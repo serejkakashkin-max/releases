@@ -1,0 +1,687 @@
+<!-- base_styles.html - базовые стили и скрипт темы -->
+<style>
+    /* CSS переменные для тем */
+    :root {
+        /* Светлая тема (по умолчанию) */
+        --bg-body: #fff;
+        --bg-card: #ffffff;
+        --bg-navbar: #ffffff;
+        --bg-input: #ffffff;
+        --bg-secondary: #f8f9fa;
+        --bg-tooltip: #212529;
+        
+        --text-primary: #333333;
+        --text-secondary: #6c757d;
+        --text-muted: #6c757d;
+        --text-inverse: #ffffff;
+        
+        --border-color: #dee2e6;
+        --border-input: #dddddd;
+        
+        --primary: #0d6efd;
+        --primary-hover: #0b5ed7;
+        --success: #198754;
+        --danger: #dc3545;
+        --warning: #ffc107;
+        --info: #0dcaf0;
+        
+        --progress-bg: #e9ecef;
+        --shadow: rgba(0,0,0,0.1);
+    }
+
+    /* Тёмная тема */
+    [data-theme="dark"] {
+        --bg-body: #1a1d23;
+        --bg-card: #21262d;
+        --bg-navbar: #21262d;
+        --bg-input: #2d333b;
+        --bg-secondary: #2d333b;
+        --bg-tooltip: #2d333b;
+
+        --text-primary: #c9d1d9;
+        --text-secondary: #8b949e;
+        --text-muted: #6e7681;
+        --text-inverse: #f0f6fc;
+
+        --border-color: #30363d;
+        --border-input: #30363d;
+
+        --primary: #58a6ff;
+        --primary-hover: #79b8ff;
+        --success: #3fb950;
+        --danger: #f85149;
+        --warning: #d29922;
+        --info: #58a6ff;
+
+        --progress-bg: #30363d;
+        --shadow: rgba(0,0,0,0.4);
+    }
+
+    /* Применение переменных */
+    body {
+        background-color: var(--bg-body);
+        color: var(--text-primary);
+        transition: background-color 0.3s ease, color 0.3s ease;
+    }
+
+    .card {
+        background-color: var(--bg-card);
+        box-shadow: 0 4px 12px var(--shadow);
+        border: none;
+        transition: background-color 0.3s ease;
+    }
+
+    .navbar {
+        background-color: var(--bg-navbar) !important;
+        transition: background-color 0.3s ease;
+    }
+
+    .navbar-brand, .nav-link {
+        color: var(--text-primary) !important;
+        transition: color 0.3s ease;
+    }
+
+    .nav-link:hover {
+        color: var(--primary) !important;
+    }
+
+    .form-control, .form-select {
+        background-color: var(--bg-input);
+        color: var(--text-primary);
+        border-color: var(--border-input);
+        transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+    }
+
+    .form-control:focus, .form-select:focus {
+        background-color: var(--bg-input);
+        color: var(--text-primary);
+        border-color: var(--primary);
+        box-shadow: 0 0 0 0.25rem rgba(88, 166, 255, 0.25);
+    }
+
+    .form-control::placeholder {
+        color: var(--text-secondary);
+        opacity: 0.7;
+    }
+
+    .form-label, .col-form-label, .card-title {
+        color: var(--text-primary);
+    }
+
+    .text-muted {
+        color: var(--text-muted) !important;
+    }
+
+    .btn-primary {
+        background-color: var(--primary);
+        border-color: var(--primary);
+        transition: background-color 0.3s, transform 0.2s, border-color 0.3s;
+    }
+
+    .btn-primary:hover {
+        background-color: var(--primary-hover);
+        border-color: var(--primary-hover);
+        transform: translateY(-2px);
+    }
+
+    .btn-secondary {
+        background-color: var(--text-secondary);
+        border-color: var(--text-secondary);
+        color: var(--text-inverse);
+    }
+
+    .btn-secondary:hover {
+        background-color: var(--text-primary);
+        border-color: var(--text-primary);
+    }
+
+    .btn-outline-secondary {
+        color: var(--text-primary);
+        border-color: var(--border-color);
+    }
+
+    .btn-outline-secondary:hover {
+        background-color: var(--text-secondary);
+        color: var(--text-inverse);
+    }
+
+    .btn-info {
+        background-color: var(--info);
+        border-color: var(--info);
+        color: var(--text-inverse);
+    }
+
+    .progress {
+        background-color: var(--progress-bg);
+    }
+
+    .progress-bar.bg-primary {
+        background-color: var(--primary) !important;
+    }
+
+    .progress-bar.bg-success {
+        background-color: var(--success) !important;
+    }
+
+    .badge.bg-secondary {
+        background-color: var(--text-secondary) !important;
+    }
+
+    .modal-content {
+        background-color: var(--bg-card);
+        color: var(--text-primary);
+    }
+
+    .modal-header {
+        background-color: var(--bg-secondary);
+        border-bottom-color: var(--border-color);
+    }
+
+    .modal-footer {
+        border-top-color: var(--border-color);
+    }
+
+    .btn-close {
+        filter: invert(1) grayscale(100%) brightness(200%);
+    }
+
+    [data-theme="dark"] .btn-close {
+        filter: invert(0) grayscale(100%) brightness(200%);
+    }
+
+    /* Таблицы */
+    .table {
+        color: var(--text-primary);
+    }
+
+    .list-group-item {
+        background-color: var(--bg-card);
+        color: var(--text-primary);
+        border-color: var(--border-color);
+    }
+
+    .list-group-item-danger {
+        background-color: rgba(248, 81, 73, 0.1);
+        color: #f85149;
+    }
+
+    /* Стили для статистики */
+    .stats-section {
+        border-top-color: var(--border-color);
+    }
+
+    .stats-title {
+        color: var(--text-muted);
+    }
+
+    .stat-label {
+        color: var(--text-primary);
+    }
+
+    .stat-values {
+        color: var(--text-muted);
+    }
+
+    /* Версия */
+    .version-badge {
+        background-color: var(--bg-secondary);
+        color: var(--text-muted);
+        border-color: var(--border-color);
+    }
+
+    .version-badge:hover {
+        background-color: var(--border-color);
+        color: var(--text-primary);
+    }
+
+    .version-badge.active {
+        background-color: var(--primary);
+        color: var(--text-inverse);
+        border-color: var(--primary);
+    }
+
+    .custom-tooltip {
+        background-color: var(--bg-tooltip);
+        color: var(--text-inverse);
+    }
+
+    .custom-tooltip::before {
+        border-color: transparent var(--bg-tooltip) transparent transparent;
+    }
+
+    .change-item::before {
+        color: var(--primary);
+    }
+
+    /* Переключатель темы */
+    .theme-toggle {
+        cursor: pointer;
+        padding: 0.5rem;
+        border-radius: 0.375rem;
+        transition: background-color 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        border: 1px solid var(--border-color);
+        background-color: var(--bg-secondary);
+        color: var(--text-primary);
+    }
+
+    .theme-toggle:hover {
+        background-color: var(--border-color);
+    }
+
+    .theme-toggle i {
+        font-size: 1.2rem;
+    }
+
+    /* Playbooks container */
+    .playbooks-container {
+        background-color: var(--bg-secondary);
+        border-color: var(--border-color);
+    }
+
+    .playbooks-container .form-check-label {
+        color: var(--text-primary);
+    }
+
+    /* Candidate items */
+    .candidate-item {
+        background-color: var(--bg-secondary);
+        border-color: var(--border-color) !important;
+    }
+
+    /* File rows в SMS */
+    .file-row {
+        border-color: var(--border-color);
+    }
+
+    .file-row.success {
+        background-color: rgba(63, 185, 80, 0.1);
+        border-left-color: var(--success);
+    }
+
+    .file-row.failure {
+        background-color: rgba(248, 81, 73, 0.1);
+        border-left-color: var(--danger);
+    }
+
+    .file-text-preview {
+        color: var(--text-muted);
+    }
+
+    /* Instruction block */
+    .instruction {
+        background-color: rgba(88, 166, 255, 0.1);
+        border-left-color: var(--primary);
+    }
+
+    [data-theme="dark"] .instruction {
+        background-color: rgba(88, 166, 255, 0.15);
+    }
+
+    /* Глобальная дата секция */
+    .global-date-section {
+        background-color: var(--bg-secondary);
+    }
+
+    /* Ссылки */
+    a {
+        color: var(--primary);
+    }
+
+    a:hover {
+        color: var(--primary-hover);
+    }
+
+    /* Текст успеха/ошибки */
+    .text-success {
+        color: var(--success) !important;
+    }
+
+    .text-danger {
+        color: var(--danger) !important;
+    }
+
+    .text-warning {
+        color: var(--warning) !important;
+    }
+
+    .text-info {
+        color: var(--info) !important;
+    }
+
+    /* Recommendation text */
+    .recommendation-text {
+        background-color: var(--bg-secondary);
+        color: var(--text-primary);
+    }
+
+    /* Scrollbar для темной темы */
+    [data-theme="dark"] ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+    }
+
+    [data-theme="dark"] ::-webkit-scrollbar-track {
+        background: var(--bg-body);
+    }
+
+    [data-theme="dark"] ::-webkit-scrollbar-thumb {
+        background: var(--border-color);
+        border-radius: 5px;
+    }
+
+    [data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+        background: var(--text-secondary);
+    }
+
+    /* Лоадер - базовые стили, перекрываются в release.html */
+    #loader {
+        background-color: rgba(255, 255, 255, 0.95);
+    }
+
+    [data-theme="dark"] #loader {
+        background-color: rgba(26, 26, 46, 0.95);
+    }
+
+    .loader-text {
+        color: var(--text-primary);
+    }
+    
+    /* Дополнительные стили для версии из эталона */
+    .version-wrapper {
+        position: absolute;
+        top: 0.5rem;
+        right: 0.5rem;
+        z-index: 10;
+    }
+    
+    .version-badge {
+        font-size: 0.75rem;
+        padding: 0.35em 0.65em;
+        cursor: pointer;
+        transition: all 0.2s;
+        border: 1px solid var(--border-color);
+        user-select: none;
+    }
+    
+    .version-badge:hover {
+        background-color: var(--border-color);
+        color: var(--text-primary);
+    }
+    
+    .version-badge.active {
+        background-color: var(--primary);
+        color: var(--text-inverse);
+        border-color: var(--primary);
+    }
+    
+    .custom-tooltip {
+        position: absolute;
+        top: 0;
+        left: 100%;
+        margin-left: 10px;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        font-size: 0.9rem;
+        width: 350px;
+        max-width: 90vw;
+        z-index: 1000;
+        display: none;
+        box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.3);
+        line-height: 1.5;
+    }
+    
+    .custom-tooltip.show {
+        display: block;
+    }
+    
+    .custom-tooltip::before {
+        content: "";
+        position: absolute;
+        top: 15px;
+        left: -10px;
+        border-width: 10px;
+        border-style: solid;
+        border-color: transparent var(--bg-tooltip) transparent transparent;
+    }
+    
+    .custom-tooltip hr {
+        margin: 0.75rem 0;
+        border-color: rgba(255,255,255,0.2);
+    }
+    
+    .custom-tooltip .changes-list {
+        margin: 0.5rem 0;
+    }
+    
+    .custom-tooltip .change-item {
+        margin-bottom: 0.4rem;
+        padding-left: 1.2rem;
+        position: relative;
+    }
+    
+    .custom-tooltip .change-item::before {
+        content: "•";
+        color: var(--primary);
+        position: absolute;
+        left: 0;
+        font-weight: bold;
+    }
+    
+    .version-history-item {
+        border-left: 3px solid var(--primary);
+        padding-left: 1rem;
+        margin-bottom: 1.5rem;
+    }
+    
+    .version-history-version {
+        font-weight: bold;
+        color: var(--primary);
+        font-size: 1.1rem;
+    }
+    
+    .version-history-date {
+        color: var(--text-muted);
+        font-size: 0.875rem;
+        margin-bottom: 0.5rem;
+    }
+    
+    .version-history-changes {
+        list-style: none;
+        padding-left: 0;
+        margin-bottom: 0;
+    }
+    
+    .version-history-changes li {
+        position: relative;
+        padding-left: 1.2rem;
+        margin-bottom: 0.25rem;
+        font-size: 0.9rem;
+    }
+    
+    .version-history-changes li::before {
+        content: "•";
+        color: var(--primary);
+        position: absolute;
+        left: 0;
+    }
+    
+    .modal-header-version {
+        background-color: var(--bg-secondary);
+        border-bottom: 1px solid var(--border-color);
+    }
+    
+    /* Стили для статистики из эталона */
+    .stats-section {
+        margin-top: 2rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid var(--border-color);
+    }
+    
+    .stats-title {
+        color: var(--text-muted);
+        font-size: 0.875rem;
+        margin-bottom: 1rem;
+    }
+    
+    .stat-row {
+        margin-bottom: 1rem;
+    }
+    
+    .stat-label {
+        font-size: 0.875rem;
+        color: var(--text-primary);
+    }
+    
+    .stat-values {
+        font-size: 0.875rem;
+        color: var(--text-muted);
+    }
+    
+    .total-badge {
+        font-size: 1rem;
+        padding: 0.5rem 1rem;
+    }
+
+    /* === НОВЫЕ СТИЛИ ДЛЯ КНОПКИ-ДОМИКА === */
+    .nav-home-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 42px;
+        height: 42px;
+        border-radius: 50%;
+        background-color: var(--bg-secondary);
+        border: 2px solid var(--border-color);
+        color: var(--text-primary);
+        text-decoration: none;
+        transition: all 0.3s ease;
+        position: relative;
+        margin-right: 1rem;
+    }
+
+    .nav-home-btn:hover {
+        background-color: var(--primary);
+        border-color: var(--primary);
+        color: var(--text-inverse);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(88, 166, 255, 0.4);
+        text-decoration: none;
+    }
+
+    .nav-home-btn i {
+        font-size: 1.3rem;
+        transition: transform 0.3s ease;
+    }
+
+    .nav-home-btn:hover i {
+        transform: scale(1.1);
+    }
+
+    /* Tooltip для кнопки-домика */
+    .nav-home-btn::after {
+        content: "На главную";
+        position: absolute;
+        top: 50%;
+        left: calc(100% + 10px);
+        transform: translateY(-50%);
+        background-color: var(--bg-tooltip);
+        color: var(--text-inverse);
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        white-space: nowrap;
+        opacity: 0;
+        visibility: hidden;
+        transition: all 0.3s ease;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        z-index: 1000;
+    }
+
+    .nav-home-btn::before {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 100%;
+        transform: translateY(-50%);
+        border: 6px solid transparent;
+        border-right-color: var(--bg-tooltip);
+        opacity: 0;
+        visibility: hidden;
+        transition: all 0.3s ease;
+        z-index: 1000;
+    }
+
+    .nav-home-btn:hover::after,
+    .nav-home-btn:hover::before {
+        opacity: 1;
+        visibility: visible;
+    }
+
+    /* Адаптация для мобильных */
+    @media (max-width: 576px) {
+        .nav-home-btn {
+            width: 38px;
+            height: 38px;
+        }
+        
+        .nav-home-btn i {
+            font-size: 1.1rem;
+        }
+        
+        .nav-home-btn::after {
+            display: none; /* На мобильных скрываем tooltip */
+        }
+    }
+</style>
+
+<script>
+    // Скрипт переключения темы
+    (function() {
+        // Применить тему
+        function applyTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+            updateToggleIcon(theme);
+        }
+
+        // Обновить иконку переключателя
+        function updateToggleIcon(theme) {
+            const toggles = document.querySelectorAll('.theme-toggle i');
+            toggles.forEach(icon => {
+                if (theme === 'dark') {
+                    icon.classList.remove('bi-sun');
+                    icon.classList.add('bi-moon');
+                } else {
+                    icon.classList.remove('bi-moon');
+                    icon.classList.add('bi-sun');
+                }
+            });
+        }
+
+        // Переключить тему
+        function toggleTheme() {
+            const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            
+            applyTheme(newTheme);
+            localStorage.setItem('theme', newTheme);
+        }
+
+        // Инициализация при загрузке
+        function initTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            applyTheme(savedTheme);
+        }
+
+        // Экспортируем функции глобально
+        window.toggleTheme = toggleTheme;
+        window.initTheme = initTheme;
+
+        // Запускаем сразу
+        initTheme();
+    })();
+</script>

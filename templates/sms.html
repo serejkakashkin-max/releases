@@ -1,0 +1,630 @@
+<!-- templates/sms.html -->
+<!doctype html>
+<html lang="ru">
+<head>
+    <title>SMS генератор</title>
+    <base href="/releases/">
+    <link href="/static/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/static/css/bootstrap-icons.css" rel="stylesheet">
+    <script src="/static/js/bootstrap.bundle.min.js"></script>
+    {% include 'base_styles.html' %}
+    <style>
+        .container {
+            max-width: 900px;
+        }
+        
+        /* Стили для таблицы файлов */
+        .file-row {
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            margin-bottom: 8px;
+            padding: 10px;
+            display: flex;
+            align-items: center;
+            min-height: 50px;
+        }
+        
+        .file-row.success {
+            background-color: rgba(63, 185, 80, 0.1);
+            border-left: 4px solid var(--success);
+        }
+
+        .file-row.failure {
+            background-color: rgba(248, 81, 73, 0.1);
+            border-left: 4px solid var(--danger);
+        }
+        
+        .file-name {
+            flex: 0 0 40%;
+            padding-right: 10px;
+            word-break: break-all;
+        }
+        
+        .file-name strong {
+            color: var(--text-primary);
+        }
+        
+        .file-date {
+            flex: 0 0 20%;
+            padding: 0 10px;
+        }
+        
+        .file-status {
+            flex: 0 0 10%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .file-edit {
+            flex: 0 0 30%;
+            padding-left: 10px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .status-btn {
+            width: 30px;
+            height: 30px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .status-btn.success {
+            background-color: var(--success);
+        }
+        
+        .status-btn.failure {
+            background-color: var(--danger);
+        }
+        
+        .global-date-section {
+            background-color: var(--bg-secondary);
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .instruction {
+            background-color: rgba(88, 166, 255, 0.1);
+            padding: 10px 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            border-left: 4px solid var(--primary);
+            color: var(--text-primary);
+        }
+        
+        .hidden {
+            display: none !important;
+        }
+        
+        #filesTable {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .edit-text-modal textarea {
+            min-height: 200px;
+            background-color: var(--bg-input);
+            color: var(--text-primary);
+            border-color: var(--border-input);
+        }
+        
+        .file-text-preview {
+            font-size: 0.85em;
+            color: var(--text-muted);
+            margin-top: 5px;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark mb-4">
+        <div class="container-fluid">
+            <a class="nav-home-btn" href="{{basepath}}/" title="На главную">
+                <i class="bi bi-house-door-fill"></i>
+            </a>
+            <div class="d-flex align-items-center gap-2">
+                <button class="theme-toggle" onclick="toggleTheme()" title="Переключить тему">
+                    <i class="bi bi-sun"></i>
+                </button>
+            </div>
+        </div>
+    </nav>
+    <div class="container mt-4">
+        <div class="card p-4">
+            <h2 class="card-title text-center mb-3">Генератор шаблонов SMS</h2>
+            <p class="text-center text-muted mb-4">
+                Генератор шаблонов CSV для SMS-рассылок.<br>
+                Поддерживается формирование для успешного и неуспешного внедрения.
+            </p>
+            
+            <!-- Шаг 1: Выбор файлов -->
+            <div id="step1">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Выберите планы внедрения (.docx):</label>
+                    <input type="file" name="files" id="files" multiple class="form-control" accept=".docx">
+                </div>
+                <div class="text-center">
+                    <button type="button" class="btn btn-secondary" onclick="window.location.href=BASE_PATH + '/'">
+                        <i class="bi bi-x-circle me-2"></i>Закрыть
+                    </button>
+                </div>
+            </div>
+
+            <!-- Шаг 2: Настройка SMS (изначально скрыт) -->
+            <div id="step2" class="hidden">
+                <div class="global-date-section">
+                    <div class="row align-items-center">
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold mb-0">Глобальная дата:</label>
+                        </div>
+                        <div class="col-md-5">
+                            <input type="text" id="globalDate" class="form-control" placeholder="dd.mm.yyyy" maxlength="10">
+                        </div>
+                        <div class="col-md-3">
+                            <button type="button" class="btn btn-outline-primary btn-sm w-100" onclick="applyGlobalDate()">
+                                Применить ко всем
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="instruction">
+                    <i class="bi bi-info-circle me-2"></i>
+                    <strong>По умолчанию:</strong> успешное внедрение (зелёный квадрат), неуспешное (красный квадрат).
+                </div>
+
+                <!-- Заголовок таблицы -->
+                <div class="d-flex fw-bold border-bottom pb-2 mb-2 text-muted">
+                    <div style="flex: 0 0 40%;">План внедрения</div>
+                    <div style="flex: 0 0 20%; text-align: center;">Дата</div>
+                    <div style="flex: 0 0 10%; text-align: center;">Статус</div>
+                    <div style="flex: 0 0 30%; text-align: center;">Изменить</div>
+                </div>
+
+                <!-- Список файлов -->
+                <div id="filesTable"></div>
+
+                <div class="d-flex justify-content-between mt-4">
+                    <button type="button" class="btn btn-secondary" onclick="window.location.href=BASE_PATH + '/'">
+                        <i class="bi bi-arrow-left me-2"></i>Назад
+                    </button>
+                    <button type="button" class="btn btn-primary" onclick="generateSMS()">
+                        <i class="bi bi-magic me-2"></i>Генерировать
+                    </button>
+                </div>
+            </div>
+
+            <!-- Статус -->
+            <p id="statusLabel" class="text-success mt-3 text-center fw-bold"></p>
+        </div>
+    </div>
+
+    <!-- Модальное окно для редактирования текста -->
+    <div class="modal fade" id="editTextModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Редактировать текст SMS</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body edit-text-modal">
+                    <textarea id="editTextArea" class="form-control"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-primary" onclick="saveEditedText()">Сохранить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно для ошибок -->
+    <div class="modal fade" id="errorModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title">Ошибки обработки</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <ul id="errorList" class="list-group"></ul>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Автоопределение пути для локальной разработки vs хоста
+        const BASE_PATH = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '' : '/releases';
+        
+        let selectedFiles = [];
+        let fileData = {};
+        let currentEditFile = null;
+        let editTextModal = null;
+
+        document.addEventListener('DOMContentLoaded', function() {
+            editTextModal = new bootstrap.Modal(document.getElementById('editTextModal'));
+            
+            document.getElementById('files').addEventListener('change', async function(e) {
+                const files = Array.from(e.target.files);
+                console.log('Files selected:', files.length);
+                
+                if (files.length === 0) return;
+
+                // Фильтруем файлы: только с "план" в имени и .docx
+                const filteredFiles = files.filter(f => 
+                    f.name.toLowerCase().endsWith('.docx') && 
+                    f.name.toLowerCase().includes('план')
+                );
+
+                console.log('Filtered files:', filteredFiles.map(f => f.name));
+
+                if (filteredFiles.length === 0) {
+                    showStatus('Нет подходящих файлов с "план" в имени', 'danger');
+                    return;
+                }
+
+                selectedFiles = filteredFiles;
+                
+                // Извлекаем данные из файлов
+                await extractFilesData();
+                
+                // Показываем шаг 2
+                document.getElementById('step1').classList.add('hidden');
+                document.getElementById('step2').classList.remove('hidden');
+                
+                renderFilesTable();
+            });
+        });
+
+        async function extractFilesData() {
+            console.log('Starting data extraction for', selectedFiles.length, 'files');
+            
+            for (let file of selectedFiles) {
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                try {
+                    console.log('Extracting from:', file.name);
+                    // Используем BASE_PATH для автоопределения пути
+                    const response = await fetch(`${BASE_PATH}/sms/extract`, {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error('HTTP error! status: ' + response.status);
+                    }
+                    
+                    const data = await response.json();
+                    console.log('Extracted data for', file.name, ':', {
+                        hasSuccess: !!data.success_text,
+                        hasFailure: !!data.failure_text,
+                        date: data.date
+                    });
+                    
+                    // Дата из документа (не текущая!)
+                    const docDate = data.date || '';
+                    
+                    fileData[file.name] = {
+                        isFailure: false,  // По умолчанию успешное (зеленый)
+                        date: docDate,     // Дата из плана внедрения!
+                        successText: data.success_text || '',
+                        failureText: data.failure_text || '',
+                        editedSuccessText: null,  // Отредактированный текст успешного
+                        editedFailureText: null   // Отредактированный текст неуспешного
+                    };
+                    
+                    console.log('Stored data for', file.name, ':', fileData[file.name]);
+                } catch (error) {
+                    console.error('Error extracting data for', file.name, ':', error);
+                    // Инициализируем пустыми значениями при ошибке
+                    fileData[file.name] = {
+                        isFailure: false,
+                        date: '',
+                        successText: '',
+                        failureText: '',
+                        editedSuccessText: null,
+                        editedFailureText: null
+                    };
+                }
+            }
+        }
+
+        function renderFilesTable() {
+            const container = document.getElementById('filesTable');
+            container.innerHTML = '';
+
+            selectedFiles.forEach((file, index) => {
+                const data = fileData[file.name];
+                console.log('Rendering row for', file.name, 'with data:', data);
+                
+                const row = document.createElement('div');
+                row.className = `file-row ${data.isFailure ? 'failure' : 'success'}`;
+                row.id = `file-row-${index}`;
+
+                // Имя файла
+                const nameDiv = document.createElement('div');
+                nameDiv.className = 'file-name';
+                nameDiv.innerHTML = `<strong>${file.name}</strong>`;
+                
+                // Предпросмотр текста
+                const previewDiv = document.createElement('div');
+                previewDiv.className = 'file-text-preview';
+                const currentText = getCurrentText(file.name);
+                previewDiv.textContent = currentText ? (currentText.substring(0, 80) + (currentText.length > 80 ? '...' : '')) : 'Текст не найден';
+                previewDiv.id = `preview-${index}`;
+                nameDiv.appendChild(previewDiv);
+
+                // Поле даты - значение из плана внедрения
+                const dateDiv = document.createElement('div');
+                dateDiv.className = 'file-date';
+                const dateInput = document.createElement('input');
+                dateInput.type = 'text';
+                dateInput.className = 'form-control form-control-sm';
+                dateInput.value = data.date;  // Дата из документа!
+                dateInput.placeholder = 'dd.mm.yyyy';
+                dateInput.maxLength = 10;
+                dateInput.dataset.filename = file.name;
+                dateInput.addEventListener('change', function() {
+                    if (validateDate(this.value)) {
+                        fileData[file.name].date = this.value;
+                        console.log('Date changed for', file.name, 'to', this.value);
+                    } else {
+                        this.value = fileData[file.name].date;
+                        showStatus('Неверный формат даты (dd.mm.yyyy)', 'danger');
+                    }
+                });
+                dateDiv.appendChild(dateInput);
+
+                // Кнопка статуса (зеленый/красный квадрат)
+                const statusDiv = document.createElement('div');
+                statusDiv.className = 'file-status';
+                const statusBtn = document.createElement('button');
+                statusBtn.className = `status-btn ${data.isFailure ? 'failure' : 'success'}`;
+                statusBtn.title = data.isFailure ? 'Неуспешное внедрение' : 'Успешное внедрение';
+                statusBtn.onclick = function() {
+                    toggleFailure(index, file.name);
+                };
+                statusDiv.appendChild(statusBtn);
+
+                // Кнопка редактирования
+                const editDiv = document.createElement('div');
+                editDiv.className = 'file-edit';
+                const editBtn = document.createElement('button');
+                editBtn.className = 'btn btn-outline-primary btn-sm';
+                editBtn.innerHTML = '<i class="bi bi-pencil me-1"></i>Изменить';
+                editBtn.onclick = function() {
+                    openEditModal(file.name);
+                };
+                editDiv.appendChild(editBtn);
+
+                row.appendChild(nameDiv);
+                row.appendChild(dateDiv);
+                row.appendChild(statusDiv);
+                row.appendChild(editDiv);
+
+                container.appendChild(row);
+            });
+        }
+
+        // Получить текущий текст в зависимости от статуса (с учётом редактирования)
+        function getCurrentText(filename) {
+            const data = fileData[filename];
+            if (!data) return '';
+            
+            if (data.isFailure) {
+                // Неуспешное внедрение - берем отредактированный или оригинальный failure текст
+                return data.editedFailureText !== null ? data.editedFailureText : data.failureText;
+            } else {
+                // Успешное внедрение - берем отредактированный или оригинальный success текст
+                return data.editedSuccessText !== null ? data.editedSuccessText : data.successText;
+            }
+        }
+
+        function toggleFailure(index, filename) {
+            console.log('Toggling failure for', filename, 'current index:', index);
+            const data = fileData[filename];
+            if (!data) return;
+            
+            data.isFailure = !data.isFailure;
+            console.log('New isFailure state:', data.isFailure);
+            
+            const row = document.getElementById(`file-row-${index}`);
+            const btn = row.querySelector('.status-btn');
+            
+            if (data.isFailure) {
+                row.classList.remove('success');
+                row.classList.add('failure');
+                btn.classList.remove('success');
+                btn.classList.add('failure');
+                btn.title = 'Неуспешное внедрение';
+            } else {
+                row.classList.remove('failure');
+                row.classList.add('success');
+                btn.classList.remove('failure');
+                btn.classList.add('success');
+                btn.title = 'Успешное внедрение';
+            }
+            
+            // Обновляем предпросмотр текста - ключевой момент!
+            updatePreview(index, filename);
+        }
+
+        function updatePreview(index, filename) {
+            const preview = document.getElementById(`preview-${index}`);
+            const text = getCurrentText(filename);
+            console.log('Updating preview for', filename, 'text:', text ? text.substring(0, 50) : 'empty');
+            preview.textContent = text ? (text.substring(0, 80) + (text.length > 80 ? '...' : '')) : 'Текст не найден';
+        }
+
+        function openEditModal(filename) {
+            currentEditFile = filename;
+            const data = fileData[filename];
+            if (!data) return;
+            
+            // Показываем текст в зависимости от текущего статуса (успешный или неуспешный)
+            const currentText = getCurrentText(filename);
+            console.log('Opening edit modal for', filename, 'isFailure:', data.isFailure, 'text:', currentText ? currentText.substring(0, 50) : 'empty');
+            
+            document.getElementById('editTextArea').value = currentText || '';
+            
+            editTextModal.show();
+        }
+
+        function saveEditedText() {
+            if (currentEditFile) {
+                const newText = document.getElementById('editTextArea').value;
+                const data = fileData[currentEditFile];
+                
+                // Сохраняем в соответствующее поле в зависимости от статуса
+                if (data.isFailure) {
+                    data.editedFailureText = newText;
+                    console.log('Saved edited failure text for', currentEditFile);
+                } else {
+                    data.editedSuccessText = newText;
+                    console.log('Saved edited success text for', currentEditFile);
+                }
+                
+                // Обновляем предпросмотр
+                const index = selectedFiles.findIndex(f => f.name === currentEditFile);
+                if (index !== -1) {
+                    updatePreview(index, currentEditFile);
+                }
+            }
+            editTextModal.hide();
+        }
+
+        function applyGlobalDate() {
+            const globalDate = document.getElementById('globalDate').value.trim();
+            if (!validateDate(globalDate)) {
+                showStatus('Неверный формат глобальной даты (dd.mm.yyyy)', 'danger');
+                return;
+            }
+            
+            console.log('Applying global date:', globalDate);
+            
+            selectedFiles.forEach(file => {
+                if (fileData[file.name]) {
+                    fileData[file.name].date = globalDate;
+                }
+            });
+            
+            // Обновляем поля ввода
+            document.querySelectorAll('.file-date input').forEach(input => {
+                input.value = globalDate;
+            });
+            
+            showStatus('Глобальная дата применена', 'success');
+        }
+
+        function validateDate(dateStr) {
+            const regex = /^\d{2}\.\d{2}\.\d{4}$/;
+            if (!regex.test(dateStr)) return false;
+            
+            const parts = dateStr.split('.');
+            const day = parseInt(parts[0], 10);
+            const month = parseInt(parts[1], 10);
+            const year = parseInt(parts[2], 10);
+            
+            if (month < 1 || month > 12) return false;
+            if (day < 1 || day > 31) return false;
+            if (year < 1900 || year > 2100) return false;
+            
+            return true;
+        }
+
+        async function generateSMS() {
+            const formData = new FormData();
+            
+            selectedFiles.forEach(file => {
+                formData.append('files', file);
+            });
+            
+            // Добавляем метаданные
+            const metadata = {};
+            selectedFiles.forEach(file => {
+                const data = fileData[file.name];
+                if (data) {
+                    // Определяем, какой текст отправлять (успешный или неуспешный)
+                    const textToSend = data.isFailure 
+                        ? (data.editedFailureText !== null ? data.editedFailureText : data.failureText)
+                        : (data.editedSuccessText !== null ? data.editedSuccessText : data.successText);
+                    
+                    metadata[file.name] = {
+                        is_failure: data.isFailure,
+                        date: data.date,
+                        edited_text: textToSend
+                    };
+                }
+            });
+            
+            console.log('Sending metadata:', metadata);
+            formData.append('metadata', JSON.stringify(metadata));
+            
+            try {
+                // Используем BASE_PATH для автоопределения пути
+                const response = await fetch(`${BASE_PATH}/sms/generate`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'sms.zip';
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    a.remove();
+                    
+                    showStatus('✓ Шаблоны успешно сгенерированы', 'success');
+                } else {
+                    const data = await response.json();
+                    if (data.errors && data.errors.length > 0) {
+                        showErrors(data.errors);
+                    }
+                    showStatus('Обработка завершена с ошибками', 'danger');
+                }
+            } catch (error) {
+                console.error('Error generating SMS:', error);
+                showStatus('Ошибка при генерации', 'danger');
+            }
+        }
+
+        function showErrors(errors) {
+            const errorList = document.getElementById('errorList');
+            errorList.innerHTML = '';
+            errors.forEach(err => {
+                const li = document.createElement('li');
+                li.className = 'list-group-item text-danger';
+                li.textContent = err;
+                errorList.appendChild(li);
+            });
+            const errorModal = new bootstrap.Modal(document.getElementById('errorModal'));
+            errorModal.show();
+        }
+
+        function showStatus(message, type) {
+            const statusLabel = document.getElementById('statusLabel');
+            statusLabel.textContent = message;
+            statusLabel.className = `mt-3 text-center fw-bold text-${type}`;
+            
+            // Очищаем через 5 секунд
+            setTimeout(() => {
+                statusLabel.textContent = '';
+            }, 5000);
+        }
+    </script>
+</body>
+</html>

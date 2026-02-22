@@ -1,0 +1,297 @@
+﻿<!doctype html>
+<html lang="ru">
+<head>
+    <title>Генератор</title>
+    <link href="/static/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/static/css/bootstrap-icons.css" rel="stylesheet">
+    {% include 'base_styles.html' %}
+    <style>
+        .container {
+            max-width: 800px;
+        }
+        /* Стили для новой кнопки дашборда */
+        .btn-beta {
+            position: relative;
+            overflow: hidden;
+        }
+        .btn-beta::after {
+            content: "BETA";
+            position: absolute;
+            top: 2px;
+            right: -20px;
+            background: var(--primary);
+            color: white;
+            font-size: 0.6rem;
+            padding: 2px 20px;
+            transform: rotate(45deg);
+            font-weight: bold;
+        }
+        [data-theme="dark"] .btn-beta::after {
+            background: var(--primary);
+        }
+        
+        /* Лоадер для дашборда - точно как в release.html */
+        #dashboard-loader {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.95);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+        
+        [data-theme="dark"] #dashboard-loader {
+            background-color: rgba(26, 26, 46, 0.95);
+        }
+        
+        .dashboard-spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid var(--border-color);
+            border-top: 5px solid var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        .dashboard-loader-text {
+            margin-top: 20px;
+            color: var(--text-primary);
+            font-size: 18px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+    <script>
+        // Автоопределение пути для локальной разработки vs хоста
+        const BASE_PATH = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '' : '/releases';
+        
+        function goToDashboard() {
+            // Показываем лоадер
+            document.getElementById('dashboard-loader').style.display = 'flex';
+            
+            // Делаем запрос на обновление данных
+            fetch(`${BASE_PATH}/dashboard/refresh`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Переходим на дашборд без параметра refresh (данные уже в кэше)
+                    window.location.href = BASE_PATH + '/dashboard';
+                } else {
+                    alert('Ошибка обновления данных: ' + (data.error || 'Неизвестная ошибка'));
+                    document.getElementById('dashboard-loader').style.display = 'none';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Ошибка сети при обновлении данных');
+                document.getElementById('dashboard-loader').style.display = 'none';
+            });
+        }
+        
+        window.onload = function() {
+            // Устанавливаем правильные ссылки
+            document.getElementById('link-release').href = BASE_PATH + '/release';
+            document.getElementById('link-sms').href = BASE_PATH + '/sms';
+            // Дашборд теперь через onclick
+        };
+    </script>
+</head>
+<body>
+    <!-- Лоадер для дашборда -->
+    <div id="dashboard-loader">
+        <div class="dashboard-spinner"></div>
+        <div class="dashboard-loader-text">Загрузка данных из Jira, пожалуйста, подождите...</div>
+    </div>
+
+    <nav class="navbar navbar-expand-lg navbar-dark mb-4">
+        <div class="container-fluid">
+            <!-- ИСПРАВЛЕНО: кнопка домика теперь обновляет страницу -->
+            <a class="nav-home-btn" href="javascript:location.reload()">
+                <i class="bi bi-house-door-fill"></i>
+            </a>
+            <div class="d-flex align-items-center gap-2">
+                <!-- Переключатель темы -->
+                <button class="theme-toggle" onclick="toggleTheme()" title="Переключить тему">
+                    <i class="bi bi-sun"></i>
+                </button>
+            </div>
+        </div>
+    </nav>
+    <div class="container mt-5">
+        <div class="card p-4">
+            <!-- Badge версии в отдельном wrapper -->
+            <div class="version-wrapper">
+                <span class="badge version-badge" 
+                      id="versionBadge">
+                    v{{ version }}
+                </span>
+                <!-- Кастомный tooltip -->
+                <div class="custom-tooltip" id="versionTooltip">
+                    <strong style="font-size: 1.1rem;">Версия {{ version }}</strong><br>
+                    <small style="opacity: 0.8;">{{ version_history[0].date }}</small>
+                    <hr>
+                    <div class="changes-list">
+                        {% for change in version_history[0].changes %}
+                            <div class="change-item">{{ change }}</div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            
+            <h1 class="card-title text-center mb-4">AI-ассистент команды OPLOT</h1>
+            <div class="d-grid gap-3">
+                <a id="link-release" href="/release" class="btn btn-primary btn-lg d-flex align-items-center justify-content-center">
+                    <i class="bi bi-gear me-2"></i> Формирование релизной документации
+                </a>
+                <a id="link-sms" href="/sms" class="btn btn-primary btn-lg d-flex align-items-center justify-content-center">
+                    <i class="bi bi-envelope me-2"></i> SMS-оповещения
+                </a>
+                <!-- НОВАЯ КНОПКА ДАШБОРДА -->
+                <button onclick="goToDashboard()" class="btn btn-primary btn-lg btn-beta d-flex align-items-center justify-content-center">
+                    <i class="bi bi-speedometer2 me-2"></i> Дашборд дежурного
+                </button>
+            </div>
+            
+            <!-- Секция статистики -->
+            <div class="stats-section">
+                <h6 class="stats-title">
+                    <i class="bi bi-bar-chart-line me-2"></i>Статистика использования
+                </h6>
+                
+                <div class="stat-row">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <span class="stat-label">Релиз генератор</span>
+                        <span class="stat-values">{{ stats.release.total }} (30д: {{ stats.release.last_30_days }})</span>
+                    </div>
+                    <div class="progress" style="height: 6px;">
+                        <div class="progress-bar bg-primary" role="progressbar" 
+                             style="width: {{ stats.release.percentage }}%"></div>
+                    </div>
+                </div>
+                
+                <div class="stat-row">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <span class="stat-label">SMS генератор</span>
+                        <span class="stat-values">{{ stats.sms.total }} (30д: {{ stats.sms.last_30_days }})</span>
+                    </div>
+                    <div class="progress" style="height: 6px;">
+                        <div class="progress-bar bg-success" role="progressbar" 
+                             style="width: {{ stats.sms.percentage }}%"></div>
+                    </div>
+                </div>
+                
+                <div class="d-flex justify-content-between align-items-center pt-3 mt-2 border-top">
+                    <span class="stat-label fw-bold">Всего запусков</span>
+                    <span class="badge bg-secondary total-badge">{{ stats.total_combined }}</span>
+                </div>
+            </div>
+            
+        </div>
+    </div>
+    
+    <!-- Модальное окно истории версий -->
+    <div class="modal fade" id="versionHistoryModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header modal-header-version">
+                    <h5 class="modal-title">
+                        <i class="bi bi-clock-history me-2"></i>История версий
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    {% for item in version_history %}
+                    <div class="version-history-item">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="version-history-version">Версия {{ item.version }}</span>
+                            <span class="version-history-date">{{ item.date }}</span>
+                        </div>
+                        <ul class="version-history-changes">
+                            {% for change in item.changes %}
+                            <li>{{ change }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Скрипты для tooltip -->
+    <script>
+        const badge = document.getElementById('versionBadge');
+        const tooltip = document.getElementById('versionTooltip');
+        
+        let isPinned = false;
+        let isHoveringTooltip = false;
+        
+        function showTooltip() {
+            tooltip.classList.add('show');
+        }
+        
+        function hideTooltip() {
+            if (!isPinned && !isHoveringTooltip) {
+                tooltip.classList.remove('show');
+            }
+        }
+        
+        badge.addEventListener('mouseenter', function() {
+            showTooltip();
+        });
+        
+        badge.addEventListener('mouseleave', function() {
+            setTimeout(() => {
+                if (!isHoveringTooltip) {
+                    hideTooltip();
+                }
+            }, 10);
+        });
+        
+        badge.addEventListener('click', function(e) {
+            e.stopPropagation();
+            
+            if (isPinned) {
+                isPinned = false;
+                badge.classList.remove('active');
+                tooltip.classList.remove('show');
+            } else {
+                isPinned = true;
+                badge.classList.add('active');
+                showTooltip();
+            }
+        });
+        
+        tooltip.addEventListener('mouseenter', function() {
+            isHoveringTooltip = true;
+        });
+        
+        tooltip.addEventListener('mouseleave', function() {
+            isHoveringTooltip = false;
+            hideTooltip();
+        });
+        
+        document.addEventListener('click', function(e) {
+            if (!badge.contains(e.target) && !tooltip.contains(e.target)) {
+                isPinned = false;
+                badge.classList.remove('active');
+                tooltip.classList.remove('show');
+            }
+        });
+    </script>
+</body>
+</html>
