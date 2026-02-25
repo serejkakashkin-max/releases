@@ -19,14 +19,24 @@ TAG_SUP_VARIANTS = ["СУП", "суп", "Суп"]
 TAG_LOGI_VARIANTS = ["Логи", "логи", "ЛОГИ"]  # Все варианты регистра
 TAG_VNEDRENIE_VARIANTS = ["Внедрение", "внедрение"]
 TAG_ROLE_VARIANTS = ["роль", "Роль", "РОЛЬ"]
+TAG_PSI_VARIANTS = ["ПСИ", "пси", "Пси"]
 
 # Паттерны для поиска в тексте (регистронезависимые)
 SUP_PATTERN = re.compile(r'СУП', re.IGNORECASE)
 LOGI_PATTERN = re.compile(r'логи', re.IGNORECASE)
 
+# Паттерны для раскаток ПСИ (текст в теме)
+PSI_PATTERNS = [
+    "Раскатить сборку Фокус",
+    "Раскатить сборку",
+    "Раскатка на ПСИ",
+    "раскатить дистрибутив"
+]
+PSI_PATTERN = re.compile(r'(' + '|'.join(map(re.escape, PSI_PATTERNS)) + r')', re.IGNORECASE)
+
 # Паттерны для определения типов задач (только по тексту, без тегов)
 DB_PATTERNS = ["запрос к БД", "выгрузку из БД", "БД"]
-INFRA_PATTERNS = ["ПОД", "перезагрузить под", "рестартануть под"]
+INFRA_PATTERNS = ["ПОД", "перезагрузить под", "рестартануть под", "Работы по", "работы по"]
 ROLE_PATTERNS = ["сменить роль", "добавить роль"]
 
 # Компилированные регекс-паттерны для производительности
@@ -91,7 +101,22 @@ def fetch_jira_tasks():
         f'(labels = "БД" OR labels = "бд" OR '
         f'summary ~ "БД" OR summary ~ "бд" OR '
         f'summary ~ "ПОД" OR summary ~ "под" OR '
+        f'summary ~ "работы по" OR summary ~ "Работы по" OR '
         f'summary ~ "роль" OR summary ~ "Роль") AND '
+        f'created >= "{start_date}" AND '
+        f'status NOT IN ({statuses_filter}) '
+        f'ORDER BY priority DESC, created DESC'
+    )
+    
+    # === ЗАПРОС 5: ПСИ задачи (раскатки) - глобально по всему проекту ===
+    # Ищем по тегу ПСИ или паттернам раскаток в summary
+    jql_psi = (
+        f'project = OPLOT AND '
+        f'(labels = "ПСИ" OR labels = "пси" OR '
+        f'summary ~ "Раскатить сборку Фокус" OR '
+        f'summary ~ "Раскатить сборку" OR '
+        f'summary ~ "Раскатка на ПСИ" OR '
+        f'summary ~ "раскатить дистрибутив") AND '
         f'created >= "{start_date}" AND '
         f'status NOT IN ({statuses_filter}) '
         f'ORDER BY priority DESC, created DESC'
@@ -120,6 +145,11 @@ def fetch_jira_tasks():
         logging.info(f"Dashboard: Запрос задач с операциями")
         operations_issues = _execute_jql_query(domain, token, jql_operations)
         logging.info(f"Dashboard: Получено задач с операциями: {len(operations_issues)}")
+        
+        # Получаем ПСИ задачи (раскатки) - глобально по всему проекту
+        logging.info(f"Dashboard: Запрос ПСИ задач")
+        psi_issues = _execute_jql_query(domain, token, jql_psi)
+        logging.info(f"Dashboard: Получено ПСИ задач: {len(psi_issues)}")
         
         # Обрабатываем СУП задачи
         for issue in sup_issues:
@@ -241,13 +271,52 @@ def fetch_jira_tasks():
             
             all_issues.append(issue_data)
         
+        # Обрабатываем ПСИ задачи (раскатки) - глобально по всему проекту
+        for issue in psi_issues:
+            key = issue['key']
+            labels = issue['fields'].get('labels', [])
+            summary = issue['fields'].get('summary', '')
+            
+            # Если задача уже есть, обновляем флаги ПСИ
+            if key in processed_keys:
+                for existing in all_issues:
+                    if existing['key'] == key:
+                        has_psi_tag = check_tag_in_labels(labels, TAG_PSI_VARIANTS)
+                        has_psi_text = bool(PSI_PATTERN.search(summary))
+                        existing['has_psi_tag'] = has_psi_tag
+                        existing['is_psi_task'] = has_psi_tag or has_psi_text
+                        existing['psi_detected_by'] = 'tag' if has_psi_tag else ('summary' if has_psi_text else None)
+                        break
+            else:
+                processed_keys.add(key)
+                
+                issue_data = _transform_issue(issue, domain)
+                
+                # Проверяем все типы
+                has_sup_tag = check_tag_in_labels(labels, TAG_SUP_VARIANTS)
+                has_sup_in_summary = bool(SUP_PATTERN.search(summary))
+                has_logi_tag = check_tag_in_labels(labels, TAG_LOGI_VARIANTS)
+                has_logi_in_summary = bool(LOGI_PATTERN.search(summary))
+                has_psi_tag = check_tag_in_labels(labels, TAG_PSI_VARIANTS)
+                has_psi_text = bool(PSI_PATTERN.search(summary))
+                
+                issue_data['has_sup_tag'] = has_sup_tag or has_sup_in_summary
+                issue_data['has_logi_tag'] = has_logi_tag or has_logi_in_summary
+                issue_data['has_vnedrenie_tag'] = check_tag_in_labels(labels, TAG_VNEDRENIE_VARIANTS)
+                issue_data['has_psi_tag'] = has_psi_tag
+                issue_data['is_psi_task'] = has_psi_tag or has_psi_text
+                issue_data['psi_detected_by'] = 'tag' if has_psi_tag else ('summary' if has_psi_text else None)
+                
+                all_issues.append(issue_data)
+        
         # ЛОГИРОВАНИЕ для отладки
         logi_count = sum(1 for i in all_issues if i['has_logi_tag'])
         sup_count = sum(1 for i in all_issues if i['has_sup_tag'])
         db_count = sum(1 for i in all_issues if i['has_db_tag'])
         infra_count = sum(1 for i in all_issues if i['has_infra_tag'])
         role_count = sum(1 for i in all_issues if i['has_role_tag'])
-        logging.info(f"Dashboard: Итого задач: СУП={sup_count}, Логи={logi_count}, БД={db_count}, Инфра={infra_count}, Роли={role_count}, всего уникальных={len(all_issues)}")
+        psi_count = sum(1 for i in all_issues if i.get('is_psi_task'))
+        logging.info(f"Dashboard: Итого задач: СУП={sup_count}, Логи={logi_count}, БД={db_count}, Инфра={infra_count}, Роли={role_count}, ПСИ={psi_count}, всего уникальных={len(all_issues)}")
         
     except Exception as e:
         logging.error(f"Dashboard: Ошибка при запросе к Jira: {e}")
@@ -300,6 +369,7 @@ def detect_task_types(issue):
     Определяет типы задачи по тегам и тексту summary
     БД ищем только по тегу "БД" или слову "БД" в заголовке
     Инфра и роли ищем по тегам или тексту summary
+    ПСИ ищем по тегу "ПСИ" или тексту раскатки в summary
     Возвращает словарь с флагами типов
     """
     labels = issue['fields'].get('labels', [])
@@ -310,6 +380,8 @@ def detect_task_types(issue):
     has_role_tag = check_tag_in_labels(labels, TAG_ROLE_VARIANTS)
     # Проверяем тег БД (регистронезависимо)
     has_db_tag = any(label.lower() == 'бд' for label in labels)
+    # Проверяем тег ПСИ
+    has_psi_tag = check_tag_in_labels(labels, TAG_PSI_VARIANTS)
     
     # Проверяем текст только в summary (не в description)
     # Логи - только в summary
@@ -327,16 +399,23 @@ def detect_task_types(issue):
     has_role_text = bool(ROLE_PATTERN.search(summary))
     has_role = has_role_tag or has_role_text
     
+    # ПСИ - по тегу или паттернам раскаток в summary
+    has_psi_text = bool(PSI_PATTERN.search(summary))
+    is_psi_task = has_psi_tag or has_psi_text
+    
     return {
         'has_logi_tag': has_logi,
         'has_db_tag': has_db,
         'has_infra_tag': has_infra_text,
         'has_role_tag': has_role,
+        'has_psi_tag': has_psi_tag,  # Только по тегу ПСИ
+        'is_psi_task': is_psi_task,   # По тегу или тексту
         # Дополнительно: источник определения
         'logi_detected_by': 'tag' if has_logi_tag else ('summary' if has_logi_text else None),
         'role_detected_by': 'tag' if has_role_tag else ('summary' if has_role_text else None),
         'db_detected_by': 'tag' if has_db_tag else ('summary' if has_db_in_summary else None),
         'infra_detected_by': 'summary' if has_infra_text else None,
+        'psi_detected_by': 'tag' if has_psi_tag else ('summary' if has_psi_text else None),
     }
 
 def _transform_issue(issue, domain):
@@ -390,14 +469,16 @@ def process_tasks_data(issues):
     Обрабатывает данные:
     1. СУП задачи - ВСЕ из проекта, за 30 дней
     2. Логи задачи - ВСЕ из проекта, за 30 дней (включая те что и СУП)
-    3. Внедрение - только по дежурным
-    4. Структура по дежурным - ВСЕ их активные задачи
+    3. Внедрение ПРОМ - по дежурным с тегом Внедрение
+    4. Внедрение ПСИ - глобально по всему проекту (тег ПСИ или текст раскатки)
+    5. Структура по дежурным - ВСЕ их активные задачи
     """
     sup_tasks = []
     logi_tasks = []
-    vnedrenie_tasks = []
+    vnedrenie_prom_tasks = []
+    vnedrenie_psi_tasks = []
     
-    assignee_stats = {name: {'todo': [], 'in_progress': [], 'stale_count': 0} 
+    assignee_stats = {name: {'todo': [], 'in_progress': [], 'stale_count': 0}
                       for name in DASHBOARD_ASSIGNEES}
     
     cutoff_date = datetime.now() - timedelta(days=DASHBOARD_DAYS_BACK)
@@ -417,9 +498,9 @@ def process_tasks_data(issues):
         
         # === ЛОГИ И ОПЕРАЦИОННЫЕ ЗАДАЧИ ===
         # Включаем задачи с тегами: логи, бд, инфра, роли
-        is_operation_task = (issue['has_logi_tag'] or 
-                            issue['has_db_tag'] or 
-                            issue['has_infra_tag'] or 
+        is_operation_task = (issue['has_logi_tag'] or
+                            issue['has_db_tag'] or
+                            issue['has_infra_tag'] or
                             issue['has_role_tag'])
         
         if is_operation_task:
@@ -431,9 +512,21 @@ def process_tasks_data(issues):
             except Exception as e:
                 logging.warning(f"Error processing logi task {issue['key']}: {e}")
         
-        # === ВНЕДРЕНИЕ ===
+        # === ВНЕДРЕНИЕ ПРОМ ===
+        # Только по дежурным с тегом Внедрение
         if issue['has_vnedrenie_tag'] and is_our_assignee:
-            vnedrenie_tasks.append(issue)
+            vnedrenie_prom_tasks.append(issue)
+        
+        # === ВНЕДРЕНИЕ ПСИ ===
+        # Глобально по всему проекту (тег ПСИ или паттерны раскаток в summary)
+        if issue.get('is_psi_task'):
+            try:
+                created = datetime.strptime(issue['created'][:10], "%Y-%m-%d")
+                if created >= cutoff_date:
+                    vnedrenie_psi_tasks.append(issue)
+                    logging.debug(f"Added to vnedrenie_psi_tasks: {issue['key']}")
+            except Exception as e:
+                logging.warning(f"Error processing psi task {issue['key']}: {e}")
         
         # === СТРУКТУРА ПО ДЕЖУРНЫМ ===
         if is_our_assignee:
@@ -462,18 +555,20 @@ def process_tasks_data(issues):
     
     sup_tasks.sort(key=sort_key)
     logi_tasks.sort(key=sort_key)
-    vnedrenie_tasks.sort(key=sort_key)
+    vnedrenie_prom_tasks.sort(key=sort_key)
+    vnedrenie_psi_tasks.sort(key=sort_key)
     
     for assignee in assignee_stats:
         assignee_stats[assignee]['todo'].sort(key=sort_key, reverse=True)
         assignee_stats[assignee]['in_progress'].sort(key=sort_key, reverse=True)
     
-    logging.info(f"process_tasks_data: СУП={len(sup_tasks)}, Логи={len(logi_tasks)}, Внедрение={len(vnedrenie_tasks)}")
+    logging.info(f"process_tasks_data: СУП={len(sup_tasks)}, Логи={len(logi_tasks)}, Внедрение ПРОМ={len(vnedrenie_prom_tasks)}, Внедрение ПСИ={len(vnedrenie_psi_tasks)}")
     
     return {
         'sup_tasks': sup_tasks,
         'logi_tasks': logi_tasks,
-        'vnedrenie_tasks': vnedrenie_tasks,
+        'vnedrenie_prom_tasks': vnedrenie_prom_tasks,
+        'vnedrenie_psi_tasks': vnedrenie_psi_tasks,
         'assignee_stats': assignee_stats,
         'dashboard_assignees': DASHBOARD_ASSIGNEES
     }
@@ -507,7 +602,8 @@ def get_dashboard_data():
             logging.info(
                 f"Dashboard: СУП={len(processed_data['sup_tasks'])}, "
                 f"Логи={len(processed_data['logi_tasks'])}, "
-                f"Внедрение={len(processed_data['vnedrenie_tasks'])}, "
+                f"Внедрение ПРОМ={len(processed_data['vnedrenie_prom_tasks'])}, "
+                f"Внедрение ПСИ={len(processed_data['vnedrenie_psi_tasks'])}, "
                 f"Дежурные={total_assignee_tasks}"
             )
             return _cached_data

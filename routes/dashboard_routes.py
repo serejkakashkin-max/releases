@@ -23,12 +23,14 @@ def dashboard():
         # Подсчет общего количества для отображения
         total_sup = len(data.get('sup_tasks', []))
         total_logi = len(data.get('logi_tasks', []))
-        total_vnedrenie = len(data.get('vnedrenie_tasks', []))
+        vnedrenie_prom_tasks = data.get('vnedrenie_prom_tasks', [])
+        vnedrenie_psi_tasks = data.get('vnedrenie_psi_tasks', [])
+        total_vnedrenie = len(vnedrenie_prom_tasks) + len(vnedrenie_psi_tasks)
         
         # Подсчет активных дежурных (у кого есть задачи)
         assignee_stats = data.get('assignee_stats', {})
         active_assignees = sum(
-            1 for stats in assignee_stats.values() 
+            1 for stats in assignee_stats.values()
             if stats.get('todo') or stats.get('in_progress')
         )
         
@@ -37,7 +39,8 @@ def dashboard():
             basepath=BASE_PATH,
             sup_tasks=data.get('sup_tasks', []),
             logi_tasks=data.get('logi_tasks', []),
-            vnedrenie_tasks=data.get('vnedrenie_tasks', []),
+            vnedrenie_prom_tasks=vnedrenie_prom_tasks,
+            vnedrenie_psi_tasks=vnedrenie_psi_tasks,
             assignee_stats=assignee_stats,
             dashboard_assignees=data.get('dashboard_assignees', DASHBOARD_ASSIGNEES),
             last_update=last_update,
@@ -55,7 +58,8 @@ def dashboard():
             error="Ошибка загрузки данных из Jira. Попробуйте обновить страницу позже.",
             sup_tasks=[],
             logi_tasks=[],
-            vnedrenie_tasks=[],
+            vnedrenie_prom_tasks=[],
+            vnedrenie_psi_tasks=[],
             assignee_stats={},
             dashboard_assignees=DASHBOARD_ASSIGNEES,
             last_update=datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
@@ -81,17 +85,20 @@ def api_dashboard_data():
     """API endpoint для получения данных дашборда в JSON (для AJAX обновления)"""
     try:
         data = get_dashboard_data()
+        vnedrenie_prom = data.get('vnedrenie_prom_tasks', [])
+        vnedrenie_psi = data.get('vnedrenie_psi_tasks', [])
         return jsonify({
             "success": True,
             "sup_tasks": data.get('sup_tasks', []),
             "logi_tasks": data.get('logi_tasks', []),
-            "vnedrenie_tasks": data.get('vnedrenie_tasks', []),
+            "vnedrenie_prom_tasks": vnedrenie_prom,
+            "vnedrenie_psi_tasks": vnedrenie_psi,
             "assignee_stats": data.get('assignee_stats', {}),
             "dashboard_assignees": data.get('dashboard_assignees', DASHBOARD_ASSIGNEES),
             "last_update": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
             "total_sup": len(data.get('sup_tasks', [])),
             "total_logi": len(data.get('logi_tasks', [])),
-            "total_vnedrenie": len(data.get('vnedrenie_tasks', []))
+            "total_vnedrenie": len(vnedrenie_prom) + len(vnedrenie_psi)
         })
     except Exception as e:
         logging.error(f"Ошибка API дашборда: {e}")

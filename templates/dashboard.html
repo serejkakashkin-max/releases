@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ru">
 <head>
-    <title>Дашборд дежурного</title>
+    <title>Рабочий стол дежурного</title>
     <link href="/static/css/bootstrap.min.css" rel="stylesheet">
     <link href="/static/css/bootstrap-icons.css" rel="stylesheet">
     <script src="/static/js/bootstrap.bundle.min.js"></script>
@@ -160,6 +160,16 @@
         }
         
         .filter-btn[data-filter="role"].active {
+            background: #6f42c1;
+            border-color: #6f42c1;
+        }
+        
+        .filter-btn[data-filter="prom"].active {
+            background: #0d6efd;
+            border-color: #0d6efd;
+        }
+        
+        .filter-btn[data-filter="psi"].active {
             background: #6f42c1;
             border-color: #6f42c1;
         }
@@ -791,7 +801,7 @@
         <div class="dashboard-header">
             <h1>
                 <i class="bi bi-speedometer2"></i>
-                Дашборд дежурного
+                Рабочий стол дежурного
             </h1>
             <div class="header-meta">
                 <i class="bi bi-clock me-1"></i> Обновлено: {{ last_update }} | 
@@ -969,23 +979,32 @@
                     <div class="tag-header-left">
                         <i class="bi bi-rocket-takeoff-fill text-info"></i>
                         <span>Внедрение</span>
-                        <small style="font-size: 0.7rem; opacity: 0.6; font-weight: normal;">(дежурные)</small>
+                        <small style="font-size: 0.7rem; opacity: 0.6; font-weight: normal;">(весь проект)</small>
                     </div>
                     <div style="display: flex; align-items: center; gap: 0.5rem;">
                         <span class="tag-count" id="vnedrenie-count">{{ total_vnedrenie }}</span>
                         <i class="bi bi-chevron-up collapse-icon"></i>
                     </div>
                 </div>
+                <!-- Фильтры -->
+                <div class="column-filters">
+                    <button class="filter-btn active" data-filter="all" onclick="filterVnedrenieTasks('all')">Все</button>
+                    <button class="filter-btn" data-filter="prom" onclick="filterVnedrenieTasks('prom')">🚀 ПРОМ</button>
+                    <button class="filter-btn" data-filter="psi" onclick="filterVnedrenieTasks('psi')">🧪 ПСИ</button>
+                </div>
                 <div class="tag-content" id="vnedrenie-content">
-                    {% if vnedrenie_tasks %}
-                        {% for task in vnedrenie_tasks %}
+                    <!-- ПРОМ задачи -->
+                    {% if vnedrenie_prom_tasks %}
+                        {% for task in vnedrenie_prom_tasks %}
                         <div class="task-card priority-{{ 'high' if task.priority in ['High', 'Highest', 'Critical'] else ('medium' if task.priority == 'Medium' else 'low') }} {{ 'stale-task' if task.days_in_progress > 7 else '' }}"
                              data-task-key="{{ task.key }}"
                              data-task-type="vnedrenie"
+                             data-vnedrenie-type="prom"
                              data-priority="{{ task.priority }}"
                              data-created="{{ task.created }}"
                              data-updated="{{ task.updated }}">
                             <div class="task-type-badges">
+                                <span class="badge-type" style="background: rgba(13, 110, 253, 0.15); color: var(--primary);">🚀 ПРОМ</span>
                                 {% if task.has_logi_tag %}<span class="badge-type logi">📝 Логи</span>{% endif %}
                                 {% if task.has_db_tag %}<span class="badge-type db">🗄️ БД</span>{% endif %}
                                 {% if task.has_infra_tag %}<span class="badge-type infra">🔄 Инфра</span>{% endif %}
@@ -1013,7 +1032,53 @@
                             </div>
                         </div>
                         {% endfor %}
-                    {% else %}
+                    {% endif %}
+                    <!-- ПСИ задачи -->
+                    {% if vnedrenie_psi_tasks %}
+                        {% for task in vnedrenie_psi_tasks %}
+                        <div class="task-card priority-{{ 'high' if task.priority in ['High', 'Highest', 'Critical'] else ('medium' if task.priority == 'Medium' else 'low') }} {{ 'stale-task' if task.days_in_progress > 7 else '' }}"
+                             data-task-key="{{ task.key }}"
+                             data-task-type="vnedrenie"
+                             data-vnedrenie-type="psi"
+                             data-priority="{{ task.priority }}"
+                             data-created="{{ task.created }}"
+                             data-updated="{{ task.updated }}">
+                            <div class="task-type-badges">
+                                <span class="badge-type" style="background: rgba(111, 66, 193, 0.15); color: #6f42c1;">🧪 ПСИ</span>
+                                {% if task.has_logi_tag %}<span class="badge-type logi">📝 Логи</span>{% endif %}
+                                {% if task.has_db_tag %}<span class="badge-type db">🗄️ БД</span>{% endif %}
+                                {% if task.has_infra_tag %}<span class="badge-type infra">🔄 Инфра</span>{% endif %}
+                                {% if task.has_role_tag %}<span class="badge-type role">👤 Роль</span>{% endif %}
+                                <span class="badge-type approved hidden" id="approved-{{ task.key }}">✅ Согласовано</span>
+                            </div>
+                            <div class="task-header-row">
+                                <a href="{{ task.url }}" target="_blank" class="task-key">
+                                    <i class="bi bi-box-arrow-up-right" style="font-size: 0.7rem;"></i>
+                                    {{ task.key }}
+                                    {% if task.psi_detected_by == 'tag' %}
+                                    <span class="source-badge source-tag"><i class="bi bi-tag-fill"></i> ПСИ тег</span>
+                                    {% else %}
+                                    <span class="source-badge source-text"><i class="bi bi-type"></i> раскатка</span>
+                                    {% endif %}
+                                    {% if task.days_in_progress > 7 %}
+                                    <span class="stale-badge"><i class="bi bi-clock-history"></i> Проверьте</span>
+                                    {% endif %}
+                                </a>
+                                <span class="badge-mini badge-status-{{ 'progress' if task.status in ['In Progress', 'В работе'] else 'todo' }}">
+                                    {{ 'В работе' if task.status in ['In Progress', 'В работе'] else 'To Do' }}
+                                </span>
+                            </div>
+                            <div class="task-summary">{{ task.summary }}</div>
+                            <div class="task-meta-compact">
+                                <span><i class="bi bi-person"></i> {{ task.assignee_name }}</span>
+                                <span><i class="bi bi-flag"></i> {{ task.priority }}</span>
+                                <span><i class="bi bi-calendar3"></i> {{ task.created[:10] }}</span>
+                                <span><i class="bi bi-hourglass-split"></i> {{ task.days_in_progress }}д</span>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% endif %}
+                    {% if not vnedrenie_prom_tasks and not vnedrenie_psi_tasks %}
                         <div class="empty-state-small">
                             <i class="bi bi-inbox text-muted"></i>
                             <div>Нет задач Внедрение</div>
@@ -1233,8 +1298,9 @@
         function filterLogiTasks(filterType) {
             currentLogiFilter = filterType;
             
-            // Обновляем активную кнопку
-            document.querySelectorAll('.column-filters .filter-btn').forEach(function(btn) {
+            // Обновляем активную кнопку (только в колонке Логи)
+            const logiColumn = document.getElementById('col-logi');
+            logiColumn.querySelectorAll('.column-filters .filter-btn').forEach(function(btn) {
                 btn.classList.remove('active');
                 if (btn.dataset.filter === filterType) {
                     btn.classList.add('active');
@@ -1262,6 +1328,44 @@
             
             // Обновляем счетчик
             document.getElementById('logi-count').textContent = visibleCount;
+        }
+        
+        // === Фильтрация задач в колонке Внедрение ===
+        let currentVnedrenieFilter = 'all';
+        
+        function filterVnedrenieTasks(filterType) {
+            currentVnedrenieFilter = filterType;
+            
+            // Обновляем активную кнопку (только в колонке Внедрение)
+            const vnedrenieColumn = document.getElementById('col-vnedrenie');
+            vnedrenieColumn.querySelectorAll('.column-filters .filter-btn').forEach(function(btn) {
+                btn.classList.remove('active');
+                if (btn.dataset.filter === filterType) {
+                    btn.classList.add('active');
+                }
+            });
+            
+            // Фильтруем задачи
+            const tasks = document.querySelectorAll('#vnedrenie-content .task-card');
+            let visibleCount = 0;
+            
+            tasks.forEach(function(task) {
+                if (filterType === 'all') {
+                    task.style.display = '';
+                    visibleCount++;
+                } else {
+                    const vnedrenieType = task.dataset.vnedrenieType || '';
+                    if (vnedrenieType === filterType) {
+                        task.style.display = '';
+                        visibleCount++;
+                    } else {
+                        task.style.display = 'none';
+                    }
+                }
+            });
+            
+            // Обновляем счетчик
+            document.getElementById('vnedrenie-count').textContent = visibleCount;
         }
         
         // === Глобальный поиск ===
