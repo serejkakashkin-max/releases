@@ -1,7 +1,7 @@
 ﻿import re
 import logging
 import requests
-import time  # ДОБАВЛЕНО
+import time
 from datetime import datetime, timedelta
 from config import TOKENS
 
@@ -14,6 +14,9 @@ def get_jira_domain_and_token(release_id):
     return "https://jira.sberbank.ru", TOKENS["sberbank_token"]
 
 def get_release_version(release_id):
+    # ИСПРАВЛЕНО: Очищаем пробелы в начале и конце
+    release_id = release_id.strip()
+    
     domain, token = get_jira_domain_and_token(release_id)
     url = f"{domain}/rest/api/2/issue/{release_id}"
     headers = {"Authorization": f"Bearer {token}"}
@@ -24,37 +27,35 @@ def get_release_version(release_id):
         
         # Сначала пробуем получить версию из структурированных полей
         customfield_21710 = data.get("fields", {}).get("customfield_21710", [])
-        if customfield_21710 and isinstance(customfield_21710, list) and len(customfield_21710) > 0:
-            def parse_version(v):
-                if not v:
-                    return (0, 0)
-                m = re.match(r'D-01.(\d+).00-static-(\d+)', v)
-                if m:
-                    return (int(m.group(1)), int(m.group(2)))
-                return (0, 0)
-            
-            max_dist = max(customfield_21710, key=lambda d: parse_version(d.get("version")))
-            version = max_dist.get("version")
-            if version:
-                logging.info(f"Версия релиза {release_id} найдена в customfield_21710: {version}")
-                return version
         
+        if customfield_21710 and isinstance(customfield_21710, list) and len(customfield_21710) > 0:
+            # Берём первый элемент с валидной версией
+            for dist in customfield_21710:
+                version = dist.get("version")
+                if version and isinstance(version, str):
+                    # Проверяем, что версия соответствует ожидаемому формату
+                    if re.match(r'[DP]-\d+\.\d+\.\d+-\d+', version):
+                        logging.info(f"Версия релиза {release_id} найдена в customfield_21710: {version}")
+                        return version
+        
+        # Fallback на customfield_21713
         customfield_21713 = data.get("fields", {}).get("customfield_21713", "")
         if customfield_21713:
-            match = re.search(r'[DP]-[A-Za-z0-9_.-]+-\d+', customfield_21713)
+            match = re.search(r'[DP]-\d+\.\d+\.\d+-\d+', customfield_21713)
             if match:
                 version = match.group(0)
                 logging.info(f"Версия релиза {release_id} найдена в customfield_21713: {version}")
                 return version
         
+        # Fallback на полный текст ответа
         text = response.text
-        match = re.search(r'[DP]-[A-Za-z0-9_.-]+-\d+', text)
+        match = re.search(r'[DP]-\d+\.\d+\.\d+-\d+', text)
         if match:
             version = match.group(0)
             logging.info(f"Версия релиза {release_id} найдена в тексте ответа: {version}")
             return version
         
-        logging.warning(f"Версия релиза {release_id} не найдена")
+        logging.warning(f"Версия релиза {release_id} не найдена ни в одном источнике")
         return ""
         
     except Exception as e:
@@ -62,6 +63,9 @@ def get_release_version(release_id):
         return ""
 
 def get_issues_from_jira(release_id):
+    # ИСПРАВЛЕНО: Очищаем пробелы
+    release_id = release_id.strip()
+    
     domain, token = get_jira_domain_and_token(release_id)
     url = f"{domain}/rest/api/2/issue/{release_id}"
     headers = {"Authorization": f"Bearer {token}"}
@@ -87,6 +91,9 @@ def get_issues_from_jira(release_id):
         return []
 
 def get_ke_from_release(release_id):
+    # ИСПРАВЛЕНО: Очищаем пробелы
+    release_id = release_id.strip()
+    
     domain, token = get_jira_domain_and_token(release_id)
     url = f"{domain}/rest/api/2/issue/{release_id}"
     headers = {"Authorization": f"Bearer {token}"}
@@ -117,6 +124,9 @@ def get_ke_from_release(release_id):
         return ""
 
 def get_pob_from_release(release_id):
+    # ИСПРАВЛЕНО: Очищаем пробелы
+    release_id = release_id.strip()
+    
     domain, token = get_jira_domain_and_token(release_id)
     url = f"{domain}/rest/api/2/issue/{release_id}"
     headers = {"Authorization": f"Bearer {token}"}
@@ -155,6 +165,9 @@ def get_pob_from_release(release_id):
         return ""
 
 def extract_sm_id_and_summary(release_id):
+    # ИСПРАВЛЕНО: Очищаем пробелы
+    release_id = release_id.strip()
+    
     domain, token = get_jira_domain_and_token(release_id)
     url = f"{domain}/rest/api/2/issue/{release_id}"
     headers = {"Authorization": f"Bearer {token}"}
@@ -194,6 +207,9 @@ def extract_sm_id_and_summary(release_id):
 
 # --- Функции для получения дистрибутивов ---
 def get_issue_id(issue_key):
+    # ИСПРАВЛЕНО: Очищаем пробелы
+    issue_key = issue_key.strip()
+    
     domain, token = get_jira_domain_and_token(issue_key)
     url = f"{domain}/rest/api/2/issue/{issue_key}"
     headers = {"Authorization": f"Bearer {token}"}
@@ -213,6 +229,9 @@ def get_issue_id(issue_key):
         return None
 
 def get_selected_distributives(issue_key):
+    # ИСПРАВЛЕНО: Очищаем пробелы
+    issue_key = issue_key.strip()
+    
     domain, token = get_jira_domain_and_token(issue_key)
     url = f"{domain}/rest/api/2/issue/{issue_key}?fields=customfield_22401"
     headers = {"Authorization": f"Bearer {token}"}
@@ -232,6 +251,9 @@ def get_selected_distributives(issue_key):
 
 def get_all_distributives(issue_key):
     import time
+    # ИСПРАВЛЕНО: Очищаем пробелы
+    issue_key = issue_key.strip()
+    
     issue_id = get_issue_id(issue_key)
     if not issue_id:
         return []
@@ -285,6 +307,9 @@ def get_all_distributives(issue_key):
 
 def get_distributives_info(issue_key):
     import time
+    # ИСПРАВЛЕНО: Очищаем пробелы
+    issue_key = issue_key.strip()
+    
     logging.info(f"\n{'='*50}")
     logging.info(f"Обработка задачи: {issue_key}")
     

@@ -5,7 +5,8 @@ from flask import Blueprint, render_template, jsonify, request
 
 from services.dashboard_service import (
     get_dashboard_data, force_refresh_cache, 
-    check_multiple_approvals, get_task_type_badges
+    check_multiple_approvals, get_task_type_badges,
+    get_hidden_tasks, get_hidden_task_keys, hide_task, show_task, restore_all_tasks
 )
 from config import DASHBOARD_CACHE_TTL, DASHBOARD_ASSIGNEES
 
@@ -20,15 +21,32 @@ def dashboard():
         data = get_dashboard_data()
         last_update = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
         
+        # Получаем скрытые задачи
+        hidden_tasks = get_hidden_tasks()
+        hidden_task_keys = list(hidden_tasks.keys())
+        
+        # Фильтруем задачи - убираем скрытые
+        def filter_hidden(tasks):
+            return [t for t in tasks if t['key'] not in hidden_task_keys]
+        
+        sup_tasks = filter_hidden(data.get('sup_tasks', []))
+        logi_tasks = filter_hidden(data.get('logi_tasks', []))
+        vnedrenie_prom_tasks = filter_hidden(data.get('vnedrenie_prom_tasks', []))
+        vnedrenie_psi_tasks = filter_hidden(data.get('vnedrenie_psi_tasks', []))
+        
         # Подсчет общего количества для отображения
-        total_sup = len(data.get('sup_tasks', []))
-        total_logi = len(data.get('logi_tasks', []))
-        vnedrenie_prom_tasks = data.get('vnedrenie_prom_tasks', [])
-        vnedrenie_psi_tasks = data.get('vnedrenie_psi_tasks', [])
+        total_sup = len(sup_tasks)
+        total_logi = len(logi_tasks)
         total_vnedrenie = len(vnedrenie_prom_tasks) + len(vnedrenie_psi_tasks)
         
         # Подсчет активных дежурных (у кого есть задачи)
         assignee_stats = data.get('assignee_stats', {})
+        
+        # Фильтруем скрытые задачи из статистики дежурных
+        for assignee in assignee_stats:
+            assignee_stats[assignee]['todo'] = filter_hidden(assignee_stats[assignee].get('todo', []))
+            assignee_stats[assignee]['in_progress'] = filter_hidden(assignee_stats[assignee].get('in_progress', []))
+        
         active_assignees = sum(
             1 for stats in assignee_stats.values()
             if stats.get('todo') or stats.get('in_progress')
@@ -37,8 +55,8 @@ def dashboard():
         return render_template(
             'dashboard.html',
             basepath=BASE_PATH,
-            sup_tasks=data.get('sup_tasks', []),
-            logi_tasks=data.get('logi_tasks', []),
+            sup_tasks=sup_tasks,
+            logi_tasks=logi_tasks,
             vnedrenie_prom_tasks=vnedrenie_prom_tasks,
             vnedrenie_psi_tasks=vnedrenie_psi_tasks,
             assignee_stats=assignee_stats,
@@ -48,7 +66,9 @@ def dashboard():
             total_sup=total_sup,
             total_logi=total_logi,
             total_vnedrenie=total_vnedrenie,
-            active_assignees=active_assignees
+            active_assignees=active_assignees,
+            hidden_tasks=hidden_tasks,
+            hidden_count=len(hidden_tasks)
         )
     except Exception as e:
         logging.error(f"Ошибка загрузки дашборда: {e}")
@@ -67,7 +87,9 @@ def dashboard():
             total_sup=0,
             total_logi=0,
             total_vnedrenie=0,
-            active_assignees=0
+            active_assignees=0,
+            hidden_tasks={},
+            hidden_count=0
         )
 
 @dashboard_bp.route('/dashboard/refresh', methods=['POST'])
@@ -192,4 +214,75 @@ def search_tasks():
         })
     except Exception as e:
         logging.error(f"Ошибка поиска: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# === API для управления скрытыми задачами (Корзина) ===
+
+@dashboard_bp.route('/dashboard/api/hidden-tasks', methods=['GET'])
+def get_hidden_tasks_api():
+    """Получает список всех скрытых задач"""
+    try:
+        hidden = get_hidden_tasks()
+        return jsonify({
+            "success": True,
+            "hidden_tasks": hidden,
+            "count": len(hidden)
+        })
+    except Exception as e:
+        logging.error(f"Ошибка получения скрытых задач: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@dashboard_bp.route('/dashboard/api/hidden-tasks', methods=['POST'])
+def hide_task_api():
+    """Скрывает задачу (добавляет в корзину)"""
+    try:
+        data = request.get_json()
+        task_key = data.get('task_key')
+        task_data = data.get('task_data', {})
+        
+        if not task_key:
+            return jsonify({"success": False, "error": "task_key is required"}), 400
+        
+        if hide_task(task_key, task_data):
+            return jsonify({
+                "success": True,
+                "message": f"Задача {task_key} скрыта"
+            })
+        else:
+            return jsonify({"success": False, "error": "Failed to hide task"}), 500
+    except Exception as e:
+        logging.error(f"Ошибка скрытия задачи: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@dashboard_bp.route('/dashboard/api/hidden-tasks/<task_key>', methods=['DELETE'])
+def show_task_api(task_key):
+    """Показывает задачу (восстанавливает из корзины)"""
+    try:
+        if show_task(task_key):
+            return jsonify({
+                "success": True,
+                "message": f"Задача {task_key} восстановлена"
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "error": f"Задача {task_key} не найдена в корзине"
+            }), 404
+    except Exception as e:
+        logging.error(f"Ошибка восстановления задачи: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@dashboard_bp.route('/dashboard/api/hidden-tasks/restore-all', methods=['POST'])
+def restore_all_tasks_api():
+    """Восстанавливает все скрытые задачи"""
+    try:
+        count = restore_all_tasks()
+        return jsonify({
+            "success": True,
+            "message": f"Восстановлено {count} задач",
+            "restored_count": count
+        })
+    except Exception as e:
+        logging.error(f"Ошибка восстановления всех задач: {e}")
         return jsonify({"success": False, "error": str(e)}), 500

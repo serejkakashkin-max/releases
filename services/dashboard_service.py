@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import requests
 import threading
 import time
@@ -23,6 +24,7 @@ TAG_PSI_VARIANTS = ["ПСИ", "пси", "Пси"]
 
 # Паттерны для поиска в тексте (регистронезависимые)
 SUP_PATTERN = re.compile(r'СУП', re.IGNORECASE)
+SUP_VALUE_PATTERN = re.compile(r'значение\s+суп', re.IGNORECASE)  # "значение СУП", "значение супа" и т.д.
 LOGI_PATTERN = re.compile(r'логи', re.IGNORECASE)
 
 # Паттерны для раскаток ПСИ (текст в теме)
@@ -68,9 +70,16 @@ def fetch_jira_tasks():
     assignees_filter = ', '.join([f'"{name}"' for name in DASHBOARD_ASSIGNEES])
     
     # === ЗАПРОС 1: СУП задачи (по всему проекту, за 30 дней) ===
+    # Ищем по тегу СУП (любой регистр) или по тексту СУП в summary (любой регистр)
+    # Также ищем фразу "значение СУП" с разными регистрами
+    sup_summary_conditions = ' OR '.join([f'summary ~ "{variant}"' for variant in TAG_SUP_VARIANTS])
+    sup_value_conditions = ' OR '.join([
+        f'summary ~ "значение {variant}" OR summary ~ "значение {variant.lower()}" OR summary ~ "Значение {variant}"'
+        for variant in TAG_SUP_VARIANTS
+    ])
     jql_sup = (
         f'project = OPLOT AND '
-        f'(labels = "СУП" OR summary ~ "СУП") AND '
+        f'(labels = "СУП" OR labels = "суп" OR labels = "Суп" OR {sup_summary_conditions} OR {sup_value_conditions}) AND '
         f'created >= "{start_date}" AND '
         f'status NOT IN ({statuses_filter}) '
         f'ORDER BY priority DESC, created DESC'
@@ -163,9 +172,17 @@ def fetch_jira_tasks():
             # Проверяем СУП (регистронезависимо)
             has_sup_tag = check_tag_in_labels(labels, TAG_SUP_VARIANTS)
             has_sup_in_summary = bool(SUP_PATTERN.search(summary))
+            has_sup_value_in_summary = bool(SUP_VALUE_PATTERN.search(summary))
             
-            issue_data['has_sup_tag'] = has_sup_tag or has_sup_in_summary
-            issue_data['sup_detected_by'] = 'tag' if has_sup_tag else ('summary' if has_sup_in_summary else 'none')
+            issue_data['has_sup_tag'] = has_sup_tag or has_sup_in_summary or has_sup_value_in_summary
+            if has_sup_tag:
+                issue_data['sup_detected_by'] = 'tag'
+            elif has_sup_in_summary:
+                issue_data['sup_detected_by'] = 'summary'
+            elif has_sup_value_in_summary:
+                issue_data['sup_detected_by'] = 'value_phrase'
+            else:
+                issue_data['sup_detected_by'] = 'none'
             
             # Проверяем Логи (регистронезависимо)
             has_logi_tag = check_tag_in_labels(labels, TAG_LOGI_VARIANTS)
@@ -205,8 +222,9 @@ def fetch_jira_tasks():
                 
                 has_sup_tag = check_tag_in_labels(labels, TAG_SUP_VARIANTS)
                 has_sup_in_summary = bool(SUP_PATTERN.search(summary))
+                has_sup_value_in_summary = bool(SUP_VALUE_PATTERN.search(summary))
                 
-                issue_data['has_sup_tag'] = has_sup_tag or has_sup_in_summary
+                issue_data['has_sup_tag'] = has_sup_tag or has_sup_in_summary or has_sup_value_in_summary
                 issue_data['has_logi_tag'] = has_logi_tag or has_logi_in_summary
                 issue_data['logi_detected_by'] = 'tag' if has_logi_tag else ('summary' if has_logi_in_summary else 'none')
                 issue_data['has_vnedrenie_tag'] = check_tag_in_labels(labels, TAG_VNEDRENIE_VARIANTS)
@@ -230,7 +248,8 @@ def fetch_jira_tasks():
             if key in processed_keys:
                 for existing in all_issues:
                     if existing['key'] == key:
-                        existing['has_sup_tag'] = existing.get('has_sup_tag') or has_sup_tag or has_sup_in_summary
+                        has_sup_value_in_summary = bool(SUP_VALUE_PATTERN.search(summary))
+                        existing['has_sup_tag'] = existing.get('has_sup_tag') or has_sup_tag or has_sup_in_summary or has_sup_value_in_summary
                         existing['has_logi_tag'] = existing.get('has_logi_tag') or has_logi_tag or has_logi_in_summary
                         existing['has_vnedrenie_tag'] = existing.get('has_vnedrenie_tag') or check_tag_in_labels(labels, TAG_VNEDRENIE_VARIANTS)
                         break
@@ -239,7 +258,8 @@ def fetch_jira_tasks():
                 
                 issue_data = _transform_issue(issue, domain)
                 
-                issue_data['has_sup_tag'] = has_sup_tag or has_sup_in_summary
+                has_sup_value_in_summary = bool(SUP_VALUE_PATTERN.search(summary))
+                issue_data['has_sup_tag'] = has_sup_tag or has_sup_in_summary or has_sup_value_in_summary
                 issue_data['has_logi_tag'] = has_logi_tag or has_logi_in_summary
                 issue_data['has_vnedrenie_tag'] = check_tag_in_labels(labels, TAG_VNEDRENIE_VARIANTS)
                 
@@ -262,10 +282,11 @@ def fetch_jira_tasks():
             # Проверяем все типы
             has_sup_tag = check_tag_in_labels(labels, TAG_SUP_VARIANTS)
             has_sup_in_summary = bool(SUP_PATTERN.search(summary))
+            has_sup_value_in_summary = bool(SUP_VALUE_PATTERN.search(summary))
             has_logi_tag = check_tag_in_labels(labels, TAG_LOGI_VARIANTS)
             has_logi_in_summary = bool(LOGI_PATTERN.search(summary))
             
-            issue_data['has_sup_tag'] = has_sup_tag or has_sup_in_summary
+            issue_data['has_sup_tag'] = has_sup_tag or has_sup_in_summary or has_sup_value_in_summary
             issue_data['has_logi_tag'] = has_logi_tag or has_logi_in_summary
             issue_data['has_vnedrenie_tag'] = check_tag_in_labels(labels, TAG_VNEDRENIE_VARIANTS)
             
@@ -295,12 +316,13 @@ def fetch_jira_tasks():
                 # Проверяем все типы
                 has_sup_tag = check_tag_in_labels(labels, TAG_SUP_VARIANTS)
                 has_sup_in_summary = bool(SUP_PATTERN.search(summary))
+                has_sup_value_in_summary = bool(SUP_VALUE_PATTERN.search(summary))
                 has_logi_tag = check_tag_in_labels(labels, TAG_LOGI_VARIANTS)
                 has_logi_in_summary = bool(LOGI_PATTERN.search(summary))
                 has_psi_tag = check_tag_in_labels(labels, TAG_PSI_VARIANTS)
                 has_psi_text = bool(PSI_PATTERN.search(summary))
                 
-                issue_data['has_sup_tag'] = has_sup_tag or has_sup_in_summary
+                issue_data['has_sup_tag'] = has_sup_tag or has_sup_in_summary or has_sup_value_in_summary
                 issue_data['has_logi_tag'] = has_logi_tag or has_logi_in_summary
                 issue_data['has_vnedrenie_tag'] = check_tag_in_labels(labels, TAG_VNEDRENIE_VARIANTS)
                 issue_data['has_psi_tag'] = has_psi_tag
@@ -727,3 +749,123 @@ def get_task_type_badges(task):
         badges.append({'type': 'approved', 'icon': '✅', 'label': 'Согласовано', 'class': 'badge-approved'})
     
     return badges
+
+
+# === Функции для управления скрытыми задачами (Корзина) ===
+
+HIDDEN_TASKS_FILE = "hidden_tasks.json"
+# Используем RLock (реентерабельную блокировку) для избежания дедлоков
+_hidden_tasks_lock = threading.RLock()
+
+def _ensure_hidden_tasks_file():
+    """Создает файл скрытых задач, если он не существует"""
+    if not os.path.exists(HIDDEN_TASKS_FILE):
+        with open(HIDDEN_TASKS_FILE, 'w', encoding='utf-8') as f:
+            json.dump({}, f)
+        logging.info(f"Created hidden tasks file: {HIDDEN_TASKS_FILE}")
+
+def _read_hidden_tasks_file():
+    """Читает файл скрытых задач (внутренняя функция, без блокировки)"""
+    try:
+        with open(HIDDEN_TASKS_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        logging.error(f"Error reading hidden tasks file: {e}")
+        return {}
+
+def get_hidden_tasks():
+    """
+    Получает все скрытые задачи из файла.
+    Возвращает словарь {task_key: task_data}
+    """
+    try:
+        _ensure_hidden_tasks_file()
+        with _hidden_tasks_lock:
+            return _read_hidden_tasks_file()
+    except Exception as e:
+        logging.error(f"Error reading hidden tasks: {e}")
+        return {}
+
+def get_hidden_task_keys():
+    """Возвращает только список ключей скрытых задач"""
+    return list(get_hidden_tasks().keys())
+
+def hide_task(task_key, task_data=None):
+    """
+    Скрывает задачу (добавляет в корзину).
+    
+    Args:
+        task_key: Ключ задачи (например, "OPLOT-12345")
+        task_data: Данные задачи для отображения в корзине (опционально)
+    """
+    try:
+        _ensure_hidden_tasks_file()
+        with _hidden_tasks_lock:
+            # Читаем текущие данные напрямую, не через get_hidden_tasks
+            hidden = _read_hidden_tasks_file()
+            
+            hidden[task_key] = {
+                'key': task_key,
+                'hidden_at': datetime.now().isoformat(),
+                'data': task_data or {}
+            }
+            
+            with open(HIDDEN_TASKS_FILE, 'w', encoding='utf-8') as f:
+                json.dump(hidden, f, ensure_ascii=False, indent=2)
+            
+            logging.info(f"Task {task_key} added to hidden tasks")
+            return True
+    except Exception as e:
+        logging.error(f"Error hiding task {task_key}: {e}")
+        return False
+
+def show_task(task_key):
+    """
+    Показывает задачу (удаляет из корзины).
+    
+    Args:
+        task_key: Ключ задачи для восстановления
+    
+    Returns:
+        True если задача была удалена, False если её не было в корзине
+    """
+    try:
+        with _hidden_tasks_lock:
+            # Читаем текущие данные напрямую, не через get_hidden_tasks
+            hidden = _read_hidden_tasks_file()
+            
+            if task_key in hidden:
+                del hidden[task_key]
+                
+                with open(HIDDEN_TASKS_FILE, 'w', encoding='utf-8') as f:
+                    json.dump(hidden, f, ensure_ascii=False, indent=2)
+                
+                logging.info(f"Task {task_key} restored from hidden tasks")
+                return True
+            return False
+    except Exception as e:
+        logging.error(f"Error showing task {task_key}: {e}")
+        return False
+
+def restore_all_tasks():
+    """
+    Восстанавливает все скрытые задачи.
+    
+    Returns:
+        Количество восстановленных задач
+    """
+    try:
+        _ensure_hidden_tasks_file()
+        with _hidden_tasks_lock:
+            # Читаем текущие данные напрямую, не через get_hidden_tasks
+            hidden = _read_hidden_tasks_file()
+            count = len(hidden)
+            
+            with open(HIDDEN_TASKS_FILE, 'w', encoding='utf-8') as f:
+                json.dump({}, f)
+            
+            logging.info(f"All {count} tasks restored from hidden tasks")
+            return count
+    except Exception as e:
+        logging.error(f"Error restoring all tasks: {e}")
+        return 0

@@ -48,6 +48,9 @@ htmlcov/
 nosetests.xml
 coverage.xml
 *.cover
+
+# Hidden tasks storage (user data, not version controlled)
+hidden_tasks.json
 *.py,cover
 .hypothesis/
 .pytest_cache/
