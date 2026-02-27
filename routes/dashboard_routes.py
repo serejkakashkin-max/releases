@@ -255,10 +255,17 @@ def hide_task_api():
         logging.error(f"Ошибка скрытия задачи: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
-@dashboard_bp.route('/dashboard/api/hidden-tasks/<task_key>', methods=['DELETE'])
-def show_task_api(task_key):
+# Маршрут для восстановления одной задачи через query parameter
+@dashboard_bp.route('/dashboard/api/hidden-tasks/restore-one', methods=['POST'])
+def show_task_api():
     """Показывает задачу (восстанавливает из корзины)"""
     try:
+        data = request.get_json()
+        task_key = data.get('task_key')
+        
+        if not task_key:
+            return jsonify({"success": False, "error": "task_key is required"}), 400
+        
         if show_task(task_key):
             return jsonify({
                 "success": True,

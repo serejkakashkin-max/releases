@@ -1978,14 +1978,54 @@
 
         // Показать задачу (восстановление с сервера)
         async function showTask(taskKey) {
-            if (!hiddenTasksData[taskKey]) return;
+            // Нормализуем ключ задачи (trim)
+            taskKey = taskKey ? taskKey.trim() : '';
+            console.log('showTask called with:', taskKey);
+            
+            if (!taskKey) {
+                console.error('Task key is empty');
+                alert('Ошибка: ключ задачи пустой');
+                return;
+            }
+
+            // Проверяем наличие задачи в hiddenTasksData
+            if (!hiddenTasksData[taskKey]) {
+                console.warn('Task not found in hiddenTasksData:', taskKey);
+                console.log('Available keys in hiddenTasksData:', Object.keys(hiddenTasksData));
+                alert('Ошибка: задача не найдена в корзине. Возможно, страница устарела. Обновите страницу.');
+                return;
+            }
 
             try {
-                const response = await fetch(`{{basepath}}/dashboard/api/hidden-tasks/${taskKey}`, {
-                    method: 'DELETE'
+                // Используем относительный URL без динамического параметра
+                // Добавляем timestamp для сброса кэша
+                const url = BASE_PATH + '/dashboard/api/hidden-tasks/restore-one';
+                console.log('Fetching URL:', url);
+                console.log('TaskKey:', taskKey);
+                console.log('Request body:', JSON.stringify({ task_key: taskKey }));
+
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ task_key: taskKey })
                 });
 
-                const result = await response.json();
+                console.log('Response status:', response.status);
+
+                // Получаем текст ответа
+                const responseText = await response.text();
+                console.log('Response text (first 500 chars):', responseText.substring(0, 500));
+
+                // Парсим JSON
+                let result;
+                try {
+                    result = JSON.parse(responseText);
+                } catch (parseError) {
+                    console.error('Failed to parse JSON. Raw response:', responseText);
+                    alert('Ошибка: сервер вернул не JSON. Статус: ' + response.status);
+                    return;
+                }
+                console.log('Response result:', result);
 
                 if (result.success) {
                     // Удаляем из локальных данных
@@ -2005,9 +2045,13 @@
                     updateTrashPanel();
                     updateTrashButton();
                     updateCounters();
+                } else {
+                    console.error('Server returned error:', result.error);
+                    alert('Ошибка восстановления: ' + result.error);
                 }
             } catch (e) {
                 console.error('Error showing task:', e);
+                alert('Ошибка восстановления задачи: ' + e.message);
             }
         }
 
@@ -2102,18 +2146,32 @@
                 if (tasksList) {
                     tasksList.innerHTML = tasks.map(task => {
                         const data = task.data || {};
+                        // Используем data-атрибут для хранения ключа задачи
                         return `
-                            <div class="hidden-task-card">
+                            <div class="hidden-task-card" data-task-key="${task.key}">
                                 <div class="hidden-task-key">${task.key}</div>
                                 <div class="hidden-task-summary">${data.summary || ''}</div>
                                 <div class="hidden-task-actions">
-                                    <button class="restore-task-btn" onclick="showTask('${task.key}')">
+                                    <button class="restore-task-btn" data-task-key="${task.key}">
                                         <i class="bi bi-arrow-counterclockwise"></i> Восстановить
                                     </button>
                                 </div>
                             </div>
                         `;
                     }).join('');
+                    
+                    // Добавляем обработчики событий после создания HTML
+                    tasksList.querySelectorAll('.restore-task-btn').forEach(btn => {
+                        btn.addEventListener('click', function(e) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const taskKey = this.getAttribute('data-task-key');
+                            console.log('Restore button clicked for task:', taskKey);
+                            if (taskKey) {
+                                showTask(taskKey);
+                            }
+                        });
+                    });
                 }
             }
         }
