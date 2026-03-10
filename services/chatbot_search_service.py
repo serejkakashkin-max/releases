@@ -25,7 +25,7 @@ import requests
 @dataclass
 class SearchQuery:
     """Структурированный поисковый запрос"""
-    task_types: List[str]  # суп, логи, пси, внедрение, бд, инфра
+    task_types: List[str]  # суп, логи, пси, внедрение, бд, инфра, роль
     status: str  # all, open, closed
     date_from: Optional[str]  # YYYY-MM-DD
     date_to: Optional[str]  # YYYY-MM-DD
@@ -435,7 +435,7 @@ class ChatbotSearchService:
             return []
     
     def format_results(self, tasks: List[Dict], query: SearchQuery) -> str:
-        """Форматирует результаты поиска для ответа пользователю"""
+        """Форматирует результаты поиска для ответа пользователю - показывает все задачи сразу без сворачивания"""
         if not tasks:
             period_desc = self._get_period_description(query)
             types_desc = ', '.join(query.task_types) if query.task_types else 'все'
@@ -464,36 +464,23 @@ class ChatbotSearchService:
         closed_tasks = [t for t in tasks if t['status'] in ['Done', 'Closed', 'Resolved']]
         
         if open_tasks:
-            text += f"🟡 *В работе ({len(open_tasks)}):*\n"
-            # Показываем первые 5 задач
-            for i, task in enumerate(open_tasks[:5], 1):
+            text += f"🟡 *В работе ({len(open_tasks)}):*\n\n"
+            for i, task in enumerate(open_tasks, 1):
                 text += f"{i}. [{task['key']}]({task['url']})\n"
-                text += f"   {task['summary'][:60]}...\n"
-                text += f"   👤 {task['assignee_name'][:30]}\n\n"
-            
-            # Если задач больше 5 - добавляем возможность раскрыть
-            if len(open_tasks) > 5:
-                hidden_count = len(open_tasks) - 5
-                text += f"<details><summary>📂 Показать ещё {hidden_count} задач(и)</summary>\n\n"
-                for i, task in enumerate(open_tasks[5:], 6):
-                    text += f"{i}. [{task['key']}]({task['url']})\n"
-                    text += f"   {task['summary'][:60]}...\n"
-                    text += f"   👤 {task['assignee_name'][:30]}\n\n"
-                text += "</details>\n\n"
+                text += f"   {self._escape_markdown(task['summary'][:80])}{'...' if len(task['summary']) > 80 else ''}\n"
+                text += f"   👤 {self._escape_markdown(task['assignee_name'][:30])}\n\n"
         
         if closed_tasks:
-            text += f"✅ *Закрытые ({len(closed_tasks)}):*\n"
-            for i, task in enumerate(closed_tasks[:5], 1):
+            text += f"✅ *Закрытые ({len(closed_tasks)}):*\n\n"
+            for i, task in enumerate(closed_tasks, 1):
                 text += f"{i}. [{task['key']}]({task['url']}) - {task['status']}\n"
-            
-            if len(closed_tasks) > 5:
-                hidden_count = len(closed_tasks) - 5
-                text += f"<details><summary>📂 Показать ещё {hidden_count} закрытых задач(и)</summary>\n\n"
-                for i, task in enumerate(closed_tasks[5:], 6):
-                    text += f"{i}. [{task['key']}]({task['url']}) - {task['status']}\n"
-                text += "</details>\n"
         
         return text
+    
+    def _escape_markdown(self, text: str) -> str:
+        """Экранирует специальные символы markdown в тексте"""
+        # Экранируем квадратные скобки, которые могут сломать markdown ссылки
+        return text.replace('[', '\\[').replace(']', '\\]')
     
     def _get_period_description(self, query: SearchQuery) -> str:
         """Формирует описание периода для отображения"""

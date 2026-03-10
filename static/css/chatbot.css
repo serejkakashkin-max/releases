@@ -188,10 +188,12 @@
     color: var(--primary);
     text-decoration: none;
     font-weight: 500;
+    transition: opacity 0.2s;
 }
 
 .chat-message-content a:hover {
     text-decoration: underline;
+    opacity: 0.8;
 }
 
 .chat-message.user .chat-message-content a {
@@ -360,40 +362,6 @@
 [data-theme="dark"] .chat-suggestion-btn:hover {
     background: var(--primary);
     color: white;
-}
-
-/* Стили для раскрывающихся списков задач */
-.chat-message-content details {
-    margin: 8px 0;
-    padding: 8px;
-    background: rgba(0, 123, 255, 0.05);
-    border-radius: 8px;
-    border: 1px solid var(--border-color);
-}
-
-.chat-message-content summary {
-    cursor: pointer;
-    font-weight: 500;
-    color: var(--primary);
-    padding: 4px 0;
-    user-select: none;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.chat-message-content summary:hover {
-    color: var(--primary-hover);
-}
-
-.chat-message-content details[open] summary {
-    margin-bottom: 8px;
-    border-bottom: 1px solid var(--border-color);
-    padding-bottom: 8px;
-}
-
-.chat-message-content details > *:not(summary) {
-    margin-left: 8px;
 }
 
 /* Ссылка на скачивание отчёта */

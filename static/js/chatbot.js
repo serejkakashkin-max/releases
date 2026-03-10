@@ -248,65 +248,63 @@ class DashboardChatBot {
     }
     
     formatMessage(content) {
-        // Сохраняем HTML details/summary теги перед экранированием
-        const detailsBlocks = [];
-        let processedContent = content.replace(/<details>([\s\S]*?)<\/details>/g, (match) => {
-            detailsBlocks.push(match);
-            return `___DETAILS_${detailsBlocks.length - 1}___`;
-        });
-        
-        // Экранируем HTML
-        let formatted = processedContent
+        // Экранируем HTML сначала
+        let formatted = content
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;');
         
-        // Обрабатываем markdown
-        // Жирный текст
+        // Обрабатываем markdown ссылки [текст](url) - ДО других преобразований
+        // Используем специальную обработку для ссылок на скачивание отчётов
+        formatted = formatted.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, text, url) => {
+            // Декодируем HTML-сущности в URL для проверки
+            const decodedUrl = url.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+            
+            // Специальная обработка для ссылок на скачивание отчётов
+            if (decodedUrl.includes('/dashboard/api/chat/report/download')) {
+                return `<a href="${decodedUrl}" target="_blank" class="report-download-link" data-url="${decodedUrl}">📥 ${text}</a>`;
+            }
+            return `<a href="${decodedUrl}" target="_blank">${text}</a>`;
+        });
+        
+        // Обрабатываем markdown жирный текст
         formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
         formatted = formatted.replace(/\*(.*?)\*/g, '<strong>$1</strong>');
         
         // Код
         formatted = formatted.replace(/`([^`]+)`/g, '<code>$1</code>');
         
-        // Ссылки [текст](url)
-        formatted = formatted.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, text, url) => {
-            // Специальная обработка для ссылок на скачивание отчётов
-            if (url.includes('/dashboard/api/chat/report/download')) {
-                return `<a href="${url}" target="_blank" class="report-download-link" data-url="${url}">📥 ${text}</a>`;
-            }
-            return `<a href="${url}" target="_blank">${text}</a>`;
-        });
-        
         // Переносы строк
         formatted = formatted.replace(/\n/g, '<br>');
         
-        // Emoji
-        formatted = formatted.replace(/🔴/g, '<span class="emoji">🔴</span>');
-        formatted = formatted.replace(/🟡/g, '<span class="emoji">🟡</span>');
-        formatted = formatted.replace(/🟢/g, '<span class="emoji">🟢</span>');
-        formatted = formatted.replace(/📊/g, '<span class="emoji">📊</span>');
-        formatted = formatted.replace(/📋/g, '<span class="emoji">📋</span>');
-        formatted = formatted.replace(/👤/g, '<span class="emoji">👤</span>');
-        formatted = formatted.replace(/📅/g, '<span class="emoji">📅</span>');
-        formatted = formatted.replace(/⚡/g, '<span class="emoji">⚡</span>');
-        formatted = formatted.replace(/🏷️/g, '<span class="emoji">🏷️</span>');
-        formatted = formatted.replace(/🔗/g, '<span class="emoji">🔗</span>');
-        formatted = formatted.replace(/✅/g, '<span class="emoji">✅</span>');
-        formatted = formatted.replace(/🔄/g, '<span class="emoji">🔄</span>');
-        formatted = formatted.replace(/⚠️/g, '<span class="emoji">⚠️</span>');
-        formatted = formatted.replace(/💡/g, '<span class="emoji">💡</span>');
-        formatted = formatted.replace(/🔍/g, '<span class="emoji">🔍</span>');
-        formatted = formatted.replace(/📖/g, '<span class="emoji">📖</span>');
-        formatted = formatted.replace(/🤖/g, '<span class="emoji">🤖</span>');
-        formatted = formatted.replace(/👋/g, '<span class="emoji">👋</span>');
-        formatted = formatted.replace(/❌/g, '<span class="emoji">❌</span>');
-        formatted = formatted.replace(/📂/g, '<span class="emoji">📂</span>');
+        // Emoji обработка
+        const emojiMap = {
+            '🔴': '🔴',
+            '🟡': '🟡',
+            '🟢': '🟢',
+            '📊': '📊',
+            '📋': '📋',
+            '👤': '👤',
+            '📅': '📅',
+            '⚡': '⚡',
+            '🏷️': '🏷️',
+            '🔗': '🔗',
+            '✅': '✅',
+            '🔄': '🔄',
+            '⚠️': '⚠️',
+            '💡': '💡',
+            '🔍': '🔍',
+            '📖': '📖',
+            '🤖': '🤖',
+            '👋': '👋',
+            '❌': '❌',
+            '📂': '📂',
+            '📥': '📥'
+        };
         
-        // Восстанавливаем details блоки
-        detailsBlocks.forEach((block, index) => {
-            formatted = formatted.replace(`___DETAILS_${index}___`, block);
-        });
+        for (const [emoji, replacement] of Object.entries(emojiMap)) {
+            formatted = formatted.split(emoji).join(`<span class="emoji">${replacement}</span>`);
+        }
         
         return formatted;
     }
