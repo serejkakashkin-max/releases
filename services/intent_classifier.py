@@ -11,11 +11,10 @@ from typing import Dict, List, Tuple, Optional
 class IntentType(Enum):
     """Типы намерений пользователя"""
     SEARCH_TASKS = "search_tasks"           # Поиск задач
-    ANALYZE_SITUATION = "analyze_situation" # Анализ текущей ситуации
-    TASK_GUIDANCE = "task_guidance"         # Помощь по задаче
     GENERATE_REPORT = "generate_report"     # Генерация отчёта
     SPECIFIC_TASK = "specific_task"         # Запрос о конкретной задаче
     GREETING = "greeting"                   # Приветствие
+    SHOW_CAPABILITIES = "show_capabilities" # Показать возможности
     UNKNOWN = "unknown"                     # Неизвестное намерение
 
 
@@ -29,6 +28,10 @@ class IntentClassifier:
             r'покажи',
             r'поиск',
             r'где',
+            r'задач[аиу].*заголов',
+            r'задач[аиу].*текст',
+            r'задач[аиу].*описан',
+            r'задач[аиу].*тег',
             r'какие.*задачи',
             r'список.*задач',
             r'задачи.*по',
@@ -36,32 +39,14 @@ class IntentClassifier:
             r'закрытые.*задачи',
             r'открытые.*задачи',
         ],
-        IntentType.ANALYZE_SITUATION: [
-            r'что срочного',
-            r'критичные',
-            r'требуют внимания',
-            r'ситуация',
-            r'обстановка',
-            r'что делать',
-            r'приоритеты',
-            r'что важного',
-            r'критично',
-        ],
-        IntentType.TASK_GUIDANCE: [
-            r'что делать с',
-            r'как решить',
-            r'инструкция',
-            r'помоги',
-            r'помощь',
-            r'как обработать',
-            r'что нужно сделать',
-            r'какие шаги',
-        ],
         IntentType.GENERATE_REPORT: [
             r'сводка',
             r'отч[её]т',
             r'передача смены',
             r'статистика',
+            r'сататистик',
+            r'сгенерир',
+            r'сформир',
             r'итоги',
             r'подведи итог',
             r'что сделано',
@@ -88,6 +73,17 @@ class IntentClassifier:
             r'добрый вечер',
             r'hi',
             r'hello',
+        ],
+        IntentType.SHOW_CAPABILITIES: [
+            r'что ты умеешь',
+            r'что ты можешь',
+            r'покажи что ты умеешь',
+            r'показать что я умею',
+            r'покажи возможности',
+            r'какие возможности',
+            r'что ты можешь делать',
+            r'help',
+            r'помощь',
         ],
     }
     
@@ -196,6 +192,17 @@ class IntentClassifier:
         days_match = self.DAYS_PATTERN.search(message)
         if days_match:
             result['days'] = int(days_match.group(1))
+
+        message_lower = message.lower()
+        if result['days'] is None:
+            if any(word in message_lower for word in ['за неделю', 'неделю', 'неделя', 'weekly']):
+                result['days'] = 7
+            elif any(word in message_lower for word in ['за месяц', 'месяц', 'месяца', 'monthly']):
+                result['days'] = 30
+            elif any(word in message_lower for word in ['за сутки', 'сутки', 'суток']):
+                result['days'] = 1
+            elif any(word in message_lower for word in ['за 2 недели', 'две недели']):
+                result['days'] = 14
         
         # Ищем квартал и год
         quarter_match = self.QUARTER_PATTERN.search(message)
@@ -271,29 +278,25 @@ class IntentClassifier:
         """
         suggestions = {
             IntentType.SEARCH_TASKS: [
-                "Показать закрытые задачи",
-                "Найти СУП задачи",
-                "Задачи за сегодня",
-            ],
-            IntentType.ANALYZE_SITUATION: [
-                "Что срочного?",
-                "Критичные задачи",
-                "Сводка дня",
-            ],
-            IntentType.TASK_GUIDANCE: [
-                "Что делать с СУП?",
-                "Инструкция для логов",
-                "Помощь с ПСИ",
+                "Показать все задачи",
+                "Найти задачи с тегом логи",
+                "Найти задачи в заголовке",
             ],
             IntentType.GENERATE_REPORT: [
-                "Сводка для передачи",
-                "Отчёт за сегодня",
-                "Статистика",
+                "Сгенерировать статистику",
+                "Сводка для дневной смены",
+                "Сводка для вечерней смены",
+            ],
+            IntentType.SHOW_CAPABILITIES: [
+                "Показать все задачи",
+                "Найти задачи по ключевым словам",
+                "Сгенерировать статистику",
+                "Сводка для передачи смены",
             ],
             IntentType.UNKNOWN: [
+                "Показать что я умею?",
                 "Показать все задачи",
-                "Что срочного?",
-                "Помощь",
+                "Сгенерировать статистику",
             ],
         }
         

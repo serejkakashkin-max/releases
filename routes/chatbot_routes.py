@@ -117,34 +117,29 @@ def get_suggestions():
         
         # Базовые подсказки
         default_suggestions = [
-            {"text": "Что срочного?", "action": "analyze"},
+            {"text": "Показать что я умею?", "action": "capabilities"},
             {"text": "Показать все задачи", "action": "search"},
-            {"text": "Статистика по сотрудникам", "action": "assignee_stats"},
-            {"text": "Сводка для передачи", "action": "report"},
-            {"text": "Помощь", "action": "help"},
+            {"text": "Сгенерировать статистику", "action": "assignee_stats"},
+            {"text": "Сводка для дневной смены", "action": "handover_day"},
+            {"text": "Сводка для вечерней смены", "action": "handover_evening"},
         ]
         
         # Контекстные подсказки по типу намерения
         contextual_suggestions = {
             IntentType.SEARCH_TASKS.value: [
-                {"text": "Закрытые задачи", "action": "search_closed"},
-                {"text": "СУП задачи", "action": "search_sup"},
-                {"text": "Задачи за сегодня", "action": "search_today"},
-            ],
-            IntentType.ANALYZE_SITUATION.value: [
-                {"text": "Критичные задачи", "action": "critical"},
-                {"text": "Зависшие задачи", "action": "stale"},
-                {"text": "По дежурным", "action": "by_assignee"},
-            ],
-            IntentType.TASK_GUIDANCE.value: [
-                {"text": "Помощь с СУП", "action": "help_sup"},
-                {"text": "Помощь с логами", "action": "help_logi"},
-                {"text": "Помощь с ПСИ", "action": "help_psi"},
+                {"text": "Показать все задачи", "action": "search"},
+                {"text": "Найти задачи с тегом логи", "action": "search_logi_tag"},
+                {"text": "Найти задачи в заголовке", "action": "search_summary"},
             ],
             IntentType.GENERATE_REPORT.value: [
-                {"text": "Отчёт за сегодня", "action": "report_today"},
-                {"text": "Отчёт за неделю", "action": "report_week"},
-                {"text": "Статистика", "action": "stats"},
+                {"text": "Сгенерировать статистику", "action": "assignee_stats"},
+                {"text": "Сводка для дневной смены", "action": "handover_day"},
+                {"text": "Сводка для вечерней смены", "action": "handover_evening"},
+            ],
+            IntentType.SHOW_CAPABILITIES.value: [
+                {"text": "Показать все задачи", "action": "search"},
+                {"text": "Найти задачи с тегом логи", "action": "search_logi_tag"},
+                {"text": "Сгенерировать статистику", "action": "assignee_stats"},
             ],
         }
         
@@ -273,26 +268,17 @@ def quick_action():
         
         # Маппинг быстрых действий на сообщения
         action_messages = {
-            'analyze': 'Что срочного?',
+            'capabilities': 'Показать что я умею?',
             'search': 'Покажи все задачи',
-            'report': 'Сделай сводку для передачи смены',
-            'help': 'Помощь',
             'search_closed': 'Покажи закрытые задачи',
-            'search_sup': 'Найди СУП задачи',
-            'search_today': 'Покажи задачи за сегодня',
-            'critical': 'Покажи критичные задачи',
-            'stale': 'Покажи зависшие задачи',
-            'by_assignee': 'Статистика по дежурным',
-            'help_sup': 'Что делать с СУП задачами?',
-            'help_logi': 'Как работать с логами?',
-            'help_psi': 'Инструкция для ПСИ раскатки',
-            'report_today': 'Отчёт за сегодня',
-            'report_week': 'Отчёт за неделю',
-            'stats': 'Общая статистика',
-            'assignee_stats': 'Сформируй статистику по сотрудникам за 30 дней',
+            'search_logi_tag': 'Найди задачи с тегом логи',
+            'search_summary': 'Найди задачу со словом "логи" в заголовке',
+            'assignee_stats': 'Сгенерируй статистику',
+            'handover_day': 'Сводка для дневной смены',
+            'handover_evening': 'Сводка для вечерней смены',
         }
-        
-        message = action_messages.get(action, 'Помощь')
+
+        message = action_messages.get(action, 'Показать что я умею?')
         
         # Получаем контекст дашборда
         try:

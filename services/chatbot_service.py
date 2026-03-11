@@ -5,8 +5,9 @@
 
 import json
 import logging
+import re
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 
 from services.intent_classifier import IntentClassifier, IntentType, get_intent_classifier
@@ -36,6 +37,7 @@ class ChatContext:
     session_id: str
     messages: List[ChatMessage] = field(default_factory=list)
     created_at: datetime = field(default_factory=datetime.now)
+    pending_clarification: Optional[Dict[str, Any]] = None
     
     def add_message(self, role: str, content: str, intent: Optional[str] = None, metadata: Dict = None):
         """Добавляет сообщение в историю"""
@@ -84,44 +86,70 @@ class DashboardChatBot:
         """
         try:
             session = self.get_or_create_session(session_id)
-            
-            # Классифицируем намерение
-            intent = self.intent_classifier.classify(message)
-            
-            # Извлекаем параметры в зависимости от намерения
-            params = self._extract_params(message, intent)
-            
-            # Для поиска добавляем оригинальное сообщение для интеллектуального парсинга
-            if intent == IntentType.SEARCH_TASKS:
-                params['_original_message'] = message
-            
-            # Обрабатываем запрос
-            if intent == IntentType.GREETING:
+
+            clarification_response = self._handle_clarification_reply(session, message, dashboard_context)
+            if clarification_response:
+                session.add_message('user', message, 'clarification_reply')
+                session.add_message('assistant', clarification_response['text'], metadata=clarification_response.get('metadata', {}))
+                return {
+                    'text': clarification_response['text'],
+                    'intent': clarification_response.get('intent', 'clarification'),
+                    'suggestions': clarification_response.get('suggestions', []),
+                    'metadata': clarification_response.get('metadata', {})
+                }
+
+            # Сначала используем локальную классификацию, затем при наличии GigaChat
+            # даем модели шанс нормализовать "человеческую" формулировку.
+            local_intent = self.intent_classifier.classify(message)
+            resolved_intent, normalized_message, ai_plan = self._resolve_intent_and_message(
+                message,
+                local_intent,
+                dashboard_context
+            )
+
+            params = self._extract_params(normalized_message, resolved_intent)
+
+            if resolved_intent == IntentType.SEARCH_TASKS:
+                params['_original_message'] = normalized_message
+
+            clarification_prompt = self._build_clarification_prompt(
+                session=session,
+                original_message=message,
+                local_intent=local_intent,
+                resolved_intent=resolved_intent,
+                normalized_message=normalized_message,
+                ai_plan=ai_plan
+            )
+            if clarification_prompt:
+                response = clarification_prompt
+            elif resolved_intent == IntentType.GREETING:
                 response = self._handle_greeting()
-            elif intent == IntentType.SEARCH_TASKS:
+            elif resolved_intent == IntentType.SEARCH_TASKS:
                 response = self._handle_search(params, dashboard_context)
-            elif intent == IntentType.ANALYZE_SITUATION:
-                response = self._handle_analysis(dashboard_context)
-            elif intent == IntentType.TASK_GUIDANCE:
-                response = self._handle_guidance(params, dashboard_context)
-            elif intent == IntentType.GENERATE_REPORT:
-                response = self._handle_report(params, dashboard_context, message)
-            elif intent == IntentType.SPECIFIC_TASK:
+            elif resolved_intent == IntentType.GENERATE_REPORT:
+                response = self._handle_report(params, dashboard_context, normalized_message)
+            elif resolved_intent == IntentType.SPECIFIC_TASK:
                 response = self._handle_specific_task(params, dashboard_context)
+            elif resolved_intent == IntentType.SHOW_CAPABILITIES:
+                response = self._handle_show_capabilities()
+            elif ai_plan and ai_plan.get('action') == 'free_chat':
+                response = self._ask_gigachat(message, session, dashboard_context)
             else:
-                # Используем ГигаЧат для неизвестных намерений
                 response = self._ask_gigachat(message, session, dashboard_context)
             
             # Сохраняем в историю
-            session.add_message('user', message, intent.value if intent else None)
+            session.add_message('user', message, resolved_intent.value if resolved_intent else None)
             session.add_message('assistant', response['text'], metadata=response.get('metadata', {}))
             
             # Формируем результат
             return {
                 'text': response['text'],
-                'intent': intent.value if intent else 'unknown',
-                'suggestions': self.intent_classifier.get_suggestions(intent),
-                'metadata': response.get('metadata', {})
+                'intent': resolved_intent.value if resolved_intent else 'unknown',
+                'suggestions': response.get('suggestions', self.intent_classifier.get_suggestions(resolved_intent)),
+                'metadata': {
+                    **response.get('metadata', {}),
+                    **({'normalized_message': normalized_message} if normalized_message != message else {})
+                }
             }
             
         except Exception as e:
@@ -132,6 +160,274 @@ class DashboardChatBot:
                 'suggestions': ['Помощь', 'Показать все задачи'],
                 'metadata': {'error': str(e)}
             }
+
+    def _resolve_intent_and_message(
+        self,
+        message: str,
+        local_intent: IntentType,
+        dashboard_context: Dict = None
+    ) -> Tuple[IntentType, str, Optional[Dict]]:
+        """Разрешает intent и нормализованное сообщение через GigaChat, если он доступен."""
+        ai_plan = self._plan_with_gigachat(message, dashboard_context, local_intent)
+        if not ai_plan:
+            return local_intent, message, None
+
+        ai_intent = self._intent_from_ai_action(ai_plan.get('action'))
+        normalized_message = ai_plan.get('normalized_message') or message
+
+        if ai_plan.get('action') == 'free_chat':
+            return IntentType.UNKNOWN, message, ai_plan
+
+        if ai_intent is None:
+            return local_intent, message, ai_plan
+
+        # Для устойчивых рабочих сценариев позволяем AI исправлять формулировку,
+        # но не ломаем уже распознанный конкретный ключ задачи.
+        if local_intent == IntentType.SPECIFIC_TASK and ai_intent != IntentType.SPECIFIC_TASK:
+            return local_intent, message, ai_plan
+
+        if local_intent == IntentType.UNKNOWN or ai_intent == local_intent:
+            return ai_intent, normalized_message, ai_plan
+
+        # Если AI уверенно свел запрос к поддерживаемому рабочему сценарию, используем его.
+        if ai_intent in {
+            IntentType.SEARCH_TASKS,
+            IntentType.GENERATE_REPORT,
+            IntentType.SPECIFIC_TASK,
+            IntentType.SHOW_CAPABILITIES,
+            IntentType.GREETING,
+        }:
+            return ai_intent, normalized_message, ai_plan
+
+        return local_intent, message, ai_plan
+
+    def _intent_from_ai_action(self, action: Optional[str]) -> Optional[IntentType]:
+        """Преобразует AI action в локальный IntentType."""
+        mapping = {
+            'search_tasks': IntentType.SEARCH_TASKS,
+            'generate_report': IntentType.GENERATE_REPORT,
+            'specific_task': IntentType.SPECIFIC_TASK,
+            'show_capabilities': IntentType.SHOW_CAPABILITIES,
+            'greeting': IntentType.GREETING,
+        }
+        return mapping.get(action)
+
+    def _plan_with_gigachat(
+        self,
+        message: str,
+        dashboard_context: Dict = None,
+        local_intent: IntentType = IntentType.UNKNOWN
+    ) -> Optional[Dict]:
+        """Просит GigaChat определить сценарий и при необходимости нормализовать запрос."""
+        if not self.giga_helper.client:
+            return None
+
+    def _build_clarification_prompt(
+        self,
+        session: ChatContext,
+        original_message: str,
+        local_intent: IntentType,
+        resolved_intent: IntentType,
+        normalized_message: str,
+        ai_plan: Optional[Dict]
+    ) -> Optional[Dict]:
+        """Формирует уточняющий вопрос, если рабочий запрос распознан неуверенно."""
+        suggestions: List[str] = []
+        confidence = (ai_plan or {}).get('confidence', 'low')
+        action = (ai_plan or {}).get('action')
+        is_work_request = self._looks_like_work_request(original_message)
+
+        if action and action != 'free_chat' and confidence in {'low', 'medium'}:
+            suggestions.append(normalized_message)
+
+        if is_work_request and local_intent == IntentType.UNKNOWN:
+            suggestions.extend([
+                "Показать все задачи",
+                "Сгенерировать статистику",
+                "Сводка для передачи смены",
+            ])
+
+        suggestions = [item for item in suggestions if item]
+        deduped_suggestions = []
+        seen = set()
+        for item in suggestions:
+            key = item.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped_suggestions.append(item)
+
+        if not deduped_suggestions:
+            return None
+
+        session.pending_clarification = {
+            'original_message': original_message,
+            'resolved_intent': resolved_intent.value,
+            'suggestions': deduped_suggestions,
+            'created_at': datetime.now().isoformat()
+        }
+
+        text = "Не до конца понял рабочий запрос.\n\n"
+        text += "Возможно, вы имели в виду:\n"
+        for index, suggestion in enumerate(deduped_suggestions[:3], 1):
+            text += f"{index}. {suggestion}\n"
+        text += "\nОтветьте `да`, номером варианта, или напишите уточнение."
+
+        return {
+            'text': text,
+            'suggestions': deduped_suggestions[:3],
+            'metadata': {'type': 'clarification', 'options': deduped_suggestions[:3]}
+        }
+
+    def _handle_clarification_reply(
+        self,
+        session: ChatContext,
+        message: str,
+        dashboard_context: Dict = None
+    ) -> Optional[Dict]:
+        """Обрабатывает ответ пользователя на уточняющий вопрос."""
+        pending = session.pending_clarification
+        if not pending:
+            return None
+
+        message_lower = message.strip().lower()
+        suggestions = pending.get('suggestions', [])
+
+        if message_lower in {'да', 'ага', 'угу', 'yes', 'ok', 'ок', 'верно'}:
+            selected = suggestions[0] if suggestions else pending.get('original_message', '')
+            session.pending_clarification = None
+            return self._execute_clarified_message(selected, session, dashboard_context)
+
+        if message_lower in {'нет', 'неа', 'no', 'неверно'}:
+            session.pending_clarification = None
+            return {
+                'text': 'Уточните, что именно нужно сделать. Можно написать запрос свободно, я попробую понять снова.',
+                'intent': 'clarification',
+                'suggestions': ['Показать все задачи', 'Сгенерировать статистику', 'Сводка для передачи смены'],
+                'metadata': {'type': 'clarification_retry'}
+            }
+
+        if message_lower.isdigit():
+            index = int(message_lower) - 1
+            if 0 <= index < len(suggestions):
+                selected = suggestions[index]
+                session.pending_clarification = None
+                return self._execute_clarified_message(selected, session, dashboard_context)
+
+        combined_message = f"{pending.get('original_message', '')}. Уточнение пользователя: {message}".strip()
+        session.pending_clarification = None
+        return self._execute_clarified_message(combined_message, session, dashboard_context)
+
+    def _execute_clarified_message(
+        self,
+        message: str,
+        session: ChatContext,
+        dashboard_context: Dict = None
+    ) -> Dict:
+        """Повторно запускает обработку после уточнения."""
+        local_intent = self.intent_classifier.classify(message)
+        resolved_intent, normalized_message, ai_plan = self._resolve_intent_and_message(
+            message,
+            local_intent,
+            dashboard_context
+        )
+        params = self._extract_params(normalized_message, resolved_intent)
+        if resolved_intent == IntentType.SEARCH_TASKS:
+            params['_original_message'] = normalized_message
+
+        if resolved_intent == IntentType.SEARCH_TASKS:
+            response = self._handle_search(params, dashboard_context)
+        elif resolved_intent == IntentType.GENERATE_REPORT:
+            response = self._handle_report(params, dashboard_context, normalized_message)
+        elif resolved_intent == IntentType.SPECIFIC_TASK:
+            response = self._handle_specific_task(params, dashboard_context)
+        elif resolved_intent == IntentType.SHOW_CAPABILITIES:
+            response = self._handle_show_capabilities()
+        elif ai_plan and ai_plan.get('action') == 'free_chat':
+            response = self._ask_gigachat(message, session, dashboard_context)
+        else:
+            response = self._ask_gigachat(message, session, dashboard_context)
+
+        return {
+            'text': response['text'],
+            'intent': resolved_intent.value if resolved_intent else 'unknown',
+            'suggestions': self.intent_classifier.get_suggestions(resolved_intent),
+            'metadata': response.get('metadata', {})
+        }
+
+    def _looks_like_work_request(self, message: str) -> bool:
+        """Грубая эвристика для отличия рабочего запроса от свободного разговора."""
+        message_lower = message.lower()
+        work_markers = [
+            'задач', 'jira', 'сотрудник', 'статист', 'сататист', 'сводк', 'смен',
+            'отчет', 'отчёт', 'суп', 'логи', 'бд', 'инфра', 'роль', 'пси', 'внедрение',
+            'покажи', 'найди', 'сгенер', 'сформир', 'передач'
+        ]
+        return any(marker in message_lower for marker in work_markers)
+
+        dashboard_summary = self._get_dashboard_summary(dashboard_context)
+        prompt = f"""Ты маршрутизатор запросов для чат-бота дежурного инженера.
+
+Текущий локально распознанный intent: {local_intent.value}
+
+Поддерживаемые действия:
+- search_tasks: показать или найти задачи
+- generate_report: статистика или сводка передачи смены
+- specific_task: запрос по конкретному ключу Jira
+- show_capabilities: показать возможности бота
+- greeting: приветствие
+- free_chat: свободный разговор на стороннюю тему
+- unknown: ничего не понятно
+
+Контекст дашборда:
+{dashboard_summary}
+
+Запрос пользователя:
+{message}
+
+Верни только JSON:
+{{
+  "action": "one_of_supported_actions",
+  "normalized_message": "нормализованная формулировка для запуска локальной логики или пустая строка",
+  "confidence": "high|medium|low"
+}}
+
+Правила:
+1. Если пользователь спрашивает о задачах, статистике, сводке или конкретной Jira-задаче, выбирай соответствующее действие.
+2. normalized_message должен быть коротким, естественным и сохранять смысл запроса, исправляя опечатки и разговорные формулировки.
+3. Если пользователь явно ушел в сторонний диалог, выбирай free_chat.
+4. Не придумывай новые действия.
+5. Ответ только JSON."""
+        try:
+            response = self.giga_helper.client.chat(prompt)
+            content = response.choices[0].message.content
+            match = re.search(r'\{.*\}', content, re.DOTALL)
+            if not match:
+                return None
+            data = json.loads(match.group())
+            return {
+                'action': data.get('action'),
+                'normalized_message': data.get('normalized_message', '').strip(),
+                'confidence': data.get('confidence', 'low')
+            }
+        except Exception as e:
+            logging.warning(f"Не удалось получить AI-план запроса: {e}")
+            return None
+
+    def _handle_unknown(self) -> Dict:
+        """Ответ для неподдерживаемых запросов."""
+        return {
+            'text': (
+                "Я это еще не умею, функция в стадии разработки.\n\n"
+                "Сейчас доступны:\n"
+                "• показать задачи за период;\n"
+                "• найти задачи по ключевым словам, тегам, заголовку или тексту;\n"
+                "• сгенерировать статистику за период;\n"
+                "• сделать сводку для дневной или вечерней передачи смены.\n\n"
+                "Если период не указан, использую текущий квартал."
+            ),
+            'metadata': {'type': 'unsupported'}
+        }
     
     def _extract_params(self, message: str, intent: IntentType) -> Dict:
         """Извлекает параметры из сообщения в зависимости от намерения"""
@@ -141,9 +437,6 @@ class DashboardChatBot:
             params = self.intent_classifier.extract_search_params(message)
         elif intent == IntentType.SPECIFIC_TASK:
             params['task_key'] = self.intent_classifier.extract_task_key(message)
-        elif intent == IntentType.TASK_GUIDANCE:
-            params['task_key'] = self.intent_classifier.extract_task_key(message)
-            params['topic'] = message
         elif intent == IntentType.GENERATE_REPORT:
             # Извлекаем параметры для отчёта (дни или квартал)
             report_params = self.intent_classifier.extract_report_params(message)
@@ -155,14 +448,33 @@ class DashboardChatBot:
         """Обрабатывает приветствие"""
         return {
             'text': (
-                "👋 Привет! Я AI-ассистент дежурного.\n\n"
-                "Чем могу помочь?\n"
-                "• Показать текущие задачи\n"
-                "• Найти конкретную задачу\n"
-                "• Проанализировать ситуацию\n"
-                "• Сделать сводку для передачи смены"
+                "Я помощник по задачам дежурной смены.\n\n"
+                "Могу:\n"
+                "• показать задачи за период;\n"
+                "• найти задачи по словам, тегам, заголовку или тексту;\n"
+                "• сформировать статистику в HTML;\n"
+                "• подготовить сводку для передачи смены.\n\n"
+                "Напишите `показать что я умею?`, чтобы увидеть варианты запросов."
             ),
             'metadata': {'type': 'greeting'}
+        }
+
+    def _handle_show_capabilities(self) -> Dict:
+        """Показывает все возможности бота"""
+        return {
+            'text': (
+                "*Что умеет бот*\n\n"
+                "1. Показать задачи.\n"
+                "Примеры: `покажи все задачи`, `покажи закрытые задачи за неделю`, `покажи задачи по логам`.\n\n"
+                "2. Найти конкретные задачи.\n"
+                "Примеры: `найди задачи с тегом логи`, `найди задачу с текстом \"oracle\"`, `найди задачу со словом \"суп\" в заголовке`.\n\n"
+                "3. Сгенерировать статистику.\n"
+                "Примеры: `сгенерируй статистику`, `статистика за 1 квартал 2026`, `статистика за 14 дней`.\n\n"
+                "4. Сделать сводку передачи смены.\n"
+                "Примеры: `сводка для дневной смены`, `сводка для вечерней смены`, `передача смены за неделю`.\n\n"
+                "Если период не указан, использую текущий квартал."
+            ),
+            'metadata': {'type': 'capabilities'}
         }
     
     def _handle_search(self, params: Dict, dashboard_context: Dict = None) -> Dict:
@@ -319,72 +631,26 @@ class DashboardChatBot:
     def _handle_report(self, params: Dict, dashboard_context: Dict = None, original_message: str = '') -> Dict:
         """Обрабатывает генерацию отчёта"""
         try:
-            # Проверяем, запрошена ли статистика по сотрудникам
             message_lower = original_message.lower()
+
+            # Проверяем тип отчёта
             is_assignee_report = any(phrase in message_lower for phrase in [
-                'по сотрудникам', 'статистика.*сотрудник', 'сформируй.*статистику',
+                'по сотрудникам', 'статистика', 'сататист', 'сформируй', 'сгенерируй',
                 'закрытые задачи.*сотрудник', 'эффективность', 'производительность'
             ])
-            
+
+            is_shift_handover = any(phrase in message_lower for phrase in [
+                'передача смены', 'смена', 'смены'
+            ])
+
             if is_assignee_report:
                 return self._handle_assignee_statistics(params)
-            
-            # Стандартный отчёт для передачи смены
-            if dashboard_context:
-                data = dashboard_context
+            elif is_shift_handover:
+                return self._handle_shift_handover(params, dashboard_context, original_message)
             else:
-                data = get_dashboard_data()
-            
-            # Собираем статистику
-            all_tasks = (
-                data.get('sup_tasks', []) +
-                data.get('logi_tasks', []) +
-                data.get('vnedrenie_prom_tasks', []) +
-                data.get('vnedrenie_psi_tasks', [])
-            )
-            
-            # Группируем по дежурным
-            assignee_stats = {}
-            for task in all_tasks:
-                assignee = task.get('assignee_name', 'Не назначен')
-                if assignee not in assignee_stats:
-                    assignee_stats[assignee] = []
-                assignee_stats[assignee].append(task)
-            
-            # Формируем отчёт
-            text = f"📋 *Сводка для передачи смены*\n"
-            text += f"_{datetime.now().strftime('%d.%m.%Y %H:%M')}_\n\n"
-            
-            text += f"*Общая статистика:*\n"
-            text += f"• Всего активных задач: {len(all_tasks)}\n"
-            text += f"• СУП задачи: {len(data.get('sup_tasks', []))}\n"
-            text += f"• Логи задачи: {len(data.get('logi_tasks', []))}\n"
-            text += f"• Внедрение ПРОМ: {len(data.get('vnedrenie_prom_tasks', []))}\n"
-            text += f"• Внедрение ПСИ: {len(data.get('vnedrenie_psi_tasks', []))}\n\n"
-            
-            if assignee_stats:
-                text += "*Задачи по дежурным:*\n"
-                for assignee, tasks in sorted(assignee_stats.items()):
-                    text += f"• {assignee}: {len(tasks)} задач\n"
-            
-            # Используем ГигаЧат для улучшения отчёта
-            if self.giga_helper.client:
-                try:
-                    prompt = self._create_report_prompt(all_tasks, assignee_stats)
-                    giga_response = self.giga_helper.client.chat(prompt)
-                    ai_summary = giga_response.choices[0].message.content
-                    text += f"\n*AI-анализ:*\n{ai_summary}"
-                except Exception as e:
-                    logging.warning(f"Не удалось получить AI-анализ: {e}")
-            
-            return {
-                'text': text,
-                'metadata': {
-                    'total_tasks': len(all_tasks),
-                    'assignee_count': len(assignee_stats)
-                }
-            }
-            
+                # По умолчанию статистика по сотрудникам
+                return self._handle_assignee_statistics(params)
+
         except Exception as e:
             logging.error(f"Ошибка генерации отчёта: {e}")
             return {
@@ -392,23 +658,124 @@ class DashboardChatBot:
                 'metadata': {'error': str(e)}
             }
     
+    def _handle_shift_handover(self, params: Dict, dashboard_context: Dict = None, original_message: str = '') -> Dict:
+        """Обрабатывает сводку для передачи смены (дневная/вечерняя)"""
+        try:
+            message_lower = original_message.lower()
+
+            # Определяем тип смены
+            is_evening_shift = any(phrase in message_lower for phrase in [
+                'вечер', 'вечерняя', '21', 'после 21', 'ночной'
+            ])
+
+            if dashboard_context:
+                data = dashboard_context
+            else:
+                data = get_dashboard_data()
+
+            all_open_tasks = self._collect_dashboard_tasks(data)
+            query = self.search_service.parse_query(original_message or 'сводка')
+            closed_query = query
+            closed_query.status = 'closed'
+            closed_query.task_types = ['суп', 'логи', 'бд', 'инфра', 'роль', 'пси', 'внедрение']
+            closed_tasks = self.search_service.execute_search(closed_query)
+
+            if is_evening_shift:
+                evening_tasks = []
+                now = datetime.now().astimezone()
+                if now.hour < 1:
+                    evening_window_end = now.replace(minute=0, second=0, microsecond=0)
+                    evening_window_start = (evening_window_end - timedelta(days=1)).replace(hour=21, minute=0, second=0, microsecond=0)
+                else:
+                    evening_window_start = now.replace(hour=21, minute=0, second=0, microsecond=0)
+                    evening_window_end = (evening_window_start + timedelta(hours=4))
+
+                for task in closed_tasks:
+                    closed_at = task.get('resolutiondate') or task.get('updated', '')
+                    if not closed_at:
+                        continue
+                    try:
+                        closed_dt = datetime.fromisoformat(closed_at.replace('Z', '+00:00'))
+                    except ValueError:
+                        continue
+                    closed_dt = closed_dt.astimezone()
+                    if evening_window_start <= closed_dt <= evening_window_end:
+                        evening_tasks.append((closed_dt, task))
+
+                evening_tasks.sort(key=lambda item: item[0], reverse=True)
+
+                text = "🌙 *Вечерняя передача смены*\n"
+                text += f"Окно: {evening_window_start.strftime('%d.%m %H:%M')} - {evening_window_end.strftime('%d.%m %H:%M')}\n\n"
+
+                if evening_tasks:
+                    text += f"✅ Закрыто за вечернюю смену: {len(evening_tasks)}\n"
+                    for closed_dt, task in evening_tasks[:7]:
+                        text += f"• [{task['key']}]({task.get('url', '')}) - {task['summary'][:65]}{'...' if len(task['summary']) > 65 else ''}\n"
+                        text += f"  👤 {task['assignee_name']} | ⏰ {closed_dt.strftime('%d.%m %H:%M')}\n"
+                else:
+                    text += "✅ Закрытых задач в окно вечерней смены не найдено."
+
+            else:
+                text = "☀️ *Дневная передача смены*\n"
+                text += f"Период: {query.date_from} - {query.date_to}\n"
+                text += f"✅ Закрыто: {len(closed_tasks)}\n"
+                text += f"🔄 Открыто: {len(all_open_tasks)}\n\n"
+
+                if closed_tasks:
+                    text += "*Закрытые:*\n"
+                    for task in closed_tasks[:5]:
+                        text += f"• [{task['key']}]({task.get('url', '')}) - {task['summary'][:65]}{'...' if len(task['summary']) > 65 else ''}\n"
+                else:
+                    text += "*Закрытые:*\n• Нет закрытых задач\n"
+
+                if all_open_tasks:
+                    text += "\n*Остались открытыми:*\n"
+                    for task in all_open_tasks[:5]:
+                        text += f"• [{task['key']}]({task.get('url', '')}) - {task['summary'][:65]}{'...' if len(task['summary']) > 65 else ''}\n"
+                        text += f"  👤 {task['assignee_name']} | 📅 {task.get('days_in_progress', 0)} дн.\n"
+                else:
+                    text += "\n*Остались открытыми:*\n• Нет открытых задач\n"
+
+            return {
+                'text': text,
+                'metadata': {
+                    'shift_type': 'evening' if is_evening_shift else 'day',
+                    'total_tasks': len(closed_tasks) + len(all_open_tasks)
+                }
+            }
+
+        except Exception as e:
+            logging.error(f"Ошибка генерации сводки смены: {e}")
+            return {
+                'text': f'❌ Ошибка при генерации сводки смены: {str(e)}',
+                'metadata': {'error': str(e)}
+            }
+
     def _handle_assignee_statistics(self, params: Dict) -> Dict:
         """Обрабатывает генерацию отчёта по сотрудникам с закрытыми задачами"""
         try:
             from services.report_service import get_report_service, save_report_to_disk
-            
+
             # Получаем параметры периода
-            days = params.get('days', 30)
+            days = params.get('days')
             quarter = params.get('quarter')
             year = params.get('year')
-            
+
+            # Если не указан период, используем текущий квартал по умолчанию
+            if not quarter and not days:
+                now = datetime.now()
+                quarter = (now.month - 1) // 3 + 1
+                year = now.year
+
             # Генерируем отчёт
             report_service = get_report_service()
-            
+
             if quarter:
                 report_data = report_service.generate_assignee_report(quarter=quarter, year=year)
                 period_desc = f"{quarter} квартал {year or 'текущего года'}"
             else:
+                if not days:
+                    days = 30
                 report_data = report_service.generate_assignee_report(days=days)
                 period_desc = f"последние {days} дней"
             
@@ -492,6 +859,24 @@ class DashboardChatBot:
                 'text': f'❌ Ошибка при генерации статистики: {str(e)}',
                 'metadata': {'error': str(e)}
             }
+
+    def _collect_dashboard_tasks(self, dashboard_context: Dict) -> List[Dict]:
+        """Собирает уникальные открытые задачи из колонок дашборда."""
+        tasks = (
+            dashboard_context.get('sup_tasks', []) +
+            dashboard_context.get('logi_tasks', []) +
+            dashboard_context.get('vnedrenie_prom_tasks', []) +
+            dashboard_context.get('vnedrenie_psi_tasks', [])
+        )
+        unique_tasks = []
+        seen = set()
+        for task in tasks:
+            key = task.get('key')
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            unique_tasks.append(task)
+        return unique_tasks
     
     def _handle_specific_task(self, params: Dict, dashboard_context: Dict = None) -> Dict:
         """Обрабатывает запрос о конкретной задаче"""
@@ -520,49 +905,33 @@ class DashboardChatBot:
     def _ask_gigachat(self, message: str, session: ChatContext, dashboard_context: Dict = None) -> Dict:
         """Отправляет запрос к ГигаЧат как fallback"""
         if not self.giga_helper.client:
-            return {
-                'text': (
-                    "🤔 Я не совсем понял ваш запрос.\n\n"
-                    "Попробуйте:\n"
-                    "• 'Покажи все задачи'\n"
-                    "• 'Что срочного?'\n"
-                    "• 'Сводка для передачи'\n"
-                    "• Или укажите номер задачи (OPLOT-12345)"
-                ),
-                'metadata': {'fallback': True}
-            }
-        
+            return self._handle_unknown()
+
         try:
-            # Формируем контекст для ГигаЧата
-            context_info = self._get_dashboard_summary(dashboard_context)
-            
-            prompt = f"""Ты AI-ассистент дежурного инженера. Отвечай кратко и по существу.
+            dashboard_summary = self._get_dashboard_summary(dashboard_context)
+            prompt = f"""Ты дружелюбный и краткий AI-помощник дежурного инженера.
+
+Если вопрос относится к рабочим задачам, статистике, поиску задач, передаче смены или Jira,
+в ответе мягко направь пользователя к поддерживаемым сценариям бота.
+
+Если вопрос сторонний и разговорный, можешь ответить по существу как обычный собеседник.
 
 Контекст дашборда:
-{context_info}
+{dashboard_summary}
 
-Запрос пользователя: {message}
+Запрос пользователя:
+{message}
 
-Если запрос непонятен - предложи варианты:
-- Показать текущие задачи
-- Анализ ситуации  
-- Поиск задачи
-- Сводка для передачи смены
-
-Ответ:"""
-            
+Отвечай кратко, естественно и по-русски."""
             response = self.giga_helper.client.chat(prompt)
+            text = response.choices[0].message.content.strip()
             return {
-                'text': response.choices[0].message.content,
-                'metadata': {'source': 'gigachat'}
+                'text': text or self._handle_unknown()['text'],
+                'metadata': {'source': 'gigachat', 'mode': 'free_chat'}
             }
-            
         except Exception as e:
-            logging.error(f"Ошибка ГигаЧат: {e}")
-            return {
-                'text': 'Извините, не удалось обработать запрос. Попробуйте другую формулировку.',
-                'metadata': {'error': str(e)}
-            }
+            logging.warning(f"Ошибка fallback-ответа через GigaChat: {e}")
+            return self._handle_unknown()
     
     def _search_all_tasks(self, params: Dict) -> List[Dict]:
         """Выполняет расширенный поиск по всем задачам"""

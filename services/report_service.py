@@ -4,8 +4,10 @@
 """
 
 import json
+import html
 import logging
 import os
+import re
 from datetime import datetime, timedelta
 from typing import Dict, List, Any
 from collections import defaultdict
@@ -67,6 +69,7 @@ class ReportService:
                 'period_type': period_type
             },
             'statistics': stats,
+            'tasks': tasks,
             'total_tasks': len(tasks),
             'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
@@ -159,6 +162,7 @@ class ReportService:
                     'resolutiondate': issue['fields'].get('resolutiondate', ''),
                     'priority': issue['fields'].get('priority', {}).get('name', ''),
                     'labels': labels,  # Все теги задачи
+                    'first_label': labels[0] if labels else '',
                     'url': f"{domain}/browse/{issue['key']}"
                 })
             
@@ -199,19 +203,18 @@ class ReportService:
             
             labels = task.get('labels', [])
             
-            # Подсчёт по каждому тегу
+            # Подсчёт только по первому тегу (как указано в требованиях)
             if labels:
-                for label in labels:
-                    label_lower = label.lower()
-                    # Считаем для сотрудника
-                    if label_lower not in assignee_stats[assignee]['tags']:
-                        assignee_stats[assignee]['tags'][label_lower] = 0
-                    assignee_stats[assignee]['tags'][label_lower] += 1
-                    
-                    # Считаем общую статистику
-                    if label_lower not in tag_totals:
-                        tag_totals[label_lower] = 0
-                    tag_totals[label_lower] += 1
+                first_label = labels[0].lower()  # Берем только первый тег
+                # Считаем для сотрудника
+                if first_label not in assignee_stats[assignee]['tags']:
+                    assignee_stats[assignee]['tags'][first_label] = 0
+                assignee_stats[assignee]['tags'][first_label] += 1
+
+                # Считаем общую статистику
+                if first_label not in tag_totals:
+                    tag_totals[first_label] = 0
+                tag_totals[first_label] += 1
             else:
                 # Задачи без тегов
                 assignee_stats[assignee]['no_tags'] += 1
@@ -399,6 +402,10 @@ class ReportService:
             margin-bottom: 20px;
             font-size: 20px;
         }}
+
+        .section-spacing {{
+            margin-top: 20px;
+        }}
         
         table {{
             width: 100%;
@@ -422,6 +429,67 @@ class ReportService:
         
         tr:hover {{
             background: #f8f9fa;
+        }}
+
+        .assignee-row {{
+            cursor: pointer;
+        }}
+
+        .assignee-row:hover {{
+            background: #eef2ff;
+        }}
+
+        .assignee-name {{
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 700;
+        }}
+
+        .expand-indicator {{
+            display: inline-flex;
+            width: 22px;
+            height: 22px;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            background: #e8ecff;
+            color: #4f46e5;
+            font-size: 12px;
+            transition: transform 0.2s ease;
+        }}
+
+        .assignee-row.open .expand-indicator {{
+            transform: rotate(90deg);
+        }}
+
+        .assignee-tasks-row {{
+            display: none;
+            background: #f8faff;
+        }}
+
+        .assignee-tasks-row.open {{
+            display: table-row;
+        }}
+
+        .assignee-tasks-wrap {{
+            padding: 18px 20px 18px 48px;
+        }}
+
+        .assignee-task-list {{
+            margin: 0;
+            padding-left: 20px;
+        }}
+
+        .assignee-task-list li {{
+            margin-bottom: 10px;
+            line-height: 1.4;
+        }}
+
+        .assignee-task-meta {{
+            color: #667085;
+            font-size: 12px;
+            margin-top: 2px;
         }}
         
         .badge {{
@@ -528,13 +596,23 @@ class ReportService:
                 </tbody>
             </table>
         </div>
-        
+
         <div class="footer">
             <p>Отчёт сгенерирован: {report_data['generated_at']}</p>
         </div>
     </div>
     
     <script>
+        function toggleAssigneeTasks(assigneeKey) {{
+            const summaryRow = document.getElementById(`assignee-row-${{assigneeKey}}`);
+            const detailRow = document.getElementById(`assignee-tasks-${{assigneeKey}}`);
+            if (!summaryRow || !detailRow) {{
+                return;
+            }}
+            summaryRow.classList.toggle('open');
+            detailRow.classList.toggle('open');
+        }}
+
         // Столбчатая диаграмма по сотрудникам
         const assigneesCtx = document.getElementById('assigneesChart').getContext('2d');
         new Chart(assigneesCtx, {{
@@ -629,7 +707,8 @@ class ReportService:
         """Генерирует строки таблицы с динамическими тегами"""
         rows = []
         
-        for name, data in by_assignee.items():
+        for index, (name, data) in enumerate(by_assignee.items(), 1):
+            assignee_key = self._slugify_assignee(name, index)
             # Собираем ячейки для каждого тега
             tag_cells = []
             
@@ -647,16 +726,60 @@ class ReportService:
             else:
                 tag_cells.append('<td>-</td>')
             
+            details_html = self._generate_assignee_tasks_html(data.get('tasks', []))
             row = f'''
-                <tr>
-                    <td><strong>{name}</strong></td>
+                <tr id="assignee-row-{assignee_key}" class="assignee-row" onclick="toggleAssigneeTasks('{assignee_key}')">
+                    <td>
+                        <div class="assignee-name">
+                            <span class="expand-indicator">▶</span>
+                            <span>{html.escape(name)}</span>
+                        </div>
+                    </td>
                     <td><span class="badge badge-total">{data['total']}</span></td>
                     {' '.join(tag_cells)}
+                </tr>
+                <tr id="assignee-tasks-{assignee_key}" class="assignee-tasks-row">
+                    <td colspan="{len(all_tags) + 3}">
+                        <div class="assignee-tasks-wrap">
+                            {details_html}
+                        </div>
+                    </td>
                 </tr>
             '''
             rows.append(row)
         
         return ''.join(rows)
+
+    def _generate_assignee_tasks_html(self, tasks: List[Dict[str, Any]]) -> str:
+        """Генерирует раскрывающийся список задач сотрудника."""
+        if not tasks:
+            return '<div>Нет закрытых задач за период</div>'
+
+        sorted_tasks = sorted(
+            tasks,
+            key=lambda task: task.get('resolutiondate') or task.get('updated') or '',
+            reverse=True
+        )
+        items = []
+        for index, task in enumerate(sorted_tasks, 1):
+            closed_at = (task.get('resolutiondate') or task.get('updated') or '')[:16]
+            labels = ', '.join(task.get('labels', [])) or '(без тега)'
+            items.append(
+                f'''
+                <li>
+                    <a href="{html.escape(task.get('url', '#'))}" target="_blank">{html.escape(task.get('key', ''))}</a>
+                    {' - '}{html.escape(task.get('summary', ''))}
+                    <div class="assignee-task-meta">Закрыта: {html.escape(closed_at)} | Теги: {html.escape(labels)}</div>
+                </li>
+                '''
+            )
+        return f'<ol class="assignee-task-list">{"".join(items)}</ol>'
+
+    def _slugify_assignee(self, name: str, index: int) -> str:
+        """Генерирует безопасный идентификатор для HTML."""
+        slug = re.sub(r'[^a-zA-Zа-яА-Я0-9_-]+', '-', name.strip().lower())
+        slug = slug.strip('-') or 'assignee'
+        return f'{index}-{slug}'
 
 
 # Singleton

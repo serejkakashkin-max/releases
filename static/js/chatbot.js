@@ -52,7 +52,7 @@ class DashboardChatBot {
             <div class="chat-header">
                 <div class="chat-title">
                     <i class="bi bi-robot"></i>
-                    <span>AI Ассистент</span>
+                    <span>Помощник по задачам</span>
                 </div>
                 <div class="chat-actions">
                     <button class="chat-action-btn" id="chat-expand" title="Увеличить окно">
@@ -72,7 +72,7 @@ class DashboardChatBot {
                 <textarea 
                     class="chat-input" 
                     id="chat-input" 
-                    placeholder="Введите сообщение..."
+                    placeholder="Например: покажи все задачи или сгенерируй статистику"
                     rows="1"
                 ></textarea>
                 <button class="chat-send-btn" id="chat-send">
@@ -374,12 +374,13 @@ class DashboardChatBot {
             } else {
                 // Приветственное сообщение
                 this.addMessage('assistant', 
-                    '👋 Привет! Я AI-ассистент дежурного.\n\n' +
-                    'Чем могу помочь?\n' +
-                    '• Показать текущие задачи\n' +
-                    '• Найти конкретную задачу\n' +
-                    '• Проанализировать ситуацию\n' +
-                    '• Сделать сводку для передачи смены'
+                    'Я помощник по задачам дежурной смены.\n\n' +
+                    'Могу:\n' +
+                    '• показать задачи за период\n' +
+                    '• найти задачи по словам, тегам, заголовку или тексту\n' +
+                    '• сформировать статистику в HTML\n' +
+                    '• сделать сводку для передачи смены\n\n' +
+                    'Если период не указан, использую текущий квартал.'
                 );
                 
                 // Загружаем начальные подсказки
@@ -403,7 +404,7 @@ class DashboardChatBot {
                 this.messages = [];
                 
                 // Приветственное сообщение
-                this.addMessage('assistant', 'История очищена. Чем могу помочь?');
+                this.addMessage('assistant', 'История очищена. Напишите `показать что я умею?` или сразу сформулируйте запрос.');
                 this.loadSuggestions();
             }
         } catch (error) {

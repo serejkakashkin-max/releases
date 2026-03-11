@@ -31,6 +31,9 @@ class SearchQuery:
     date_to: Optional[str]  # YYYY-MM-DD
     assignee: Optional[str]
     keywords: List[str]
+    summary_keywords: List[str]
+    description_keywords: List[str]
+    label_filters: List[str]
     original_query: str
 
 
@@ -45,7 +48,18 @@ class ChatbotSearchService:
         'внедрение': ['внедрение', 'прод', 'production', 'релиз'],
         'бд': ['бд', 'db', 'база данных', 'database'],
         'инфра': ['инфра', 'infra', 'инфраструктура', 'под', 'pod'],
-        'роль': ['роль', 'role', 'права', 'доступ'],
+        'роль': ['роль', 'role', 'права', 'доступ', 'роли'],
+    }
+
+    DEFAULT_TASK_TYPES = ['суп', 'логи', 'бд', 'инфра', 'роль', 'пси', 'внедрение']
+    TASK_TYPE_PATTERNS = {
+        'суп': re.compile(r'\bсуп\w*|\bsup\w*', re.IGNORECASE),
+        'логи': re.compile(r'\bлог\w*|\blog\w*', re.IGNORECASE),
+        'пси': re.compile(r'\bпси\b|\bpsi\b', re.IGNORECASE),
+        'внедрение': re.compile(r'\bвнедрен\w*|\bпрод\w*|\bрелиз\w*', re.IGNORECASE),
+        'бд': re.compile(r'\bбд\b|\bdb\b|баз\w*\s+данн\w*', re.IGNORECASE),
+        'инфра': re.compile(r'\bинфр\w*|\bпод\w*|\binfra\b', re.IGNORECASE),
+        'роль': re.compile(r'\bрол\w*|\bправ\w*|\bдоступ\w*|\brole\b', re.IGNORECASE),
     }
     
     # Паттерны для извлечения дат
@@ -117,16 +131,20 @@ class ChatbotSearchService:
     def _parse_local(self, message: str) -> SearchQuery:
         """Локальный парсинг запроса"""
         message_lower = message.lower()
+        unscoped_content_terms = self._extract_unscoped_content_terms(message)
+        message_for_type_detection = message_lower
+        if unscoped_content_terms:
+            for term in unscoped_content_terms:
+                message_for_type_detection = message_for_type_detection.replace(term.lower(), ' ')
         
         # Определяем типы задач
         task_types = []
-        for task_type, keywords in self.TASK_TYPE_MAPPINGS.items():
-            if any(keyword in message_lower for keyword in keywords):
+        for task_type, pattern in self.TASK_TYPE_PATTERNS.items():
+            if pattern.search(message_for_type_detection):
                 task_types.append(task_type)
         
-        # Если сказано "все задачи" и не указан конкретный тип - ищем по всем типам
-        if not task_types and any(phrase in message_lower for phrase in ['все задачи', 'все задания', 'весь список', 'покажи все', 'все открытые', 'все закрытые']):
-            task_types = ['суп', 'логи', 'пси', 'внедрение', 'бд', 'роль']
+        if not task_types:
+            task_types = self.DEFAULT_TASK_TYPES.copy()
         
         # Определяем статус
         status = 'all'
@@ -138,19 +156,22 @@ class ChatbotSearchService:
         # Определяем даты
         date_from, date_to = self._extract_dates(message_lower)
         
-        # Если дата не указана - по умолчанию 30 дней (для "всех задач")
-        if date_from is None and task_types:
-            from datetime import datetime, timedelta
-            today = datetime.now()
-            date_from = (today - timedelta(days=30)).strftime('%Y-%m-%d')
-            date_to = today.strftime('%Y-%m-%d')
+        if date_from is None:
+            date_from, date_to = self._get_current_quarter_dates()
         
         # Извлекаем исполнителя
         assignee = self._extract_assignee(message)
-        
-        # Извлекаем ключевые слова
+
+        summary_keywords, description_keywords, scoped_keywords = self._extract_scoped_keywords(message)
+        label_filters = self._extract_label_filters(message)
         keywords = self._extract_keywords(message)
-        
+        if summary_keywords or description_keywords:
+            keywords = []
+        elif unscoped_content_terms:
+            keywords = unscoped_content_terms
+        if scoped_keywords:
+            keywords = scoped_keywords
+
         return SearchQuery(
             task_types=task_types,
             status=status,
@@ -158,6 +179,9 @@ class ChatbotSearchService:
             date_to=date_to,
             assignee=assignee,
             keywords=keywords,
+            summary_keywords=summary_keywords,
+            description_keywords=description_keywords,
+            label_filters=label_filters,
             original_query=message
         )
     
@@ -203,16 +227,30 @@ class ChatbotSearchService:
                 return SearchQuery(
                     task_types=data.get('task_types', local_result.task_types),
                     status=data.get('status', local_result.status),
-                    date_from=data.get('date_from') if data.get('date_from') != 'null' else None,
-                    date_to=data.get('date_to') if data.get('date_to') != 'null' else None,
+                    date_from=(data.get('date_from') if data.get('date_from') != 'null' else None) or local_result.date_from,
+                    date_to=(data.get('date_to') if data.get('date_to') != 'null' else None) or local_result.date_to,
                     assignee=data.get('assignee') if data.get('assignee') != 'null' else None,
                     keywords=local_result.keywords,
+                    summary_keywords=local_result.summary_keywords,
+                    description_keywords=local_result.description_keywords,
+                    label_filters=local_result.label_filters,
                     original_query=message
                 )
         except Exception as e:
             logging.error(f"Ошибка парсинга через ГигаЧат: {e}")
         
         return None
+
+    def _get_current_quarter_dates(self) -> Tuple[str, str]:
+        """Возвращает даты начала и конца текущего квартала."""
+        now = datetime.now()
+        quarter_start_month = ((now.month - 1) // 3) * 3 + 1
+        start_date = datetime(now.year, quarter_start_month, 1)
+        if quarter_start_month == 10:
+            end_date = datetime(now.year, 12, 31)
+        else:
+            end_date = datetime(now.year, quarter_start_month + 3, 1) - timedelta(days=1)
+        return start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')
     
     def _extract_dates(self, message: str) -> Tuple[Optional[str], Optional[str]]:
         """Извлекает даты из сообщения"""
@@ -295,20 +333,106 @@ class ChatbotSearchService:
         """Извлекает ключевые слова"""
         # Убираем стоп-слова - временные слова, предлоги и типы задач
         stop_words = {
-            # Общие слова
-            'покажи', 'найди', 'все', 'задачи', 'с', 'по', 'за', 'на', 'в', 'какие',
-            # Временные слова
+            'покажи', 'показать', 'найди', 'найти', 'все', 'задачи', 'задача', 'задачу',
+            'с', 'по', 'за', 'на', 'в', 'какие', 'какой', 'касаемую', 'которые', 'который',
             'текущий', 'текущие', 'день', 'дня', 'дней', 'сутки', 'суток',
             'вчера', 'сегодня', 'завтра', 'последний', 'последние', 'последняя',
-            'неделя', 'неделю', 'месяц', 'год', 'двое', 'трое', 'четверо',
-            'открытые', 'закрытые', 'все', 'активные', 'выполненные',
-            # Типы задач (уже используются в type_conditions)
-            'суп', 'логи', 'пси', 'внедрение', 'бд', 'инфра', 'роль',
+            'неделя', 'неделю', 'месяц', 'месяца', 'год', 'года', 'квартал', 'квартала',
+            'двое', 'трое', 'четверо', 'открытые', 'закрытые', 'активные', 'выполненные',
+            'текст', 'тексте', 'текстом', 'описание', 'описании', 'заголовок', 'заголовке',
+            'содержит', 'содержат', 'содержащие',
+            'сотрудникам', 'сотрудники', 'статистика', 'статистику', 'сататистика', 'сататистику',
+            'словом', 'слово', 'значением',
             'sup', 'logi', 'psi', 'db', 'infra', 'role',
         }
         words = re.findall(r'[\w\-]+', message.lower())
-        keywords = [w for w in words if w not in stop_words and len(w) > 3]
+        keywords = []
+        for word in words:
+            if word in stop_words or len(word) <= 2 or word.isdigit():
+                continue
+            if any(pattern.search(word) for pattern in self.TASK_TYPE_PATTERNS.values()):
+                continue
+            keywords.append(word)
         return keywords[:3]  # Максимум 3 ключевых слова
+
+    def _extract_scoped_keywords(self, message: str) -> Tuple[List[str], List[str], List[str]]:
+        """Извлекает ключевые слова для заголовка и текста."""
+        message_lower = message.lower()
+        summary_keywords: List[str] = []
+        description_keywords: List[str] = []
+
+        quoted = re.findall(r'"([^"]+)"|«([^»]+)»', message)
+        quoted_values = [item[0] or item[1] for item in quoted if item[0] or item[1]]
+
+        if any(word in message_lower for word in ['заголов', 'теме', 'summary']):
+            summary_inline = re.search(r'(?:слово|текст|значение)\s+(.+?)\s+в\s+(?:заголовк\w*|теме)', message, re.IGNORECASE)
+            summary_source = self._extract_tail_after_markers(
+                message,
+                [r'в заголовк\w*', r'в теме', r'по заголовк\w*', r'summary']
+            )
+            summary_keywords = quoted_values or self._extract_scope_terms((summary_inline.group(1) if summary_inline else '') or summary_source or message)
+        if any(word in message_lower for word in ['текст', 'описани', 'description']):
+            description_inline = re.search(r'(?:слово|текст|значение)\s+(.+?)\s+в\s+описан\w*', message, re.IGNORECASE)
+            description_source = self._extract_tail_after_markers(
+                message,
+                [r'с текст\w*', r'в тексте', r'в описан\w*', r'по текст\w*', r'description']
+            )
+            description_keywords = quoted_values or self._extract_scope_terms((description_inline.group(1) if description_inline else '') or description_source or message)
+
+        scoped_keywords = []
+        if not summary_keywords and not description_keywords and quoted_values:
+            scoped_keywords = quoted_values[:3]
+
+        return summary_keywords[:3], description_keywords[:3], scoped_keywords[:3]
+
+    def _extract_tail_after_markers(self, message: str, markers: List[str]) -> str:
+        """Возвращает хвост запроса после служебного маркера."""
+        for marker in markers:
+            match = re.search(marker + r'\s*(?:[:-]\s*)?(.+)$', message, re.IGNORECASE)
+            if match:
+                return match.group(1)
+        return ''
+
+    def _extract_scope_terms(self, text: str) -> List[str]:
+        """Очищает хвост scoped-запроса от служебных слов."""
+        cleaned = re.sub(
+            r'\b(которые|который|которая|содержат|содержит|содержащие|со словом|слово|текст|значение|нужный|нужное)\b',
+            ' ',
+            text,
+            flags=re.IGNORECASE
+        )
+        cleaned = re.sub(r'\s+', ' ', cleaned).strip(' -:,.')
+        if not cleaned:
+            return []
+        if ' ' in cleaned or len(cleaned) <= 3:
+            return [cleaned]
+        return self._extract_keywords(cleaned)
+
+    def _extract_unscoped_content_terms(self, message: str) -> List[str]:
+        """Извлекает поисковую фразу, если пользователь просит искать слово/текст без указания области."""
+        match = re.search(
+            r'(?:содерж\w*\s+(?:слово|текст|значение)|со\s+словом)\s*(?:[:-]\s*)?(.+)$',
+            message,
+            re.IGNORECASE
+        )
+        if not match:
+            return []
+        tail = match.group(1).strip(' -:,.')
+        if not tail:
+            return []
+        if ' ' in tail:
+            return [tail]
+        return [tail]
+
+    def _extract_label_filters(self, message: str) -> List[str]:
+        """Извлекает фильтры по тегам."""
+        message_lower = message.lower()
+        label_filters = []
+        if any(word in message_lower for word in ['тег', 'ярлык', 'label']):
+            for task_type, pattern in self.TASK_TYPE_PATTERNS.items():
+                if pattern.search(message_lower):
+                    label_filters.append(task_type)
+        return list(dict.fromkeys(label_filters))
     
     def build_jql(self, query: SearchQuery) -> str:
         """Строит JQL запрос из структурированного запроса, используя логику dashboard_service"""
@@ -342,7 +466,11 @@ class ChatbotSearchService:
             elif task_type == 'бд':
                 # БД: labels ИЛИ summary
                 type_conditions.append(
-                    f'(labels = "БД" OR labels = "бд" OR summary ~ "БД" OR summary ~ "бд" OR summary ~ "ПОД" OR summary ~ "под")'
+                    f'(labels = "БД" OR labels = "бд" OR summary ~ "БД" OR summary ~ "бд")'
+                )
+            elif task_type == 'инфра':
+                type_conditions.append(
+                    f'(summary ~ "ПОД" OR summary ~ "под" OR summary ~ "работы по" OR summary ~ "Работы по")'
                 )
             elif task_type == 'роль':
                 # Роль: labels ИЛИ summary
@@ -369,13 +497,36 @@ class ChatbotSearchService:
         if query.assignee:
             jql_parts.append(f'assignee ~ "{query.assignee}"')
         
-        # Ключевые слова в тексте - только если нет условий по типам задач
-        # (чтобы не фильтровать лишний раз результаты по тегам)
-        if query.keywords and not query.task_types:
-            keyword_conditions = [f'text ~ "{kw}"' for kw in query.keywords]
-            if len(keyword_conditions) <= 2:  # Не более 2 ключевых слов
-                jql_parts.append(f'({" OR ".join(keyword_conditions)})')
-        
+        if query.label_filters:
+            label_conditions = []
+            for task_type in query.label_filters:
+                if task_type == 'суп':
+                    label_conditions.extend(['labels = "СУП"', 'labels = "суп"', 'labels = "Суп"'])
+                elif task_type == 'логи':
+                    label_conditions.extend(['labels = "Логи"', 'labels = "логи"', 'labels = "ЛОГИ"'])
+                elif task_type == 'пси':
+                    label_conditions.extend(['labels = "ПСИ"', 'labels = "пси"', 'labels = "Пси"'])
+                elif task_type == 'внедрение':
+                    label_conditions.extend(['labels = "Внедрение"', 'labels = "внедрение"'])
+                elif task_type == 'бд':
+                    label_conditions.extend(['labels = "БД"', 'labels = "бд"'])
+                elif task_type == 'роль':
+                    label_conditions.extend(['labels = "Роль"', 'labels = "роль"'])
+            if label_conditions:
+                jql_parts.append(f'({" OR ".join(label_conditions)})')
+
+        if query.summary_keywords:
+            summary_conditions = [f'summary ~ "{kw}"' for kw in query.summary_keywords]
+            jql_parts.append(f'({" AND ".join(summary_conditions)})')
+
+        if query.description_keywords:
+            description_conditions = [f'description ~ "{kw}"' for kw in query.description_keywords]
+            jql_parts.append(f'({" AND ".join(description_conditions)})')
+
+        if query.keywords:
+            keyword_conditions = [f'(summary ~ "{kw}" OR description ~ "{kw}" OR text ~ "{kw}")' for kw in query.keywords]
+            jql_parts.append(f'({" AND ".join(keyword_conditions)})')
+
         return ' AND '.join(jql_parts) + ' ORDER BY created DESC'
     
     def execute_search(self, query: SearchQuery) -> List[Dict]:
@@ -391,8 +542,8 @@ class ChatbotSearchService:
             headers = {"Authorization": f"Bearer {token}"}
             params = {
                 'jql': jql,
-                'maxResults': 50,
-                'fields': 'key,summary,created,updated,status,assignee,reporter,labels,priority,issuetype'
+                'maxResults': 200,
+                'fields': 'key,summary,created,updated,status,assignee,reporter,labels,priority,issuetype,description,resolutiondate'
             }
             
             response = requests.get(url, headers=headers, params=params, verify=False, timeout=30)
@@ -404,7 +555,12 @@ class ChatbotSearchService:
             
             # Трансформируем
             tasks = []
+            seen_keys = set()
             for issue in issues:
+                if issue['key'] in seen_keys:
+                    continue
+                seen_keys.add(issue['key'])
+
                 assignee = issue['fields'].get('assignee')
                 
                 # Определяем типы задачи
@@ -422,6 +578,8 @@ class ChatbotSearchService:
                     'updated': issue['fields'].get('updated', ''),
                     'priority': issue['fields'].get('priority', {}).get('name', ''),
                     'labels': issue['fields'].get('labels', []),
+                    'description': issue['fields'].get('description', '') or '',
+                    'resolutiondate': issue['fields'].get('resolutiondate', ''),
                     'has_sup_tag': has_sup,
                     'has_logi_tag': has_logi,
                     'is_psi_task': has_psi,
@@ -458,23 +616,29 @@ class ChatbotSearchService:
         text += f"📋 {types_label} задачи ({status_label})\n"
         text += f"📅 {period_desc}\n"
         text += f"📊 Найдено: {len(tasks)}\n\n"
-        
+
         # Группируем по статусу
         open_tasks = [t for t in tasks if t['status'] not in ['Done', 'Closed', 'Resolved']]
         closed_tasks = [t for t in tasks if t['status'] in ['Done', 'Closed', 'Resolved']]
-        
+
         if open_tasks:
-            text += f"🟡 *В работе ({len(open_tasks)}):*\n\n"
-            for i, task in enumerate(open_tasks, 1):
-                text += f"{i}. [{task['key']}]({task['url']})\n"
-                text += f"   {self._escape_markdown(task['summary'][:80])}{'...' if len(task['summary']) > 80 else ''}\n"
-                text += f"   👤 {self._escape_markdown(task['assignee_name'][:30])}\n\n"
-        
+            text += f"🟡 *Открытые ({len(open_tasks)}):*\n"
+            for task in open_tasks[:10]:
+                labels = ', '.join(task.get('labels', [])[:3]) or 'без тегов'
+                text += f"• [{task['key']}]({task['url']}) - {self._escape_markdown(task['summary'][:70])}{'...' if len(task['summary']) > 70 else ''}\n"
+                text += f"  👤 {self._escape_markdown(task['assignee_name'][:30])} | 🏷️ {self._escape_markdown(labels)}\n"
+            text += "\n"
+
         if closed_tasks:
-            text += f"✅ *Закрытые ({len(closed_tasks)}):*\n\n"
-            for i, task in enumerate(closed_tasks, 1):
-                text += f"{i}. [{task['key']}]({task['url']}) - {task['status']}\n"
-        
+            text += f"✅ *Закрытые ({len(closed_tasks)}):*\n"
+            for task in closed_tasks[:10]:
+                labels = ', '.join(task.get('labels', [])[:3]) or 'без тегов'
+                text += f"• [{task['key']}]({task['url']}) - {self._escape_markdown(task['summary'][:70])}{'...' if len(task['summary']) > 70 else ''}\n"
+                text += f"  👤 {self._escape_markdown(task['assignee_name'][:30])} | 🏷️ {self._escape_markdown(labels)}\n"
+
+        if len(tasks) > 10:
+            text += f"\n_Показаны первые {min(len(tasks), 20)} задач из {len(tasks)}._"
+
         return text
     
     def _escape_markdown(self, text: str) -> str:
