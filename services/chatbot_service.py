@@ -242,9 +242,9 @@ class DashboardChatBot:
 
         if is_work_request and local_intent == IntentType.UNKNOWN:
             suggestions.extend([
-                "Показать все задачи",
                 "Сгенерировать статистику",
-                "Сводка для передачи смены",
+                "Найти задачи с тегом логи",
+                "Показать что я умею?",
             ])
 
         suggestions = [item for item in suggestions if item]
@@ -303,7 +303,7 @@ class DashboardChatBot:
             return {
                 'text': 'Уточните, что именно нужно сделать. Можно написать запрос свободно, я попробую понять снова.',
                 'intent': 'clarification',
-                'suggestions': ['Показать все задачи', 'Сгенерировать статистику', 'Сводка для передачи смены'],
+                'suggestions': ['Сгенерировать статистику', 'Найти задачи с тегом логи', 'Показать что я умею?'],
                 'metadata': {'type': 'clarification_retry'}
             }
 
@@ -447,15 +447,7 @@ class DashboardChatBot:
     def _handle_greeting(self) -> Dict:
         """Обрабатывает приветствие"""
         return {
-            'text': (
-                "Я помощник по задачам дежурной смены.\n\n"
-                "Могу:\n"
-                "• показать задачи за период;\n"
-                "• найти задачи по словам, тегам, заголовку или тексту;\n"
-                "• сформировать статистику в HTML;\n"
-                "• подготовить сводку для передачи смены.\n\n"
-                "Напишите `показать что я умею?`, чтобы увидеть варианты запросов."
-            ),
+            'text': self._get_welcome_text(),
             'metadata': {'type': 'greeting'}
         }
 
@@ -463,16 +455,16 @@ class DashboardChatBot:
         """Показывает все возможности бота"""
         return {
             'text': (
-                "*Что умеет бот*\n\n"
-                "1. Показать задачи.\n"
-                "Примеры: `покажи все задачи`, `покажи закрытые задачи за неделю`, `покажи задачи по логам`.\n\n"
-                "2. Найти конкретные задачи.\n"
-                "Примеры: `найди задачи с тегом логи`, `найди задачу с текстом \"oracle\"`, `найди задачу со словом \"суп\" в заголовке`.\n\n"
-                "3. Сгенерировать статистику.\n"
-                "Примеры: `сгенерируй статистику`, `статистика за 1 квартал 2026`, `статистика за 14 дней`.\n\n"
-                "4. Сделать сводку передачи смены.\n"
-                "Примеры: `сводка для дневной смены`, `сводка для вечерней смены`, `передача смены за неделю`.\n\n"
-                "Если период не указан, использую текущий квартал."
+                "*Что умеет AI-помощник*\n\n"
+                "1. Показать задачи по блокам дашборда.\n"
+                "Примеры: `покажи все задачи`, `покажи задачи по логам`, `покажи задачи по инфре за 2 недели`.\n\n"
+                "2. Найти нужные задачи.\n"
+                "Примеры: `найди задачи с тегом логи`, `найди задачу с текстом \"oracle\"`, `найди задачи со словом \"БД\" в заголовке`.\n\n"
+                "3. Сформировать статистику по сотрудникам в HTML.\n"
+                "Примеры: `сгенерируй статистику`, `статистика за неделю`, `статистика за 1 квартал 2026`.\n\n"
+                "4. Подготовить сводку для передачи смены.\n"
+                "Примеры: `сводка для дневной смены`, `сводка для вечерней смены`.\n\n"
+                "Если период не указан, используется текущий квартал."
             ),
             'metadata': {'type': 'capabilities'}
         }
@@ -678,17 +670,19 @@ class DashboardChatBot:
             closed_query = query
             closed_query.status = 'closed'
             closed_query.task_types = ['суп', 'логи', 'бд', 'инфра', 'роль', 'пси', 'внедрение']
+            closed_query.keywords = []
+            closed_query.summary_keywords = []
+            closed_query.description_keywords = []
+            closed_query.label_filters = []
             closed_tasks = self.search_service.execute_search(closed_query)
 
             if is_evening_shift:
                 evening_tasks = []
                 now = datetime.now().astimezone()
-                if now.hour < 1:
-                    evening_window_end = now.replace(minute=0, second=0, microsecond=0)
-                    evening_window_start = (evening_window_end - timedelta(days=1)).replace(hour=21, minute=0, second=0, microsecond=0)
-                else:
-                    evening_window_start = now.replace(hour=21, minute=0, second=0, microsecond=0)
-                    evening_window_end = (evening_window_start + timedelta(hours=4))
+                evening_window_start, evening_window_end = self._get_evening_shift_window(now)
+                closed_query.date_from = evening_window_start.strftime('%Y-%m-%d')
+                closed_query.date_to = evening_window_end.strftime('%Y-%m-%d')
+                closed_tasks = self.search_service.execute_search(closed_query, date_field='resolutiondate')
 
                 for task in closed_tasks:
                     closed_at = task.get('resolutiondate') or task.get('updated', '')
@@ -716,25 +710,7 @@ class DashboardChatBot:
                     text += "✅ Закрытых задач в окно вечерней смены не найдено."
 
             else:
-                text = "☀️ *Дневная передача смены*\n"
-                text += f"Период: {query.date_from} - {query.date_to}\n"
-                text += f"✅ Закрыто: {len(closed_tasks)}\n"
-                text += f"🔄 Открыто: {len(all_open_tasks)}\n\n"
-
-                if closed_tasks:
-                    text += "*Закрытые:*\n"
-                    for task in closed_tasks[:5]:
-                        text += f"• [{task['key']}]({task.get('url', '')}) - {task['summary'][:65]}{'...' if len(task['summary']) > 65 else ''}\n"
-                else:
-                    text += "*Закрытые:*\n• Нет закрытых задач\n"
-
-                if all_open_tasks:
-                    text += "\n*Остались открытыми:*\n"
-                    for task in all_open_tasks[:5]:
-                        text += f"• [{task['key']}]({task.get('url', '')}) - {task['summary'][:65]}{'...' if len(task['summary']) > 65 else ''}\n"
-                        text += f"  👤 {task['assignee_name']} | 📅 {task.get('days_in_progress', 0)} дн.\n"
-                else:
-                    text += "\n*Остались открытыми:*\n• Нет открытых задач\n"
+                text = self._format_day_shift_handover(data)
 
             return {
                 'text': text,
@@ -877,6 +853,64 @@ class DashboardChatBot:
             seen.add(key)
             unique_tasks.append(task)
         return unique_tasks
+
+    def _get_welcome_text(self) -> str:
+        return (
+            "*AI-помощник дежурного*\n\n"
+            "Помогаю быстро разобраться с задачами на рабочем столе.\n\n"
+            "Могу:\n"
+            "• показать задачи по блокам дашборда;\n"
+            "• найти задачи по тегу, заголовку или описанию;\n"
+            "• сформировать статистику по сотрудникам в HTML;\n"
+            "• подготовить дневную или вечернюю сводку смены.\n\n"
+            "Если не указать период, по умолчанию беру текущий квартал."
+        )
+
+    def _format_day_shift_handover(self, dashboard_context: Dict) -> str:
+        sections = [
+            ('СУП', dashboard_context.get('sup_tasks', [])),
+            ('Логи и операции', dashboard_context.get('logi_tasks', [])),
+            ('Внедрение ПРОМ', dashboard_context.get('vnedrenie_prom_tasks', [])),
+            ('Внедрение ПСИ', dashboard_context.get('vnedrenie_psi_tasks', [])),
+        ]
+
+        total_open = sum(len(tasks) for _, tasks in sections)
+        text = "☀️ *Дневная передача смены*\n"
+        text += f"Открытых задач по блокам дашборда: {total_open}\n\n"
+
+        non_empty_sections = 0
+        for title, tasks in sections:
+            if not tasks:
+                continue
+            non_empty_sections += 1
+            text += f"*{title}* ({len(tasks)})\n"
+            for task in tasks[:4]:
+                summary = task['summary'][:62] + ('...' if len(task['summary']) > 62 else '')
+                text += f"• [{task['key']}]({task.get('url', '')}) - {summary}\n"
+                text += f"  👤 {task['assignee_name']} | ⏳ {task.get('days_in_progress', 0)} дн.\n"
+            if len(tasks) > 4:
+                text += f"• ... еще {len(tasks) - 4}\n"
+            text += "\n"
+
+        if non_empty_sections == 0:
+            text += "Открытых задач в блоках дашборда нет."
+
+        return text.strip()
+
+    def _get_evening_shift_window(self, now: datetime) -> Tuple[datetime, datetime]:
+        if now.hour >= 21:
+            window_start = now.replace(hour=21, minute=0, second=0, microsecond=0)
+            window_end = (window_start + timedelta(hours=4))
+            return window_start, min(now, window_end)
+
+        if now.hour < 1:
+            window_end = now.replace(hour=1, minute=0, second=0, microsecond=0)
+            window_start = (window_end - timedelta(days=1)).replace(hour=21, minute=0, second=0, microsecond=0)
+            return window_start, min(now, window_end)
+
+        window_end = now.replace(hour=1, minute=0, second=0, microsecond=0)
+        window_start = (window_end - timedelta(days=1)).replace(hour=21, minute=0, second=0, microsecond=0)
+        return window_start, window_end
     
     def _handle_specific_task(self, params: Dict, dashboard_context: Dict = None) -> Dict:
         """Обрабатывает запрос о конкретной задаче"""

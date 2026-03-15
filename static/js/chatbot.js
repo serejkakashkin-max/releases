@@ -52,7 +52,10 @@ class DashboardChatBot {
             <div class="chat-header">
                 <div class="chat-title">
                     <i class="bi bi-robot"></i>
-                    <span>Помощник по задачам</span>
+                    <div class="chat-title-block">
+                        <span class="chat-title-label">AI-помощник дежурного</span>
+                        <span class="chat-title-subtitle">Задачи, поиск, статистика, смена</span>
+                    </div>
                 </div>
                 <div class="chat-actions">
                     <button class="chat-action-btn" id="chat-expand" title="Увеличить окно">
@@ -72,7 +75,6 @@ class DashboardChatBot {
                 <textarea 
                     class="chat-input" 
                     id="chat-input" 
-                    placeholder="Например: покажи все задачи или сгенерируй статистику"
                     rows="1"
                 ></textarea>
                 <button class="chat-send-btn" id="chat-send">
@@ -317,7 +319,7 @@ class DashboardChatBot {
         
         this.suggestionsContainer.innerHTML = suggestions.map(suggestion => `
             <button class="chat-suggestion-btn" data-text="${suggestion}">
-                ${suggestion}
+                <span>${suggestion}</span>
             </button>
         `).join('');
         
@@ -373,15 +375,7 @@ class DashboardChatBot {
                 }
             } else {
                 // Приветственное сообщение
-                this.addMessage('assistant', 
-                    'Я помощник по задачам дежурной смены.\n\n' +
-                    'Могу:\n' +
-                    '• показать задачи за период\n' +
-                    '• найти задачи по словам, тегам, заголовку или тексту\n' +
-                    '• сформировать статистику в HTML\n' +
-                    '• сделать сводку для передачи смены\n\n' +
-                    'Если период не указан, использую текущий квартал.'
-                );
+                this.addMessage('assistant', this.getWelcomeMessage());
                 
                 // Загружаем начальные подсказки
                 this.loadSuggestions();
@@ -404,12 +398,25 @@ class DashboardChatBot {
                 this.messages = [];
                 
                 // Приветственное сообщение
-                this.addMessage('assistant', 'История очищена. Напишите `показать что я умею?` или сразу сформулируйте запрос.');
+                this.addMessage('assistant', this.getWelcomeMessage());
                 this.loadSuggestions();
             }
         } catch (error) {
             console.error('Error clearing history:', error);
         }
+    }
+
+    getWelcomeMessage() {
+        return (
+            '*AI-помощник дежурного*\n\n' +
+            'Помогаю быстро работать с задачами на рабочем столе.\n\n' +
+            'Могу:\n' +
+            '• показать задачи по блокам дашборда\n' +
+            '• найти задачи по тегу, заголовку или описанию\n' +
+            '• сформировать статистику по сотрудникам в HTML\n' +
+            '• подготовить дневную или вечернюю сводку смены\n\n' +
+            'Если период не указан, по умолчанию использую текущий квартал.'
+        );
     }
     
     setLoading(loading) {

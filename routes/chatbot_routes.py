@@ -117,28 +117,26 @@ def get_suggestions():
         
         # Базовые подсказки
         default_suggestions = [
-            {"text": "Показать что я умею?", "action": "capabilities"},
-            {"text": "Показать все задачи", "action": "search"},
+            {"text": "Что я умею", "action": "capabilities"},
             {"text": "Сгенерировать статистику", "action": "assignee_stats"},
-            {"text": "Сводка для дневной смены", "action": "handover_day"},
-            {"text": "Сводка для вечерней смены", "action": "handover_evening"},
+            {"text": "Найти задачи с тегом логи", "action": "search_logi_tag"},
+            {"text": "Найти задачи в заголовке", "action": "search_summary"},
         ]
         
         # Контекстные подсказки по типу намерения
         contextual_suggestions = {
             IntentType.SEARCH_TASKS.value: [
-                {"text": "Показать все задачи", "action": "search"},
                 {"text": "Найти задачи с тегом логи", "action": "search_logi_tag"},
                 {"text": "Найти задачи в заголовке", "action": "search_summary"},
+                {"text": "Что я умею", "action": "capabilities"},
             ],
             IntentType.GENERATE_REPORT.value: [
                 {"text": "Сгенерировать статистику", "action": "assignee_stats"},
-                {"text": "Сводка для дневной смены", "action": "handover_day"},
-                {"text": "Сводка для вечерней смены", "action": "handover_evening"},
+                {"text": "Что я умею", "action": "capabilities"},
             ],
             IntentType.SHOW_CAPABILITIES.value: [
-                {"text": "Показать все задачи", "action": "search"},
                 {"text": "Найти задачи с тегом логи", "action": "search_logi_tag"},
+                {"text": "Найти задачи в заголовке", "action": "search_summary"},
                 {"text": "Сгенерировать статистику", "action": "assignee_stats"},
             ],
         }

@@ -25,8 +25,15 @@ TAG_PSI_VARIANTS = ["ПСИ", "пси", "Пси"]
 # Паттерны для поиска в тексте (регистронезависимые)
 SUP_PATTERN = re.compile(r'СУП', re.IGNORECASE)
 SUP_VALUE_PATTERN = re.compile(r'значение\s+суп', re.IGNORECASE)  # "значение СУП", "значение супа" и т.д.
-LOGI_PATTERN = re.compile(r'логи', re.IGNORECASE)
-LOGI_UNLOAD_PATTERN = re.compile(r'выгрузка\s+логов|выгрузить\s+логи', re.IGNORECASE)  # "Выгрузка логов", "Выгрузить логи" и т.д.
+LOGI_PATTERN = re.compile(r'(?<![а-яё])лог(?:и|а|ов|у|ом)?(?![а-яё])', re.IGNORECASE)
+LOGI_UNLOAD_PATTERN = re.compile(
+    r'выгруз(?:ка|ку|ить)\s+(?:текущ(?:ий|его)?\s+)?лог(?:и|а|ов)?|запрос\s+лог(?:а|ов)?',
+    re.IGNORECASE
+)  # "Выгрузить лог", "Выгрузка логов", "Запрос лога" и т.д.
+LOGI_CONTEXT_PATTERN = re.compile(
+    r'classname|файл\s+с\s+лог(?:ами|ом)?|error\.log|service_http_proxy|логи?\s+со\s+стенда',
+    re.IGNORECASE
+)
 
 # Паттерны для раскаток ПСИ (текст в теме)
 PSI_PATTERNS = [
@@ -39,8 +46,31 @@ PSI_PATTERN = re.compile(r'(' + '|'.join(map(re.escape, PSI_PATTERNS)) + r')', r
 
 # Паттерны для определения типов задач (только по тексту, без тегов)
 DB_PATTERNS = ["запрос к БД", "выгрузку из БД", "БД"]
-INFRA_PATTERNS = ["ПОД", "перезагрузить под", "рестартануть под", "Работы по", "работы по"]
-ROLE_PATTERNS = ["сменить роль", "добавить роль"]
+INFRA_PATTERNS = [
+    "ПОД",
+    "перезагрузить под",
+    "рестартануть под",
+    "Работы по",
+    "работы по",
+    "неймспейс",
+    "namespace",
+    "контейнер",
+    "container",
+    "pod",
+    "пода",
+    "поду",
+    "поде",
+]
+ROLE_PATTERNS = [
+    "сменить роль",
+    "добавить роль",
+    "изменить роль",
+    "Изменить роль",
+    "роль",
+    "Роль",
+    "роли",
+    "Роли",
+]
 
 # Компилированные регекс-паттерны для производительности
 DB_PATTERN = re.compile(r'(' + '|'.join(map(re.escape, DB_PATTERNS)) + r')', re.IGNORECASE)
@@ -55,6 +85,56 @@ def check_tag_in_labels(labels, tag_variants):
     """Проверяет наличие тега в списке (регистронезависимо)"""
     labels_lower = [l.lower() for l in labels]
     return any(variant.lower() in labels_lower for variant in tag_variants)
+
+def get_issue_text(summary, description=''):
+    """Объединяет заголовок и описание задачи для поиска по тексту."""
+    return f"{summary or ''}\n{description or ''}"
+
+def contains_any(text, keywords):
+    """Проверяет наличие любого ключевого слова в тексте."""
+    text_lower = (text or '').lower()
+    return any(keyword in text_lower for keyword in keywords)
+
+def detect_logi_text(summary, description=''):
+    """Определяет логовые задачи по заголовку и описанию."""
+    summary = summary or ''
+    description = description or ''
+    infra_priority_keywords = ['под', 'пода', 'поду', 'поде', 'pod']
+
+    has_infra_priority = contains_any(summary, infra_priority_keywords)
+    if has_infra_priority:
+        return False, None
+
+    has_logi_in_summary = (
+        bool(LOGI_PATTERN.search(summary)) or
+        bool(LOGI_UNLOAD_PATTERN.search(summary)) or
+        bool(LOGI_CONTEXT_PATTERN.search(summary))
+    )
+    has_logi_in_description = (
+        bool(LOGI_PATTERN.search(description)) or
+        bool(LOGI_UNLOAD_PATTERN.search(description)) or
+        bool(LOGI_CONTEXT_PATTERN.search(description))
+    )
+    has_logi_in_text = has_logi_in_summary or has_logi_in_description
+
+    if not has_logi_in_text:
+        return False, None
+
+    if bool(LOGI_UNLOAD_PATTERN.search(summary)):
+        return True, 'unload_phrase'
+    if has_logi_in_summary:
+        return True, 'summary'
+    if bool(LOGI_UNLOAD_PATTERN.search(description)):
+        return True, 'unload_phrase'
+    return True, 'description'
+
+def detect_infra_text(summary, description=''):
+    """Определяет инфраструктурные задачи по слову "под" в заголовке."""
+    infra_keywords = ['под', 'пода', 'поду', 'поде', 'pod']
+
+    if contains_any(summary, infra_keywords):
+        return True, 'summary'
+    return False, None
 
 def fetch_jira_tasks():
     """
@@ -87,11 +167,28 @@ def fetch_jira_tasks():
     )
     
     # === ЗАПРОС 2: Логи задачи (по всему проекту, за 30 дней) ===
+    logi_conditions = [
+        'labels = "Логи"',
+        'labels = "логи"',
+        'labels = "ЛОГИ"',
+        'summary ~ "Логи"',
+        'summary ~ "логи"',
+        'summary ~ "лог"',
+        'summary ~ "лога"',
+        'summary ~ "Выгрузка логов"',
+        'summary ~ "Выгрузить лог"',
+        'summary ~ "Запрос лога"',
+        'summary ~ "classname"',
+        'description ~ "лог"',
+        'description ~ "логи"',
+        'description ~ "classname"',
+        'description ~ "файл с логами"',
+        'description ~ "error.log"',
+        'description ~ "service_http_proxy"',
+    ]
     jql_logi = (
         f'project = OPLOT AND '
-        f'(labels = "Логи" OR labels = "логи" OR labels = "ЛОГИ" OR '
-        f'summary ~ "Логи" OR summary ~ "логи" OR '
-        f'summary ~ "Выгрузка логов" OR summary ~ "Выгрузить логи") AND '
+        f'({" OR ".join(logi_conditions)}) AND '
         f'created >= "{start_date}" AND '
         f'status NOT IN ({statuses_filter}) '
         f'ORDER BY priority DESC, created DESC'
@@ -106,14 +203,25 @@ def fetch_jira_tasks():
     )
     
     # === ЗАПРОС 4: Задачи с операциями (БД, Инфра, Роли) по всему проекту ===
-    # Ищем по тегу БД или ключевым словам в summary (НЕ в description)
+    # Для инфры ориентируемся на слово "под" в заголовке
+    operation_conditions = [
+        'labels = "БД"',
+        'labels = "бд"',
+        'summary ~ "БД"',
+        'summary ~ "бд"',
+        'summary ~ "ПОД"',
+        'summary ~ "под"',
+        'summary ~ "роль"',
+        'summary ~ "Роль"',
+        'summary ~ "роли"',
+        'summary ~ "Роли"',
+        'summary ~ "изменить роль"',
+        'summary ~ "Изменить роль"',
+        'summary ~ "pod"',
+    ]
     jql_operations = (
         f'project = OPLOT AND '
-        f'(labels = "БД" OR labels = "бд" OR '
-        f'summary ~ "БД" OR summary ~ "бд" OR '
-        f'summary ~ "ПОД" OR summary ~ "под" OR '
-        f'summary ~ "работы по" OR summary ~ "Работы по" OR '
-        f'summary ~ "роль" OR summary ~ "Роль") AND '
+        f'({" OR ".join(operation_conditions)}) AND '
         f'created >= "{start_date}" AND '
         f'status NOT IN ({statuses_filter}) '
         f'ORDER BY priority DESC, created DESC'
@@ -188,15 +296,13 @@ def fetch_jira_tasks():
             
             # Проверяем Логи (регистронезависимо)
             has_logi_tag = check_tag_in_labels(labels, TAG_LOGI_VARIANTS)
-            has_logi_in_summary = bool(LOGI_PATTERN.search(summary)) or bool(LOGI_UNLOAD_PATTERN.search(summary))
-            issue_data['has_logi_tag'] = has_logi_tag or has_logi_in_summary
+            has_logi_in_text, logi_detected_by = detect_logi_text(summary, issue['fields'].get('description', ''))
+            issue_data['has_logi_tag'] = has_logi_tag or has_logi_in_text
             if issue_data['has_logi_tag']:
                 if has_logi_tag:
                     issue_data['logi_detected_by'] = 'tag'
-                elif bool(LOGI_UNLOAD_PATTERN.search(summary)):
-                    issue_data['logi_detected_by'] = 'unload_phrase'
                 else:
-                    issue_data['logi_detected_by'] = 'summary'
+                    issue_data['logi_detected_by'] = logi_detected_by
             
             # Проверяем Внедрение
             issue_data['has_vnedrenie_tag'] = check_tag_in_labels(labels, TAG_VNEDRENIE_VARIANTS)
@@ -212,14 +318,14 @@ def fetch_jira_tasks():
             summary = issue['fields'].get('summary', '')
             
             has_logi_tag = check_tag_in_labels(labels, TAG_LOGI_VARIANTS)
-            has_logi_in_summary = bool(LOGI_PATTERN.search(summary)) or bool(LOGI_UNLOAD_PATTERN.search(summary))
+            has_logi_in_text, logi_detected_by = detect_logi_text(summary, issue['fields'].get('description', ''))
             
             # Если задача уже была в СУП, обновляем флаги
             if key in processed_keys:
                 for existing in all_issues:
                     if existing['key'] == key:
                         existing['has_logi_tag'] = True
-                        existing['logi_detected_by'] = 'tag' if has_logi_tag else 'summary'
+                        existing['logi_detected_by'] = 'tag' if has_logi_tag else logi_detected_by
                         logging.debug(f"Updated existing task {key} with LOGI flag")
                         break
             else:
@@ -232,13 +338,11 @@ def fetch_jira_tasks():
                 has_sup_value_in_summary = bool(SUP_VALUE_PATTERN.search(summary))
                 
                 issue_data['has_sup_tag'] = has_sup_tag or has_sup_in_summary or has_sup_value_in_summary
-                issue_data['has_logi_tag'] = has_logi_tag or has_logi_in_summary
+                issue_data['has_logi_tag'] = has_logi_tag or has_logi_in_text
                 if has_logi_tag:
                     issue_data['logi_detected_by'] = 'tag'
-                elif bool(LOGI_UNLOAD_PATTERN.search(summary)):
-                    issue_data['logi_detected_by'] = 'unload_phrase'
                 else:
-                    issue_data['logi_detected_by'] = 'summary'
+                    issue_data['logi_detected_by'] = logi_detected_by
                 issue_data['has_vnedrenie_tag'] = check_tag_in_labels(labels, TAG_VNEDRENIE_VARIANTS)
                 
                 logging.debug(f"New LOGI task {key}: SUP={issue_data['has_sup_tag']}, LOGI={issue_data['has_logi_tag']}")
@@ -254,7 +358,7 @@ def fetch_jira_tasks():
             has_sup_tag = check_tag_in_labels(labels, TAG_SUP_VARIANTS)
             has_sup_in_summary = bool(SUP_PATTERN.search(summary))
             has_logi_tag = check_tag_in_labels(labels, TAG_LOGI_VARIANTS)
-            has_logi_in_summary = bool(LOGI_PATTERN.search(summary)) or bool(LOGI_UNLOAD_PATTERN.search(summary))
+            has_logi_in_text, _ = detect_logi_text(summary, issue['fields'].get('description', ''))
             
             # Если задача уже есть, обновляем флаги
             if key in processed_keys:
@@ -262,7 +366,7 @@ def fetch_jira_tasks():
                     if existing['key'] == key:
                         has_sup_value_in_summary = bool(SUP_VALUE_PATTERN.search(summary))
                         existing['has_sup_tag'] = existing.get('has_sup_tag') or has_sup_tag or has_sup_in_summary or has_sup_value_in_summary
-                        existing['has_logi_tag'] = existing.get('has_logi_tag') or has_logi_tag or has_logi_in_summary
+                        existing['has_logi_tag'] = existing.get('has_logi_tag') or has_logi_tag or has_logi_in_text
                         existing['has_vnedrenie_tag'] = existing.get('has_vnedrenie_tag') or check_tag_in_labels(labels, TAG_VNEDRENIE_VARIANTS)
                         break
             else:
@@ -272,7 +376,7 @@ def fetch_jira_tasks():
                 
                 has_sup_value_in_summary = bool(SUP_VALUE_PATTERN.search(summary))
                 issue_data['has_sup_tag'] = has_sup_tag or has_sup_in_summary or has_sup_value_in_summary
-                issue_data['has_logi_tag'] = has_logi_tag or has_logi_in_summary
+                issue_data['has_logi_tag'] = has_logi_tag or has_logi_in_text
                 issue_data['has_vnedrenie_tag'] = check_tag_in_labels(labels, TAG_VNEDRENIE_VARIANTS)
                 
                 all_issues.append(issue_data)
@@ -296,10 +400,10 @@ def fetch_jira_tasks():
             has_sup_in_summary = bool(SUP_PATTERN.search(summary))
             has_sup_value_in_summary = bool(SUP_VALUE_PATTERN.search(summary))
             has_logi_tag = check_tag_in_labels(labels, TAG_LOGI_VARIANTS)
-            has_logi_in_summary = bool(LOGI_PATTERN.search(summary)) or bool(LOGI_UNLOAD_PATTERN.search(summary))
+            has_logi_in_text, _ = detect_logi_text(summary, issue['fields'].get('description', ''))
             
             issue_data['has_sup_tag'] = has_sup_tag or has_sup_in_summary or has_sup_value_in_summary
-            issue_data['has_logi_tag'] = has_logi_tag or has_logi_in_summary
+            issue_data['has_logi_tag'] = has_logi_tag or has_logi_in_text
             issue_data['has_vnedrenie_tag'] = check_tag_in_labels(labels, TAG_VNEDRENIE_VARIANTS)
             
             all_issues.append(issue_data)
@@ -330,12 +434,12 @@ def fetch_jira_tasks():
                 has_sup_in_summary = bool(SUP_PATTERN.search(summary))
                 has_sup_value_in_summary = bool(SUP_VALUE_PATTERN.search(summary))
                 has_logi_tag = check_tag_in_labels(labels, TAG_LOGI_VARIANTS)
-                has_logi_in_summary = bool(LOGI_PATTERN.search(summary)) or bool(LOGI_UNLOAD_PATTERN.search(summary))
+                has_logi_in_text, _ = detect_logi_text(summary, issue['fields'].get('description', ''))
                 has_psi_tag = check_tag_in_labels(labels, TAG_PSI_VARIANTS)
                 has_psi_text = bool(PSI_PATTERN.search(summary))
                 
                 issue_data['has_sup_tag'] = has_sup_tag or has_sup_in_summary or has_sup_value_in_summary
-                issue_data['has_logi_tag'] = has_logi_tag or has_logi_in_summary
+                issue_data['has_logi_tag'] = has_logi_tag or has_logi_in_text
                 issue_data['has_vnedrenie_tag'] = check_tag_in_labels(labels, TAG_VNEDRENIE_VARIANTS)
                 issue_data['has_psi_tag'] = has_psi_tag
                 issue_data['is_psi_task'] = has_psi_tag or has_psi_text
@@ -408,6 +512,7 @@ def detect_task_types(issue):
     """
     labels = issue['fields'].get('labels', [])
     summary = issue['fields'].get('summary', '')
+    description = issue['fields'].get('description', '') or ''
     
     # Проверяем теги
     has_logi_tag = check_tag_in_labels(labels, TAG_LOGI_VARIANTS)
@@ -419,7 +524,7 @@ def detect_task_types(issue):
     
     # Проверяем текст только в summary (не в description)
     # Логи - только в summary
-    has_logi_text = bool(LOGI_PATTERN.search(summary))
+    has_logi_text, logi_detected_by = detect_logi_text(summary, description)
     has_logi = has_logi_tag or has_logi_text
     
     # БД - только по тегу или слову "БД" в заголовке
@@ -427,7 +532,7 @@ def detect_task_types(issue):
     has_db = has_db_tag or has_db_in_summary
     
     # Инфра / Рестарт - в summary
-    has_infra_text = bool(INFRA_PATTERN.search(summary))
+    has_infra_text, infra_detected_by = detect_infra_text(summary, description)
     
     # Роли - по тегу или тексту summary
     has_role_text = bool(ROLE_PATTERN.search(summary))
@@ -445,10 +550,10 @@ def detect_task_types(issue):
         'has_psi_tag': has_psi_tag,  # Только по тегу ПСИ
         'is_psi_task': is_psi_task,   # По тегу или тексту
         # Дополнительно: источник определения
-        'logi_detected_by': 'tag' if has_logi_tag else ('summary' if has_logi_text else None),
+        'logi_detected_by': 'tag' if has_logi_tag else logi_detected_by,
         'role_detected_by': 'tag' if has_role_tag else ('summary' if has_role_text else None),
         'db_detected_by': 'tag' if has_db_tag else ('summary' if has_db_in_summary else None),
-        'infra_detected_by': 'summary' if has_infra_text else None,
+        'infra_detected_by': infra_detected_by,
         'psi_detected_by': 'tag' if has_psi_tag else ('summary' if has_psi_text else None),
     }
 
