@@ -13,7 +13,7 @@ from typing import Dict, List, Any
 from collections import defaultdict
 
 import requests
-from config import DASHBOARD_ASSIGNEES, DASHBOARD_DAYS_BACK
+from config import DASHBOARD_ASSIGNEES, DASHBOARD_DAYS_BACK, get_dashboard_assignee_display_name
 from services.dashboard_service import get_jira_domain_and_token
 
 # Папка для хранения отчётов
@@ -155,7 +155,7 @@ class ReportService:
                     'key': issue['key'],
                     'summary': issue['fields'].get('summary', ''),
                     'status': issue['fields'].get('status', {}).get('name', ''),
-                    'assignee_name': assignee.get('displayName', 'Не назначен') if assignee else 'Не назначен',
+                    'assignee_name': get_dashboard_assignee_display_name(assignee.get('displayName', '?? ????????') if assignee else '?? ????????'),
                     'assignee_email': assignee.get('emailAddress', '') if assignee else '',
                     'created': issue['fields'].get('created', ''),
                     'updated': issue['fields'].get('updated', ''),

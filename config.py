@@ -2,6 +2,7 @@ import json
 import logging
 import sys
 from pathlib import Path
+
 from version import VERSION, VERSION_HISTORY
 
 # --- Базовые пути ---
@@ -38,22 +39,60 @@ OPLOT_VALUES = [
 # === Константы для Дашборда дежурного ===
 # Список дежурных ОПЛОТ (ФИО полностью как в Jira)
 DASHBOARD_ASSIGNEES = [
+    "Айрапетова Нелли Геннадьевна - СРБ",
+    "Андреев Василий Юрьевич",
     "Гапоненко Дмитрий Анатольевич",
-    "Глотов Кирилл Сергеевич", 
+    "Глотов Кирилл Сергеевич",
     "Ефимов Владимир Владимирович",
     "Кашкин Сергей Николаевич",
     "Кондратьева Алена Александровна",
     "Мухиддинов Манучехр Бахриддинович",
-    "Сафонов Кирилл Евгеньевич",
+    "Сафронов Кирилл Евгеньевич",
     "Тутов Артем Михайлович",
     "Фисан Кирилл Юрьевич",
     "Частухин Александр Михайлович",
-    "Андреев Василий Юрьевич"
 ]
+
+DASHBOARD_EXTRA_ASSIGNEES = [
+    "Монахов Дмитрий Владимирович",
+    "Васькин Антон Анатольевич",
+]
+
+_ASSIGNEE_DISPLAY_SUFFIXES = (" - СРБ",)
+
+DASHBOARD_ASSIGNEE_DISPLAY_MAP = {
+    name: next(
+        (name[:-len(suffix)] for suffix in _ASSIGNEE_DISPLAY_SUFFIXES if name.endswith(suffix)),
+        name
+    )
+    for name in DASHBOARD_ASSIGNEES + DASHBOARD_EXTRA_ASSIGNEES
+}
+
+DASHBOARD_ASSIGNEES_DISPLAY = [
+    DASHBOARD_ASSIGNEE_DISPLAY_MAP[name]
+    for name in DASHBOARD_ASSIGNEES
+]
+
+DASHBOARD_VISIBLE_ASSIGNEES = list(dict.fromkeys(
+    DASHBOARD_ASSIGNEES + DASHBOARD_EXTRA_ASSIGNEES
+))
+
+DASHBOARD_VISIBLE_ASSIGNEES_DISPLAY = [
+    DASHBOARD_ASSIGNEE_DISPLAY_MAP[name]
+    for name in DASHBOARD_VISIBLE_ASSIGNEES
+]
+
+
+def get_dashboard_assignee_display_name(name: str) -> str:
+    """Возвращает имя для UI без служебных суффиксов Jira."""
+    if not name:
+        return name
+    return DASHBOARD_ASSIGNEE_DISPLAY_MAP.get(name, name)
+
 
 # Теги для фильтрации задач в Jira
 DASHBOARD_TAG = "СУП"
-DASHBOARD_TAG_VNEDRENIE = "Внедрение"  # НОВОЕ: тег для внедрения
+DASHBOARD_TAG_VNEDRENIE = "Внедрение"
 
 # Период в днях для поиска задач
 DASHBOARD_DAYS_BACK = 30
@@ -69,6 +108,7 @@ except Exception as e:
     logging.error(f"Ошибка загрузки config.json: {e}")
     sys.exit(1)
 
+
 # --- Настройка логирования ---
 def setup_logging():
     logging.basicConfig(
@@ -77,13 +117,14 @@ def setup_logging():
         format='[%(asctime)s] %(levelname)s - %(message)s',
         level=logging.DEBUG
     )
-    
+
     sms_logger = logging.getLogger('sms')
     sms_handler = logging.FileHandler(SMS_LOG_FILE, mode='w')
     sms_handler.setFormatter(logging.Formatter('[%(asctime)s] %(levelname)s - %(message)s'))
     sms_logger.addHandler(sms_handler)
     sms_logger.setLevel(logging.DEBUG)
     return sms_logger
+
 
 # Экспортируем логгер SMS
 sms_logger = setup_logging()

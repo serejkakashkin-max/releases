@@ -195,7 +195,10 @@ class IntentClassifier:
 
         message_lower = message.lower()
         if result['days'] is None:
-            if any(word in message_lower for word in ['за неделю', 'неделю', 'неделя', 'weekly']):
+            weeks_match = re.search(r'за\s+(\d+)\s+нед\w*', message_lower)
+            if weeks_match:
+                result['days'] = int(weeks_match.group(1)) * 7
+            elif any(word in message_lower for word in ['за неделю', 'неделю', 'неделя', 'weekly']):
                 result['days'] = 7
             elif any(word in message_lower for word in ['за месяц', 'месяц', 'месяца', 'monthly']):
                 result['days'] = 30
@@ -278,25 +281,24 @@ class IntentClassifier:
         """
         suggestions = {
             IntentType.SEARCH_TASKS: [
-                "Показать все задачи",
-                "Найти задачи с тегом логи",
-                "Найти задачи в заголовке",
+                "Показать что я умею?",
+                "Сгенерировать статистику",
+                "Сводка для передачи дневной смены",
             ],
             IntentType.GENERATE_REPORT: [
                 "Сгенерировать статистику",
-                "Сводка для дневной смены",
-                "Сводка для вечерней смены",
+                "Сводка для передачи дневной смены",
+                "Сводка для передачи вечерней смены",
             ],
             IntentType.SHOW_CAPABILITIES: [
-                "Показать все задачи",
-                "Найти задачи по ключевым словам",
                 "Сгенерировать статистику",
-                "Сводка для передачи смены",
+                "Сводка для передачи дневной смены",
+                "Сводка для передачи вечерней смены",
             ],
             IntentType.UNKNOWN: [
                 "Показать что я умею?",
-                "Показать все задачи",
                 "Сгенерировать статистику",
+                "Сводка для передачи дневной смены",
             ],
         }
         

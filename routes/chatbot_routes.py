@@ -119,25 +119,27 @@ def get_suggestions():
         default_suggestions = [
             {"text": "Что я умею", "action": "capabilities"},
             {"text": "Сгенерировать статистику", "action": "assignee_stats"},
-            {"text": "Найти задачи с тегом логи", "action": "search_logi_tag"},
-            {"text": "Найти задачи в заголовке", "action": "search_summary"},
+            {"text": "Сводка для передачи дневной смены", "action": "handover_day"},
+            {"text": "Сводка для передачи вечерней смены", "action": "handover_evening"},
         ]
         
         # Контекстные подсказки по типу намерения
         contextual_suggestions = {
             IntentType.SEARCH_TASKS.value: [
-                {"text": "Найти задачи с тегом логи", "action": "search_logi_tag"},
-                {"text": "Найти задачи в заголовке", "action": "search_summary"},
                 {"text": "Что я умею", "action": "capabilities"},
+                {"text": "Сгенерировать статистику", "action": "assignee_stats"},
             ],
             IntentType.GENERATE_REPORT.value: [
                 {"text": "Сгенерировать статистику", "action": "assignee_stats"},
+                {"text": "Сводка для передачи дневной смены", "action": "handover_day"},
+                {"text": "Сводка для передачи вечерней смены", "action": "handover_evening"},
                 {"text": "Что я умею", "action": "capabilities"},
             ],
             IntentType.SHOW_CAPABILITIES.value: [
-                {"text": "Найти задачи с тегом логи", "action": "search_logi_tag"},
-                {"text": "Найти задачи в заголовке", "action": "search_summary"},
                 {"text": "Сгенерировать статистику", "action": "assignee_stats"},
+                {"text": "Сводка для передачи дневной смены", "action": "handover_day"},
+                {"text": "Сводка для передачи вечерней смены", "action": "handover_evening"},
+                {"text": "Что я умею", "action": "capabilities"},
             ],
         }
         
@@ -272,8 +274,8 @@ def quick_action():
             'search_logi_tag': 'Найди задачи с тегом логи',
             'search_summary': 'Найди задачу со словом "логи" в заголовке',
             'assignee_stats': 'Сгенерируй статистику',
-            'handover_day': 'Сводка для дневной смены',
-            'handover_evening': 'Сводка для вечерней смены',
+            'handover_day': 'Сводка для передачи дневной смены',
+            'handover_evening': 'Сводка для передачи вечерней смены',
         }
 
         message = action_messages.get(action, 'Показать что я умею?')

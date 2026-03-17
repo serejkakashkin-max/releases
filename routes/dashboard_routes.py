@@ -8,7 +8,7 @@ from services.dashboard_service import (
     check_multiple_approvals, get_task_type_badges,
     get_hidden_tasks, get_hidden_task_keys, hide_task, show_task, restore_all_tasks
 )
-from config import DASHBOARD_CACHE_TTL, DASHBOARD_ASSIGNEES
+from config import DASHBOARD_CACHE_TTL, DASHBOARD_ASSIGNEES_DISPLAY
 
 BASE_PATH = os.getenv("BASE_PATH", "")
 
@@ -47,9 +47,10 @@ def dashboard():
             assignee_stats[assignee]['todo'] = filter_hidden(assignee_stats[assignee].get('todo', []))
             assignee_stats[assignee]['in_progress'] = filter_hidden(assignee_stats[assignee].get('in_progress', []))
         
+        dashboard_assignees = data.get('dashboard_assignees', DASHBOARD_ASSIGNEES_DISPLAY)
         active_assignees = sum(
-            1 for stats in assignee_stats.values()
-            if stats.get('todo') or stats.get('in_progress')
+            1 for assignee in dashboard_assignees
+            if assignee_stats.get(assignee, {}).get('todo') or assignee_stats.get(assignee, {}).get('in_progress')
         )
         
         return render_template(
@@ -60,7 +61,7 @@ def dashboard():
             vnedrenie_prom_tasks=vnedrenie_prom_tasks,
             vnedrenie_psi_tasks=vnedrenie_psi_tasks,
             assignee_stats=assignee_stats,
-            dashboard_assignees=data.get('dashboard_assignees', DASHBOARD_ASSIGNEES),
+            dashboard_assignees=dashboard_assignees,
             last_update=last_update,
             cache_ttl_minutes=DASHBOARD_CACHE_TTL // 60,
             total_sup=total_sup,
@@ -81,7 +82,7 @@ def dashboard():
             vnedrenie_prom_tasks=[],
             vnedrenie_psi_tasks=[],
             assignee_stats={},
-            dashboard_assignees=DASHBOARD_ASSIGNEES,
+            dashboard_assignees=DASHBOARD_ASSIGNEES_DISPLAY,
             last_update=datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
             cache_ttl_minutes=DASHBOARD_CACHE_TTL // 60,
             total_sup=0,
@@ -116,7 +117,7 @@ def api_dashboard_data():
             "vnedrenie_prom_tasks": vnedrenie_prom,
             "vnedrenie_psi_tasks": vnedrenie_psi,
             "assignee_stats": data.get('assignee_stats', {}),
-            "dashboard_assignees": data.get('dashboard_assignees', DASHBOARD_ASSIGNEES),
+            "dashboard_assignees": data.get('dashboard_assignees', DASHBOARD_ASSIGNEES_DISPLAY),
             "last_update": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
             "total_sup": len(data.get('sup_tasks', [])),
             "total_logi": len(data.get('logi_tasks', [])),

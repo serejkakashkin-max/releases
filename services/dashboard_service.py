@@ -8,7 +8,16 @@ import re
 from datetime import datetime, timedelta
 from collections import defaultdict
 
-from config import TOKENS, DASHBOARD_ASSIGNEES, DASHBOARD_DAYS_BACK, DASHBOARD_CACHE_TTL
+from config import (
+    TOKENS,
+    DASHBOARD_ASSIGNEES,
+    DASHBOARD_ASSIGNEES_DISPLAY,
+    DASHBOARD_VISIBLE_ASSIGNEES,
+    DASHBOARD_VISIBLE_ASSIGNEES_DISPLAY,
+    DASHBOARD_DAYS_BACK,
+    DASHBOARD_CACHE_TTL,
+    get_dashboard_assignee_display_name,
+)
 
 # Глобальные переменные для кэширования
 _cache_lock = threading.Lock()
@@ -65,17 +74,23 @@ ROLE_PATTERNS = [
     "сменить роль",
     "добавить роль",
     "изменить роль",
-    "Изменить роль",
-    "роль",
-    "Роль",
-    "роли",
-    "Роли",
+    "назначить роль",
+    "выдать роль",
+    "отозвать роль",
 ]
 
 # Компилированные регекс-паттерны для производительности
 DB_PATTERN = re.compile(r'(' + '|'.join(map(re.escape, DB_PATTERNS)) + r')', re.IGNORECASE)
 INFRA_PATTERN = re.compile(r'(' + '|'.join(map(re.escape, INFRA_PATTERNS)) + r')', re.IGNORECASE)
 ROLE_PATTERN = re.compile(r'(' + '|'.join(map(re.escape, ROLE_PATTERNS)) + r')', re.IGNORECASE)
+INFRA_SUMMARY_PATTERN = re.compile(
+    r'(?<!\w)(?:под|пода|поду|поде|pod)(?!\w)',
+    re.IGNORECASE,
+)
+ROLE_SUMMARY_PATTERN = re.compile(
+    r'(?<!\w)(?:роль|роли)(?!\w)',
+    re.IGNORECASE,
+)
 
 def get_jira_domain_and_token():
     """Возвращает домен и токен для Jira Delta"""
@@ -130,9 +145,7 @@ def detect_logi_text(summary, description=''):
 
 def detect_infra_text(summary, description=''):
     """Определяет инфраструктурные задачи по слову "под" в заголовке."""
-    infra_keywords = ['под', 'пода', 'поду', 'поде', 'pod']
-
-    if contains_any(summary, infra_keywords):
+    if INFRA_SUMMARY_PATTERN.search(summary or ''):
         return True, 'summary'
     return False, None
 
@@ -148,7 +161,7 @@ def fetch_jira_tasks():
     excluded_statuses = ['Done', 'Closed', 'Resolved']
     statuses_filter = ', '.join([f'"{s}"' for s in excluded_statuses])
     start_date = (datetime.now() - timedelta(days=DASHBOARD_DAYS_BACK)).strftime("%Y-%m-%d")
-    assignees_filter = ', '.join([f'"{name}"' for name in DASHBOARD_ASSIGNEES])
+    assignees_filter = ', '.join([f'"{name}"' for name in DASHBOARD_VISIBLE_ASSIGNEES])
     
     # === ЗАПРОС 1: СУП задачи (по всему проекту, за 30 дней) ===
     # Ищем по тегу СУП (любой регистр) или по тексту СУП в summary (любой регистр)
@@ -210,13 +223,12 @@ def fetch_jira_tasks():
         'summary ~ "БД"',
         'summary ~ "бд"',
         'summary ~ "ПОД"',
-        'summary ~ "под"',
-        'summary ~ "роль"',
-        'summary ~ "Роль"',
-        'summary ~ "роли"',
-        'summary ~ "Роли"',
         'summary ~ "изменить роль"',
-        'summary ~ "Изменить роль"',
+        'summary ~ "сменить роль"',
+        'summary ~ "добавить роль"',
+        'summary ~ "назначить роль"',
+        'summary ~ "выдать роль"',
+        'summary ~ "отозвать роль"',
         'summary ~ "pod"',
     ]
     jql_operations = (
@@ -535,7 +547,7 @@ def detect_task_types(issue):
     has_infra_text, infra_detected_by = detect_infra_text(summary, description)
     
     # Роли - по тегу или тексту summary
-    has_role_text = bool(ROLE_PATTERN.search(summary))
+    has_role_text = bool(ROLE_PATTERN.search(summary) or ROLE_SUMMARY_PATTERN.search(summary))
     has_role = has_role_tag or has_role_text
     
     # ПСИ - по тегу или паттернам раскаток в summary
@@ -561,6 +573,7 @@ def _transform_issue(issue, domain):
     """Трансформирует сырые данные Jira в наш формат"""
     assignee = issue['fields'].get('assignee')
     assignee_name = assignee.get('displayName', 'Не назначен') if assignee else 'Не назначен'
+    assignee_display_name = get_dashboard_assignee_display_name(assignee_name)
     
     # Определяем типы задачи
     task_types = detect_task_types(issue)
@@ -572,7 +585,8 @@ def _transform_issue(issue, domain):
         'created': issue['fields'].get('created', ''),
         'updated': issue['fields'].get('updated', ''),
         'status': issue['fields'].get('status', {}).get('name', ''),
-        'assignee_name': assignee_name,
+        'assignee_name': assignee_display_name,
+        'assignee_jira_name': assignee_name,
         'assignee_avatar': assignee.get('avatarUrls', {}).get('48x48', '') if assignee else '',
         'reporter': issue['fields'].get('reporter', {}).get('displayName', '') if issue['fields'].get('reporter') else '',
         'labels': issue['fields'].get('labels', []),
@@ -618,16 +632,17 @@ def process_tasks_data(issues):
     vnedrenie_psi_tasks = []
     
     assignee_stats = {name: {'todo': [], 'in_progress': [], 'stale_count': 0}
-                      for name in DASHBOARD_ASSIGNEES}
+                      for name in DASHBOARD_VISIBLE_ASSIGNEES_DISPLAY}
     
     cutoff_date = datetime.now() - timedelta(days=DASHBOARD_DAYS_BACK)
     
     for issue in issues:
-        assignee = issue['assignee_name']
-        is_our_assignee = assignee in DASHBOARD_ASSIGNEES
+        assignee_jira_name = issue.get('assignee_jira_name', issue['assignee_name'])
+        assignee = get_dashboard_assignee_display_name(assignee_jira_name)
+        is_visible_assignee = assignee_jira_name in DASHBOARD_VISIBLE_ASSIGNEES
         
         # === СУП ЗАДАЧИ ===
-        if issue['has_sup_tag']:
+        if issue['has_sup_tag'] and is_visible_assignee:
             try:
                 created = datetime.strptime(issue['created'][:10], "%Y-%m-%d")
                 if created >= cutoff_date:
@@ -642,7 +657,7 @@ def process_tasks_data(issues):
                             issue['has_infra_tag'] or
                             issue['has_role_tag'])
         
-        if is_operation_task:
+        if is_operation_task and is_visible_assignee:
             try:
                 created = datetime.strptime(issue['created'][:10], "%Y-%m-%d")
                 if created >= cutoff_date:
@@ -653,12 +668,12 @@ def process_tasks_data(issues):
         
         # === ВНЕДРЕНИЕ ПРОМ ===
         # Только по дежурным с тегом Внедрение
-        if issue['has_vnedrenie_tag'] and is_our_assignee:
+        if issue['has_vnedrenie_tag'] and is_visible_assignee:
             vnedrenie_prom_tasks.append(issue)
         
         # === ВНЕДРЕНИЕ ПСИ ===
         # Глобально по всему проекту (тег ПСИ или паттерны раскаток в summary)
-        if issue.get('is_psi_task'):
+        if issue.get('is_psi_task') and is_visible_assignee:
             try:
                 created = datetime.strptime(issue['created'][:10], "%Y-%m-%d")
                 if created >= cutoff_date:
@@ -668,7 +683,7 @@ def process_tasks_data(issues):
                 logging.warning(f"Error processing psi task {issue['key']}: {e}")
         
         # === СТРУКТУРА ПО ДЕЖУРНЫМ ===
-        if is_our_assignee:
+        if is_visible_assignee:
             is_stale = issue['days_in_progress'] > 7
             status = issue['status']
             
@@ -709,7 +724,7 @@ def process_tasks_data(issues):
         'vnedrenie_prom_tasks': vnedrenie_prom_tasks,
         'vnedrenie_psi_tasks': vnedrenie_psi_tasks,
         'assignee_stats': assignee_stats,
-        'dashboard_assignees': DASHBOARD_ASSIGNEES
+        'dashboard_assignees': DASHBOARD_ASSIGNEES_DISPLAY
     }
 
 def get_dashboard_data():
