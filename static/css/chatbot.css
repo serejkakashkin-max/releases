@@ -222,6 +222,42 @@
     line-height: 1;
 }
 
+.chat-details {
+    margin-top: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: rgba(0, 123, 255, 0.04);
+    overflow: hidden;
+}
+
+.chat-details summary {
+    cursor: pointer;
+    list-style: none;
+    padding: 10px 12px;
+    font-weight: 600;
+    color: var(--primary);
+    user-select: none;
+}
+
+.chat-details summary::-webkit-details-marker {
+    display: none;
+}
+
+.chat-details summary::before {
+    content: '▸';
+    display: inline-block;
+    margin-right: 8px;
+    transition: transform 0.2s ease;
+}
+
+.chat-details[open] summary::before {
+    transform: rotate(90deg);
+}
+
+.chat-details-body {
+    padding: 0 12px 12px;
+}
+
 /* Время сообщения */
 .chat-message-time {
     font-size: 11px;

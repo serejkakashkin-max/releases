@@ -297,6 +297,16 @@ class DashboardChatBot {
         
         // Код
         formatted = formatted.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+        // Раскрывающиеся блоки для длинных списков
+        formatted = formatted.replace(/\[details=(.*?)\]([\s\S]*?)\[\/details\]/g, (match, title, body) => {
+            return (
+                `<details class="chat-details">` +
+                `<summary>${title.trim()}</summary>` +
+                `<div class="chat-details-body">${body.trim()}</div>` +
+                `</details>`
+            );
+        });
         
         // Переносы строк
         formatted = formatted.replace(/\n/g, '<br>');

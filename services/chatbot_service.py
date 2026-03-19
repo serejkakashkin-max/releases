@@ -703,9 +703,24 @@ class DashboardChatBot:
 
                 if evening_tasks:
                     text += f"✅ Закрыто за вечернюю смену: {len(evening_tasks)}\n"
-                    for closed_dt, task in evening_tasks[:7]:
+                    visible_evening = evening_tasks[:5]
+                    hidden_evening = evening_tasks[5:]
+                    for closed_dt, task in visible_evening:
                         text += f"• [{task['key']}]({task.get('url', '')}) - {task['summary'][:65]}{'...' if len(task['summary']) > 65 else ''}\n"
                         text += f"  👤 {task['assignee_name']} | ⏰ {closed_dt.strftime('%d.%m %H:%M')}\n"
+                    if hidden_evening:
+                        text += self._format_expandable_task_block(
+                            [
+                                {
+                                    'key': task['key'],
+                                    'url': task.get('url', ''),
+                                    'summary': task.get('summary', ''),
+                                    'meta': f"👤 {task['assignee_name']} | ⏰ {closed_dt.strftime('%d.%m %H:%M')}"
+                                }
+                                for closed_dt, task in hidden_evening
+                            ],
+                            f"Показать еще {len(hidden_evening)} закрытых задач"
+                        )
                 else:
                     text += "✅ Закрытых задач в окно вечерней смены не найдено."
 
@@ -883,18 +898,43 @@ class DashboardChatBot:
                 continue
             non_empty_sections += 1
             text += f"*{title}* ({len(tasks)})\n"
-            for task in tasks[:4]:
+            visible_tasks = tasks[:5]
+            hidden_tasks = tasks[5:]
+            for task in visible_tasks:
                 summary = task['summary'][:62] + ('...' if len(task['summary']) > 62 else '')
                 text += f"• [{task['key']}]({task.get('url', '')}) - {summary}\n"
                 text += f"  👤 {task['assignee_name']} | ⏳ {task.get('days_in_progress', 0)} дн.\n"
-            if len(tasks) > 4:
-                text += f"• ... еще {len(tasks) - 4}\n"
+            if hidden_tasks:
+                text += self._format_expandable_task_block(
+                    [
+                        {
+                            'key': task['key'],
+                            'url': task.get('url', ''),
+                            'summary': task.get('summary', ''),
+                            'meta': f"👤 {task['assignee_name']} | ⏳ {task.get('days_in_progress', 0)} дн."
+                        }
+                        for task in hidden_tasks
+                    ],
+                    f"Показать еще {len(hidden_tasks)} задач"
+                )
             text += "\n"
 
         if non_empty_sections == 0:
             text += "Открытых задач в блоках дашборда нет."
 
         return text.strip()
+
+    def _format_expandable_task_block(self, tasks: List[Dict], title: str) -> str:
+        """Формирует сворачиваемый блок с дополнительными задачами."""
+        lines = [f"[details={title}]"]
+        for task in tasks:
+            summary = task.get('summary', '')[:62] + ('...' if len(task.get('summary', '')) > 62 else '')
+            lines.append(f"• [{task['key']}]({task.get('url', '')}) - {summary}")
+            meta = task.get('meta')
+            if meta:
+                lines.append(f"  {meta}")
+        lines.append("[/details]")
+        return "\n".join(lines) + "\n"
 
     def _get_evening_shift_window(self, now: datetime) -> Tuple[datetime, datetime]:
         if now.hour >= 21:

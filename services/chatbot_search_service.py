@@ -14,6 +14,7 @@ from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 
 from services.gigachat_service import GIGA_HELPER
+from config import DASHBOARD_ASSIGNEES
 from services.dashboard_service import (
     TAG_SUP_VARIANTS, TAG_LOGI_VARIANTS, TAG_VNEDRENIE_VARIANTS,
     TAG_PSI_VARIANTS, TAG_ROLE_VARIANTS, DB_PATTERNS, INFRA_PATTERNS, ROLE_PATTERNS,
@@ -37,6 +38,8 @@ class SearchQuery:
     label_filters: List[str]
     original_query: str
     ai_confidence: str = 'local'
+    assignee_scope: str = 'duty'
+    explicit_task_types: bool = False
 
 
 class ChatbotSearchService:
@@ -158,6 +161,7 @@ class ChatbotSearchService:
         label_filters = self._extract_label_filters(message)
         if not task_types and label_filters:
             task_types = label_filters.copy()
+        explicit_task_types = bool(task_types)
         if not task_types:
             task_types = self.DEFAULT_TASK_TYPES.copy()
         
@@ -176,6 +180,7 @@ class ChatbotSearchService:
         
         # Извлекаем исполнителя
         assignee = self._extract_assignee(message)
+        assignee_scope = self._extract_assignee_scope(message)
 
         summary_keywords, description_keywords, scoped_keywords = self._extract_scoped_keywords(message)
         keywords = self._extract_keywords(message)
@@ -196,7 +201,9 @@ class ChatbotSearchService:
             summary_keywords=summary_keywords,
             description_keywords=description_keywords,
             label_filters=label_filters,
-            original_query=message
+            original_query=message,
+            assignee_scope=assignee_scope,
+            explicit_task_types=explicit_task_types
         )
     
     def _parse_with_gigachat(self, message: str, local_result: SearchQuery) -> Optional[SearchQuery]:
@@ -218,6 +225,7 @@ class ChatbotSearchService:
     "assignee": "имя исполнителя или null",
     "scope": "anywhere|summary|description|labels",
     "search_text": "основной текст поиска или null",
+    "assignee_scope": "duty|all_oplot",
     "confidence": "low|medium|high"
 }}
 
@@ -233,6 +241,8 @@ class ChatbotSearchService:
 9. Если пользователь пишет "по ключевому слову", "содержит", "присутствует", но не указывает область - scope=anywhere.
 10. search_text должен содержать только полезную строку поиска без служебных слов.
 11. Если в запросе есть техническая строка вида focus.bh.new_clm_list.users, верни ее целиком в search_text.
+12. Если пользователь просит искать по всем людям, всем пользователям, всем сотрудникам, по всей группе OPLOT, по всем из OPLOT - assignee_scope=all_oplot.
+13. Если это не указано явно - assignee_scope=duty.
 
 Ответ только JSON, без дополнительного текста."""
 
@@ -259,6 +269,10 @@ class ChatbotSearchService:
         date_from = (data.get('date_from') if data.get('date_from') != 'null' else None) or local_result.date_from
         date_to = (data.get('date_to') if data.get('date_to') != 'null' else None) or local_result.date_to
         assignee = data.get('assignee') if data.get('assignee') not in {None, 'null', ''} else local_result.assignee
+        assignee_scope = (data.get('assignee_scope') or local_result.assignee_scope or 'duty').lower()
+        if assignee_scope not in {'duty', 'all_oplot'}:
+            assignee_scope = local_result.assignee_scope or 'duty'
+        explicit_task_types = local_result.explicit_task_types or bool(self._normalize_task_types(data.get('task_types')))
         scope = (data.get('scope') or 'anywhere').lower()
         search_text = self._normalize_ai_search_text(data.get('search_text'))
         confidence = (data.get('confidence') or 'medium').lower()
@@ -297,6 +311,8 @@ class ChatbotSearchService:
             date_from == local_result.date_from and
             date_to == local_result.date_to and
             assignee == local_result.assignee and
+            assignee_scope == local_result.assignee_scope and
+            explicit_task_types == local_result.explicit_task_types and
             keywords == local_result.keywords and
             summary_keywords == local_result.summary_keywords and
             description_keywords == local_result.description_keywords and
@@ -315,8 +331,26 @@ class ChatbotSearchService:
             description_keywords=description_keywords,
             label_filters=label_filters,
             original_query=message,
-            ai_confidence=confidence
+            ai_confidence=confidence,
+            assignee_scope=assignee_scope,
+            explicit_task_types=explicit_task_types
         )
+
+    def _extract_assignee_scope(self, message: str) -> str:
+        """Определяет, нужно ли искать только по дежурным или по всем в OPLOT."""
+        message_lower = message.lower()
+        all_oplot_patterns = [
+            r'по\s+всем\s+(?:людям|пользователям|сотрудникам|исполнителям)',
+            r'среди\s+всех\s+(?:людей|пользователей|сотрудников|исполнителей)',
+            r'по\s+всем\s+из\s+oplot',
+            r'по\s+всей\s+группе\s+oplot',
+            r'по\s+всем\s+в\s+oplot',
+            r'по\s+всему\s+oplot',
+            r'поиск\s+по\s+всем',
+        ]
+        if any(re.search(pattern, message_lower, re.IGNORECASE) for pattern in all_oplot_patterns):
+            return 'all_oplot'
+        return 'duty'
 
     def _normalize_task_types(self, raw_task_types) -> List[str]:
         if not isinstance(raw_task_types, list):
@@ -616,7 +650,13 @@ class ChatbotSearchService:
                     f'({self._build_label_conditions("роль")} OR {role_summary_conditions})'
                 )
         
-        if type_conditions:
+        skip_default_type_filter = (
+            query.assignee_scope == 'all_oplot' and
+            not query.explicit_task_types and
+            not query.label_filters
+        )
+
+        if type_conditions and not skip_default_type_filter:
             jql_parts.append(f'({" OR ".join(type_conditions)})')
         
         # Статус
@@ -634,6 +674,9 @@ class ChatbotSearchService:
         # Исполнитель
         if query.assignee:
             jql_parts.append(f'assignee ~ "{query.assignee}"')
+        elif query.assignee_scope != 'all_oplot':
+            assignees_filter = ', '.join([f'"{name}"' for name in DASHBOARD_ASSIGNEES])
+            jql_parts.append(f'assignee IN ({assignees_filter})')
         
         if query.label_filters:
             label_conditions = []
@@ -755,23 +798,45 @@ class ChatbotSearchService:
 
         if open_tasks:
             text += f"🟡 *Открытые ({len(open_tasks)}):*\n"
-            for task in open_tasks[:10]:
+            visible_open = open_tasks[:20]
+            hidden_open = open_tasks[20:]
+            for task in visible_open:
                 labels = ', '.join(task.get('labels', [])[:3]) or 'без тегов'
                 text += f"• [{task['key']}]({task['url']}) - {self._escape_markdown(task['summary'][:70])}{'...' if len(task['summary']) > 70 else ''}\n"
                 text += f"  👤 {self._escape_markdown(task['assignee_name'][:30])} | 🏷️ {self._escape_markdown(labels)}\n"
+            if hidden_open:
+                text += self._format_expandable_tasks(hidden_open, f"Показать еще {len(hidden_open)} открытых задач")
             text += "\n"
 
         if closed_tasks:
             text += f"✅ *Закрытые ({len(closed_tasks)}):*\n"
-            for task in closed_tasks[:10]:
+            visible_closed = closed_tasks[:20]
+            hidden_closed = closed_tasks[20:]
+            for task in visible_closed:
                 labels = ', '.join(task.get('labels', [])[:3]) or 'без тегов'
                 text += f"• [{task['key']}]({task['url']}) - {self._escape_markdown(task['summary'][:70])}{'...' if len(task['summary']) > 70 else ''}\n"
                 text += f"  👤 {self._escape_markdown(task['assignee_name'][:30])} | 🏷️ {self._escape_markdown(labels)}\n"
-
-        if len(tasks) > 10:
-            text += f"\n_Показаны первые {min(len(tasks), 20)} задач из {len(tasks)}._"
+            if hidden_closed:
+                text += self._format_expandable_tasks(hidden_closed, f"Показать еще {len(hidden_closed)} закрытых задач")
 
         return text
+
+    def _format_expandable_tasks(self, tasks: List[Dict], summary: str) -> str:
+        """Формирует сворачиваемый блок со скрытой частью списка задач."""
+        lines = [f"[details={summary}]"]
+        for task in tasks:
+            labels = ', '.join(task.get('labels', [])[:3]) or 'без тегов'
+            lines.append(
+                f"• [{task['key']}]({task['url']}) - "
+                f"{self._escape_markdown(task['summary'][:70])}"
+                f"{'...' if len(task['summary']) > 70 else ''}"
+            )
+            lines.append(
+                f"  👤 {self._escape_markdown(task['assignee_name'][:30])} | "
+                f"🏷️ {self._escape_markdown(labels)}"
+            )
+        lines.append("[/details]")
+        return "\n".join(lines) + "\n"
     
     def _escape_markdown(self, text: str) -> str:
         """Экранирует специальные символы markdown в тексте"""
@@ -822,6 +887,8 @@ class ChatbotSearchService:
                 'status': query.status,
                 'date_from': query.date_from,
                 'date_to': query.date_to,
+                'assignee_scope': query.assignee_scope,
+                'explicit_task_types': query.explicit_task_types,
                 'ai_confidence': query.ai_confidence,
                 'jql': self.build_jql(query)
             }
