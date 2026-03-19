@@ -2193,6 +2193,7 @@
     <!-- Передача данных дашборда в JavaScript -->
     <script>
         // Данные дашборда для чат-бота
+        window.CHATBOT_BASE_PATH = {{ basepath | tojson | safe }};
         window.dashboardData = {
             sup_tasks: {{ sup_tasks | tojson | safe }},
             logi_tasks: {{ logi_tasks | tojson | safe }},

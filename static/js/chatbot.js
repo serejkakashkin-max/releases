@@ -9,6 +9,7 @@ class DashboardChatBot {
         this.messages = [];
         this.sessionId = null;
         this.isLoading = false;
+        this.basePath = window.CHATBOT_BASE_PATH || '';
         
         // DOM элементы
         this.chatWidget = null;
@@ -20,6 +21,26 @@ class DashboardChatBot {
         this.suggestionsContainer = null;
         
         this.init();
+    }
+
+    buildUrl(path) {
+        if (!path) {
+            return this.basePath || '';
+        }
+
+        if (/^https?:\/\//i.test(path)) {
+            return path;
+        }
+
+        if (this.basePath && path.startsWith(`${this.basePath}/`)) {
+            return path;
+        }
+
+        if (path.startsWith('/')) {
+            return `${this.basePath}${path}`;
+        }
+
+        return `${this.basePath}/${path}`;
     }
     
     init() {
@@ -193,7 +214,7 @@ class DashboardChatBot {
             const dashboardContext = this.getDashboardContext();
             
             // Отправляем запрос
-            const response = await fetch('/dashboard/api/chat', {
+            const response = await fetch(this.buildUrl('/dashboard/api/chat'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -264,9 +285,10 @@ class DashboardChatBot {
             
             // Специальная обработка для ссылок на скачивание отчётов
             if (decodedUrl.includes('/dashboard/api/chat/report/download')) {
-                return `<a href="${decodedUrl}" target="_blank" class="report-download-link" data-url="${decodedUrl}">📥 ${text}</a>`;
+                const reportUrl = this.buildUrl(decodedUrl);
+                return `<a href="${reportUrl}" target="_blank" class="report-download-link" data-url="${reportUrl}">📥 ${text}</a>`;
             }
-            return `<a href="${decodedUrl}" target="_blank">${text}</a>`;
+            return `<a href="${this.buildUrl(decodedUrl)}" target="_blank">${text}</a>`;
         });
         
         // Обрабатываем markdown жирный текст
@@ -335,8 +357,8 @@ class DashboardChatBot {
     async loadSuggestions(intent = null) {
         try {
             const url = intent 
-                ? `/dashboard/api/chat/suggestions?intent=${encodeURIComponent(intent)}`
-                : '/dashboard/api/chat/suggestions';
+                ? this.buildUrl(`/dashboard/api/chat/suggestions?intent=${encodeURIComponent(intent)}`)
+                : this.buildUrl('/dashboard/api/chat/suggestions');
             
             const response = await fetch(url);
             const data = await response.json();
@@ -353,7 +375,7 @@ class DashboardChatBot {
     
     async loadHistory() {
         try {
-            const response = await fetch('/dashboard/api/chat/history?limit=20');
+            const response = await fetch(this.buildUrl('/dashboard/api/chat/history?limit=20'));
             const data = await response.json();
             
             if (data.success && data.history.length > 0) {
@@ -387,7 +409,7 @@ class DashboardChatBot {
     
     async clearHistory() {
         try {
-            const response = await fetch('/dashboard/api/chat/clear', {
+            const response = await fetch(this.buildUrl('/dashboard/api/chat/clear'), {
                 method: 'POST'
             });
             

@@ -3,6 +3,7 @@ API routes для чат-бота дашборда дежурного.
 """
 
 import logging
+import os
 import uuid
 from datetime import datetime
 from flask import Blueprint, request, jsonify, session
@@ -11,6 +12,7 @@ from services.chatbot_service import get_chatbot, ChatMessage
 from services.dashboard_service import get_dashboard_data
 
 chatbot_bp = Blueprint('chatbot', __name__)
+BASE_PATH = os.getenv("BASE_PATH", "")
 
 # In-memory storage for sessions (в продакшене лучше использовать Redis)
 _chat_sessions = {}
@@ -351,7 +353,7 @@ def generate_report():
         
         return jsonify({
             "success": True,
-            "download_url": f"/dashboard/api/chat/report/download/{report_id}",
+            "download_url": f"{BASE_PATH}/dashboard/api/chat/report/download/{report_id}",
             "report_summary": {
                 "total_tasks": report_data['total_tasks'],
                 "period": f"{report_data['period']['start']} / {report_data['period']['end']}",
