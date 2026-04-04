@@ -476,6 +476,117 @@ class ReportService:
             padding: 18px 20px 18px 48px;
         }}
 
+        .assignee-detail-panel {{
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }}
+
+        .assignee-detail-summary {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+            color: #475467;
+            font-size: 13px;
+        }}
+
+        .assignee-detail-hint {{
+            color: #667085;
+            font-size: 12px;
+        }}
+
+        .assignee-tag-filters {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }}
+
+        .assignee-tag-filter {{
+            border: 1px solid #d0d5dd;
+            background: white;
+            color: #344054;
+            border-radius: 999px;
+            padding: 8px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }}
+
+        .assignee-tag-filter:hover {{
+            border-color: #98a2b3;
+            background: #f8fafc;
+        }}
+
+        .assignee-tag-filter.active {{
+            background: #4f46e5;
+            border-color: #4f46e5;
+            color: white;
+            box-shadow: 0 8px 18px rgba(79, 70, 229, 0.18);
+        }}
+
+        .assignee-tag-filter-count {{
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 20px;
+            height: 20px;
+            margin-left: 8px;
+            padding: 0 6px;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.08);
+            font-size: 11px;
+        }}
+
+        .assignee-tag-filter.active .assignee-tag-filter-count {{
+            background: rgba(255, 255, 255, 0.18);
+        }}
+
+        .assignee-task-groups {{
+            display: grid;
+            gap: 14px;
+        }}
+
+        .assignee-task-group {{
+            background: white;
+            border: 1px solid #e4e7ec;
+            border-radius: 14px;
+            padding: 14px 16px;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+        }}
+
+        .assignee-task-group-header {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 12px;
+        }}
+
+        .assignee-task-group-title {{
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 15px;
+            font-weight: 700;
+            color: #101828;
+        }}
+
+        .assignee-task-group-count {{
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 26px;
+            height: 26px;
+            padding: 0 8px;
+            border-radius: 999px;
+            background: #eef2ff;
+            color: #4338ca;
+            font-size: 12px;
+            font-weight: 700;
+        }}
+
         .assignee-task-list {{
             margin: 0;
             padding-left: 20px;
@@ -613,6 +724,26 @@ class ReportService:
             detailRow.classList.toggle('open');
         }}
 
+        function filterAssigneeTasks(assigneeKey, filterKey, event) {{
+            if (event) {{
+                event.stopPropagation();
+            }}
+
+            const detailPanel = document.getElementById(`assignee-detail-${{assigneeKey}}`);
+            if (!detailPanel) {{
+                return;
+            }}
+
+            detailPanel.querySelectorAll('.assignee-tag-filter').forEach((button) => {{
+                button.classList.toggle('active', button.dataset.filter === filterKey);
+            }});
+
+            detailPanel.querySelectorAll('.assignee-task-group').forEach((group) => {{
+                const shouldShow = filterKey === 'all' || group.dataset.tag === filterKey;
+                group.style.display = shouldShow ? 'block' : 'none';
+            }});
+        }}
+
         // Столбчатая диаграмма по сотрудникам
         const assigneesCtx = document.getElementById('assigneesChart').getContext('2d');
         new Chart(assigneesCtx, {{
@@ -726,7 +857,7 @@ class ReportService:
             else:
                 tag_cells.append('<td>-</td>')
             
-            details_html = self._generate_assignee_tasks_html(data.get('tasks', []))
+            details_html = self._generate_assignee_tasks_html(data.get('tasks', []), assignee_key)
             row = f'''
                 <tr id="assignee-row-{assignee_key}" class="assignee-row" onclick="toggleAssigneeTasks('{assignee_key}')">
                     <td>
@@ -750,35 +881,109 @@ class ReportService:
         
         return ''.join(rows)
 
-    def _generate_assignee_tasks_html(self, tasks: List[Dict[str, Any]]) -> str:
-        """Генерирует раскрывающийся список задач сотрудника."""
+    def _generate_assignee_tasks_html(self, tasks: List[Dict[str, Any]], assignee_key: str) -> str:
+        """Генерирует структурированный блок задач сотрудника с фильтрацией по тегам."""
         if not tasks:
             return '<div>Нет закрытых задач за период</div>'
+
+        grouped_tasks = self._group_tasks_by_first_label(tasks)
+        total_tags = len(grouped_tasks)
+
+        filter_buttons = [
+            f'''
+            <button class="assignee-tag-filter active" data-filter="all" onclick="filterAssigneeTasks('{assignee_key}', 'all', event)">
+                Все теги
+                <span class="assignee-tag-filter-count">{len(tasks)}</span>
+            </button>
+            '''
+        ]
+
+        group_blocks = []
+        for group_index, (tag_name, grouped_items) in enumerate(grouped_tasks.items(), 1):
+            tag_key = self._slugify_tag(tag_name, group_index)
+            filter_buttons.append(
+                f'''
+                <button class="assignee-tag-filter" data-filter="{tag_key}" onclick="filterAssigneeTasks('{assignee_key}', '{tag_key}', event)">
+                    {html.escape(tag_name)}
+                    <span class="assignee-tag-filter-count">{len(grouped_items)}</span>
+                </button>
+                '''
+            )
+
+            items = []
+            for index, task in enumerate(grouped_items, 1):
+                closed_at = (task.get('resolutiondate') or task.get('updated') or '')[:16]
+                labels = ', '.join(task.get('labels', [])) or '(без тега)'
+                items.append(
+                    f'''
+                    <li>
+                        <a href="{html.escape(task.get('url', '#'))}" target="_blank">{html.escape(task.get('key', ''))}</a>
+                        {' - '}{html.escape(task.get('summary', ''))}
+                        <div class="assignee-task-meta">#{index} | Закрыта: {html.escape(closed_at)} | Все теги: {html.escape(labels)}</div>
+                    </li>
+                    '''
+                )
+
+            group_blocks.append(
+                f'''
+                <section class="assignee-task-group" data-tag="{tag_key}">
+                    <div class="assignee-task-group-header">
+                        <div class="assignee-task-group-title">
+                            <span>{html.escape(tag_name)}</span>
+                            <span class="assignee-task-group-count">{len(grouped_items)}</span>
+                        </div>
+                    </div>
+                    <ol class="assignee-task-list">{"".join(items)}</ol>
+                </section>
+                '''
+            )
+
+        return f'''
+        <div class="assignee-detail-panel" id="assignee-detail-{assignee_key}">
+            <div class="assignee-detail-summary">
+                <span><strong>Задач за период:</strong> {len(tasks)}</span>
+                <span><strong>Тегов в раскрытии:</strong> {total_tags}</span>
+                <span class="assignee-detail-hint">Фильтр считает задачу по первому тегу, как и основная таблица.</span>
+            </div>
+            <div class="assignee-tag-filters">
+                {"".join(filter_buttons)}
+            </div>
+            <div class="assignee-task-groups">
+                {"".join(group_blocks)}
+            </div>
+        </div>
+        '''
+
+    def _group_tasks_by_first_label(self, tasks: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+        """Группирует задачи по первому тегу с сортировкой по количеству и дате закрытия."""
+        grouped: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
 
         sorted_tasks = sorted(
             tasks,
             key=lambda task: task.get('resolutiondate') or task.get('updated') or '',
             reverse=True
         )
-        items = []
-        for index, task in enumerate(sorted_tasks, 1):
-            closed_at = (task.get('resolutiondate') or task.get('updated') or '')[:16]
-            labels = ', '.join(task.get('labels', [])) or '(без тега)'
-            items.append(
-                f'''
-                <li>
-                    <a href="{html.escape(task.get('url', '#'))}" target="_blank">{html.escape(task.get('key', ''))}</a>
-                    {' - '}{html.escape(task.get('summary', ''))}
-                    <div class="assignee-task-meta">Закрыта: {html.escape(closed_at)} | Теги: {html.escape(labels)}</div>
-                </li>
-                '''
-            )
-        return f'<ol class="assignee-task-list">{"".join(items)}</ol>'
+
+        for task in sorted_tasks:
+            tag_name = task.get('first_label') or '(без тега)'
+            grouped[tag_name].append(task)
+
+        sorted_groups = sorted(
+            grouped.items(),
+            key=lambda item: (-len(item[1]), item[0].lower())
+        )
+        return dict(sorted_groups)
 
     def _slugify_assignee(self, name: str, index: int) -> str:
         """Генерирует безопасный идентификатор для HTML."""
         slug = re.sub(r'[^a-zA-Zа-яА-Я0-9_-]+', '-', name.strip().lower())
         slug = slug.strip('-') or 'assignee'
+        return f'{index}-{slug}'
+
+    def _slugify_tag(self, name: str, index: int) -> str:
+        """Генерирует безопасный идентификатор для фильтра по тегу."""
+        slug = re.sub(r'[^a-zA-Zа-яА-Я0-9_-]+', '-', name.strip().lower())
+        slug = slug.strip('-') or 'tag'
         return f'{index}-{slug}'
 
 

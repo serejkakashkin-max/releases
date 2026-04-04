@@ -68,6 +68,16 @@
             background-color: var(--border-color);
             border-radius: 4px;
         }
+
+        .playbooks-container.is-disabled {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+
+        .playbooks-hint {
+            margin-top: 8px;
+            font-size: 0.875rem;
+        }
         
         .candidate-item {
             background-color: var(--bg-secondary);
@@ -81,10 +91,73 @@
         // для локально запущенной не нужно path /releases
         const pathname = '{{basepath}}';
 
+        function releaseUsesPlaybooks(releaseName) {
+            var normalizedReleaseName = (releaseName || '').toUpperCase();
+            var blockedMarkers = ['SOWA', 'ЕФС.AUTHENTICATION_USER', 'AUTH', 'RESSTORE(2889318)'];
+            return !blockedMarkers.some(function(marker) {
+                return normalizedReleaseName.includes(marker);
+            });
+        }
+
+        function clearPlaybooksSelection() {
+            document.querySelectorAll('input[name="playbooks"]').forEach(function(checkbox) {
+                checkbox.checked = false;
+            });
+        }
+
+        function resetReleaseFormFields() {
+            clearPlaybooksSelection();
+
+            var prevVersionInput = document.getElementById('prev_version');
+            var checkerInput = document.getElementById('checker');
+            var instructionInput = document.getElementById('instruction_link');
+
+            if (prevVersionInput) {
+                prevVersionInput.value = '';
+            }
+
+            if (checkerInput) {
+                checkerInput.value = '';
+            }
+
+            if (instructionInput) {
+                instructionInput.value = '';
+            }
+        }
+
+        function syncPlaybooksState() {
+            var releaseSelect = document.getElementById('release');
+            var playbooksContainer = document.getElementById('playbooksContainer');
+            var playbooksHint = document.getElementById('playbooksHint');
+            var playbookCheckboxes = document.querySelectorAll('input[name="playbooks"]');
+            var shouldDisable = !releaseUsesPlaybooks(releaseSelect ? releaseSelect.value : '');
+
+            if (playbooksContainer) {
+                playbooksContainer.classList.toggle('is-disabled', shouldDisable);
+            }
+
+            playbookCheckboxes.forEach(function(checkbox) {
+                checkbox.disabled = shouldDisable;
+                if (shouldDisable) {
+                    checkbox.checked = false;
+                }
+            });
+
+            if (playbooksHint) {
+                playbooksHint.textContent = shouldDisable
+                    ? 'Для данного типа релиза выбор плейбуков не предусмотрен.'
+                    : '';
+                playbooksHint.className = shouldDisable
+                    ? 'playbooks-hint text-warning'
+                    : 'playbooks-hint';
+            }
+        }
+
         function updateReleases() {
             var category = document.getElementById('category').value;
             if (!category) {
                 document.getElementById('release').innerHTML = '<option value="">Сначала выберите категорию</option>';
+                syncPlaybooksState();
                 return Promise.resolve();
             }
             
@@ -106,6 +179,7 @@
                             select.add(option);
                         });
                     }
+                    syncPlaybooksState();
                 });
         }
         
@@ -126,6 +200,9 @@
                 document.getElementById('autoDetectStatus').innerHTML = '<span class="text-warning">Введите номер релиза для автоопределения</span>';
                 return;
             }
+
+            resetReleaseFormFields();
+            syncPlaybooksState();
             
             // Показываем индикатор загрузки
             document.getElementById('autoDetectStatus').innerHTML = '<span class="text-info"><i class="bi bi-hourglass-split me-1"></i>Определяем категорию и релиз...</span>';
@@ -141,6 +218,7 @@
                         updateReleases().then(() => {
                             // Устанавливаем релиз после обновления списка
                             document.getElementById('release').value = data.release_full;
+                            syncPlaybooksState();
                             document.getElementById('autoDetectStatus').innerHTML = '<span class="text-success"><i class="bi bi-check-circle me-1"></i>Авто-определено: ' + data.category + ' / ' + data.release_clean + '</span>';
                         });
                     } else {
@@ -179,6 +257,7 @@
             document.getElementById('category').value = category;
             updateReleases().then(() => {
                 document.getElementById('release').value = release_full;
+                syncPlaybooksState();
                 document.getElementById('autoDetectStatus').innerHTML = '<span class="text-success"><i class="bi bi-check-circle me-1"></i>Выбрано: ' + category + ' / ' + release_clean + '</span>';
                 var modal = bootstrap.Modal.getInstance(document.getElementById('candidatesModal'));
                 modal.hide();
@@ -206,6 +285,12 @@
         window.onload = function() {
             // При загрузке не заполняем список релизов - ждем автоопределения
             document.getElementById('release').innerHTML = '<option value="">Сначала введите номер релиза</option>';
+            document.getElementById('release_id').addEventListener('input', function() {
+                resetReleaseFormFields();
+                syncPlaybooksState();
+            });
+            document.getElementById('release').addEventListener('change', syncPlaybooksState);
+            syncPlaybooksState();
             
             // Обработчик отправки формы
             document.getElementById('releaseForm').addEventListener('submit', function(e) {
@@ -318,7 +403,7 @@
                 <div class="row mb-3">
                     <label class="col-sm-4 col-form-label">Предыдущая версия:</label>
                     <div class="col-sm-8">
-                        <input type="text" name="prev_version" class="form-control" required placeholder="Введите предыдущую версию">
+                        <input type="text" id="prev_version" name="prev_version" class="form-control" required placeholder="Введите предыдущую версию">
                     </div>
                 </div>
                 <div class="row mb-3">
@@ -334,13 +419,13 @@
                 <div class="row mb-3">
                     <label class="col-sm-4 col-form-label">Проверяющий:</label>
                     <div class="col-sm-8">
-                        <input type="text" name="checker" class="form-control" required placeholder="Введите имя проверяющего">
+                        <input type="text" id="checker" name="checker" class="form-control" required placeholder="Введите имя проверяющего">
                     </div>
                 </div>
                 <div class="row mb-3">
                     <label class="col-sm-4 col-form-label">Ссылка на инструкцию:</label>
                     <div class="col-sm-8">
-                        <input type="text" name="instruction_link" class="form-control" placeholder="Введите ссылку">
+                        <input type="text" id="instruction_link" name="instruction_link" class="form-control" placeholder="Введите ссылку">
                     </div>
                 </div>
                 <div class="row mb-3">
@@ -357,7 +442,7 @@
                 </div>
                 <div class="mb-4">
                     <label class="form-label">Выберите плейбуки:</label>
-                    <div class="playbooks-container">
+                    <div class="playbooks-container" id="playbooksContainer">
                         {% for pb in playbooks %}
                         <div class="form-check">
                             <input type="checkbox" name="playbooks" value="{{ pb }}" class="form-check-input" id="playbook-{{ loop.index }}">
@@ -365,6 +450,7 @@
                         </div>
                         {% endfor %}
                     </div>
+                    <div id="playbooksHint" class="playbooks-hint"></div>
                 </div>
                 <div class="d-flex justify-content-between gap-2">
                     <button type="button" class="btn btn-secondary" onclick="window.location.href=BASE_PATH + '/'">

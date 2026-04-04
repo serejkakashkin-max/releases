@@ -27,6 +27,13 @@ release_bp = Blueprint('release', __name__)
 
 # УБРАНО: определение get_release_structure() - оно теперь в extensions.py
 
+
+def release_uses_playbooks(release_name: str) -> bool:
+    """Для части релизов плейбуки не используются."""
+    release_name_upper = (release_name or "").upper()
+    blocked_markers = ("SOWA", "ЕФС.AUTHENTICATION_USER", "AUTH", "RESSTORE(2889318)")
+    return not any(marker in release_name_upper for marker in blocked_markers)
+
 @release_bp.route('/get_ke')
 def get_ke():
     release_id = request.args.get('release_id')
@@ -111,6 +118,8 @@ def release():
         date_str = request.form['date']
         ke = request.form['ke']
         selected_playbooks = request.form.getlist('playbooks')
+        if not release_uses_playbooks(release_full):
+            selected_playbooks = []
         playbooks_text = "\n".join(selected_playbooks)
         
         try:
