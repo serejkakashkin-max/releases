@@ -8,6 +8,7 @@ from services.dashboard_service import (
     check_multiple_approvals, get_task_type_badges,
     get_hidden_tasks, get_hidden_task_keys, hide_task, show_task, restore_all_tasks
 )
+from services.release_monitor_service import get_release_monitor_data
 from config import DASHBOARD_CACHE_TTL, DASHBOARD_ASSIGNEES_DISPLAY
 
 BASE_PATH = os.getenv("BASE_PATH", "")
@@ -33,6 +34,9 @@ def dashboard():
         logi_tasks = filter_hidden(data.get('logi_tasks', []))
         vnedrenie_prom_tasks = filter_hidden(data.get('vnedrenie_prom_tasks', []))
         vnedrenie_psi_tasks = filter_hidden(data.get('vnedrenie_psi_tasks', []))
+        release_monitor = data.get('release_monitor', [])
+        release_monitor_summary = data.get('release_monitor_summary', {})
+        release_monitor_meta = data.get('release_monitor_meta', {})
         
         # Подсчет общего количества для отображения
         total_sup = len(sup_tasks)
@@ -68,6 +72,9 @@ def dashboard():
             total_logi=total_logi,
             total_vnedrenie=total_vnedrenie,
             active_assignees=active_assignees,
+            release_monitor=release_monitor,
+            release_monitor_summary=release_monitor_summary,
+            release_monitor_meta=release_monitor_meta,
             hidden_tasks=hidden_tasks,
             hidden_count=len(hidden_tasks)
         )
@@ -89,6 +96,9 @@ def dashboard():
             total_logi=0,
             total_vnedrenie=0,
             active_assignees=0,
+            release_monitor=[],
+            release_monitor_summary={},
+            release_monitor_meta={},
             hidden_tasks={},
             hidden_count=0
         )
@@ -116,6 +126,9 @@ def api_dashboard_data():
             "logi_tasks": data.get('logi_tasks', []),
             "vnedrenie_prom_tasks": vnedrenie_prom,
             "vnedrenie_psi_tasks": vnedrenie_psi,
+            "release_monitor": data.get('release_monitor', []),
+            "release_monitor_summary": data.get('release_monitor_summary', {}),
+            "release_monitor_meta": data.get('release_monitor_meta', {}),
             "assignee_stats": data.get('assignee_stats', {}),
             "dashboard_assignees": data.get('dashboard_assignees', DASHBOARD_ASSIGNEES_DISPLAY),
             "last_update": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
@@ -126,6 +139,23 @@ def api_dashboard_data():
     except Exception as e:
         logging.error(f"Ошибка API дашборда: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+@dashboard_bp.route('/dashboard/release-monitor/refresh', methods=['POST'])
+def refresh_release_monitor():
+    """Принудительное обновление только данных по релизам."""
+    try:
+        release_monitor_data = get_release_monitor_data(force_refresh=True)
+        return jsonify({
+            "success": True,
+            "release_monitor": release_monitor_data.get('items', []),
+            "release_monitor_summary": release_monitor_data.get('summary', {}),
+            "release_monitor_meta": release_monitor_data.get('meta', {}),
+            "message": "Данные по релизам обновлены"
+        })
+    except Exception as e:
+        logging.error(f"Ошибка обновления блока релизов: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
 
 @dashboard_bp.route('/dashboard/check-approvals', methods=['POST'])
 def check_approvals():

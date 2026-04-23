@@ -1385,11 +1385,14 @@ class DashboardChatBot:
             len(dashboard_context.get('vnedrenie_prom_tasks', [])) +
             len(dashboard_context.get('vnedrenie_psi_tasks', []))
         )
+        release_summary = dashboard_context.get('release_monitor_summary', {})
         
         return f"""- Всего активных задач: {total}
 - СУП задачи: {len(dashboard_context.get('sup_tasks', []))}
 - Логи задачи: {len(dashboard_context.get('logi_tasks', []))}
-- Внедрение: {len(dashboard_context.get('vnedrenie_prom_tasks', [])) + len(dashboard_context.get('vnedrenie_psi_tasks', []))}"""
+- Внедрение: {len(dashboard_context.get('vnedrenie_prom_tasks', [])) + len(dashboard_context.get('vnedrenie_psi_tasks', []))}
+- Релизы вне финального статуса: {release_summary.get('total', 0)}
+- Просроченные релизы: {release_summary.get('overdue', 0)}"""
 
 
 # Singleton для использования в приложении

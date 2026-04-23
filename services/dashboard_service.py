@@ -18,6 +18,7 @@ from config import (
     DASHBOARD_CACHE_TTL,
     get_dashboard_assignee_display_name,
 )
+from services.release_monitor_service import get_release_monitor_snapshot
 
 # Глобальные переменные для кэширования
 _cache_lock = threading.Lock()
@@ -744,6 +745,10 @@ def get_dashboard_data():
         try:
             raw_issues = fetch_jira_tasks()
             processed_data = process_tasks_data(raw_issues)
+            release_monitor_data = get_release_monitor_snapshot()
+            processed_data['release_monitor'] = release_monitor_data.get('items', [])
+            processed_data['release_monitor_summary'] = release_monitor_data.get('summary', {})
+            processed_data['release_monitor_meta'] = release_monitor_data.get('meta', {})
             
             _cached_data = processed_data
             _last_cache_update = now
@@ -758,6 +763,7 @@ def get_dashboard_data():
                 f"Логи={len(processed_data['logi_tasks'])}, "
                 f"Внедрение ПРОМ={len(processed_data['vnedrenie_prom_tasks'])}, "
                 f"Внедрение ПСИ={len(processed_data['vnedrenie_psi_tasks'])}, "
+                f"Релизы={len(processed_data.get('release_monitor', []))}, "
                 f"Дежурные={total_assignee_tasks}"
             )
             return _cached_data

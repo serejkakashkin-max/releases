@@ -469,6 +469,8 @@ class DashboardChatBot {
             logi_tasks: window.dashboardData?.logi_tasks || [],
             vnedrenie_prom_tasks: window.dashboardData?.vnedrenie_prom_tasks || [],
             vnedrenie_psi_tasks: window.dashboardData?.vnedrenie_psi_tasks || [],
+            release_monitor: window.dashboardData?.release_monitor || [],
+            release_monitor_summary: window.dashboardData?.release_monitor_summary || {},
             assignee_stats: window.dashboardData?.assignee_stats || {}
         };
         

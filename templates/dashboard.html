@@ -43,6 +43,395 @@
             opacity: 0.8;
             margin-top: 0.5rem;
         }
+
+        .release-monitor-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            margin-bottom: 1.75rem;
+            box-shadow: 0 10px 24px rgba(0,0,0,0.08);
+            overflow: hidden;
+        }
+
+        .release-monitor-section.collapsed .release-monitor-content {
+            display: none;
+        }
+
+        .release-monitor-section.collapsed .release-monitor-collapse-icon {
+            transform: rotate(-90deg);
+        }
+
+        .release-monitor-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 1rem;
+            flex-wrap: wrap;
+            padding: 1.1rem 1.25rem;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .release-monitor-header:hover {
+            background: var(--bg-secondary);
+        }
+
+        .release-monitor-title h2 {
+            margin: 0;
+            font-size: 1.2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+        }
+
+        .release-monitor-subtitle {
+            margin-top: 0.35rem;
+            color: var(--text-secondary);
+            font-size: 0.88rem;
+        }
+
+        .release-monitor-content {
+            padding: 0 1.25rem 1.25rem;
+        }
+
+        .release-monitor-summary {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .release-summary-card {
+            background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-card) 100%);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 0.9rem 1rem;
+        }
+
+        .release-summary-label {
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .release-summary-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-top: 0.15rem;
+        }
+
+        .release-summary-note {
+            margin-top: 0.25rem;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        .release-summary-card.overdue .release-summary-value {
+            color: var(--danger);
+        }
+
+        .release-summary-card.today .release-summary-value {
+            color: #b38600;
+        }
+
+        [data-theme="dark"] .release-summary-card.today .release-summary-value {
+            color: #ffc107;
+        }
+
+        .release-summary-card.pre-final .release-summary-value {
+            color: var(--info);
+        }
+
+        .release-summary-card.no-date .release-summary-value {
+            color: var(--text-secondary);
+        }
+
+        .release-monitor-controls {
+            display: grid;
+            grid-template-columns: 1.4fr 1fr 1fr 1fr;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .release-search-box {
+            position: relative;
+        }
+
+        .release-search-box i {
+            position: absolute;
+            left: 0.8rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+        }
+
+        .release-search-box input,
+        .release-filter-select {
+            width: 100%;
+            padding: 0.72rem 0.9rem;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-card);
+            color: var(--text-primary);
+            font-size: 0.9rem;
+        }
+
+        .release-search-box input {
+            padding-left: 2.35rem;
+        }
+
+        .release-filter-pills {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .release-filter-pill {
+            border: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            border-radius: 999px;
+            padding: 0.45rem 0.8rem;
+            font-size: 0.82rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .release-filter-pill.active {
+            background: var(--primary);
+            color: #fff;
+            border-color: var(--primary);
+        }
+
+        .release-table-wrap {
+            overflow-x: auto;
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+        }
+
+        .release-table-wrap.compact {
+            max-height: 440px;
+            overflow-y: auto;
+        }
+
+        .release-table-wrap.compact::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+
+        .release-table-wrap.compact::-webkit-scrollbar-thumb {
+            background: rgba(128, 128, 128, 0.35);
+            border-radius: 999px;
+        }
+
+        .release-monitor-table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 980px;
+        }
+
+        .release-monitor-table th,
+        .release-monitor-table td {
+            padding: 0.85rem 0.9rem;
+            border-bottom: 1px solid var(--border-color);
+            vertical-align: top;
+        }
+
+        .release-monitor-table th {
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            white-space: nowrap;
+            position: sticky;
+            top: 0;
+            z-index: 2;
+        }
+
+        .release-monitor-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .release-row.state-overdue {
+            background: rgba(248, 81, 73, 0.08);
+        }
+
+        .release-row.state-today {
+            background: rgba(255, 193, 7, 0.10);
+        }
+
+        .release-row.state-no_date {
+            background: rgba(108, 117, 125, 0.08);
+        }
+
+        .release-key-link {
+            font-weight: 700;
+            color: var(--primary);
+            text-decoration: none;
+        }
+
+        .release-key-link:hover {
+            text-decoration: underline;
+        }
+
+        .release-summary-text {
+            font-size: 0.9rem;
+            line-height: 1.35;
+            margin-top: 0.2rem;
+        }
+
+        .release-micro-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+            margin-top: 0.45rem;
+        }
+
+        .release-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            padding: 0.26rem 0.55rem;
+            border-radius: 999px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .release-badge.system {
+            background: rgba(13, 110, 253, 0.12);
+            color: var(--primary);
+        }
+
+        .release-badge.pre-final {
+            background: rgba(88, 166, 255, 0.16);
+            color: var(--info);
+        }
+
+        .release-badge.state-overdue {
+            background: rgba(248, 81, 73, 0.16);
+            color: var(--danger);
+        }
+
+        .release-badge.state-today {
+            background: rgba(255, 193, 7, 0.24);
+            color: #b38600;
+        }
+
+        [data-theme="dark"] .release-badge.state-today {
+            color: #ffc107;
+        }
+
+        .release-badge.state-planned {
+            background: rgba(25, 135, 84, 0.15);
+            color: #198754;
+        }
+
+        .release-badge.state-no_date {
+            background: rgba(108, 117, 125, 0.18);
+            color: var(--text-secondary);
+        }
+
+        .release-status {
+            font-weight: 700;
+            font-size: 0.88rem;
+        }
+
+        .release-status-note {
+            margin-top: 0.3rem;
+            color: var(--text-muted);
+            font-size: 0.78rem;
+        }
+
+        .release-overdue {
+            font-weight: 700;
+        }
+
+        .release-overdue.overdue {
+            color: var(--danger);
+        }
+
+        .release-overdue.today {
+            color: #b38600;
+        }
+
+        [data-theme="dark"] .release-overdue.today {
+            color: #ffc107;
+        }
+
+        .release-visible-counter {
+            color: var(--text-secondary);
+            font-size: 0.88rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .release-monitor-actions {
+            display: flex;
+            gap: 0.6rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .release-monitor-btn {
+            border: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border-radius: 10px;
+            padding: 0.65rem 0.95rem;
+            font-size: 0.88rem;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .release-monitor-btn:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+
+        .release-monitor-btn:disabled {
+            opacity: 0.65;
+            cursor: wait;
+        }
+
+        .release-monitor-btn.spinning i {
+            animation: spin 1s linear infinite;
+        }
+
+        .release-monitor-meta {
+            color: var(--text-secondary);
+            font-size: 0.82rem;
+            white-space: nowrap;
+        }
+
+        .release-monitor-collapse-icon {
+            transition: transform 0.3s ease;
+            font-size: 1rem;
+            opacity: 0.7;
+        }
+
+        @media (max-width: 1200px) {
+            .release-monitor-summary {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .release-monitor-controls {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .release-monitor-summary,
+            .release-monitor-controls {
+                grid-template-columns: 1fr;
+            }
+        }
         
         /* Трехколоночная сетка тегов */
         .tags-grid {
@@ -1070,6 +1459,184 @@
         </div>
         {% endif %}
 
+        <div class="release-monitor-section collapsed" id="releaseMonitorSection">
+            <div class="release-monitor-header" onclick="toggleReleaseMonitorSection()">
+                <div class="release-monitor-title">
+                    <h2>
+                        <i class="bi bi-rocket-takeoff"></i>
+                        Контроль релизов
+                    </h2>
+                    <div class="release-monitor-subtitle">
+                        Релизы `EMRM`, `SMECLM`, `SMECSC`, которые еще не достигли статуса
+                        <strong>{{ release_monitor_meta.final_status if release_monitor_meta else 'Установлен на ПРОМ' }}</strong>.
+                    </div>
+                </div>
+                <div class="release-monitor-actions">
+                    <div class="release-monitor-meta">
+                        Обновлено: <strong id="releaseMonitorLastUpdated">{{ release_monitor_meta.last_updated or 'еще не загружалось' }}</strong>
+                    </div>
+                    <button id="releaseMonitorRefreshBtn" class="release-monitor-btn" onclick="event.stopPropagation(); refreshReleaseMonitor()">
+                        <i class="bi bi-arrow-repeat"></i>
+                        Обновить релизы
+                    </button>
+                    <button id="releaseMonitorToggleBtn" class="release-monitor-btn" onclick="event.stopPropagation(); toggleReleaseMonitorExpand()">
+                        <i class="bi bi-arrows-expand"></i>
+                        Показать все
+                    </button>
+                    <i class="bi bi-chevron-up release-monitor-collapse-icon"></i>
+                </div>
+            </div>
+
+            <div class="release-monitor-content">
+            <div class="release-monitor-summary">
+                <div class="release-summary-card">
+                    <div class="release-summary-label">Не в финале</div>
+                    <div class="release-summary-value" id="releaseSummaryTotal">{{ release_monitor_summary.total or 0 }}</div>
+                    <div class="release-summary-note">все релизы вне финального статуса</div>
+                </div>
+                <div class="release-summary-card overdue">
+                    <div class="release-summary-label">Просрочены</div>
+                    <div class="release-summary-value" id="releaseSummaryOverdue">{{ release_monitor_summary.overdue or 0 }}</div>
+                    <div class="release-summary-note">дата установки уже прошла</div>
+                </div>
+                <div class="release-summary-card today">
+                    <div class="release-summary-label">На сегодня</div>
+                    <div class="release-summary-value" id="releaseSummaryToday">{{ release_monitor_summary.today or 0 }}</div>
+                    <div class="release-summary-note">требуют контроля сегодня</div>
+                </div>
+                <div class="release-summary-card pre-final">
+                    <div class="release-summary-label">Установка на ПРОМ</div>
+                    <div class="release-summary-value" id="releaseSummaryPreFinal">{{ release_monitor_summary.pre_final or 0 }}</div>
+                    <div class="release-summary-note">предпоследний шаг перед финалом</div>
+                </div>
+            </div>
+
+            <div class="release-monitor-controls">
+                <div class="release-search-box">
+                    <i class="bi bi-search"></i>
+                    <input type="text" id="releaseSearchInput" placeholder="Поиск по релизам: ключ, название, система..." onkeyup="handleReleaseSearch()">
+                </div>
+                <select id="releaseSystemFilter" class="release-filter-select" onchange="handleReleaseSystemFilter()">
+                    <option value="all">Все системы</option>
+                    <option value="CLM">CLM</option>
+                    <option value="Фокус">Фокус</option>
+                    <option value="АИСТ">АИСТ</option>
+                </select>
+                <select id="releaseTimelineFilter" class="release-filter-select" onchange="handleReleaseTimelineFilter()">
+                    <option value="all">Все состояния</option>
+                    <option value="overdue">Просроченные</option>
+                    <option value="today">На сегодня</option>
+                    <option value="planned">Будущие</option>
+                </select>
+                <select id="releaseStatusFilter" class="release-filter-select" onchange="applyReleaseFilters()">
+                    <option value="all">Все статусы</option>
+                    {% for status_name, status_count in (release_monitor_summary.by_status or {}).items() %}
+                    <option value="{{ status_name }}">{{ status_name }} ({{ status_count }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="release-visible-counter">
+                Видимых релизов: <strong id="releaseVisibleCount">{{ release_monitor|length }}</strong>
+            </div>
+
+            <div id="releaseMonitorEmptyState" class="empty-state-small" {% if release_monitor %}style="display: none;"{% endif %}>
+                <i class="bi bi-cloud-arrow-down"></i>
+                <div>Данные по релизам загружаются отдельно. Нажмите "Обновить релизы", чтобы получить актуальный список из Jira.</div>
+            </div>
+
+            {% if release_monitor %}
+            <div id="releaseTableWrap" class="release-table-wrap compact">
+                <table class="release-monitor-table">
+                    <thead>
+                        <tr>
+                            <th>Релиз</th>
+                            <th>Статус</th>
+                            <th>Дата завершения установки</th>
+                            <th>Просрочка</th>
+                            <th>Ответственный</th>
+                            <th>Источник</th>
+                        </tr>
+                    </thead>
+                    <tbody id="releaseMonitorBody">
+                        {% for item in release_monitor %}
+                        <tr class="release-row state-{{ item.timeline_state }}"
+                            data-system="{{ item.system_name }}"
+                            data-timeline="{{ item.timeline_state }}"
+                            data-status="{{ item.status }}">
+                            <td>
+                                <a href="{{ item.url }}" target="_blank" class="release-key-link">{{ item.key }}</a>
+                                <div class="release-summary-text">{{ item.summary }}</div>
+                                <div class="release-micro-meta">
+                                    <span class="release-badge system">{{ item.system_name }}</span>
+                                    {% if item.is_pre_final %}
+                                    <span class="release-badge pre-final">Установка на ПРОМ</span>
+                                    {% endif %}
+                                    {% if item.timeline_state == 'overdue' %}
+                                    <span class="release-badge state-overdue">Дата уже прошла</span>
+                                    {% elif item.timeline_state == 'today' %}
+                                    <span class="release-badge state-today">Сегодня</span>
+                                    {% elif item.timeline_state == 'planned' %}
+                                    <span class="release-badge state-planned">Дата впереди</span>
+                                    {% else %}
+                                    <span class="release-badge state-no_date">Нет даты</span>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td>
+                                <div class="release-status">{{ item.status }}</div>
+                                <div class="release-status-note">{{ item.issue_type }}</div>
+                            </td>
+                            <td>
+                                {% if item.planned_prom_end %}
+                                <strong>{{ item.planned_prom_end }}</strong>
+                                {% else %}
+                                <span style="color: var(--text-muted);">Не указана</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if item.timeline_state == 'overdue' %}
+                                <span class="release-overdue overdue">+{{ item.days_overdue }} дн.</span>
+                                {% elif item.timeline_state == 'today' %}
+                                <span class="release-overdue today">Сегодня</span>
+                                {% elif item.timeline_state == 'planned' %}
+                                <span>Ожидает окна</span>
+                                {% else %}
+                                <span style="color: var(--text-muted);">Невозможно оценить</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ item.assignee_name }}</td>
+                            <td>
+                                <div>{{ item.source_prefix }}</div>
+                                {% if item.system_info %}
+                                <div class="release-status-note">{{ item.system_info }}</div>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div id="releaseTableWrap" class="release-table-wrap compact" style="display: none;">
+                <table class="release-monitor-table">
+                    <thead>
+                        <tr>
+                            <th>Релиз</th>
+                            <th>Статус</th>
+                            <th>Дата завершения установки</th>
+                            <th>Просрочка</th>
+                            <th>Ответственный</th>
+                            <th>Источник</th>
+                        </tr>
+                    </thead>
+                    <tbody id="releaseMonitorBody"></tbody>
+                </table>
+            </div>
+            {% endif %}
+            </div>
+        </div>
+
         <!-- Трехколоночная сетка: СУП | Логи | Внедрение -->
         <div class="tags-grid">
             <!-- СУП -->
@@ -1499,6 +2066,291 @@
 
     <script>
         const BASE_PATH = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '' : '/releases';
+        let currentReleaseSystemFilter = 'all';
+        let currentReleaseTimelineFilter = 'all';
+        let isReleaseMonitorExpanded = false;
+
+        function escapeHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function getReleaseTimelineBadge(item) {
+            if (item.timeline_state === 'overdue') {
+                return '<span class="release-badge state-overdue">Дата уже прошла</span>';
+            }
+            if (item.timeline_state === 'today') {
+                return '<span class="release-badge state-today">Сегодня</span>';
+            }
+            if (item.timeline_state === 'planned') {
+                return '<span class="release-badge state-planned">Дата впереди</span>';
+            }
+            return '<span class="release-badge state-no_date">Нет даты</span>';
+        }
+
+        function getReleaseOverdueText(item) {
+            if (item.timeline_state === 'overdue') {
+                return `<span class="release-overdue overdue">+${escapeHtml(item.days_overdue)} дн.</span>`;
+            }
+            if (item.timeline_state === 'today') {
+                return '<span class="release-overdue today">Сегодня</span>';
+            }
+            if (item.timeline_state === 'planned') {
+                return '<span>Ожидает окна</span>';
+            }
+            return '<span style="color: var(--text-muted);">Невозможно оценить</span>';
+        }
+
+        function buildReleaseRow(item) {
+            const preFinalBadge = item.is_pre_final
+                ? '<span class="release-badge pre-final">Установка на ПРОМ</span>'
+                : '';
+            const plannedPromEnd = item.planned_prom_end
+                ? `<strong>${escapeHtml(item.planned_prom_end)}</strong>`
+                : '<span style="color: var(--text-muted);">Не указана</span>';
+            const systemInfo = item.system_info
+                ? `<div class="release-status-note">${escapeHtml(item.system_info)}</div>`
+                : '';
+
+            return `
+                <tr class="release-row state-${escapeHtml(item.timeline_state)}"
+                    data-system="${escapeHtml(item.system_name)}"
+                    data-timeline="${escapeHtml(item.timeline_state)}"
+                    data-status="${escapeHtml(item.status)}">
+                    <td>
+                        <a href="${escapeHtml(item.url)}" target="_blank" class="release-key-link">${escapeHtml(item.key)}</a>
+                        <div class="release-summary-text">${escapeHtml(item.summary)}</div>
+                        <div class="release-micro-meta">
+                            <span class="release-badge system">${escapeHtml(item.system_name)}</span>
+                            ${preFinalBadge}
+                            ${getReleaseTimelineBadge(item)}
+                        </div>
+                    </td>
+                    <td>
+                        <div class="release-status">${escapeHtml(item.status)}</div>
+                        <div class="release-status-note">${escapeHtml(item.issue_type)}</div>
+                    </td>
+                    <td>${plannedPromEnd}</td>
+                    <td>${getReleaseOverdueText(item)}</td>
+                    <td>${escapeHtml(item.assignee_name)}</td>
+                    <td>
+                        <div>${escapeHtml(item.source_prefix)}</div>
+                        ${systemInfo}
+                    </td>
+                </tr>
+            `;
+        }
+
+        function updateReleaseStatusFilterOptions(summary) {
+            const statusSelect = document.getElementById('releaseStatusFilter');
+            if (!statusSelect) {
+                return;
+            }
+
+            const currentValue = statusSelect.value || 'all';
+            const statusEntries = Object.entries((summary && summary.by_status) || {});
+            statusSelect.innerHTML = '<option value="all">Все статусы</option>' +
+                statusEntries.map(([statusName, statusCount]) => (
+                    `<option value="${escapeHtml(statusName)}">${escapeHtml(statusName)} (${escapeHtml(statusCount)})</option>`
+                )).join('');
+            statusSelect.value = statusEntries.some(([statusName]) => statusName === currentValue) ? currentValue : 'all';
+        }
+
+        function updateReleaseEmptyState(meta, hasItems) {
+            const emptyState = document.getElementById('releaseMonitorEmptyState');
+            if (!emptyState || hasItems) {
+                return;
+            }
+
+            if (meta?.last_updated) {
+                emptyState.innerHTML = `
+                    <i class="bi bi-check-circle-fill text-success"></i>
+                    <div>После последнего обновления все релизы уже в финальном статусе или отменены.</div>
+                `;
+            } else {
+                emptyState.innerHTML = `
+                    <i class="bi bi-cloud-arrow-down"></i>
+                    <div>Данные по релизам загружаются отдельно. Нажмите "Обновить релизы", чтобы получить актуальный список из Jira.</div>
+                `;
+            }
+        }
+
+        function renderReleaseMonitor(items, summary, meta) {
+            const body = document.getElementById('releaseMonitorBody');
+            const tableWrap = document.getElementById('releaseTableWrap');
+            const emptyState = document.getElementById('releaseMonitorEmptyState');
+            const lastUpdated = document.getElementById('releaseMonitorLastUpdated');
+
+            if (body) {
+                body.innerHTML = (items || []).map(buildReleaseRow).join('');
+            }
+
+            if (document.getElementById('releaseSummaryTotal')) {
+                document.getElementById('releaseSummaryTotal').textContent = summary?.total || 0;
+                document.getElementById('releaseSummaryOverdue').textContent = summary?.overdue || 0;
+                document.getElementById('releaseSummaryToday').textContent = summary?.today || 0;
+                document.getElementById('releaseSummaryPreFinal').textContent = summary?.pre_final || 0;
+            }
+
+            if (lastUpdated) {
+                lastUpdated.textContent = meta?.last_updated || 'еще не загружалось';
+            }
+
+            updateReleaseStatusFilterOptions(summary || {});
+
+            const hasItems = Boolean(items && items.length);
+            if (tableWrap) {
+                tableWrap.style.display = hasItems ? '' : 'none';
+                tableWrap.classList.toggle('compact', !isReleaseMonitorExpanded);
+            }
+            if (emptyState) {
+                emptyState.style.display = hasItems ? 'none' : '';
+            }
+            updateReleaseEmptyState(meta, hasItems);
+
+            applyReleaseFilters();
+        }
+
+        function setReleaseSystemFilter(filterValue) {
+            currentReleaseSystemFilter = filterValue;
+            const select = document.getElementById('releaseSystemFilter');
+            if (select) {
+                select.value = filterValue;
+            }
+
+            document.querySelectorAll('.release-filter-pill[data-system-filter]').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.systemFilter === filterValue);
+            });
+
+            applyReleaseFilters();
+        }
+
+        function setReleaseTimelineFilter(filterValue) {
+            currentReleaseTimelineFilter = filterValue;
+            const select = document.getElementById('releaseTimelineFilter');
+            if (select) {
+                select.value = filterValue;
+            }
+
+            document.querySelectorAll('.release-filter-pill[data-timeline-filter]').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.timelineFilter === filterValue);
+            });
+
+            applyReleaseFilters();
+        }
+
+        function handleReleaseSystemFilter() {
+            const select = document.getElementById('releaseSystemFilter');
+            setReleaseSystemFilter(select ? select.value : 'all');
+        }
+
+        function handleReleaseTimelineFilter() {
+            const select = document.getElementById('releaseTimelineFilter');
+            setReleaseTimelineFilter(select ? select.value : 'all');
+        }
+
+        function handleReleaseSearch() {
+            applyReleaseFilters();
+        }
+
+        function toggleReleaseMonitorExpand() {
+            isReleaseMonitorExpanded = !isReleaseMonitorExpanded;
+            const tableWrap = document.getElementById('releaseTableWrap');
+            const toggleBtn = document.getElementById('releaseMonitorToggleBtn');
+
+            if (tableWrap) {
+                tableWrap.classList.toggle('compact', !isReleaseMonitorExpanded);
+            }
+
+            if (toggleBtn) {
+                toggleBtn.innerHTML = isReleaseMonitorExpanded
+                    ? '<i class="bi bi-arrows-collapse"></i> Свернуть'
+                    : '<i class="bi bi-arrows-expand"></i> Показать все';
+            }
+        }
+
+        function toggleReleaseMonitorSection() {
+            const section = document.getElementById('releaseMonitorSection');
+            if (section) {
+                section.classList.toggle('collapsed');
+            }
+        }
+
+        async function refreshReleaseMonitor() {
+            const btn = document.getElementById('releaseMonitorRefreshBtn');
+            if (btn) {
+                btn.disabled = true;
+                btn.classList.add('spinning');
+            }
+
+            try {
+                const response = await fetch(BASE_PATH + '/dashboard/release-monitor/refresh', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await response.json();
+
+                if (!data.success) {
+                    throw new Error(data.error || 'Не удалось обновить релизы');
+                }
+
+                window.dashboardData.release_monitor = data.release_monitor || [];
+                window.dashboardData.release_monitor_summary = data.release_monitor_summary || {};
+                window.dashboardData.release_monitor_meta = data.release_monitor_meta || {};
+                renderReleaseMonitor(
+                    data.release_monitor || [],
+                    data.release_monitor_summary || {},
+                    data.release_monitor_meta || {}
+                );
+            } catch (error) {
+                console.error('Release monitor refresh error:', error);
+                alert('Ошибка обновления релизов: ' + error.message);
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.classList.remove('spinning');
+                }
+            }
+        }
+
+        function applyReleaseFilters() {
+            const rows = document.querySelectorAll('.release-row');
+            const searchValue = (document.getElementById('releaseSearchInput')?.value || '').toLowerCase().trim();
+            const statusValue = document.getElementById('releaseStatusFilter')?.value || 'all';
+            let visibleCount = 0;
+
+            rows.forEach(row => {
+                const matchesSystem = currentReleaseSystemFilter === 'all' || row.dataset.system === currentReleaseSystemFilter;
+                const matchesTimeline = currentReleaseTimelineFilter === 'all' || row.dataset.timeline === currentReleaseTimelineFilter;
+                const matchesStatus = statusValue === 'all' || row.dataset.status === statusValue;
+                const matchesSearch = !searchValue || row.textContent.toLowerCase().includes(searchValue);
+                const isVisible = matchesSystem && matchesTimeline && matchesStatus && matchesSearch;
+
+                row.style.display = isVisible ? '' : 'none';
+                if (isVisible) {
+                    visibleCount += 1;
+                }
+            });
+
+            const visibleCounter = document.getElementById('releaseVisibleCount');
+            const emptyState = document.getElementById('releaseMonitorEmptyState');
+            const tableWrap = document.getElementById('releaseTableWrap');
+            const hasRows = rows.length > 0;
+
+            if (visibleCounter) {
+                visibleCounter.textContent = visibleCount;
+            }
+            if (tableWrap) {
+                tableWrap.style.display = hasRows ? '' : 'none';
+            }
+            if (emptyState) {
+                emptyState.style.display = hasRows ? 'none' : '';
+            }
+        }
         
         // Сворачивание колонок (СУП, Логи, Внедрение)
         function toggleColumn(columnId) {
@@ -2184,8 +3036,15 @@
 
         // Запускаем обновление UI при загрузке страницы
         document.addEventListener('DOMContentLoaded', function() {
+            const releaseMonitorSection = document.getElementById('releaseMonitorSection');
+            const tagsGrid = document.querySelector('.tags-grid');
+            if (releaseMonitorSection && tagsGrid) {
+                tagsGrid.insertAdjacentElement('afterend', releaseMonitorSection);
+            }
+
             updateTrashButton();
             updateCounters();
+            applyReleaseFilters();
         });
         
     </script>
@@ -2199,8 +3058,17 @@
             logi_tasks: {{ logi_tasks | tojson | safe }},
             vnedrenie_prom_tasks: {{ vnedrenie_prom_tasks | tojson | safe }},
             vnedrenie_psi_tasks: {{ vnedrenie_psi_tasks | tojson | safe }},
+            release_monitor: {{ release_monitor | tojson | safe }},
+            release_monitor_summary: {{ release_monitor_summary | tojson | safe }},
+            release_monitor_meta: {{ release_monitor_meta | tojson | safe }},
             assignee_stats: {{ assignee_stats | tojson | safe }}
         };
+
+        renderReleaseMonitor(
+            window.dashboardData.release_monitor || [],
+            window.dashboardData.release_monitor_summary || {},
+            window.dashboardData.release_monitor_meta || {}
+        );
     </script>
     
     <!-- ChatBot -->
