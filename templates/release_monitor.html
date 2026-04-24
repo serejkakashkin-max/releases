@@ -360,6 +360,13 @@
             flex-wrap: wrap;
         }
 
+        .release-monitor-sync-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+            align-items: flex-end;
+        }
+
         .release-monitor-btn {
             border: 1px solid var(--border-color);
             background: var(--bg-secondary);
@@ -393,6 +400,14 @@
             color: var(--text-secondary);
             font-size: 0.82rem;
             white-space: nowrap;
+        }
+
+        .release-monitor-btn.quick {
+            border-color: rgba(13, 110, 253, 0.22);
+        }
+
+        .release-monitor-btn.full {
+            border-color: rgba(25, 135, 84, 0.22);
         }
 
         .empty-state-small {
@@ -493,12 +508,27 @@
                     </div>
                 </div>
                 <div class="release-monitor-actions">
-                    <div class="release-monitor-meta">
-                        Обновлено: <strong id="releaseMonitorLastUpdated">{{ release_monitor_meta.last_updated or 'еще не загружалось' }}</strong>
+                    <div class="release-monitor-sync-stack">
+                        <div class="release-monitor-meta">
+                            Обновлено: <strong id="releaseMonitorLastUpdated">{{ release_monitor_meta.last_updated or 'еще не загружалось' }}</strong>
+                        </div>
+                        <div class="release-monitor-meta">
+                            Быстрое: <strong id="releaseMonitorLastQuickSync">{{ release_monitor_meta.last_quick_sync or 'еще не выполнялось' }}</strong>
+                        </div>
+                        <div class="release-monitor-meta">
+                            Полное: <strong id="releaseMonitorLastFullSync">{{ release_monitor_meta.last_full_sync or 'еще не выполнялось' }}</strong>
+                        </div>
+                        <div class="release-monitor-meta">
+                            Автопересборка: ежедневно в <strong>{{ '%02d:00'|format(release_monitor_meta.auto_full_refresh_hour or 6) }}</strong>
+                        </div>
                     </div>
-                    <button id="releaseMonitorRefreshBtn" class="release-monitor-btn" onclick="refreshReleaseMonitor()">
+                    <button id="releaseMonitorQuickRefreshBtn" class="release-monitor-btn quick" onclick="refreshReleaseMonitor('quick')">
+                        <i class="bi bi-lightning-charge"></i>
+                        Быстрое обновление
+                    </button>
+                    <button id="releaseMonitorRefreshBtn" class="release-monitor-btn full" onclick="refreshReleaseMonitor('full')">
                         <i class="bi bi-arrow-repeat"></i>
-                        Обновить релизы
+                        Полное обновление
                     </button>
                     <button id="releaseMonitorToggleBtn" class="release-monitor-btn" onclick="toggleReleaseMonitorExpand()">
                         <i class="bi bi-arrows-collapse"></i>
@@ -728,6 +758,8 @@
             const tableWrap = document.getElementById('releaseTableWrap');
             const emptyState = document.getElementById('releaseMonitorEmptyState');
             const lastUpdated = document.getElementById('releaseMonitorLastUpdated');
+            const lastQuickSync = document.getElementById('releaseMonitorLastQuickSync');
+            const lastFullSync = document.getElementById('releaseMonitorLastFullSync');
             const yearSelect = document.getElementById('releaseYearFilter');
 
             releaseMonitorItems = Array.isArray(items) ? items : [];
@@ -743,6 +775,12 @@
 
             if (lastUpdated) {
                 lastUpdated.textContent = meta?.last_updated || 'еще не загружалось';
+            }
+            if (lastQuickSync) {
+                lastQuickSync.textContent = meta?.last_quick_sync || 'еще не выполнялось';
+            }
+            if (lastFullSync) {
+                lastFullSync.textContent = meta?.last_full_sync || 'еще не выполнялось';
             }
 
             if (tableWrap) {
@@ -793,17 +831,25 @@
             }
         }
 
-        async function refreshReleaseMonitor() {
-            const btn = document.getElementById('releaseMonitorRefreshBtn');
-            if (btn) {
-                btn.disabled = true;
-                btn.classList.add('spinning');
-            }
+        function setReleaseRefreshButtonsLoading(isLoading) {
+            ['releaseMonitorQuickRefreshBtn', 'releaseMonitorRefreshBtn'].forEach(id => {
+                const btn = document.getElementById(id);
+                if (!btn) {
+                    return;
+                }
+                btn.disabled = isLoading;
+                btn.classList.toggle('spinning', isLoading && id === 'releaseMonitorRefreshBtn');
+            });
+        }
+
+        async function refreshReleaseMonitor(mode = 'full') {
+            setReleaseRefreshButtonsLoading(true);
 
             try {
                 const response = await fetch(BASE_PATH + '/dashboard/release-monitor/refresh', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mode })
                 });
                 const data = await response.json();
                 if (!data.success) {
@@ -812,10 +858,7 @@
             } catch (error) {
                 console.error('Release monitor refresh error:', error);
                 alert('Ошибка обновления релизов: ' + error.message);
-                if (btn) {
-                    btn.disabled = false;
-                    btn.classList.remove('spinning');
-                }
+                setReleaseRefreshButtonsLoading(false);
                 return;
             }
 
@@ -823,7 +866,6 @@
         }
 
         async function pollReleaseMonitorRefresh(forceStart = false) {
-            const btn = document.getElementById('releaseMonitorRefreshBtn');
             if (releaseMonitorRefreshPoll && !forceStart) {
                 return;
             }
@@ -843,10 +885,7 @@
                         clearInterval(releaseMonitorRefreshPoll);
                         releaseMonitorRefreshPoll = null;
                     }
-                    if (btn) {
-                        btn.disabled = false;
-                        btn.classList.remove('spinning');
-                    }
+                    setReleaseRefreshButtonsLoading(false);
                     return refreshStatus.state;
                 }
 
@@ -855,10 +894,7 @@
                         clearInterval(releaseMonitorRefreshPoll);
                         releaseMonitorRefreshPoll = null;
                     }
-                    if (btn) {
-                        btn.disabled = false;
-                        btn.classList.remove('spinning');
-                    }
+                    setReleaseRefreshButtonsLoading(false);
                     throw new Error(refreshStatus.error || 'Ошибка фонового обновления релизов');
                 }
 
@@ -876,10 +912,7 @@
                     clearInterval(releaseMonitorRefreshPoll);
                     releaseMonitorRefreshPoll = null;
                 }
-                if (btn) {
-                    btn.disabled = false;
-                    btn.classList.remove('spinning');
-                }
+                setReleaseRefreshButtonsLoading(false);
                 alert('Ошибка обновления релизов: ' + error.message);
                 return;
             }
@@ -892,10 +925,7 @@
                         console.error('Release monitor status polling error:', error);
                         clearInterval(releaseMonitorRefreshPoll);
                         releaseMonitorRefreshPoll = null;
-                        if (btn) {
-                            btn.disabled = false;
-                            btn.classList.remove('spinning');
-                        }
+                        setReleaseRefreshButtonsLoading(false);
                         alert('Ошибка обновления релизов: ' + error.message);
                     }
                 }, 2000);

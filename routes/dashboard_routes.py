@@ -174,12 +174,22 @@ def api_dashboard_data():
 def refresh_release_monitor():
     """Запускает фоновое обновление блока релизов."""
     try:
-        refresh_info = start_release_monitor_refresh()
+        request_data = request.get_json(silent=True) or {}
+        mode = (request_data.get("mode") or "full").strip().lower()
+        if mode not in {"full", "quick"}:
+            mode = "full"
+        refresh_info = start_release_monitor_refresh(mode=mode, trigger="manual")
         return jsonify({
             "success": True,
             "started": refresh_info.get("started", False),
             "refresh_status": refresh_info.get("status", {}),
-            "message": "Обновление релизов запущено" if refresh_info.get("started") else "Обновление релизов уже выполняется"
+            "message": (
+                "Полное обновление релизов запущено"
+                if mode == "full" and refresh_info.get("started")
+                else "Быстрое обновление релизов запущено"
+                if mode == "quick" and refresh_info.get("started")
+                else "Обновление релизов уже выполняется"
+            )
         })
     except Exception as e:
         logging.error(f"Ошибка обновления блока релизов: {e}")

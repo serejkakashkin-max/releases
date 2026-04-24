@@ -140,6 +140,7 @@ dmypy.json
 data/
 logs/
 certificates/
+cache/
 
 # Config with sensitive data
 config.json

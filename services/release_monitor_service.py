@@ -1,9 +1,12 @@
 import logging
+import json
+import os
 import re
 import threading
 import time
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
+from pathlib import Path
 
 import requests
 
@@ -24,8 +27,14 @@ PRE_FINAL_RELEASE_STATUSES = (
 RELEASE_PREFIXES = ("EMRM", "SMECLM", "SMECSC")
 RELEASE_ISSUE_TYPE = "Release 2.0"
 ROV_ISSUE_TYPE = "Introduction Order"
+QUICK_REFRESH_DAYS = 14
+AUTO_FULL_REFRESH_HOUR = 6
+AUTO_REFRESH_CHECK_INTERVAL = 300
+SNAPSHOT_DIR = Path(__file__).resolve().parent.parent / "cache"
+SNAPSHOT_FILE = SNAPSHOT_DIR / "release_monitor_snapshot.json"
 
 FIELD_FALLBACKS = {
+    "planned_prom_start": None,
     "planned_prom_end": "customfield_18606",
     "system_info": "customfield_22400",
     "ke_object": "customfield_18300",
@@ -36,6 +45,11 @@ FIELD_FALLBACKS = {
 }
 
 FIELD_ALIASES = {
+    "planned_prom_start": (
+        "начало внедрения",
+        "дата начала внедрения",
+        "начало внедрения план",
+    ),
     "planned_prom_end": (
         "дата завершения установки в пром",
         "дата установки в пром",
@@ -68,12 +82,16 @@ _cached_data = None
 _last_cache_update = None
 _field_map_cache = {}
 _refresh_thread = None
+_scheduler_thread = None
+_scheduler_started = False
 _refresh_status = {
     "state": "idle",
     "message": "",
     "started_at": None,
     "finished_at": None,
     "error": None,
+    "mode": None,
+    "trigger": None,
 }
 
 
@@ -121,9 +139,43 @@ def _build_empty_release_monitor_payload():
             "years": [current_year, previous_year],
             "current_year": current_year,
             "last_updated": None,
+            "last_full_sync": None,
+            "last_quick_sync": None,
+            "last_sync_mode": None,
+            "quick_refresh_days": QUICK_REFRESH_DAYS,
+            "auto_full_refresh_hour": AUTO_FULL_REFRESH_HOUR,
             "is_cached": False,
         },
     }
+
+
+def _ensure_snapshot_dir():
+    os.makedirs(SNAPSHOT_DIR, exist_ok=True)
+
+
+def _save_snapshot_to_disk(payload):
+    try:
+        _ensure_snapshot_dir()
+        SNAPSHOT_FILE.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        logging.warning("Release monitor: failed to save snapshot to disk: %s", exc)
+
+
+def _load_snapshot_from_disk():
+    if not SNAPSHOT_FILE.exists():
+        return None
+
+    try:
+        payload = json.loads(SNAPSHOT_FILE.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            return None
+        return payload
+    except Exception as exc:
+        logging.warning("Release monitor: failed to load snapshot from disk: %s", exc)
+        return None
 
 
 def _normalize_text(value):
@@ -134,7 +186,14 @@ def _parse_jira_date(value):
     if not value:
         return None
 
-    for fmt in ("%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+    for fmt in (
+        "%Y-%m-%dT%H:%M:%S.%f%z",
+        "%Y-%m-%dT%H:%M:%S%z",
+        "%Y-%m-%dT%H:%M:%S.%f",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%d",
+    ):
         try:
             parsed = datetime.strptime(value, fmt)
             if parsed.tzinfo is not None:
@@ -143,6 +202,10 @@ def _parse_jira_date(value):
         except ValueError:
             continue
     return None
+
+
+def _format_timestamp(dt=None):
+    return (dt or datetime.now()).strftime("%d.%m.%Y %H:%M:%S")
 
 
 def _extract_field_value(raw_value):
@@ -322,6 +385,19 @@ def _execute_release_search(domain, token, prefix, year_from, fields_to_load):
     return _execute_search(domain, token, jql, fields_to_load)
 
 
+def _execute_quick_release_search(domain, token, prefix, updated_since, fields_to_load):
+    current_year = datetime.now().year
+    updated_since_str = updated_since.strftime("%Y-%m-%d")
+    jql = (
+        f'project = {prefix} AND '
+        f'issuetype = "{RELEASE_ISSUE_TYPE}" AND '
+        f'updated >= "{updated_since_str}" AND '
+        f'created < "{current_year + 1}-01-01" '
+        f'ORDER BY updated DESC, key ASC'
+    )
+    return _execute_search(domain, token, jql, fields_to_load)
+
+
 def _execute_issue_keys_search(domain, token, issue_keys, fields_to_load):
     issues = []
     for offset in range(0, len(issue_keys), 50):
@@ -400,11 +476,15 @@ def _build_rov_record(issue, domain, resolved_fields):
     }
 
 
-def _pick_release_year(rov_start, rov_end, planned_prom_end, created_dt):
-    for dt in (rov_start, rov_end, planned_prom_end, created_dt):
+def _pick_release_year(rov_start, rov_end, planned_prom_start, planned_prom_end, created_dt):
+    for dt in (rov_start, rov_end, planned_prom_start, planned_prom_end, created_dt):
         if dt:
             return dt.year
     return datetime.now().year
+
+
+def _pick_release_sort_dt(rov_start, rov_end, planned_prom_start, planned_prom_end):
+    return rov_start or rov_end or planned_prom_start or planned_prom_end
 
 
 def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, current_year, previous_year):
@@ -412,6 +492,7 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
     status_name = (fields.get("status") or {}).get("name", "")
     summary = fields.get("summary", "")
     created_dt = _parse_jira_date(fields.get("created"))
+    planned_prom_start = _parse_jira_date(_extract_field_value(fields.get(resolved_fields["planned_prom_start"])))
     planned_prom_end = _parse_jira_date(_extract_field_value(fields.get(resolved_fields["planned_prom_end"])))
     system_info_text = _extract_field_value(fields.get(resolved_fields["system_info"])) or ""
 
@@ -425,7 +506,7 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
     rov_start = rov_data.get("start_dt")
     rov_end = rov_data.get("end_dt")
 
-    release_year = _pick_release_year(rov_start, rov_end, planned_prom_end, created_dt)
+    release_year = _pick_release_year(rov_start, rov_end, planned_prom_start, planned_prom_end, created_dt)
     if release_year not in {current_year, previous_year}:
         return None
 
@@ -457,7 +538,7 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
 
     return {
         "year": release_year,
-        "release_number": 0,
+        "release_number": "",
         "release_key": issue.get("key"),
         "release_url": f"{domain}/browse/{issue.get('key')}",
         "release_status": status_name,
@@ -472,6 +553,7 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
         "rov_key": rov_key,
         "rov_url": rov_data.get("url", ""),
         "rov_status": rov_data.get("status", ""),
+        "has_rov": bool(rov_key),
         "deployment_start": rov_data.get("start", ""),
         "deployment_start_iso": rov_data.get("start_iso", ""),
         "deployment_end": rov_data.get("end", ""),
@@ -485,11 +567,24 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
         "is_overdue": is_overdue,
         "is_today": is_today,
         "days_overdue": days_overdue,
+        "waits_for_rov": not rov_key and not is_cancelled,
         "source_prefix": prefix,
         "system_name": _detect_system(prefix, summary, ke_name, system_info_text),
-        "sort_date": rov_start or rov_end or planned_prom_end or created_dt,
+        "sort_date": _pick_release_sort_dt(rov_start, rov_end, planned_prom_start, planned_prom_end).isoformat() if _pick_release_sort_dt(rov_start, rov_end, planned_prom_start, planned_prom_end) else "",
+        "created_sort_date": created_dt.isoformat() if created_dt else "",
         "created": fields.get("created", ""),
     }
+
+
+def _sort_datetime_value(item, field_name="sort_date"):
+    sort_value = item.get(field_name)
+    if isinstance(sort_value, datetime):
+        return sort_value
+    if isinstance(sort_value, str) and sort_value:
+        parsed = _parse_jira_date(sort_value)
+        if parsed:
+            return parsed
+    return datetime.min
 
 
 def _sort_and_number_records(records):
@@ -498,19 +593,38 @@ def _sort_and_number_records(records):
         records_by_year[item["year"]].append(item)
 
     for year_items in records_by_year.values():
-        year_items.sort(
+        numbered_items = [item for item in year_items if not item.get("waits_for_rov")]
+        waiting_items = [item for item in year_items if item.get("waits_for_rov")]
+
+        numbered_items.sort(
             key=lambda item: (
-                item.get("sort_date") or datetime.min,
+                _sort_datetime_value(item, "sort_date"),
+                _sort_datetime_value(item, "created_sort_date"),
                 item.get("release_key", ""),
             )
         )
-        for index, item in enumerate(year_items, start=1):
+
+        waiting_items.sort(
+            key=lambda item: (
+                _sort_datetime_value(item, "sort_date"),
+                _sort_datetime_value(item, "created_sort_date"),
+                item.get("release_key", ""),
+            ),
+            reverse=True,
+        )
+
+        for index, item in enumerate(numbered_items, start=1):
             item["release_number"] = index
+
+        for item in waiting_items:
+            item["release_number"] = ""
 
     records.sort(
         key=lambda item: (
             -item.get("year", 0),
-            -item.get("release_number", 0),
+            0 if item.get("waits_for_rov") else 1,
+            -_sort_datetime_value(item, "sort_date").timestamp() if _sort_datetime_value(item, "sort_date") != datetime.min else float("inf"),
+            -(item.get("release_number") or 0),
             item.get("release_key", ""),
         )
     )
@@ -590,6 +704,31 @@ def _build_summary(records, current_year, previous_year):
     return summary
 
 
+def _compose_release_payload(all_records, mode):
+    current_year = datetime.now().year
+    previous_year = current_year - 1
+    _sort_and_number_records(all_records)
+    payload = {
+        "items": all_records,
+        "summary": _build_summary(all_records, current_year, previous_year),
+        "meta": {
+            "final_status": FINAL_RELEASE_STATUS,
+            "cancelled_status": CANCELLED_RELEASE_STATUS,
+            "final_statuses": list(FINAL_RELEASE_STATUSES),
+            "pre_final_statuses": list(PRE_FINAL_RELEASE_STATUSES),
+            "prefixes": list(RELEASE_PREFIXES),
+            "years": [current_year, previous_year],
+            "current_year": current_year,
+            "last_updated": _format_timestamp(),
+            "last_sync_mode": mode,
+            "quick_refresh_days": QUICK_REFRESH_DAYS,
+            "auto_full_refresh_hour": AUTO_FULL_REFRESH_HOUR,
+            "is_cached": True,
+        },
+    }
+    return payload
+
+
 def _fetch_release_monitor_data():
     current_year = datetime.now().year
     previous_year = current_year - 1
@@ -609,6 +748,7 @@ def _fetch_release_monitor_data():
             "issuetype",
             "priority",
             "issuelinks",
+            resolved_fields["planned_prom_start"],
             resolved_fields["planned_prom_end"],
             resolved_fields["system_info"],
             resolved_fields["ke_object"],
@@ -678,23 +818,117 @@ def _fetch_release_monitor_data():
             if record:
                 all_records.append(record)
 
-    _sort_and_number_records(all_records)
+    return _compose_release_payload(all_records, "full")
 
-    return {
-        "items": all_records,
-        "summary": _build_summary(all_records, current_year, previous_year),
-        "meta": {
-            "final_status": FINAL_RELEASE_STATUS,
-            "cancelled_status": CANCELLED_RELEASE_STATUS,
-            "final_statuses": list(FINAL_RELEASE_STATUSES),
-            "pre_final_statuses": list(PRE_FINAL_RELEASE_STATUSES),
-            "prefixes": list(RELEASE_PREFIXES),
-            "years": [current_year, previous_year],
-            "current_year": current_year,
-            "last_updated": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
-            "is_cached": True,
-        },
+
+def _merge_release_records(existing_items, updated_items):
+    current_year = datetime.now().year
+    previous_year = current_year - 1
+    records_by_key = {
+        item.get("release_key"): dict(item)
+        for item in (existing_items or [])
+        if item.get("release_key") and item.get("year") in {current_year, previous_year}
     }
+
+    for item in updated_items:
+        if item and item.get("release_key"):
+            records_by_key[item["release_key"]] = item
+
+    merged_items = list(records_by_key.values())
+    return _compose_release_payload(merged_items, "quick")
+
+
+def _fetch_quick_release_monitor_data(base_items=None):
+    current_year = datetime.now().year
+    previous_year = current_year - 1
+    updated_since = datetime.now() - timedelta(days=QUICK_REFRESH_DAYS)
+    updated_records = []
+
+    for (domain, token), prefixes in _get_domain_groups().items():
+        resolved_fields = _resolve_field_ids(domain, token)
+        release_fields_to_load = {
+            "key",
+            "summary",
+            "status",
+            "resolution",
+            "assignee",
+            "reporter",
+            "created",
+            "updated",
+            "issuetype",
+            "priority",
+            "issuelinks",
+            resolved_fields["planned_prom_start"],
+            resolved_fields["planned_prom_end"],
+            resolved_fields["system_info"],
+            resolved_fields["ke_object"],
+            resolved_fields["release_distributive"],
+            resolved_fields["delta_release_distributive"],
+        }
+
+        domain_release_issues = []
+        for prefix in prefixes:
+            try:
+                issues = _execute_quick_release_search(
+                    domain,
+                    token,
+                    prefix,
+                    updated_since,
+                    release_fields_to_load,
+                )
+                logging.info(
+                    "Release monitor: quick refresh loaded %s releases for prefix %s",
+                    len(issues),
+                    prefix,
+                )
+                domain_release_issues.extend((prefix, issue) for issue in issues)
+            except Exception as exc:
+                logging.error(
+                    "Release monitor: quick refresh failed for prefix %s: %s",
+                    prefix,
+                    exc,
+                )
+
+        rov_keys = sorted(
+            {
+                _extract_release_io_key(issue)
+                for _, issue in domain_release_issues
+                if _extract_release_io_key(issue)
+            }
+        )
+        rov_map = {}
+        if rov_keys:
+            rov_fields_to_load = {
+                "key",
+                "summary",
+                "status",
+                "issuetype",
+                resolved_fields["rov_start"],
+                resolved_fields["rov_end"],
+            }
+            try:
+                rov_issues = _execute_issue_keys_search(domain, token, rov_keys, rov_fields_to_load)
+                rov_map = {
+                    issue.get("key"): _build_rov_record(issue, domain, resolved_fields)
+                    for issue in rov_issues
+                }
+            except Exception as exc:
+                logging.error("Release monitor: quick refresh failed to load linked ROV issues from %s: %s", domain, exc)
+
+        for prefix, issue in domain_release_issues:
+            record = _build_release_record(
+                issue,
+                domain,
+                prefix,
+                resolved_fields,
+                rov_map,
+                current_year,
+                previous_year,
+            )
+            if record:
+                updated_records.append(record)
+
+    return _merge_release_records(base_items or [], updated_records)
 
 
 def get_release_monitor_data(force_refresh=False):
@@ -811,3 +1045,219 @@ def clear_release_monitor_cache():
     with _cache_lock:
         _cached_data = None
         _last_cache_update = None
+
+
+def _get_cached_payload_copy():
+    if _cached_data is None:
+        return None
+    return {
+        "items": list(_cached_data.get("items", [])),
+        "summary": dict(_cached_data.get("summary", {})),
+        "meta": dict(_cached_data.get("meta", {})),
+    }
+
+
+def _ensure_scheduler_started():
+    global _scheduler_thread, _scheduler_started
+
+    if _scheduler_started:
+        return
+
+    def _scheduler_loop():
+        while True:
+            try:
+                with _cache_lock:
+                    snapshot = _cached_data or _load_snapshot_from_disk() or _build_empty_release_monitor_payload()
+                    last_full_sync = (snapshot.get("meta") or {}).get("last_full_sync")
+                    running = _refresh_thread is not None and _refresh_thread.is_alive()
+
+                now = datetime.now()
+                last_full_date = None
+                if last_full_sync:
+                    try:
+                        last_full_date = datetime.strptime(last_full_sync, "%d.%m.%Y %H:%M:%S").date()
+                    except ValueError:
+                        last_full_date = None
+
+                should_run = (
+                    now.hour >= AUTO_FULL_REFRESH_HOUR
+                    and last_full_date != now.date()
+                    and not running
+                )
+
+                if should_run:
+                    start_release_monitor_refresh(mode="full", trigger="auto")
+            except Exception:
+                logging.exception("Release monitor: auto full refresh scheduler failed")
+
+            time.sleep(AUTO_REFRESH_CHECK_INTERVAL)
+
+    _scheduler_thread = threading.Thread(target=_scheduler_loop, daemon=True)
+    _scheduler_thread.start()
+    _scheduler_started = True
+
+
+def get_release_monitor_data(force_refresh=False):
+    global _cached_data, _last_cache_update
+
+    with _cache_lock:
+        _ensure_scheduler_started()
+        if _cached_data is None:
+            disk_payload = _load_snapshot_from_disk()
+            if disk_payload:
+                _cached_data = disk_payload
+                _last_cache_update = time.time()
+
+        now = time.time()
+        if (
+            not force_refresh
+            and _cached_data is not None
+            and _last_cache_update is not None
+            and (now - _last_cache_update) < DASHBOARD_CACHE_TTL
+        ):
+            return _cached_data
+
+    data = _fetch_release_monitor_data()
+    data["meta"]["last_full_sync"] = data["meta"].get("last_updated")
+    data["meta"]["last_quick_sync"] = (_cached_data or {}).get("meta", {}).get("last_quick_sync")
+
+    with _cache_lock:
+        _cached_data = data
+        _last_cache_update = time.time()
+        _save_snapshot_to_disk(_cached_data)
+        return _cached_data
+
+
+def _run_release_monitor_refresh(mode="full", trigger="manual"):
+    global _cached_data, _last_cache_update
+
+    try:
+        logging.info("Release monitor: background %s refresh started", mode)
+        with _cache_lock:
+            base_items = list((_cached_data or {}).get("items", []))
+            current_meta = dict((_cached_data or {}).get("meta", {}))
+            if not base_items:
+                disk_payload = _load_snapshot_from_disk()
+                if disk_payload:
+                    base_items = list(disk_payload.get("items", []))
+                    current_meta = dict(disk_payload.get("meta", {}))
+
+        if mode == "quick" and base_items:
+            data = _fetch_quick_release_monitor_data(base_items)
+        else:
+            data = _fetch_release_monitor_data()
+            if mode == "quick":
+                mode = "full"
+
+        now_str = _format_timestamp()
+        meta = dict(data.get("meta", {}))
+        meta["last_updated"] = now_str
+        meta["last_sync_mode"] = mode
+        meta["quick_refresh_days"] = QUICK_REFRESH_DAYS
+        meta["auto_full_refresh_hour"] = AUTO_FULL_REFRESH_HOUR
+        meta["last_full_sync"] = now_str if mode == "full" else current_meta.get("last_full_sync")
+        meta["last_quick_sync"] = now_str if mode == "quick" else current_meta.get("last_quick_sync")
+        data["meta"] = meta
+
+        with _cache_lock:
+            _cached_data = data
+            _last_cache_update = time.time()
+            _save_snapshot_to_disk(_cached_data)
+            _refresh_status.update(
+                {
+                    "state": "completed",
+                    "message": "Данные по релизам обновлены",
+                    "started_at": _refresh_status.get("started_at"),
+                    "finished_at": now_str,
+                    "error": None,
+                    "mode": mode,
+                    "trigger": trigger,
+                }
+            )
+        logging.info("Release monitor: background %s refresh completed, items=%s", mode, len(data.get("items", [])))
+    except Exception as exc:
+        logging.exception("Release monitor: background %s refresh failed", mode)
+        with _cache_lock:
+            _refresh_status.update(
+                {
+                    "state": "failed",
+                    "message": "Ошибка обновления релизов",
+                    "finished_at": _format_timestamp(),
+                    "error": str(exc),
+                    "mode": mode,
+                    "trigger": trigger,
+                }
+            )
+
+
+def start_release_monitor_refresh(mode="full", trigger="manual"):
+    global _refresh_thread
+
+    with _cache_lock:
+        _ensure_scheduler_started()
+        if _refresh_thread and _refresh_thread.is_alive():
+            return {
+                "started": False,
+                "status": dict(_refresh_status),
+            }
+
+        _refresh_status.update(
+            {
+                "state": "refreshing",
+                "message": "Идет полное обновление релизов из Jira" if mode == "full" else f"Идет быстрое обновление релизов за последние {QUICK_REFRESH_DAYS} дней",
+                "started_at": _format_timestamp(),
+                "finished_at": None,
+                "error": None,
+                "mode": mode,
+                "trigger": trigger,
+            }
+        )
+        _refresh_thread = threading.Thread(
+            target=_run_release_monitor_refresh,
+            kwargs={"mode": mode, "trigger": trigger},
+            daemon=True,
+        )
+        _refresh_thread.start()
+
+        return {
+            "started": True,
+            "status": dict(_refresh_status),
+        }
+
+
+def get_release_monitor_refresh_status():
+    global _cached_data
+
+    with _cache_lock:
+        _ensure_scheduler_started()
+        if _cached_data is None:
+            disk_payload = _load_snapshot_from_disk()
+            if disk_payload:
+                _cached_data = disk_payload
+
+        payload = {
+            "status": dict(_refresh_status),
+        }
+        payload["data"] = _get_cached_payload_copy() or _build_empty_release_monitor_payload()
+        return payload
+
+
+def get_release_monitor_snapshot():
+    global _cached_data, _last_cache_update
+
+    with _cache_lock:
+        _ensure_scheduler_started()
+        if _cached_data is None:
+            disk_payload = _load_snapshot_from_disk()
+            if disk_payload:
+                _cached_data = disk_payload
+                _last_cache_update = time.time()
+            else:
+                return _build_empty_release_monitor_payload()
+
+        payload = _get_cached_payload_copy()
+        payload["meta"] = {
+            **payload.get("meta", {}),
+            "is_cached": True,
+        }
+        return payload
