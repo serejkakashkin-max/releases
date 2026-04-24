@@ -103,6 +103,7 @@
             // Устанавливаем правильные ссылки
             document.getElementById('link-release').href = BASE_PATH + '/release';
             document.getElementById('link-sms').href = BASE_PATH + '/sms';
+            document.getElementById('link-release-monitor').href = BASE_PATH + '/release-monitor';
             // Дашборд теперь через onclick
         };
     </script>
@@ -161,6 +162,9 @@
                 <button onclick="goToDashboard()" class="btn btn-primary btn-lg btn-beta d-flex align-items-center justify-content-center">
                     <i class="bi bi-speedometer2 me-2"></i> Рабочий стол дежурного
                 </button>
+                <a id="link-release-monitor" href="/release-monitor" class="btn btn-primary btn-lg btn-beta d-flex align-items-center justify-content-center">
+                    <i class="bi bi-rocket-takeoff me-2"></i> Блок релизов
+                </a>
             </div>
             
             <!-- Секция статистики -->

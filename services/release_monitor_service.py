@@ -1,4 +1,5 @@
 import logging
+import re
 import threading
 import time
 from collections import defaultdict
@@ -10,47 +11,55 @@ from config import DASHBOARD_CACHE_TTL
 from services.jira_service import get_jira_domain_and_token
 
 
+FINAL_RELEASE_STATUS = "Установлен на ПРОМ"
+CANCELLED_RELEASE_STATUS = "Отменено"
 FINAL_RELEASE_STATUSES = (
-    "Установлен на ПРОМ",
-    "Отменено",
+    FINAL_RELEASE_STATUS,
+    CANCELLED_RELEASE_STATUS,
 )
-PRE_FINAL_RELEASE_STATUS = "Установка на ПРОМ"
+PRE_FINAL_RELEASE_STATUSES = (
+    "Установка на ПРОМ",
+    "Готов к установке на ПРОМ",
+)
 RELEASE_PREFIXES = ("EMRM", "SMECLM", "SMECSC")
 RELEASE_ISSUE_TYPE = "Release 2.0"
+ROV_ISSUE_TYPE = "Introduction Order"
 
 FIELD_FALLBACKS = {
-    "planned_psi_start": "customfield_24200",
-    "planned_psi_end": "customfield_24201",
     "planned_prom_end": "customfield_18606",
     "system_info": "customfield_22400",
-    "sm_id": "customfield_18300",
+    "ke_object": "customfield_18300",
+    "release_distributive": "customfield_21710",
+    "delta_release_distributive": "customfield_27011",
+    "rov_start": None,
+    "rov_end": None,
 }
 
 FIELD_ALIASES = {
-    "planned_psi_start": (
-        "начало пси",
-        "дата начала пси",
-        "начало пси план",
-    ),
-    "planned_psi_end": (
-        "окончание пси",
-        "дата окончания пси",
-        "окончание пси план",
-    ),
     "planned_prom_end": (
         "дата завершения установки в пром",
-        "завершение установки в пром",
         "дата установки в пром",
-        "дата завершения установки на пром",
     ),
     "system_info": (
         "ит-услуга",
-        "ит услуга",
-        "ке",
+        "кэ",
     ),
-    "sm_id": (
-        "smid",
-        "sm id",
+    "ke_object": (
+        "кэ",
+    ),
+    "release_distributive": (
+        "кэ дистрибутива",
+        "кэ дистрибутивов",
+    ),
+    "rov_start": (
+        "дата/время начала работ по внедрению",
+        "дата время начала работ по внедрению",
+        "начало работ по внедрению",
+    ),
+    "rov_end": (
+        "дата/время окончания работ по внедрению",
+        "дата время окончания работ по внедрению",
+        "окончание работ по внедрению",
     ),
 }
 
@@ -58,26 +67,59 @@ _cache_lock = threading.Lock()
 _cached_data = None
 _last_cache_update = None
 _field_map_cache = {}
+_refresh_thread = None
+_refresh_status = {
+    "state": "idle",
+    "message": "",
+    "started_at": None,
+    "finished_at": None,
+    "error": None,
+}
 
 
 def _build_empty_release_monitor_payload():
+    current_year = datetime.now().year
+    previous_year = current_year - 1
     return {
         "items": [],
         "summary": {
             "total": 0,
+            "non_final": 0,
             "overdue": 0,
             "today": 0,
-            "planned": 0,
-            "no_date": 0,
             "pre_final": 0,
-            "by_system": {},
+            "final": 0,
+            "cancelled": 0,
             "by_status": {},
+            "by_year": {
+                str(current_year): {
+                    "total": 0,
+                    "non_final": 0,
+                    "overdue": 0,
+                    "today": 0,
+                    "pre_final": 0,
+                    "final": 0,
+                    "cancelled": 0,
+                },
+                str(previous_year): {
+                    "total": 0,
+                    "non_final": 0,
+                    "overdue": 0,
+                    "today": 0,
+                    "pre_final": 0,
+                    "final": 0,
+                    "cancelled": 0,
+                },
+            },
         },
         "meta": {
-            "final_status": FINAL_RELEASE_STATUSES[0],
+            "final_status": FINAL_RELEASE_STATUS,
+            "cancelled_status": CANCELLED_RELEASE_STATUS,
             "final_statuses": list(FINAL_RELEASE_STATUSES),
-            "pre_final_status": PRE_FINAL_RELEASE_STATUS,
+            "pre_final_statuses": list(PRE_FINAL_RELEASE_STATUSES),
             "prefixes": list(RELEASE_PREFIXES),
+            "years": [current_year, previous_year],
+            "current_year": current_year,
             "last_updated": None,
             "is_cached": False,
         },
@@ -92,9 +134,12 @@ def _parse_jira_date(value):
     if not value:
         return None
 
-    for fmt in ("%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%d"):
+    for fmt in ("%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
         try:
-            return datetime.strptime(value, fmt)
+            parsed = datetime.strptime(value, fmt)
+            if parsed.tzinfo is not None:
+                return parsed.astimezone().replace(tzinfo=None)
+            return parsed
         except ValueError:
             continue
     return None
@@ -116,12 +161,84 @@ def _extract_field_value(raw_value):
     return raw_value
 
 
+def _first_list_item(raw_value):
+    if isinstance(raw_value, list) and raw_value:
+        return raw_value[0]
+    if isinstance(raw_value, dict):
+        return raw_value
+    return None
+
+
+def _format_ke_id(raw_ke_id):
+    if not raw_ke_id:
+        return ""
+
+    digits = re.sub(r"\D", "", str(raw_ke_id))
+    if not digits:
+        return ""
+    return f"CI{digits.zfill(8)}"
+
+
+def _extract_version(dist_item):
+    if not dist_item:
+        return ""
+
+    if isinstance(dist_item, dict):
+        for key in ("version", "buildVersion"):
+            value = dist_item.get(key)
+            if value:
+                return str(value)
+
+        for key in ("value", "url"):
+            value = dist_item.get(key)
+            if not value:
+                continue
+            match = re.search(r"[DP]-\d+\.\d+\.\d+-\d+", str(value))
+            if match:
+                return match.group(0)
+    else:
+        match = re.search(r"[DP]-\d+\.\d+\.\d+-\d+", str(dist_item))
+        if match:
+            return match.group(0)
+
+    return ""
+
+
+def _extract_ke_object(fields, resolved_fields):
+    raw_ke_object = fields.get(resolved_fields["ke_object"])
+    item = _first_list_item(raw_ke_object)
+    if isinstance(item, dict):
+        return {
+            "id": item.get("id") or item.get("smId") or "",
+            "name": item.get("value") or item.get("name") or "",
+        }
+
+    raw_delta_object = fields.get(resolved_fields["delta_release_distributive"])
+    item = _first_list_item(raw_delta_object)
+    if isinstance(item, dict):
+        parent_ci = item.get("PARENT_CI") or item.get("id") or ""
+        return {
+            "id": parent_ci[2:].lstrip("0") if str(parent_ci).startswith("CI") else str(parent_ci),
+            "name": item.get("value") or item.get("name") or "",
+        }
+
+    return {"id": "", "name": ""}
+
+
+def _extract_release_dist(fields, resolved_fields):
+    for logical_name in ("release_distributive", "delta_release_distributive"):
+        raw_dist = fields.get(resolved_fields[logical_name])
+        item = _first_list_item(raw_dist)
+        if item:
+            return item
+    return None
+
+
 def _get_domain_groups():
     groups = {}
     for prefix in RELEASE_PREFIXES:
         domain, token = get_jira_domain_and_token(f"{prefix}-1")
-        key = (domain, token)
-        groups.setdefault(key, []).append(prefix)
+        groups.setdefault((domain, token), []).append(prefix)
     return groups
 
 
@@ -152,46 +269,33 @@ def _resolve_field_ids(domain, token):
     field_name_map = _fetch_field_name_map(domain, token)
     resolved = {}
 
-    for logical_name, aliases in FIELD_ALIASES.items():
-        fallback_id = FIELD_FALLBACKS[logical_name]
+    for logical_name, fallback_id in FIELD_FALLBACKS.items():
         resolved[logical_name] = fallback_id
+        aliases = FIELD_ALIASES.get(logical_name, ())
+        if not aliases:
+            continue
 
         for field_id, field_name in field_name_map.items():
             normalized_name = _normalize_text(field_name)
-            if all(alias in normalized_name for alias in aliases[0].split()):
+            if any(_normalize_text(alias) in normalized_name for alias in aliases):
                 resolved[logical_name] = field_id
                 break
-
-        if resolved[logical_name] == fallback_id:
-            for field_id, field_name in field_name_map.items():
-                normalized_name = _normalize_text(field_name)
-                if any(alias in normalized_name for alias in aliases):
-                    resolved[logical_name] = field_id
-                    break
 
     return resolved
 
 
-def _execute_release_search(domain, token, prefix, fields_to_load):
+def _execute_search(domain, token, jql, fields_to_load):
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
     url = f"{domain}/rest/api/2/search"
     start_at = 0
     issues = []
-
-    final_statuses_jql = ", ".join(f'"{status}"' for status in FINAL_RELEASE_STATUSES)
-    jql = (
-        f'project = {prefix} AND '
-        f'issuetype = "{RELEASE_ISSUE_TYPE}" AND '
-        f'status NOT IN ({final_statuses_jql}) '
-        f'ORDER BY updated DESC'
-    )
 
     while True:
         params = {
             "jql": jql,
             "startAt": start_at,
             "maxResults": 100,
-            "fields": ",".join(fields_to_load),
+            "fields": ",".join(sorted(field for field in fields_to_load if field)),
         }
         response = requests.get(url, headers=headers, params=params, verify=False, timeout=60)
         response.raise_for_status()
@@ -206,8 +310,48 @@ def _execute_release_search(domain, token, prefix, fields_to_load):
     return issues
 
 
-def _detect_system(prefix, summary, system_info_text):
-    searchable = _normalize_text(f"{summary} {system_info_text}")
+def _execute_release_search(domain, token, prefix, year_from, fields_to_load):
+    current_year = datetime.now().year
+    jql = (
+        f'project = {prefix} AND '
+        f'issuetype = "{RELEASE_ISSUE_TYPE}" AND '
+        f'created >= "{year_from}-01-01" AND '
+        f'created < "{current_year + 1}-01-01" '
+        f'ORDER BY created ASC, key ASC'
+    )
+    return _execute_search(domain, token, jql, fields_to_load)
+
+
+def _execute_issue_keys_search(domain, token, issue_keys, fields_to_load):
+    issues = []
+    for offset in range(0, len(issue_keys), 50):
+        batch_keys = issue_keys[offset: offset + 50]
+        quoted = ", ".join(f'"{key}"' for key in batch_keys)
+        jql = f"key in ({quoted})"
+        issues.extend(_execute_search(domain, token, jql, fields_to_load))
+    return issues
+
+
+def _extract_release_io_key(issue):
+    for link in issue.get("fields", {}).get("issuelinks", []):
+        link_type = link.get("type", {})
+        inward_issue = link.get("inwardIssue")
+        if not inward_issue:
+            continue
+
+        if link_type.get("name") == "ReleaseIO" or link_type.get("inward") == "Introduction Order":
+            return inward_issue.get("key")
+
+    return ""
+
+
+def _clean_release_summary(summary):
+    cleaned = re.sub(r"^\s*Релиз#\d+\s*", "", summary or "", flags=re.IGNORECASE)
+    return cleaned.strip()
+
+
+def _detect_system(prefix, summary, ke_name, system_info_text):
+    searchable = _normalize_text(f"{summary} {ke_name} {system_info_text}")
 
     if "аист" in searchable or "aist" in searchable:
         return "АИСТ"
@@ -216,121 +360,230 @@ def _detect_system(prefix, summary, system_info_text):
     return "Фокус"
 
 
-def _build_release_record(issue, domain, prefix, resolved_fields):
+def _build_release_name_lines(summary, ke_name, ke_id, version):
+    lines = []
+    short_name = _clean_release_summary(summary)
+    if short_name:
+        lines.append(short_name)
+
+    if ke_name:
+        if ke_id:
+            lines.append(f"{ke_name}({ke_id})")
+        else:
+            lines.append(ke_name)
+
+    lines.append("(Релиз)")
+
+    if version:
+        lines.append(f"Сборка: {version}")
+
+    return lines
+
+
+def _build_rov_record(issue, domain, resolved_fields):
     fields = issue.get("fields", {})
-    status_name = fields.get("status", {}).get("name", "")
-    assignee = fields.get("assignee")
-    reporter = fields.get("reporter")
-    summary = fields.get("summary", "")
-
-    planned_prom_end_raw = fields.get(resolved_fields["planned_prom_end"])
-    planned_psi_start_raw = fields.get(resolved_fields["planned_psi_start"])
-    planned_psi_end_raw = fields.get(resolved_fields["planned_psi_end"])
-    system_info_raw = fields.get(resolved_fields["system_info"])
-    sm_info_raw = fields.get(resolved_fields["sm_id"])
-
-    planned_prom_end = _parse_jira_date(_extract_field_value(planned_prom_end_raw))
-    planned_psi_start = _parse_jira_date(_extract_field_value(planned_psi_start_raw))
-    planned_psi_end = _parse_jira_date(_extract_field_value(planned_psi_end_raw))
-    system_info_text = _extract_field_value(system_info_raw) or ""
-
-    now = datetime.now()
-    today = now.date()
-    planned_prom_end_date = planned_prom_end.date() if planned_prom_end else None
-
-    is_final = _normalize_text(status_name) in {
-        _normalize_text(status) for status in FINAL_RELEASE_STATUSES
-    }
-    is_pre_final = _normalize_text(status_name) == _normalize_text(PRE_FINAL_RELEASE_STATUS)
-    is_overdue = bool(planned_prom_end_date and planned_prom_end_date < today and not is_final)
-    is_today = bool(planned_prom_end_date and planned_prom_end_date == today and not is_final)
-
-    if is_overdue:
-        timeline_state = "overdue"
-    elif is_today:
-        timeline_state = "today"
-    elif planned_prom_end_date:
-        timeline_state = "planned"
-    else:
-        timeline_state = "no_date"
-
-    days_overdue = (today - planned_prom_end_date).days if is_overdue else 0
-    sm_id = None
-    if isinstance(sm_info_raw, list) and sm_info_raw:
-        first = sm_info_raw[0]
-        if isinstance(first, dict):
-            sm_id = first.get("id") or first.get("smId")
+    rov_start = _parse_jira_date(_extract_field_value(fields.get(resolved_fields["rov_start"])))
+    rov_end = _parse_jira_date(_extract_field_value(fields.get(resolved_fields["rov_end"])))
 
     return {
         "key": issue.get("key"),
-        "summary": summary,
-        "status": status_name,
-        "resolution": (fields.get("resolution") or {}).get("name", ""),
+        "summary": fields.get("summary", ""),
+        "status": (fields.get("status") or {}).get("name", ""),
         "issue_type": (fields.get("issuetype") or {}).get("name", ""),
-        "priority": (fields.get("priority") or {}).get("name", ""),
-        "assignee_name": assignee.get("displayName", "Не назначен") if assignee else "Не назначен",
-        "reporter_name": reporter.get("displayName", "Не указан") if reporter else "Не указан",
-        "created": fields.get("created", ""),
-        "updated": fields.get("updated", ""),
-        "planned_prom_end": planned_prom_end.strftime("%d.%m.%Y") if planned_prom_end else "",
-        "planned_prom_end_iso": planned_prom_end_date.isoformat() if planned_prom_end_date else "",
-        "planned_psi_start": planned_psi_start.strftime("%d.%m.%Y %H:%M") if planned_psi_start else "",
-        "planned_psi_end": planned_psi_end.strftime("%d.%m.%Y %H:%M") if planned_psi_end else "",
-        "timeline_state": timeline_state,
-        "days_overdue": days_overdue,
-        "is_final": is_final,
-        "is_pre_final": is_pre_final,
-        "system_name": _detect_system(prefix, summary, system_info_text),
-        "source_prefix": prefix,
-        "system_info": system_info_text,
-        "sm_id": sm_id,
+        "start_dt": rov_start,
+        "end_dt": rov_end,
+        "start": rov_start.strftime("%d.%m.%Y") if rov_start else "",
+        "end": rov_end.strftime("%d.%m.%Y") if rov_end else "",
+        "start_iso": rov_start.isoformat() if rov_start else "",
+        "end_iso": rov_end.isoformat() if rov_end else "",
         "url": f"{domain}/browse/{issue.get('key')}",
     }
 
 
-def _sort_release_records(records):
-    state_order = {
-        "overdue": 0,
-        "today": 1,
-        "no_date": 2,
-        "planned": 3,
+def _pick_release_year(rov_start, rov_end, planned_prom_end, created_dt):
+    for dt in (rov_start, rov_end, planned_prom_end, created_dt):
+        if dt:
+            return dt.year
+    return datetime.now().year
+
+
+def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, current_year, previous_year):
+    fields = issue.get("fields", {})
+    status_name = (fields.get("status") or {}).get("name", "")
+    summary = fields.get("summary", "")
+    created_dt = _parse_jira_date(fields.get("created"))
+    planned_prom_end = _parse_jira_date(_extract_field_value(fields.get(resolved_fields["planned_prom_end"])))
+    system_info_text = _extract_field_value(fields.get(resolved_fields["system_info"])) or ""
+
+    ke_object = _extract_ke_object(fields, resolved_fields)
+    dist_item = _extract_release_dist(fields, resolved_fields)
+    release_version = _extract_version(dist_item)
+    ke_distributive = _format_ke_id((dist_item or {}).get("id") if isinstance(dist_item, dict) else "")
+
+    rov_key = _extract_release_io_key(issue)
+    rov_data = rov_map.get(rov_key, {})
+    rov_start = rov_data.get("start_dt")
+    rov_end = rov_data.get("end_dt")
+
+    release_year = _pick_release_year(rov_start, rov_end, planned_prom_end, created_dt)
+    if release_year not in {current_year, previous_year}:
+        return None
+
+    normalized_status = _normalize_text(status_name)
+    is_cancelled = normalized_status == _normalize_text(CANCELLED_RELEASE_STATUS)
+    is_final = normalized_status == _normalize_text(FINAL_RELEASE_STATUS)
+    is_non_final = not is_final and not is_cancelled
+    is_pre_final = normalized_status in {_normalize_text(status) for status in PRE_FINAL_RELEASE_STATUSES}
+
+    today = datetime.now().date()
+    rov_end_date = rov_end.date() if rov_end else None
+    is_overdue = bool(rov_end_date and rov_end_date < today and is_non_final)
+    is_today = bool(rov_end_date and rov_end_date == today and is_non_final)
+
+    if is_final:
+        row_state = "final"
+    elif is_cancelled:
+        row_state = "cancelled"
+    elif is_overdue:
+        row_state = "overdue"
+    elif is_today:
+        row_state = "today"
+    else:
+        row_state = "planned"
+
+    days_overdue = (today - rov_end_date).days if is_overdue else 0
+    ke_name = ke_object.get("name") or ""
+    ke_id = ke_object.get("id") or ""
+
+    return {
+        "year": release_year,
+        "release_number": 0,
+        "release_key": issue.get("key"),
+        "release_url": f"{domain}/browse/{issue.get('key')}",
+        "release_status": status_name,
+        "release_status_normalized": normalized_status,
+        "release_summary": summary,
+        "release_name_lines": _build_release_name_lines(summary, ke_name, ke_id, release_version),
+        "zni_key": "",
+        "ke": ke_distributive,
+        "ke_name": ke_name,
+        "ke_id": ke_id,
+        "release_version": release_version,
+        "rov_key": rov_key,
+        "rov_url": rov_data.get("url", ""),
+        "rov_status": rov_data.get("status", ""),
+        "deployment_start": rov_data.get("start", ""),
+        "deployment_start_iso": rov_data.get("start_iso", ""),
+        "deployment_end": rov_data.get("end", ""),
+        "deployment_end_iso": rov_data.get("end_iso", ""),
+        "psi_owner": "",
+        "row_state": row_state,
+        "is_final": is_final,
+        "is_cancelled": is_cancelled,
+        "is_non_final": is_non_final,
+        "is_pre_final": is_pre_final,
+        "is_overdue": is_overdue,
+        "is_today": is_today,
+        "days_overdue": days_overdue,
+        "source_prefix": prefix,
+        "system_name": _detect_system(prefix, summary, ke_name, system_info_text),
+        "sort_date": rov_start or rov_end or planned_prom_end or created_dt,
+        "created": fields.get("created", ""),
     }
 
-    def sort_key(item):
-        planned_date = item.get("planned_prom_end_iso") or "9999-12-31"
-        return (
-            state_order.get(item.get("timeline_state"), 9),
-            -item.get("days_overdue", 0),
-            planned_date,
-            item.get("status", ""),
-            item.get("key", ""),
-        )
 
-    records.sort(key=sort_key)
+def _sort_and_number_records(records):
+    records_by_year = defaultdict(list)
+    for item in records:
+        records_by_year[item["year"]].append(item)
+
+    for year_items in records_by_year.values():
+        year_items.sort(
+            key=lambda item: (
+                item.get("sort_date") or datetime.min,
+                item.get("release_key", ""),
+            )
+        )
+        for index, item in enumerate(year_items, start=1):
+            item["release_number"] = index
+
+    records.sort(
+        key=lambda item: (
+            -item.get("year", 0),
+            -item.get("release_number", 0),
+            item.get("release_key", ""),
+        )
+    )
     return records
 
 
-def _build_summary(records):
+def _build_summary(records, current_year, previous_year):
     summary = {
         "total": len(records),
+        "non_final": 0,
         "overdue": 0,
         "today": 0,
-        "planned": 0,
-        "no_date": 0,
         "pre_final": 0,
-        "by_system": defaultdict(int),
+        "final": 0,
+        "cancelled": 0,
         "by_status": defaultdict(int),
+        "by_year": {
+            str(current_year): {
+                "total": 0,
+                "non_final": 0,
+                "overdue": 0,
+                "today": 0,
+                "pre_final": 0,
+                "final": 0,
+                "cancelled": 0,
+            },
+            str(previous_year): {
+                "total": 0,
+                "non_final": 0,
+                "overdue": 0,
+                "today": 0,
+                "pre_final": 0,
+                "final": 0,
+                "cancelled": 0,
+            },
+        },
     }
 
     for item in records:
-        timeline_state = item.get("timeline_state", "planned")
-        summary[timeline_state] += 1
-        if item.get("is_pre_final"):
-            summary["pre_final"] += 1
-        summary["by_system"][item.get("system_name") or "Не определено"] += 1
-        summary["by_status"][item.get("status") or "Не указан"] += 1
+        year_bucket = summary["by_year"].setdefault(
+            str(item["year"]),
+            {
+                "total": 0,
+                "non_final": 0,
+                "overdue": 0,
+                "today": 0,
+                "pre_final": 0,
+                "final": 0,
+                "cancelled": 0,
+            },
+        )
+        summary["by_status"][item["release_status"] or "Не указан"] += 1
+        year_bucket["total"] += 1
 
-    summary["by_system"] = dict(sorted(summary["by_system"].items()))
+        if item["is_non_final"]:
+            summary["non_final"] += 1
+            year_bucket["non_final"] += 1
+        if item["is_overdue"]:
+            summary["overdue"] += 1
+            year_bucket["overdue"] += 1
+        if item["is_today"]:
+            summary["today"] += 1
+            year_bucket["today"] += 1
+        if item["is_pre_final"]:
+            summary["pre_final"] += 1
+            year_bucket["pre_final"] += 1
+        if item["is_final"]:
+            summary["final"] += 1
+            year_bucket["final"] += 1
+        if item["is_cancelled"]:
+            summary["cancelled"] += 1
+            year_bucket["cancelled"] += 1
+
     summary["by_status"] = dict(
         sorted(summary["by_status"].items(), key=lambda pair: (-pair[1], pair[0]))
     )
@@ -338,11 +591,13 @@ def _build_summary(records):
 
 
 def _fetch_release_monitor_data():
+    current_year = datetime.now().year
+    previous_year = current_year - 1
     all_records = []
 
     for (domain, token), prefixes in _get_domain_groups().items():
         resolved_fields = _resolve_field_ids(domain, token)
-        fields_to_load = {
+        release_fields_to_load = {
             "key",
             "summary",
             "status",
@@ -353,23 +608,30 @@ def _fetch_release_monitor_data():
             "updated",
             "issuetype",
             "priority",
-            resolved_fields["planned_psi_start"],
-            resolved_fields["planned_psi_end"],
+            "issuelinks",
             resolved_fields["planned_prom_end"],
             resolved_fields["system_info"],
-            resolved_fields["sm_id"],
+            resolved_fields["ke_object"],
+            resolved_fields["release_distributive"],
+            resolved_fields["delta_release_distributive"],
         }
 
+        domain_release_issues = []
         for prefix in prefixes:
             try:
-                issues = _execute_release_search(domain, token, prefix, sorted(fields_to_load))
+                issues = _execute_release_search(
+                    domain,
+                    token,
+                    prefix,
+                    previous_year,
+                    release_fields_to_load,
+                )
                 logging.info(
-                    "Release monitor: loaded %s non-final releases for prefix %s",
+                    "Release monitor: loaded %s releases for prefix %s",
                     len(issues),
                     prefix,
                 )
-                for issue in issues:
-                    all_records.append(_build_release_record(issue, domain, prefix, resolved_fields))
+                domain_release_issues.extend((prefix, issue) for issue in issues)
             except Exception as exc:
                 logging.error(
                     "Release monitor: failed to load releases for prefix %s: %s",
@@ -377,15 +639,58 @@ def _fetch_release_monitor_data():
                     exc,
                 )
 
-    _sort_release_records(all_records)
+        rov_keys = sorted(
+            {
+                _extract_release_io_key(issue)
+                for _, issue in domain_release_issues
+                if _extract_release_io_key(issue)
+            }
+        )
+        rov_map = {}
+        if rov_keys:
+            rov_fields_to_load = {
+                "key",
+                "summary",
+                "status",
+                "issuetype",
+                resolved_fields["rov_start"],
+                resolved_fields["rov_end"],
+            }
+            try:
+                rov_issues = _execute_issue_keys_search(domain, token, rov_keys, rov_fields_to_load)
+                rov_map = {
+                    issue.get("key"): _build_rov_record(issue, domain, resolved_fields)
+                    for issue in rov_issues
+                }
+            except Exception as exc:
+                logging.error("Release monitor: failed to load linked ROV issues from %s: %s", domain, exc)
+
+        for prefix, issue in domain_release_issues:
+            record = _build_release_record(
+                issue,
+                domain,
+                prefix,
+                resolved_fields,
+                rov_map,
+                current_year,
+                previous_year,
+            )
+            if record:
+                all_records.append(record)
+
+    _sort_and_number_records(all_records)
+
     return {
         "items": all_records,
-        "summary": _build_summary(all_records),
+        "summary": _build_summary(all_records, current_year, previous_year),
         "meta": {
-            "final_status": FINAL_RELEASE_STATUSES[0],
+            "final_status": FINAL_RELEASE_STATUS,
+            "cancelled_status": CANCELLED_RELEASE_STATUS,
             "final_statuses": list(FINAL_RELEASE_STATUSES),
-            "pre_final_status": PRE_FINAL_RELEASE_STATUS,
+            "pre_final_statuses": list(PRE_FINAL_RELEASE_STATUSES),
             "prefixes": list(RELEASE_PREFIXES),
+            "years": [current_year, previous_year],
+            "current_year": current_year,
             "last_updated": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
             "is_cached": True,
         },
@@ -408,6 +713,82 @@ def get_release_monitor_data(force_refresh=False):
         _cached_data = _fetch_release_monitor_data()
         _last_cache_update = now
         return _cached_data
+
+
+def _run_release_monitor_refresh():
+    global _cached_data, _last_cache_update
+
+    try:
+        logging.info("Release monitor: background refresh started")
+        data = _fetch_release_monitor_data()
+        with _cache_lock:
+            _cached_data = data
+            _last_cache_update = time.time()
+            _refresh_status.update(
+                {
+                    "state": "completed",
+                    "message": "Данные по релизам обновлены",
+                    "started_at": _refresh_status.get("started_at"),
+                    "finished_at": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
+                    "error": None,
+                }
+            )
+        logging.info("Release monitor: background refresh completed, items=%s", len(data.get("items", [])))
+    except Exception as exc:
+        logging.exception("Release monitor: background refresh failed")
+        with _cache_lock:
+            _refresh_status.update(
+                {
+                    "state": "failed",
+                    "message": "Ошибка обновления релизов",
+                    "finished_at": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
+                    "error": str(exc),
+                }
+            )
+
+
+def start_release_monitor_refresh():
+    global _refresh_thread
+
+    with _cache_lock:
+        if _refresh_thread and _refresh_thread.is_alive():
+            return {
+                "started": False,
+                "status": dict(_refresh_status),
+            }
+
+        _refresh_status.update(
+            {
+                "state": "refreshing",
+                "message": "Идет обновление релизов из Jira",
+                "started_at": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
+                "finished_at": None,
+                "error": None,
+            }
+        )
+        _refresh_thread = threading.Thread(target=_run_release_monitor_refresh, daemon=True)
+        _refresh_thread.start()
+
+        return {
+            "started": True,
+            "status": dict(_refresh_status),
+        }
+
+
+def get_release_monitor_refresh_status():
+    with _cache_lock:
+        payload = {
+            "status": dict(_refresh_status),
+        }
+        if _cached_data is not None:
+            payload["data"] = {
+                "items": list(_cached_data.get("items", [])),
+                "summary": dict(_cached_data.get("summary", {})),
+                "meta": dict(_cached_data.get("meta", {})),
+            }
+        else:
+            payload["data"] = _build_empty_release_monitor_payload()
+        return payload
 
 
 def get_release_monitor_snapshot():

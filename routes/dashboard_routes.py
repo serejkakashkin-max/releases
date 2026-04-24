@@ -8,7 +8,12 @@ from services.dashboard_service import (
     check_multiple_approvals, get_task_type_badges,
     get_hidden_tasks, get_hidden_task_keys, hide_task, show_task, restore_all_tasks
 )
-from services.release_monitor_service import get_release_monitor_data
+from services.release_monitor_service import (
+    get_release_monitor_data,
+    get_release_monitor_snapshot,
+    start_release_monitor_refresh,
+    get_release_monitor_refresh_status,
+)
 from config import DASHBOARD_CACHE_TTL, DASHBOARD_ASSIGNEES_DISPLAY
 
 BASE_PATH = os.getenv("BASE_PATH", "")
@@ -103,6 +108,31 @@ def dashboard():
             hidden_count=0
         )
 
+@dashboard_bp.route('/release-monitor')
+def release_monitor_page():
+    """Отдельная страница контроля релизов."""
+    try:
+        release_monitor_data = get_release_monitor_snapshot()
+        return render_template(
+            'release_monitor.html',
+            basepath=BASE_PATH,
+            release_monitor=release_monitor_data.get('items', []),
+            release_monitor_summary=release_monitor_data.get('summary', {}),
+            release_monitor_meta=release_monitor_data.get('meta', {}),
+            last_update=datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
+        )
+    except Exception as e:
+        logging.error(f"Ошибка загрузки страницы контроля релизов: {e}")
+        return render_template(
+            'release_monitor.html',
+            basepath=BASE_PATH,
+            release_monitor=[],
+            release_monitor_summary={},
+            release_monitor_meta={},
+            last_update=datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
+            error="Ошибка загрузки данных по релизам. Попробуйте обновить страницу позже.",
+        )
+
 @dashboard_bp.route('/dashboard/refresh', methods=['POST'])
 def refresh_dashboard():
     """Принудительное обновление данных дашборда"""
@@ -142,18 +172,35 @@ def api_dashboard_data():
 
 @dashboard_bp.route('/dashboard/release-monitor/refresh', methods=['POST'])
 def refresh_release_monitor():
-    """Принудительное обновление только данных по релизам."""
+    """Запускает фоновое обновление блока релизов."""
     try:
-        release_monitor_data = get_release_monitor_data(force_refresh=True)
+        refresh_info = start_release_monitor_refresh()
         return jsonify({
             "success": True,
-            "release_monitor": release_monitor_data.get('items', []),
-            "release_monitor_summary": release_monitor_data.get('summary', {}),
-            "release_monitor_meta": release_monitor_data.get('meta', {}),
-            "message": "Данные по релизам обновлены"
+            "started": refresh_info.get("started", False),
+            "refresh_status": refresh_info.get("status", {}),
+            "message": "Обновление релизов запущено" if refresh_info.get("started") else "Обновление релизов уже выполняется"
         })
     except Exception as e:
         logging.error(f"Ошибка обновления блока релизов: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@dashboard_bp.route('/dashboard/release-monitor/status', methods=['GET'])
+def release_monitor_status():
+    """Возвращает статус фонового обновления и последний снимок данных релизов."""
+    try:
+        status_payload = get_release_monitor_refresh_status()
+        release_monitor_data = status_payload.get("data", {})
+        return jsonify({
+            "success": True,
+            "refresh_status": status_payload.get("status", {}),
+            "release_monitor": release_monitor_data.get("items", []),
+            "release_monitor_summary": release_monitor_data.get("summary", {}),
+            "release_monitor_meta": release_monitor_data.get("meta", {}),
+        })
+    except Exception as e:
+        logging.error(f"Ошибка получения статуса обновления релизов: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 

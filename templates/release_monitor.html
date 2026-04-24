@@ -1,0 +1,971 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Блок релизов</title>
+    <link href="/static/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/static/css/bootstrap-icons.css" rel="stylesheet">
+    {% include 'base_styles.html' %}
+    <style>
+        body {
+            min-height: 100vh;
+        }
+
+        .page-shell {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 0 1rem 3rem;
+        }
+
+        .nav-home-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
+            border: 1px solid var(--border-color);
+        }
+
+        .nav-home-btn:hover {
+            color: var(--primary);
+            border-color: var(--primary);
+        }
+
+        .theme-toggle {
+            border: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border-radius: 12px;
+            width: 40px;
+            height: 40px;
+        }
+
+        .page-hero {
+            background:
+                radial-gradient(circle at top right, rgba(13, 110, 253, 0.14), transparent 28%),
+                linear-gradient(135deg, var(--bg-card) 0%, var(--bg-secondary) 100%);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            padding: 1.75rem 1.75rem 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.08);
+        }
+
+        .page-hero-top {
+            display: flex;
+            justify-content: space-between;
+            gap: 1rem;
+            align-items: flex-start;
+            flex-wrap: wrap;
+        }
+
+        .page-title-wrap h1 {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 2rem;
+            margin: 0;
+            color: var(--text-primary);
+        }
+
+        .beta-pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.2rem 0.55rem;
+            border-radius: 999px;
+            background: var(--primary);
+            color: #fff;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+        }
+
+        .page-subtitle {
+            margin-top: 0.8rem;
+            color: var(--text-secondary);
+            max-width: 900px;
+            line-height: 1.55;
+        }
+
+        .page-meta {
+            color: var(--text-secondary);
+            font-size: 0.92rem;
+            white-space: nowrap;
+        }
+
+        .release-monitor-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.08);
+            overflow: hidden;
+        }
+
+        .release-monitor-header {
+            display: flex;
+            justify-content: space-between;
+            gap: 1rem;
+            align-items: flex-start;
+            padding: 1.35rem 1.5rem 1rem;
+            border-bottom: 1px solid var(--border-color);
+            background: linear-gradient(135deg, var(--bg-card) 0%, var(--bg-secondary) 100%);
+        }
+
+        .release-monitor-title h2 {
+            margin: 0;
+            font-size: 1.25rem;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+        }
+
+        .release-monitor-subtitle {
+            margin-top: 0.45rem;
+            font-size: 0.92rem;
+            color: var(--text-secondary);
+            max-width: 880px;
+            line-height: 1.5;
+        }
+
+        .release-monitor-content {
+            padding: 1.25rem 1.5rem 1.5rem;
+        }
+
+        .release-monitor-summary {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.9rem;
+            margin-bottom: 1.15rem;
+        }
+
+        .release-summary-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1rem 1.05rem;
+        }
+
+        .release-summary-label {
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .release-summary-value {
+            color: var(--text-primary);
+            font-size: 1.7rem;
+            font-weight: 800;
+            line-height: 1.1;
+            margin-top: 0.35rem;
+        }
+
+        .release-summary-note {
+            margin-top: 0.25rem;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        .release-summary-card.overdue .release-summary-value {
+            color: var(--danger);
+        }
+
+        .release-summary-card.today .release-summary-value {
+            color: #b38600;
+        }
+
+        [data-theme="dark"] .release-summary-card.today .release-summary-value {
+            color: #ffc107;
+        }
+
+        .release-summary-card.pre-final .release-summary-value {
+            color: var(--info);
+        }
+
+        .release-monitor-controls {
+            display: grid;
+            grid-template-columns: 1.4fr 1fr 1fr 1fr;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .release-search-box {
+            position: relative;
+        }
+
+        .release-search-box i {
+            position: absolute;
+            left: 0.8rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+        }
+
+        .release-search-box input,
+        .release-filter-select {
+            width: 100%;
+            padding: 0.72rem 0.9rem;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-card);
+            color: var(--text-primary);
+            font-size: 0.9rem;
+        }
+
+        .release-search-box input {
+            padding-left: 2.35rem;
+        }
+
+        .release-table-wrap {
+            overflow-x: auto;
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+        }
+
+        .release-table-wrap.compact {
+            max-height: 440px;
+            overflow-y: auto;
+        }
+
+        .release-table-wrap.compact::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+
+        .release-table-wrap.compact::-webkit-scrollbar-thumb {
+            background: rgba(128, 128, 128, 0.35);
+            border-radius: 999px;
+        }
+
+        .release-monitor-table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 1380px;
+        }
+
+        .release-monitor-table th,
+        .release-monitor-table td {
+            padding: 0.85rem 0.9rem;
+            border-bottom: 1px solid var(--border-color);
+            vertical-align: top;
+        }
+
+        .release-monitor-table th {
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            white-space: normal;
+            line-height: 1.35;
+            position: sticky;
+            top: 0;
+            z-index: 2;
+        }
+
+        .release-monitor-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .release-row.state-overdue {
+            background: rgba(248, 81, 73, 0.08);
+        }
+
+        .release-row.state-today {
+            background: rgba(255, 193, 7, 0.10);
+        }
+
+        .release-row.state-final {
+            background: rgba(63, 185, 80, 0.10);
+        }
+
+        .release-row.state-cancelled {
+            background: rgba(248, 81, 73, 0.12);
+        }
+
+        .release-key-link {
+            font-weight: 700;
+            color: var(--primary);
+            text-decoration: none;
+        }
+
+        .release-key-link:hover {
+            text-decoration: underline;
+        }
+
+        .release-name-line {
+            display: block;
+            line-height: 1.35;
+            margin-bottom: 0.15rem;
+        }
+
+        .release-micro-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+            margin-top: 0.45rem;
+        }
+
+        .release-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            padding: 0.26rem 0.55rem;
+            border-radius: 999px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .release-badge.pre-final {
+            background: rgba(88, 166, 255, 0.16);
+            color: var(--info);
+        }
+
+        .release-badge.state-overdue {
+            background: rgba(248, 81, 73, 0.16);
+            color: var(--danger);
+        }
+
+        .release-badge.state-today {
+            background: rgba(255, 193, 7, 0.24);
+            color: #b38600;
+        }
+
+        [data-theme="dark"] .release-badge.state-today {
+            color: #ffc107;
+        }
+
+        .release-badge.state-planned {
+            background: rgba(25, 135, 84, 0.15);
+            color: #198754;
+        }
+
+        .release-visible-counter {
+            color: var(--text-secondary);
+            font-size: 0.88rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .release-monitor-actions {
+            display: flex;
+            gap: 0.6rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .release-monitor-btn {
+            border: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border-radius: 10px;
+            padding: 0.65rem 0.95rem;
+            font-size: 0.88rem;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .release-monitor-btn:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+
+        .release-monitor-btn:disabled {
+            opacity: 0.65;
+            cursor: wait;
+        }
+
+        .release-monitor-btn.spinning i {
+            animation: spin 1s linear infinite;
+        }
+
+        .release-monitor-meta {
+            color: var(--text-secondary);
+            font-size: 0.82rem;
+            white-space: nowrap;
+        }
+
+        .empty-state-small {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        .empty-state-small i {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+            display: block;
+            opacity: 0.6;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 992px) {
+            .release-monitor-summary,
+            .release-monitor-controls {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .page-title-wrap h1 {
+                font-size: 1.55rem;
+            }
+
+            .release-monitor-summary,
+            .release-monitor-controls {
+                grid-template-columns: 1fr;
+            }
+
+            .release-monitor-header,
+            .page-hero-top {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <script>
+        const BASE_PATH = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '' : '/releases';
+    </script>
+
+    <nav class="navbar navbar-expand-lg navbar-dark mb-4">
+        <div class="container-fluid">
+            <a class="nav-home-btn" href="{{ basepath }}/" title="На главную">
+                <i class="bi bi-house-door-fill"></i>
+            </a>
+            <div class="d-flex align-items-center gap-2">
+                <button class="theme-toggle" onclick="toggleTheme()" title="Переключить тему">
+                    <i class="bi bi-sun"></i>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="page-shell">
+        <div class="page-hero">
+            <div class="page-hero-top">
+                <div class="page-title-wrap">
+                    <h1>
+                        <i class="bi bi-rocket-takeoff"></i>
+                        Блок релизов
+                        <span class="beta-pill">BETA</span>
+                    </h1>
+                    <div class="page-subtitle">
+                        Отдельный экран контроля релизов `EMRM`, `SMECLM`, `SMECSC` с годовой таблицей, фильтрами и мониторингом просрочки по связанным РОВ.
+                    </div>
+                </div>
+                <div class="page-meta">
+                    Открыто: <strong>{{ last_update }}</strong>
+                </div>
+            </div>
+        </div>
+
+        {% if error %}
+        <div class="alert alert-danger" role="alert">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>{{ error }}
+        </div>
+        {% endif %}
+
+        <div class="release-monitor-section" id="releaseMonitorSection">
+            <div class="release-monitor-header">
+                <div class="release-monitor-title">
+                    <h2>
+                        <i class="bi bi-table"></i>
+                        Контроль релизов
+                    </h2>
+                    <div class="release-monitor-subtitle">
+                        Годовая таблица релизов с акцентом на просроченные и нефинальные релизы по данным распоряжений о внедрении.
+                    </div>
+                </div>
+                <div class="release-monitor-actions">
+                    <div class="release-monitor-meta">
+                        Обновлено: <strong id="releaseMonitorLastUpdated">{{ release_monitor_meta.last_updated or 'еще не загружалось' }}</strong>
+                    </div>
+                    <button id="releaseMonitorRefreshBtn" class="release-monitor-btn" onclick="refreshReleaseMonitor()">
+                        <i class="bi bi-arrow-repeat"></i>
+                        Обновить релизы
+                    </button>
+                    <button id="releaseMonitorToggleBtn" class="release-monitor-btn" onclick="toggleReleaseMonitorExpand()">
+                        <i class="bi bi-arrows-collapse"></i>
+                        Свернуть
+                    </button>
+                </div>
+            </div>
+
+            <div class="release-monitor-content">
+                <div class="release-monitor-summary">
+                    <div class="release-summary-card">
+                        <div class="release-summary-label">Всего за год</div>
+                        <div class="release-summary-value" id="releaseSummaryTotal">0</div>
+                        <div class="release-summary-note">все релизы выбранного года</div>
+                    </div>
+                    <div class="release-summary-card overdue">
+                        <div class="release-summary-label">Просрочены</div>
+                        <div class="release-summary-value" id="releaseSummaryOverdue">0</div>
+                        <div class="release-summary-note">РОВ завершился, а статус не финальный</div>
+                    </div>
+                    <div class="release-summary-card today">
+                        <div class="release-summary-label">Не в финале</div>
+                        <div class="release-summary-value" id="releaseSummaryNonFinal">0</div>
+                        <div class="release-summary-note">релизы без статусов Установлен на ПРОМ и Отменено</div>
+                    </div>
+                    <div class="release-summary-card pre-final">
+                        <div class="release-summary-label">Установка на ПРОМ</div>
+                        <div class="release-summary-value" id="releaseSummaryPreFinal">0</div>
+                        <div class="release-summary-note">релизы на завершающем шаге перед финалом</div>
+                    </div>
+                </div>
+
+                <div class="release-monitor-controls">
+                    <div class="release-search-box">
+                        <i class="bi bi-search"></i>
+                        <input type="text" id="releaseSearchInput" placeholder="Поиск по релизам: ключ, КЭ, РОВ, название..." onkeyup="handleReleaseSearch()">
+                    </div>
+                    <select id="releaseYearFilter" class="release-filter-select" onchange="handleReleaseYearFilter()">
+                        {% for year in (release_monitor_meta.years or [release_monitor_meta.current_year or 0]) %}
+                        <option value="{{ year }}" {% if year == (release_monitor_meta.current_year or 0) %}selected{% endif %}>{{ year }}</option>
+                        {% endfor %}
+                    </select>
+                    <select id="releaseViewFilter" class="release-filter-select" onchange="handleReleaseViewFilter()">
+                        <option value="all">Все релизы года</option>
+                        <option value="non_final">Только не в финале</option>
+                        <option value="overdue">Просроченные по РОВ</option>
+                        <option value="today">На сегодня</option>
+                        <option value="final">Установлен на ПРОМ</option>
+                        <option value="cancelled">Отменено</option>
+                    </select>
+                    <select id="releaseStatusFilter" class="release-filter-select" onchange="applyReleaseFilters()">
+                        <option value="all">Все статусы</option>
+                    </select>
+                </div>
+
+                <div class="release-visible-counter">
+                    Видимых релизов: <strong id="releaseVisibleCount">{{ release_monitor|length }}</strong>
+                </div>
+
+                <div id="releaseMonitorEmptyState" class="empty-state-small" {% if release_monitor %}style="display: none;"{% endif %}>
+                    <i class="bi bi-cloud-arrow-down"></i>
+                    <div>Данные по релизам загружаются отдельно. Нажмите "Обновить релизы", чтобы получить актуальную таблицу из Jira.</div>
+                </div>
+
+                <div id="releaseTableWrap" class="release-table-wrap">
+                    <table class="release-monitor-table">
+                        <thead>
+                            <tr>
+                                <th>Номер релиза</th>
+                                <th>Название релиза</th>
+                                <th>№ ЗНИ</th>
+                                <th>КЭ</th>
+                                <th>ID Релиза</th>
+                                <th>ID Распоряжения</th>
+                                <th>Дата начала<br>внедрения</th>
+                                <th>Дата окончания<br>внедрения</th>
+                                <th>Ответственный<br>за ПСИ/Проверки</th>
+                            </tr>
+                        </thead>
+                        <tbody id="releaseMonitorBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentReleaseYearFilter = String(new Date().getFullYear());
+        let currentReleaseViewFilter = 'all';
+        let isReleaseMonitorExpanded = true;
+        let releaseMonitorItems = [];
+        let releaseMonitorMeta = {};
+        let releaseMonitorRefreshPoll = null;
+
+        function escapeHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function getReleaseNameHtml(item) {
+            const lines = Array.isArray(item.release_name_lines) ? item.release_name_lines : [];
+            const statusBadge = item.release_status
+                ? `<div class="release-micro-meta"><span class="release-badge ${item.is_final ? 'state-planned' : item.is_cancelled ? 'state-overdue' : item.is_overdue ? 'state-overdue' : item.is_today ? 'state-today' : 'state-planned'}">${escapeHtml(item.release_status)}</span>${item.is_pre_final ? '<span class="release-badge pre-final">Установка на ПРОМ</span>' : ''}</div>`
+                : '';
+
+            if (!lines.length) {
+                return statusBadge || '<span style="color: var(--text-muted);">Не указано</span>';
+            }
+
+            return `
+                <div class="release-name-cell">
+                    ${lines.map(line => `<div class="release-name-line">${escapeHtml(line)}</div>`).join('')}
+                    ${statusBadge}
+                </div>
+            `;
+        }
+
+        function buildReleaseLinkCell(url, key) {
+            if (!key) {
+                return '<span style="color: var(--text-muted);">-</span>';
+            }
+            if (!url) {
+                return escapeHtml(key);
+            }
+            return `<a href="${escapeHtml(url)}" target="_blank" class="release-key-link">${escapeHtml(key)}</a>`;
+        }
+
+        function buildReleaseRow(item) {
+            return `
+                <tr class="release-row state-${escapeHtml(item.row_state || 'planned')}" data-year="${escapeHtml(item.year)}" data-status="${escapeHtml(item.release_status || '')}">
+                    <td><strong>${escapeHtml(item.release_number || '')}</strong></td>
+                    <td>${getReleaseNameHtml(item)}</td>
+                    <td>${item.zni_key ? escapeHtml(item.zni_key) : '<span style="color: var(--text-muted);">-</span>'}</td>
+                    <td>${item.ke ? escapeHtml(item.ke) : '<span style="color: var(--text-muted);">-</span>'}</td>
+                    <td>${buildReleaseLinkCell(item.release_url, item.release_key)}</td>
+                    <td>${buildReleaseLinkCell(item.rov_url, item.rov_key)}</td>
+                    <td>${item.deployment_start ? escapeHtml(item.deployment_start) : '<span style="color: var(--text-muted);">-</span>'}</td>
+                    <td>${item.deployment_end ? escapeHtml(item.deployment_end) : '<span style="color: var(--text-muted);">-</span>'}</td>
+                    <td>${item.psi_owner ? escapeHtml(item.psi_owner) : '<span style="color: var(--text-muted);">-</span>'}</td>
+                </tr>
+            `;
+        }
+
+        function getSelectedReleaseYear() {
+            const select = document.getElementById('releaseYearFilter');
+            return String(select?.value || currentReleaseYearFilter || releaseMonitorMeta?.current_year || new Date().getFullYear());
+        }
+
+        function getYearFilteredReleaseItems(items) {
+            const selectedYear = getSelectedReleaseYear();
+            return (items || []).filter(item => String(item.year) === selectedYear);
+        }
+
+        function buildReleaseYearSummary(items) {
+            const summary = {
+                total: items.length,
+                non_final: 0,
+                overdue: 0,
+                today: 0,
+                pre_final: 0,
+                final: 0,
+                cancelled: 0,
+                by_status: {}
+            };
+
+            items.forEach(item => {
+                const statusName = item.release_status || 'Не указан';
+                summary.by_status[statusName] = (summary.by_status[statusName] || 0) + 1;
+                if (item.is_non_final) summary.non_final += 1;
+                if (item.is_overdue) summary.overdue += 1;
+                if (item.is_today) summary.today += 1;
+                if (item.is_pre_final) summary.pre_final += 1;
+                if (item.is_final) summary.final += 1;
+                if (item.is_cancelled) summary.cancelled += 1;
+            });
+
+            summary.by_status = Object.fromEntries(
+                Object.entries(summary.by_status).sort((a, b) => {
+                    if (b[1] !== a[1]) return b[1] - a[1];
+                    return a[0].localeCompare(b[0], 'ru');
+                })
+            );
+            return summary;
+        }
+
+        function updateReleaseStatusFilterOptions(items) {
+            const statusSelect = document.getElementById('releaseStatusFilter');
+            if (!statusSelect) {
+                return;
+            }
+
+            const currentValue = statusSelect.value || 'all';
+            const summary = buildReleaseYearSummary(items || []);
+            const statusEntries = Object.entries(summary.by_status || {});
+            statusSelect.innerHTML = '<option value="all">Все статусы</option>' +
+                statusEntries.map(([statusName, statusCount]) => `<option value="${escapeHtml(statusName)}">${escapeHtml(statusName)} (${escapeHtml(statusCount)})</option>`).join('');
+            statusSelect.value = statusEntries.some(([statusName]) => statusName === currentValue) ? currentValue : 'all';
+        }
+
+        function updateReleaseEmptyState(state) {
+            const emptyState = document.getElementById('releaseMonitorEmptyState');
+            if (!emptyState) {
+                return;
+            }
+
+            if (state === 'initial') {
+                emptyState.innerHTML = `<i class="bi bi-cloud-arrow-down"></i><div>Данные по релизам загружаются отдельно. Нажмите "Обновить релизы", чтобы получить актуальную таблицу из Jira.</div>`;
+                return;
+            }
+            if (state === 'empty-year') {
+                emptyState.innerHTML = `<i class="bi bi-calendar-x"></i><div>За выбранный год релизы не найдены.</div>`;
+                return;
+            }
+            if (state === 'empty-filter') {
+                emptyState.innerHTML = `<i class="bi bi-funnel"></i><div>По выбранным фильтрам релизы не найдены.</div>`;
+                return;
+            }
+
+            emptyState.innerHTML = `<i class="bi bi-check-circle-fill text-success"></i><div>Таблица релизов загружена, но строки для отображения отсутствуют.</div>`;
+        }
+
+        function renderReleaseMonitor(items, meta) {
+            const tableWrap = document.getElementById('releaseTableWrap');
+            const emptyState = document.getElementById('releaseMonitorEmptyState');
+            const lastUpdated = document.getElementById('releaseMonitorLastUpdated');
+            const yearSelect = document.getElementById('releaseYearFilter');
+
+            releaseMonitorItems = Array.isArray(items) ? items : [];
+            releaseMonitorMeta = meta || {};
+
+            if (yearSelect) {
+                const years = Array.isArray(meta?.years) && meta.years.length ? meta.years : [meta?.current_year || new Date().getFullYear()];
+                const previousValue = currentReleaseYearFilter || String(meta?.current_year || years[0]);
+                yearSelect.innerHTML = years.map(year => `<option value="${escapeHtml(year)}">${escapeHtml(year)}</option>`).join('');
+                currentReleaseYearFilter = years.map(String).includes(String(previousValue)) ? String(previousValue) : String(meta?.current_year || years[0]);
+                yearSelect.value = currentReleaseYearFilter;
+            }
+
+            if (lastUpdated) {
+                lastUpdated.textContent = meta?.last_updated || 'еще не загружалось';
+            }
+
+            if (tableWrap) {
+                tableWrap.classList.toggle('compact', !isReleaseMonitorExpanded);
+            }
+
+            if (emptyState && !releaseMonitorItems.length) {
+                emptyState.style.display = '';
+                updateReleaseEmptyState('initial');
+            }
+
+            const viewSelect = document.getElementById('releaseViewFilter');
+            if (viewSelect) {
+                currentReleaseViewFilter = viewSelect.value || 'all';
+            }
+
+            applyReleaseFilters();
+        }
+
+        function handleReleaseYearFilter() {
+            currentReleaseYearFilter = getSelectedReleaseYear();
+            updateReleaseStatusFilterOptions(getYearFilteredReleaseItems(releaseMonitorItems));
+            applyReleaseFilters();
+        }
+
+        function handleReleaseViewFilter() {
+            const select = document.getElementById('releaseViewFilter');
+            currentReleaseViewFilter = select?.value || 'all';
+            applyReleaseFilters();
+        }
+
+        function handleReleaseSearch() {
+            applyReleaseFilters();
+        }
+
+        function toggleReleaseMonitorExpand() {
+            isReleaseMonitorExpanded = !isReleaseMonitorExpanded;
+            const tableWrap = document.getElementById('releaseTableWrap');
+            const toggleBtn = document.getElementById('releaseMonitorToggleBtn');
+
+            if (tableWrap) {
+                tableWrap.classList.toggle('compact', !isReleaseMonitorExpanded);
+            }
+            if (toggleBtn) {
+                toggleBtn.innerHTML = isReleaseMonitorExpanded
+                    ? '<i class="bi bi-arrows-collapse"></i> Свернуть'
+                    : '<i class="bi bi-arrows-expand"></i> Показать все';
+            }
+        }
+
+        async function refreshReleaseMonitor() {
+            const btn = document.getElementById('releaseMonitorRefreshBtn');
+            if (btn) {
+                btn.disabled = true;
+                btn.classList.add('spinning');
+            }
+
+            try {
+                const response = await fetch(BASE_PATH + '/dashboard/release-monitor/refresh', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await response.json();
+                if (!data.success) {
+                    throw new Error(data.error || 'Не удалось обновить релизы');
+                }
+            } catch (error) {
+                console.error('Release monitor refresh error:', error);
+                alert('Ошибка обновления релизов: ' + error.message);
+                if (btn) {
+                    btn.disabled = false;
+                    btn.classList.remove('spinning');
+                }
+                return;
+            }
+
+            await pollReleaseMonitorRefresh(true);
+        }
+
+        async function pollReleaseMonitorRefresh(forceStart = false) {
+            const btn = document.getElementById('releaseMonitorRefreshBtn');
+            if (releaseMonitorRefreshPoll && !forceStart) {
+                return;
+            }
+
+            const loadStatus = async () => {
+                const response = await fetch(BASE_PATH + '/dashboard/release-monitor/status');
+                const data = await response.json();
+                if (!data.success) {
+                    throw new Error(data.error || 'Не удалось получить статус обновления релизов');
+                }
+
+                const refreshStatus = data.refresh_status || {};
+                renderReleaseMonitor(data.release_monitor || [], data.release_monitor_meta || {});
+
+                if (refreshStatus.state === 'completed' || refreshStatus.state === 'idle') {
+                    if (releaseMonitorRefreshPoll) {
+                        clearInterval(releaseMonitorRefreshPoll);
+                        releaseMonitorRefreshPoll = null;
+                    }
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.classList.remove('spinning');
+                    }
+                    return refreshStatus.state;
+                }
+
+                if (refreshStatus.state === 'failed') {
+                    if (releaseMonitorRefreshPoll) {
+                        clearInterval(releaseMonitorRefreshPoll);
+                        releaseMonitorRefreshPoll = null;
+                    }
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.classList.remove('spinning');
+                    }
+                    throw new Error(refreshStatus.error || 'Ошибка фонового обновления релизов');
+                }
+
+                return refreshStatus.state;
+            };
+
+            try {
+                const currentState = await loadStatus();
+                if (currentState === 'completed' || currentState === 'idle') {
+                    return;
+                }
+            } catch (error) {
+                console.error('Release monitor status error:', error);
+                if (releaseMonitorRefreshPoll) {
+                    clearInterval(releaseMonitorRefreshPoll);
+                    releaseMonitorRefreshPoll = null;
+                }
+                if (btn) {
+                    btn.disabled = false;
+                    btn.classList.remove('spinning');
+                }
+                alert('Ошибка обновления релизов: ' + error.message);
+                return;
+            }
+
+            if (!releaseMonitorRefreshPoll) {
+                releaseMonitorRefreshPoll = setInterval(async () => {
+                    try {
+                        await loadStatus();
+                    } catch (error) {
+                        console.error('Release monitor status polling error:', error);
+                        clearInterval(releaseMonitorRefreshPoll);
+                        releaseMonitorRefreshPoll = null;
+                        if (btn) {
+                            btn.disabled = false;
+                            btn.classList.remove('spinning');
+                        }
+                        alert('Ошибка обновления релизов: ' + error.message);
+                    }
+                }, 2000);
+            }
+        }
+
+        function applyReleaseFilters() {
+            const body = document.getElementById('releaseMonitorBody');
+            const tableWrap = document.getElementById('releaseTableWrap');
+            const emptyState = document.getElementById('releaseMonitorEmptyState');
+            const visibleCounter = document.getElementById('releaseVisibleCount');
+            const searchValue = (document.getElementById('releaseSearchInput')?.value || '').toLowerCase().trim();
+            const statusValue = document.getElementById('releaseStatusFilter')?.value || 'all';
+            const yearItems = getYearFilteredReleaseItems(releaseMonitorItems);
+            const filteredItems = yearItems.filter(item => {
+                const matchesView = (
+                    currentReleaseViewFilter === 'all' ||
+                    (currentReleaseViewFilter === 'non_final' && item.is_non_final) ||
+                    (currentReleaseViewFilter === 'overdue' && item.is_overdue) ||
+                    (currentReleaseViewFilter === 'today' && item.is_today) ||
+                    (currentReleaseViewFilter === 'final' && item.is_final) ||
+                    (currentReleaseViewFilter === 'cancelled' && item.is_cancelled)
+                );
+                const matchesStatus = statusValue === 'all' || item.release_status === statusValue;
+                const haystack = [
+                    item.release_key,
+                    item.rov_key,
+                    item.ke,
+                    item.release_status,
+                    item.system_name,
+                    ...(Array.isArray(item.release_name_lines) ? item.release_name_lines : [])
+                ].join(' ').toLowerCase();
+                const matchesSearch = !searchValue || haystack.includes(searchValue);
+                return matchesView && matchesStatus && matchesSearch;
+            });
+
+            if (body) {
+                body.innerHTML = filteredItems.map(buildReleaseRow).join('');
+            }
+
+            const yearSummary = buildReleaseYearSummary(yearItems);
+            document.getElementById('releaseSummaryTotal').textContent = yearSummary.total || 0;
+            document.getElementById('releaseSummaryOverdue').textContent = yearSummary.overdue || 0;
+            document.getElementById('releaseSummaryNonFinal').textContent = yearSummary.non_final || 0;
+            document.getElementById('releaseSummaryPreFinal').textContent = yearSummary.pre_final || 0;
+            updateReleaseStatusFilterOptions(yearItems);
+
+            if (visibleCounter) {
+                visibleCounter.textContent = filteredItems.length;
+            }
+            if (tableWrap) {
+                tableWrap.style.display = filteredItems.length ? '' : 'none';
+                tableWrap.classList.toggle('compact', !isReleaseMonitorExpanded);
+            }
+            if (emptyState) {
+                emptyState.style.display = filteredItems.length ? 'none' : '';
+                if (!releaseMonitorItems.length) {
+                    updateReleaseEmptyState('initial');
+                } else if (!yearItems.length) {
+                    updateReleaseEmptyState('empty-year');
+                } else if (!filteredItems.length) {
+                    updateReleaseEmptyState('empty-filter');
+                }
+            }
+        }
+
+        renderReleaseMonitor(
+            {{ release_monitor | tojson | safe }},
+            {{ release_monitor_meta | tojson | safe }}
+        );
+    </script>
+</body>
+</html>
