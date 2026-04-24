@@ -34,24 +34,12 @@ def release_uses_playbooks(release_name: str) -> bool:
     blocked_markers = ("SOWA", "ЕФС.AUTHENTICATION_USER", "AUTH", "RESSTORE(2889318)")
     return not any(marker in release_name_upper for marker in blocked_markers)
 
-@release_bp.route('/get_ke')
-def get_ke():
-    release_id = request.args.get('release_id')
-    ke = get_ke_from_release(release_id)
-    return jsonify({'ke': ke})
 
-@release_bp.route('/get_releases')
-def get_releases():
-    category = request.args.get('category')
-    releases = RELEASE_STRUCTURE.get(category, [])
-    return jsonify([{"clean": clean, "full": full} for clean, full in releases])
-
-@release_bp.route('/auto_detect')
-def auto_detect():
-    release_id = request.args.get('release_id')
+def detect_release_template(release_id: str):
+    release_id = (release_id or "").strip()
     if not release_id:
-        return jsonify({"error": "No release_id provided"}), 400
-    
+        return {"found": False, "candidates": [], "error": "No release_id provided"}
+
     sm_id, summary = extract_sm_id_and_summary(release_id)
     if sm_id and sm_id in ID_MAP:
         candidates = ID_MAP[sm_id]
@@ -59,7 +47,13 @@ def auto_detect():
             category, release_name_clean = candidates[0]
             for clean, full in RELEASE_STRUCTURE.get(category, []):
                 if clean == release_name_clean:
-                    return jsonify({"found": True, "category": category, "release_clean": release_name_clean, "release_full": full, "candidates": None})
+                    return {
+                        "found": True,
+                        "category": category,
+                        "release_clean": release_name_clean,
+                        "release_full": full,
+                        "candidates": None,
+                    }
         else:
             summary_lower = summary.lower() if summary else ""
             selected = None
@@ -81,16 +75,225 @@ def auto_detect():
                 category, release_name_clean = selected
                 for clean, full in RELEASE_STRUCTURE.get(category, []):
                     if clean == release_name_clean:
-                        return jsonify({"found": True, "category": category, "release_clean": release_name_clean, "release_full": full, "candidates": None})
+                        return {
+                            "found": True,
+                            "category": category,
+                            "release_clean": release_name_clean,
+                            "release_full": full,
+                            "candidates": None,
+                        }
             candidates_list = []
             for cand_category, cand_release_clean in candidates:
                 for clean, full in RELEASE_STRUCTURE.get(cand_category, []):
                     if clean == cand_release_clean:
-                        candidates_list.append({"category": cand_category, "release_clean": cand_release_clean, "release_full": full})
+                        candidates_list.append(
+                            {
+                                "category": cand_category,
+                                "release_clean": cand_release_clean,
+                                "release_full": full,
+                            }
+                        )
                         break
-            return jsonify({"found": False, "candidates": candidates_list})
-    
-    return jsonify({"found": False, "candidates": []})
+            return {"found": False, "candidates": candidates_list}
+
+    return {"found": False, "candidates": []}
+
+
+def _normalize_release_date(raw_date: str):
+    raw_date = (raw_date or "").strip()
+    for fmt in ("%d.%m.%Y", "%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+        try:
+            parsed = datetime.strptime(raw_date, fmt)
+            return parsed.strftime("%d.%m.%Y"), (parsed + timedelta(days=1)).strftime("%d.%m.%Y")
+        except ValueError:
+            continue
+    raise ValueError("Неверный формат даты")
+
+
+def _generate_release_zip_buffer(
+    *,
+    category: str,
+    release_full: str,
+    release_id: str,
+    prev_version: str,
+    oplot: str,
+    checker: str,
+    instruction_link: str,
+    date_str: str,
+    ke: str,
+    selected_playbooks,
+):
+    if not category or not release_full:
+        raise ValueError("Не выбраны категория и релиз. Используйте автоопределение или выберите вручную.")
+
+    if not release_id:
+        raise ValueError("Не указан номер релиза")
+
+    t, tt = _normalize_release_date(date_str)
+    template_dir = DOC_TEMPLATES_ROOT / category / release_full
+    if not template_dir.exists():
+        raise ValueError(f"Директория с шаблонами не найдена: {template_dir}")
+
+    template_files = list(template_dir.glob("*.docx"))
+    if not template_files:
+        raise ValueError(f"Шаблоны не найдены в директории: {template_dir}")
+
+    release_version = get_release_version(release_id)
+    jira_issues = get_issues_from_jira(release_id)
+    instruction_block = "Выполнить пункты инструкции по внедрению ИНСТРУКЦИЯ" if instruction_link else "Отсутствуют"
+    pob = get_pob_from_release(release_id)
+    playbooks_text = "\n".join(selected_playbooks)
+
+    context = {
+        "RELEASE_VERSION": release_version,
+        "PREV_VERSION": prev_version,
+        "RELEASE_ID": release_id,
+        "OPLOT": oplot,
+        "CHECKER": checker,
+        "DATE": t,
+        "PLUS_1": tt,
+        "PLAYBOOKS": playbooks_text,
+        "INSTRUCTION_BLOCK": instruction_block,
+        "POB": pob,
+        "RELNUMBER": release_id,
+    }
+
+    zip_buffer = BytesIO()
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        generated_docs = []
+
+        for path in template_files:
+            doc = Document(path)
+            doc = replace_keys_in_doc(
+                doc,
+                context,
+                jira_issues,
+                release_id,
+                instruction_url=instruction_link if "План" in path.name else None,
+            )
+            stem = path.stem
+            if ke:
+                stem = stem.replace("КЭ", ke)
+
+            output_path = temp_path / f"{stem}.docx"
+            doc.save(output_path)
+            generated_docs.append(output_path)
+
+        with ZipFile(zip_buffer, "w") as zip_file:
+            for doc_path in generated_docs:
+                zip_file.write(doc_path, doc_path.name)
+
+    zip_buffer.seek(0)
+    return zip_buffer
+
+@release_bp.route('/get_ke')
+def get_ke():
+    release_id = request.args.get('release_id')
+    ke = get_ke_from_release(release_id)
+    return jsonify({'ke': ke})
+
+@release_bp.route('/get_releases')
+def get_releases():
+    category = request.args.get('category')
+    releases = RELEASE_STRUCTURE.get(category, [])
+    return jsonify([{"clean": clean, "full": full} for clean, full in releases])
+
+@release_bp.route('/auto_detect')
+def auto_detect():
+    release_id = request.args.get('release_id')
+    if not release_id:
+        return jsonify({"error": "No release_id provided"}), 400
+
+    return jsonify(detect_release_template(release_id))
+
+
+@release_bp.route('/release/monitor-init', methods=['POST'])
+def release_monitor_init():
+    data = request.get_json(silent=True) or {}
+    release_id = (data.get("release_id") or "").strip()
+    if not release_id:
+        return jsonify({"success": False, "error": "Не указан номер релиза"}), 400
+
+    detection = detect_release_template(release_id)
+    if detection.get("error"):
+        return jsonify({"success": False, "error": detection["error"]}), 400
+
+    release_full = detection.get("release_full", "")
+    playbooks_required = release_uses_playbooks(release_full) if detection.get("found") else None
+
+    return jsonify({
+        "success": True,
+        "release_id": release_id,
+        "detection": detection,
+        "ke": (data.get("ke") or get_ke_from_release(release_id) or "").strip(),
+        "playbooks_required": playbooks_required,
+        "playbooks": DEFAULT_BH_PLAYBOOKS,
+        "oplot": (data.get("oplot") or "").strip(),
+        "checker": (data.get("checker") or "").strip(),
+        "date": (data.get("date") or "").strip(),
+    })
+
+
+@release_bp.route('/release/monitor-generate', methods=['POST'])
+def release_monitor_generate():
+    data = request.get_json(silent=True) or {}
+    release_id = (data.get("release_id") or "").strip()
+    prev_version = (data.get("prev_version") or "").strip()
+    oplot = (data.get("oplot") or "").strip()
+    checker = (data.get("checker") or "").strip()
+    instruction_link = (data.get("instruction_link") or "").strip()
+    date_str = (data.get("date") or "").strip()
+    ke = (data.get("ke") or "").strip()
+    category = (data.get("category") or "").strip()
+    release_full = (data.get("release_full") or "").strip()
+    selected_playbooks = data.get("playbooks") or []
+
+    if not release_id:
+        return jsonify({"success": False, "error": "Не указан номер релиза"}), 400
+    if not prev_version:
+        return jsonify({"success": False, "error": "Не указана предыдущая версия"}), 400
+    if not oplot:
+        return jsonify({"success": False, "error": "Не назначен дежурный ОПЛОТ"}), 400
+    if not checker:
+        return jsonify({"success": False, "error": "Не указан проверяющий"}), 400
+    if not date_str:
+        return jsonify({"success": False, "error": "Не указана дата релиза"}), 400
+
+    if not category or not release_full:
+        detection = detect_release_template(release_id)
+        if not detection.get("found"):
+            return jsonify({
+                "success": False,
+                "error": "Не удалось автоопределить шаблон релиза. Используйте стандартный генератор или выберите шаблон вручную.",
+                "detection": detection,
+            }), 400
+        category = detection.get("category", "")
+        release_full = detection.get("release_full", "")
+
+    if not release_uses_playbooks(release_full):
+        selected_playbooks = []
+
+    try:
+        zip_buffer = _generate_release_zip_buffer(
+            category=category,
+            release_full=release_full,
+            release_id=release_id,
+            prev_version=prev_version,
+            oplot=oplot,
+            checker=checker,
+            instruction_link=instruction_link,
+            date_str=date_str,
+            ke=ke,
+            selected_playbooks=selected_playbooks,
+        )
+        increment_counter('release')
+        return send_file(zip_buffer, as_attachment=True, download_name=f"{release_id}.zip")
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    except Exception as exc:
+        logging.error("Ошибка формирования документов из блока релизов: %s", exc)
+        return jsonify({"success": False, "error": "Не удалось сформировать документы"}), 500
 
 @release_bp.route('/release', methods=['GET', 'POST'])
 def release():

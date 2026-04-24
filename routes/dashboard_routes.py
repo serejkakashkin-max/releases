@@ -13,6 +13,9 @@ from services.release_monitor_service import (
     get_release_monitor_snapshot,
     start_release_monitor_refresh,
     get_release_monitor_refresh_status,
+    get_release_monitor_reviewer_options,
+    set_release_monitor_assignment,
+    set_release_monitor_reviewer,
 )
 from config import DASHBOARD_CACHE_TTL, DASHBOARD_ASSIGNEES_DISPLAY
 
@@ -119,6 +122,7 @@ def release_monitor_page():
             release_monitor=release_monitor_data.get('items', []),
             release_monitor_summary=release_monitor_data.get('summary', {}),
             release_monitor_meta=release_monitor_data.get('meta', {}),
+            reviewer_options=get_release_monitor_reviewer_options(),
             last_update=datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
         )
     except Exception as e:
@@ -129,6 +133,7 @@ def release_monitor_page():
             release_monitor=[],
             release_monitor_summary={},
             release_monitor_meta={},
+            reviewer_options=get_release_monitor_reviewer_options(),
             last_update=datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
             error="Ошибка загрузки данных по релизам. Попробуйте обновить страницу позже.",
         )
@@ -212,6 +217,26 @@ def release_monitor_status():
     except Exception as e:
         logging.error(f"Ошибка получения статуса обновления релизов: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+@dashboard_bp.route('/dashboard/release-monitor/reviewer', methods=['POST'])
+def update_release_monitor_reviewer():
+    """Сохраняет назначение по релизу: дежурный и проверяющий."""
+    try:
+        data = request.get_json(silent=True) or {}
+        release_key = data.get("release_key", "")
+        reviewer = data.get("reviewer", "")
+        checker = data.get("checker", "")
+        saved_assignment = set_release_monitor_assignment(release_key, reviewer, checker)
+        return jsonify({
+            "success": True,
+            "release_key": release_key,
+            "reviewer": saved_assignment.get("reviewer", ""),
+            "checker": saved_assignment.get("checker", ""),
+        })
+    except Exception as e:
+        logging.error(f"Ошибка сохранения назначения по релизу: {e}")
+        return jsonify({"success": False, "error": str(e)}), 400
 
 
 @dashboard_bp.route('/dashboard/check-approvals', methods=['POST'])

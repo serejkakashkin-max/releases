@@ -7,8 +7,8 @@ from config import TOKENS
 
 
 def get_jira_domain_and_token(release_id):
-    # ИЗМЕНЕНО: Добавлена поддержка SMEPG наряду с SMECSC
-    delta_prefixes = ("SMECSC", "SMEPG")
+    # ИЗМЕНЕНО: релизы из delta-домена
+    delta_prefixes = ("SMECSC", "SMEPG", "HELPERAI", "AIGAS")
     if any(release_id.startswith(prefix) for prefix in delta_prefixes):
         return "https://jira.delta.sbrf.ru", TOKENS["delta_token"]
     return "https://jira.sberbank.ru", TOKENS["sberbank_token"]

@@ -6,6 +6,7 @@
     <title>Блок релизов</title>
     <link href="/static/css/bootstrap.min.css" rel="stylesheet">
     <link href="/static/css/bootstrap-icons.css" rel="stylesheet">
+    <script src="/static/js/bootstrap.bundle.min.js"></script>
     {% include 'base_styles.html' %}
     <style>
         body {
@@ -246,7 +247,7 @@
         .release-monitor-table {
             width: 100%;
             border-collapse: collapse;
-            min-width: 1380px;
+            min-width: 1300px;
         }
 
         .release-monitor-table th,
@@ -410,6 +411,255 @@
             border-color: rgba(25, 135, 84, 0.22);
         }
 
+        .reviewer-select {
+            width: 100%;
+            min-width: 220px;
+            padding: 0.5rem 0.7rem;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            font-size: 0.84rem;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .reviewer-select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 0.2rem rgba(88, 166, 255, 0.18);
+        }
+
+        .reviewer-select.saving {
+            opacity: 0.7;
+            cursor: wait;
+        }
+
+        .reviewer-cell {
+            min-width: 190px;
+            display: flex;
+            flex-direction: column;
+            gap: 0.45rem;
+        }
+
+        .reviewer-block-label {
+            font-size: 0.74rem;
+            font-weight: 700;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .checker-input {
+            width: 100%;
+            min-width: 170px;
+            padding: 0.5rem 0.7rem;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            font-size: 0.84rem;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .checker-input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 0.2rem rgba(88, 166, 255, 0.18);
+        }
+
+        .checker-input.saving {
+            opacity: 0.7;
+            cursor: wait;
+        }
+
+        .release-doc-btn {
+            width: 100%;
+            border: 1px solid rgba(13, 110, 253, 0.24);
+            background: linear-gradient(135deg, rgba(13, 110, 253, 0.14), rgba(13, 110, 253, 0.05));
+            color: var(--primary);
+            border-radius: 12px;
+            padding: 0.62rem 0.7rem;
+            font-size: 0.82rem;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.45rem;
+            transition: all 0.2s ease;
+        }
+
+        .release-doc-btn:hover {
+            border-color: var(--primary);
+            transform: translateY(-1px);
+            box-shadow: 0 10px 22px rgba(13, 110, 253, 0.14);
+        }
+
+        .release-doc-btn:disabled {
+            opacity: 0.6;
+            cursor: wait;
+        }
+
+        .release-doc-note {
+            margin-top: 0.4rem;
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            line-height: 1.35;
+        }
+
+        .release-doc-modal .modal-dialog {
+            max-width: 760px;
+        }
+
+        .release-doc-modal .modal-content {
+            border: 1px solid var(--border-color);
+            border-radius: 22px;
+            background: var(--bg-card);
+            color: var(--text-primary);
+            overflow: hidden;
+        }
+
+        .release-doc-modal .modal-header,
+        .release-doc-modal .modal-footer {
+            border-color: var(--border-color);
+            background: linear-gradient(135deg, var(--bg-card) 0%, var(--bg-secondary) 100%);
+        }
+
+        [data-theme="dark"] .release-doc-modal .btn-close {
+            filter: invert(1) grayscale(100%) brightness(200%);
+        }
+
+        .release-doc-step-meta {
+            display: flex;
+            justify-content: space-between;
+            gap: 0.75rem;
+            align-items: center;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .release-doc-step-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            padding: 0.4rem 0.7rem;
+            border-radius: 999px;
+            background: rgba(13, 110, 253, 0.12);
+            color: var(--primary);
+            font-size: 0.78rem;
+            font-weight: 700;
+        }
+
+        .release-doc-template {
+            color: var(--text-secondary);
+            font-size: 0.88rem;
+        }
+
+        .release-doc-summary {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .release-doc-summary-card {
+            padding: 0.8rem 0.9rem;
+            border-radius: 14px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+        }
+
+        .release-doc-summary-label {
+            display: block;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 0.25rem;
+        }
+
+        .release-doc-summary-value {
+            color: var(--text-primary);
+            font-weight: 700;
+            line-height: 1.35;
+        }
+
+        .release-doc-step-title {
+            font-size: 1.08rem;
+            font-weight: 800;
+            margin-bottom: 0.35rem;
+        }
+
+        .release-doc-step-description {
+            color: var(--text-secondary);
+            margin-bottom: 0.95rem;
+            line-height: 1.55;
+        }
+
+        .release-doc-field-label {
+            font-weight: 700;
+            margin-bottom: 0.4rem;
+            color: var(--text-primary);
+        }
+
+        .release-doc-field-help {
+            margin-top: 0.45rem;
+            color: var(--text-muted);
+            font-size: 0.82rem;
+            line-height: 1.45;
+        }
+
+        .release-doc-modal .form-control,
+        .release-doc-modal .form-select {
+            background: var(--bg-secondary);
+            border-color: var(--border-color);
+            color: var(--text-primary);
+            border-radius: 12px;
+        }
+
+        .release-doc-modal .form-control:focus,
+        .release-doc-modal .form-select:focus {
+            border-color: rgba(13, 110, 253, 0.45);
+            box-shadow: 0 0 0 0.18rem rgba(13, 110, 253, 0.12);
+        }
+
+        .release-doc-playbooks {
+            max-height: 260px;
+            overflow-y: auto;
+            padding: 0.9rem;
+            border-radius: 14px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+        }
+
+        .release-doc-playbooks .form-check + .form-check {
+            margin-top: 0.45rem;
+        }
+
+        .release-doc-loader {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.7rem;
+            min-height: 220px;
+            color: var(--text-secondary);
+            flex-direction: column;
+        }
+
+        .release-doc-error {
+            border-radius: 14px;
+            border: 1px solid rgba(220, 53, 69, 0.25);
+            background: rgba(220, 53, 69, 0.08);
+            color: var(--text-primary);
+            padding: 1rem;
+            line-height: 1.55;
+        }
+
+        .release-doc-footer-note {
+            color: var(--text-muted);
+            font-size: 0.82rem;
+            margin-right: auto;
+        }
+
         .empty-state-small {
             text-align: center;
             padding: 2rem;
@@ -433,6 +683,10 @@
             .release-monitor-summary,
             .release-monitor-controls {
                 grid-template-columns: 1fr 1fr;
+            }
+
+            .release-doc-summary {
+                grid-template-columns: 1fr;
             }
         }
 
@@ -606,10 +860,33 @@
                                 <th>Дата начала<br>внедрения</th>
                                 <th>Дата окончания<br>внедрения</th>
                                 <th>Ответственный<br>за ПСИ/Проверки</th>
+                                <th>Документы</th>
                             </tr>
                         </thead>
                         <tbody id="releaseMonitorBody"></tbody>
                     </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade release-doc-modal" id="releaseDocumentModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title">Формирование документов</h5>
+                        <div class="small text-secondary" id="releaseDocumentModalSubtitle">Подготовка данных по релизу</div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="releaseDocumentModalBody"></div>
+                </div>
+                <div class="modal-footer">
+                    <div class="release-doc-footer-note" id="releaseDocumentFooterNote">Используются те же шаблоны и правила, что и в основном генераторе.</div>
+                    <button type="button" class="btn btn-outline-secondary" id="releaseDocumentPrevBtn">Назад</button>
+                    <button type="button" class="btn btn-primary" id="releaseDocumentNextBtn">Далее</button>
                 </div>
             </div>
         </div>
@@ -622,6 +899,9 @@
         let releaseMonitorItems = [];
         let releaseMonitorMeta = {};
         let releaseMonitorRefreshPoll = null;
+        const RELEASE_REVIEWER_OPTIONS = {{ reviewer_options | tojson | safe }};
+        let releaseDocumentModalInstance = null;
+        let releaseDocumentWizardState = null;
 
         function escapeHtml(value) {
             return String(value || '')
@@ -660,6 +940,48 @@
             return `<a href="${escapeHtml(url)}" target="_blank" class="release-key-link">${escapeHtml(key)}</a>`;
         }
 
+        function buildReviewerCell(item) {
+            const currentReviewer = item.psi_owner || '';
+            const currentChecker = item.psi_checker || '';
+            return `
+                <div class="reviewer-cell">
+                    <div>
+                        <div class="reviewer-block-label">Дежурный</div>
+                        <select class="reviewer-select" onchange="updateReleaseAssignment('${escapeHtml(item.row_key || item.release_key)}', this)">
+                            <option value="">Не назначен</option>
+                            ${RELEASE_REVIEWER_OPTIONS.map(option => `
+                                <option value="${escapeHtml(option)}" ${option === currentReviewer ? 'selected' : ''}>${escapeHtml(option)}</option>
+                            `).join('')}
+                        </select>
+                    </div>
+                    <div>
+                        <div class="reviewer-block-label">Проверяет</div>
+                        <input
+                            type="text"
+                            class="checker-input"
+                            value="${escapeHtml(currentChecker)}"
+                            placeholder="Введите ФИО проверяющего"
+                            onchange="updateReleaseAssignment('${escapeHtml(item.row_key || item.release_key)}', this)"
+                        >
+                    </div>
+                </div>
+            `;
+        }
+
+        function buildGeneratorActionCell(item) {
+            return `
+                <div>
+                    <button class="release-doc-btn" onclick="openReleaseDocumentWizard('${escapeHtml(item.row_key || item.release_key)}')">
+                        <i class="bi bi-file-earmark-zip"></i>
+                        Сформировать документы
+                    </button>
+                    <div class="release-doc-note">
+                        Использует данные релиза, РОВ и назначений из этой таблицы.
+                    </div>
+                </div>
+            `;
+        }
+
         function buildReleaseRow(item) {
             return `
                 <tr class="release-row state-${escapeHtml(item.row_state || 'planned')}" data-year="${escapeHtml(item.year)}" data-status="${escapeHtml(item.release_status || '')}">
@@ -671,9 +993,498 @@
                     <td>${buildReleaseLinkCell(item.rov_url, item.rov_key)}</td>
                     <td>${item.deployment_start ? escapeHtml(item.deployment_start) : '<span style="color: var(--text-muted);">-</span>'}</td>
                     <td>${item.deployment_end ? escapeHtml(item.deployment_end) : '<span style="color: var(--text-muted);">-</span>'}</td>
-                    <td>${item.psi_owner ? escapeHtml(item.psi_owner) : '<span style="color: var(--text-muted);">-</span>'}</td>
+                    <td>${buildReviewerCell(item)}</td>
+                    <td>${buildGeneratorActionCell(item)}</td>
                 </tr>
             `;
+        }
+
+        function getReleaseMonitorItem(releaseKey) {
+            return (releaseMonitorItems || []).find(item => (item.row_key || item.release_key) === releaseKey) || null;
+        }
+
+        function releaseUsesPlaybooks(releaseName) {
+            const normalizedReleaseName = String(releaseName || '').toUpperCase();
+            const blockedMarkers = ['SOWA', 'ЕФС.AUTHENTICATION_USER', 'AUTH', 'RESSTORE(2889318)'];
+            return !blockedMarkers.some(marker => normalizedReleaseName.includes(marker));
+        }
+
+        function dateToInputValue(dateValue) {
+            if (!dateValue) {
+                const today = new Date();
+                return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+            }
+
+            if (/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
+                return dateValue;
+            }
+
+            const match = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(dateValue);
+            if (match) {
+                return `${match[3]}-${match[2]}-${match[1]}`;
+            }
+
+            return dateValue.slice(0, 10);
+        }
+
+        function inputValueToDisplayDate(value) {
+            if (!value) {
+                return '';
+            }
+            const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+            if (!match) {
+                return value;
+            }
+            return `${match[3]}.${match[2]}.${match[1]}`;
+        }
+
+        function getReleaseDocumentSummaryCards(state) {
+            const item = state.item;
+            const templateTitle = state.templateChoice
+                ? `${state.templateChoice.category} / ${state.templateChoice.release_clean}`
+                : state.initData?.detection?.found
+                    ? `${state.initData.detection.category} / ${state.initData.detection.release_clean}`
+                    : 'Будет уточнен по шагам';
+
+            return `
+                <div class="release-doc-summary">
+                    <div class="release-doc-summary-card">
+                        <span class="release-doc-summary-label">Релиз</span>
+                        <div class="release-doc-summary-value">${escapeHtml(item.release_key || '')}</div>
+                    </div>
+                    <div class="release-doc-summary-card">
+                        <span class="release-doc-summary-label">Шаблон</span>
+                        <div class="release-doc-summary-value">${escapeHtml(templateTitle)}</div>
+                    </div>
+                    <div class="release-doc-summary-card">
+                        <span class="release-doc-summary-label">Дежурный ОПЛОТ</span>
+                        <div class="release-doc-summary-value">${escapeHtml(state.form.oplot || 'Не назначен')}</div>
+                    </div>
+                    <div class="release-doc-summary-card">
+                        <span class="release-doc-summary-label">Проверяющий</span>
+                        <div class="release-doc-summary-value">${escapeHtml(state.form.checker || 'Не указан')}</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function buildReleaseDocumentSteps(state) {
+            const steps = [];
+            const detection = state.initData?.detection || {};
+
+            if (!detection.found && Array.isArray(detection.candidates) && detection.candidates.length > 0) {
+                steps.push({ type: 'template' });
+            }
+
+            steps.push({ type: 'prev_version' });
+            steps.push({ type: 'instruction_link' });
+            steps.push({ type: 'date' });
+
+            const templateSource = state.templateChoice || (detection.found ? detection : null);
+            if (templateSource?.release_full ? releaseUsesPlaybooks(templateSource.release_full) : state.initData?.playbooks_required === true) {
+                steps.push({ type: 'playbooks' });
+            }
+
+            return steps;
+        }
+
+        function ensureReleaseDocumentModal() {
+            if (!releaseDocumentModalInstance) {
+                releaseDocumentModalInstance = new bootstrap.Modal(document.getElementById('releaseDocumentModal'));
+            }
+            return releaseDocumentModalInstance;
+        }
+
+        function setReleaseDocumentModalLoading(message) {
+            const body = document.getElementById('releaseDocumentModalBody');
+            const prevBtn = document.getElementById('releaseDocumentPrevBtn');
+            const nextBtn = document.getElementById('releaseDocumentNextBtn');
+            if (body) {
+                body.innerHTML = `
+                    <div class="release-doc-loader">
+                        <div class="spinner-border text-primary" role="status" aria-hidden="true"></div>
+                        <div>${escapeHtml(message || 'Подготавливаем форму...')}</div>
+                    </div>
+                `;
+            }
+            if (prevBtn) prevBtn.style.display = 'none';
+            if (nextBtn) {
+                nextBtn.disabled = true;
+                nextBtn.textContent = 'Загрузка...';
+            }
+        }
+
+        function setReleaseDocumentModalError(message) {
+            const body = document.getElementById('releaseDocumentModalBody');
+            const prevBtn = document.getElementById('releaseDocumentPrevBtn');
+            const nextBtn = document.getElementById('releaseDocumentNextBtn');
+            if (body) {
+                body.innerHTML = `<div class="release-doc-error">${escapeHtml(message)}</div>`;
+            }
+            if (prevBtn) prevBtn.style.display = 'none';
+            if (nextBtn) {
+                nextBtn.disabled = false;
+                nextBtn.textContent = 'Закрыть';
+                nextBtn.onclick = closeReleaseDocumentWizard;
+            }
+        }
+
+        function closeReleaseDocumentWizard() {
+            if (releaseDocumentModalInstance) {
+                releaseDocumentModalInstance.hide();
+            }
+        }
+
+        async function openReleaseDocumentWizard(releaseKey) {
+            const item = getReleaseMonitorItem(releaseKey);
+            if (!item) {
+                alert('Не удалось найти релиз в текущей таблице.');
+                return;
+            }
+
+            if (!item.psi_owner) {
+                alert('Сначала назначьте дежурного ОПЛОТ в таблице релизов.');
+                return;
+            }
+
+            if (!item.psi_checker) {
+                alert('Сначала заполните поле "Проверяет" в таблице релизов.');
+                return;
+            }
+
+            releaseDocumentWizardState = {
+                item,
+                initData: null,
+                templateChoice: null,
+                steps: [],
+                stepIndex: 0,
+                form: {
+                    release_id: item.release_key || '',
+                    prev_version: '',
+                    oplot: item.psi_owner || '',
+                    checker: item.psi_checker || '',
+                    instruction_link: '',
+                    date: dateToInputValue(item.deployment_start || ''),
+                    ke: item.ke || '',
+                    playbooks: []
+                }
+            };
+
+            const modal = ensureReleaseDocumentModal();
+            document.getElementById('releaseDocumentModalSubtitle').textContent = `Релиз ${item.release_key}`;
+            setReleaseDocumentModalLoading('Подтягиваем шаблоны и автозаполненные поля...');
+            modal.show();
+
+            try {
+                const response = await fetch(BASE_PATH + '/release/monitor-init', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        release_id: item.release_key,
+                        ke: item.ke || '',
+                        oplot: item.psi_owner || '',
+                        checker: item.psi_checker || '',
+                        date: item.deployment_start || ''
+                    })
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Не удалось подготовить генератор документов');
+                }
+
+                releaseDocumentWizardState.initData = data;
+                releaseDocumentWizardState.form.ke = data.ke || releaseDocumentWizardState.form.ke;
+                if (!data.detection?.found && !(Array.isArray(data.detection?.candidates) && data.detection.candidates.length)) {
+                    throw new Error('Не удалось автоопределить шаблон релиза. Для этого релиза используйте основной генератор документов.');
+                }
+                releaseDocumentWizardState.steps = buildReleaseDocumentSteps(releaseDocumentWizardState);
+                releaseDocumentWizardState.stepIndex = 0;
+                renderReleaseDocumentWizardStep();
+            } catch (error) {
+                console.error('Release document init error:', error);
+                setReleaseDocumentModalError(error.message || 'Не удалось подготовить форму генерации');
+            }
+        }
+
+        function validateReleaseDocumentCurrentStep() {
+            const state = releaseDocumentWizardState;
+            if (!state) {
+                return false;
+            }
+            const step = state.steps[state.stepIndex];
+            if (!step) {
+                return false;
+            }
+
+            if (step.type === 'template') {
+                const selected = document.querySelector('input[name="releaseTemplateCandidate"]:checked');
+                if (!selected) {
+                    alert('Выберите шаблон для формирования документов.');
+                    return false;
+                }
+                const candidateIndex = Number(selected.value);
+                const candidate = state.initData?.detection?.candidates?.[candidateIndex];
+                if (!candidate) {
+                    alert('Не удалось определить выбранный шаблон.');
+                    return false;
+                }
+                state.templateChoice = candidate;
+                state.steps = buildReleaseDocumentSteps(state);
+                return true;
+            }
+
+            if (step.type === 'prev_version') {
+                const input = document.getElementById('releaseDocumentPrevVersion');
+                const value = (input?.value || '').trim();
+                if (!value) {
+                    alert('Укажите предыдущую версию.');
+                    return false;
+                }
+                state.form.prev_version = value;
+                return true;
+            }
+
+            if (step.type === 'instruction_link') {
+                const input = document.getElementById('releaseDocumentInstructionLink');
+                state.form.instruction_link = (input?.value || '').trim();
+                return true;
+            }
+
+            if (step.type === 'date') {
+                const input = document.getElementById('releaseDocumentDate');
+                const value = input?.value || '';
+                if (!value) {
+                    alert('Подтвердите или выберите дату релиза.');
+                    return false;
+                }
+                state.form.date = value;
+                return true;
+            }
+
+            if (step.type === 'playbooks') {
+                state.form.playbooks = Array.from(document.querySelectorAll('input[name="releaseDocumentPlaybooks"]:checked'))
+                    .map(input => input.value);
+                return true;
+            }
+
+            return true;
+        }
+
+        function getReleaseDocumentStepContent(state, step, stepNumber, totalSteps) {
+            const item = state.item;
+            const detection = state.initData?.detection || {};
+            const templateChoice = state.templateChoice || (detection.found ? detection : null);
+            const templateText = templateChoice
+                ? `${templateChoice.category} / ${templateChoice.release_clean}`
+                : Array.isArray(detection.candidates) && detection.candidates.length
+                    ? 'Нужно выбрать шаблон'
+                    : 'Автоопределение не удалось';
+
+            let content = `
+                <div class="release-doc-step-meta">
+                    <div class="release-doc-step-badge"><i class="bi bi-magic"></i> Шаг ${stepNumber} из ${totalSteps}</div>
+                    <div class="release-doc-template">Шаблон: ${escapeHtml(templateText)}</div>
+                </div>
+                ${getReleaseDocumentSummaryCards(state)}
+            `;
+
+            if (step.type === 'template') {
+                const candidates = Array.isArray(detection.candidates) ? detection.candidates : [];
+                content += `
+                    <div class="release-doc-step-title">Выберите пакет шаблонов</div>
+                    <div class="release-doc-step-description">
+                        По релизу найдено несколько вариантов. Выберите нужный шаблон, после чего мастер продолжит заполнение только недостающих данных.
+                    </div>
+                    <div class="release-doc-playbooks">
+                        ${candidates.map((candidate, index) => `
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="releaseTemplateCandidate" id="releaseTemplateCandidate${index}" value="${index}" ${state.templateChoice && state.templateChoice.release_full === candidate.release_full ? 'checked' : ''}>
+                                <label class="form-check-label" for="releaseTemplateCandidate${index}">
+                                    <strong>${escapeHtml(candidate.category)}</strong> / ${escapeHtml(candidate.release_clean)}
+                                </label>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            } else if (step.type === 'prev_version') {
+                content += `
+                    <div class="release-doc-step-title">Предыдущая версия</div>
+                    <div class="release-doc-step-description">
+                        Укажите версию или дистрибутив отката. Это единственное обязательное поле, которого нет в таблице релизов.
+                    </div>
+                    <label class="release-doc-field-label" for="releaseDocumentPrevVersion">Предыдущая версия</label>
+                    <input id="releaseDocumentPrevVersion" type="text" class="form-control" value="${escapeHtml(state.form.prev_version)}" placeholder="Например: D-01.00.00-285">
+                `;
+            } else if (step.type === 'instruction_link') {
+                content += `
+                    <div class="release-doc-step-title">Ссылка на инструкцию</div>
+                    <div class="release-doc-step-description">
+                        Поле обязательно к подтверждению по логике генератора, но ссылку можно оставить пустой, если инструкции пока нет.
+                    </div>
+                    <label class="release-doc-field-label" for="releaseDocumentInstructionLink">Ссылка на инструкцию</label>
+                    <input id="releaseDocumentInstructionLink" type="text" class="form-control" value="${escapeHtml(state.form.instruction_link)}" placeholder="https://...">
+                    <div class="release-doc-field-help">Если оставить поле пустым, в документе будет подставлен блок об отсутствии инструкции.</div>
+                `;
+            } else if (step.type === 'date') {
+                content += `
+                    <div class="release-doc-step-title">Дата релиза</div>
+                    <div class="release-doc-step-description">
+                        По умолчанию берем дату начала внедрения из таблицы релизов. При необходимости ее можно скорректировать перед формированием документов.
+                    </div>
+                    <label class="release-doc-field-label" for="releaseDocumentDate">Дата релиза</label>
+                    <input id="releaseDocumentDate" type="date" class="form-control" value="${escapeHtml(state.form.date)}">
+                    <div class="release-doc-field-help">Текущая дата из таблицы: ${escapeHtml(item.deployment_start || 'не указана, можно выбрать вручную')}</div>
+                `;
+            } else if (step.type === 'playbooks') {
+                const playbooks = Array.isArray(state.initData?.playbooks) ? state.initData.playbooks : [];
+                content += `
+                    <div class="release-doc-step-title">Выбор плейбуков</div>
+                    <div class="release-doc-step-description">
+                        Для этого типа релиза плейбуки используются. Отметьте только те, которые должны попасть в сформированные документы.
+                    </div>
+                    <div class="release-doc-playbooks">
+                        ${playbooks.map((playbook, index) => `
+                            <div class="form-check">
+                                <input
+                                    class="form-check-input"
+                                    type="checkbox"
+                                    name="releaseDocumentPlaybooks"
+                                    id="releaseDocumentPlaybook${index}"
+                                    value="${escapeHtml(playbook)}"
+                                    ${state.form.playbooks.includes(playbook) ? 'checked' : ''}
+                                >
+                                <label class="form-check-label" for="releaseDocumentPlaybook${index}">${escapeHtml(playbook)}</label>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+
+            return content;
+        }
+
+        function renderReleaseDocumentWizardStep() {
+            const state = releaseDocumentWizardState;
+            const body = document.getElementById('releaseDocumentModalBody');
+            const prevBtn = document.getElementById('releaseDocumentPrevBtn');
+            const nextBtn = document.getElementById('releaseDocumentNextBtn');
+            if (!state || !body) {
+                return;
+            }
+
+            const step = state.steps[state.stepIndex];
+            if (!step) {
+                setReleaseDocumentModalError('Не удалось определить шаги мастера формирования.');
+                return;
+            }
+
+            document.getElementById('releaseDocumentModalSubtitle').textContent = `Релиз ${state.item.release_key}`;
+            body.innerHTML = getReleaseDocumentStepContent(state, step, state.stepIndex + 1, state.steps.length);
+
+            if (prevBtn) {
+                prevBtn.style.display = state.stepIndex > 0 ? '' : 'none';
+                prevBtn.disabled = false;
+                prevBtn.onclick = () => goReleaseDocumentStep(-1);
+            }
+
+            if (nextBtn) {
+                nextBtn.disabled = false;
+                nextBtn.onclick = () => goReleaseDocumentStep(1);
+                nextBtn.textContent = state.stepIndex === state.steps.length - 1 ? 'Сформировать документы' : 'Далее';
+            }
+        }
+
+        async function goReleaseDocumentStep(direction) {
+            const state = releaseDocumentWizardState;
+            if (!state) {
+                return;
+            }
+
+            if (direction < 0) {
+                state.stepIndex = Math.max(0, state.stepIndex - 1);
+                renderReleaseDocumentWizardStep();
+                return;
+            }
+
+            if (!validateReleaseDocumentCurrentStep()) {
+                return;
+            }
+
+            if (state.stepIndex >= state.steps.length - 1) {
+                await submitReleaseDocumentWizard();
+                return;
+            }
+
+            state.stepIndex += 1;
+            renderReleaseDocumentWizardStep();
+        }
+
+        async function submitReleaseDocumentWizard() {
+            const state = releaseDocumentWizardState;
+            const nextBtn = document.getElementById('releaseDocumentNextBtn');
+            const prevBtn = document.getElementById('releaseDocumentPrevBtn');
+            if (!state || !nextBtn) {
+                return;
+            }
+
+            const detection = state.initData?.detection || {};
+            const templateChoice = state.templateChoice || (detection.found ? detection : null);
+            if (!templateChoice?.category || !templateChoice?.release_full) {
+                alert('Не удалось определить шаблон релиза для формирования документов.');
+                return;
+            }
+
+            nextBtn.disabled = true;
+            nextBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Формирование...';
+            if (prevBtn) prevBtn.disabled = true;
+
+            try {
+                const response = await fetch(BASE_PATH + '/release/monitor-generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        release_id: state.form.release_id,
+                        prev_version: state.form.prev_version,
+                        oplot: state.form.oplot,
+                        checker: state.form.checker,
+                        instruction_link: state.form.instruction_link,
+                        date: inputValueToDisplayDate(state.form.date),
+                        ke: state.form.ke,
+                        playbooks: state.form.playbooks,
+                        category: templateChoice.category,
+                        release_full: templateChoice.release_full
+                    })
+                });
+
+                if (!response.ok) {
+                    let errorMessage = 'Не удалось сформировать документы';
+                    try {
+                        const data = await response.json();
+                        errorMessage = data.error || errorMessage;
+                    } catch (jsonError) {
+                        console.error('Release document error response parse:', jsonError);
+                    }
+                    throw new Error(errorMessage);
+                }
+
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${state.form.release_id}.zip`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+                closeReleaseDocumentWizard();
+            } catch (error) {
+                console.error('Release document generation error:', error);
+                alert('Ошибка формирования документов: ' + error.message);
+            } finally {
+                nextBtn.disabled = false;
+                nextBtn.textContent = 'Сформировать документы';
+                if (prevBtn) prevBtn.disabled = false;
+            }
         }
 
         function getSelectedReleaseYear() {
@@ -828,6 +1639,63 @@
                 toggleBtn.innerHTML = isReleaseMonitorExpanded
                     ? '<i class="bi bi-arrows-collapse"></i> Свернуть'
                     : '<i class="bi bi-arrows-expand"></i> Показать все';
+            }
+        }
+
+        async function updateReleaseAssignment(releaseKey, changedElement) {
+            if (!releaseKey || !changedElement) {
+                return;
+            }
+
+            const cell = changedElement.closest('.reviewer-cell');
+            const reviewerSelect = cell?.querySelector('.reviewer-select');
+            const checkerInput = cell?.querySelector('.checker-input');
+            const reviewer = reviewerSelect?.value || '';
+            const checker = checkerInput?.value || '';
+
+            [reviewerSelect, checkerInput].forEach(element => {
+                if (!element) {
+                    return;
+                }
+                element.disabled = true;
+                element.classList.add('saving');
+            });
+
+            try {
+                const response = await fetch(BASE_PATH + '/dashboard/release-monitor/reviewer', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        release_key: releaseKey,
+                        reviewer: reviewer,
+                        checker: checker
+                    })
+                });
+                const data = await response.json();
+                if (!data.success) {
+                    throw new Error(data.error || 'Не удалось сохранить назначение');
+                }
+
+                releaseMonitorItems = releaseMonitorItems.map(item => (
+                    (item.row_key || item.release_key) === releaseKey
+                        ? {
+                            ...item,
+                            psi_owner: data.reviewer || '',
+                            psi_checker: data.checker || ''
+                        }
+                        : item
+                ));
+            } catch (error) {
+                console.error('Release assignment update error:', error);
+                alert('Ошибка сохранения назначения: ' + error.message);
+            } finally {
+                [reviewerSelect, checkerInput].forEach(element => {
+                    if (!element) {
+                        return;
+                    }
+                    element.disabled = false;
+                    element.classList.remove('saving');
+                });
             }
         }
 

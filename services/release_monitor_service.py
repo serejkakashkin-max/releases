@@ -10,7 +10,7 @@ from pathlib import Path
 
 import requests
 
-from config import DASHBOARD_CACHE_TTL
+from config import DASHBOARD_CACHE_TTL, OPLOT_VALUES
 from services.jira_service import get_jira_domain_and_token
 
 
@@ -24,7 +24,7 @@ PRE_FINAL_RELEASE_STATUSES = (
     "Установка на ПРОМ",
     "Готов к установке на ПРОМ",
 )
-RELEASE_PREFIXES = ("EMRM", "SMECLM", "SMECSC")
+RELEASE_PREFIXES = ("EMRM", "SMECLM", "SMECSC", "HELPERAI", "AIGAS")
 RELEASE_ISSUE_TYPE = "Release 2.0"
 ROV_ISSUE_TYPE = "Introduction Order"
 QUICK_REFRESH_DAYS = 14
@@ -32,6 +32,7 @@ AUTO_FULL_REFRESH_HOUR = 6
 AUTO_REFRESH_CHECK_INTERVAL = 300
 SNAPSHOT_DIR = Path(__file__).resolve().parent.parent / "cache"
 SNAPSHOT_FILE = SNAPSHOT_DIR / "release_monitor_snapshot.json"
+REVIEWERS_FILE = SNAPSHOT_DIR / "release_monitor_reviewers.json"
 
 FIELD_FALLBACKS = {
     "planned_prom_start": None,
@@ -176,6 +177,54 @@ def _load_snapshot_from_disk():
     except Exception as exc:
         logging.warning("Release monitor: failed to load snapshot from disk: %s", exc)
         return None
+
+
+def _load_reviewer_assignments():
+    if not REVIEWERS_FILE.exists():
+        return {}
+
+    try:
+        payload = json.loads(REVIEWERS_FILE.read_text(encoding="utf-8"))
+        if isinstance(payload, dict):
+            normalized = {}
+            for key, value in payload.items():
+                release_key = str(key)
+                if isinstance(value, dict):
+                    normalized[release_key] = {
+                        "reviewer": str(value.get("reviewer", "") or "").strip(),
+                        "checker": str(value.get("checker", "") or "").strip(),
+                    }
+                elif value:
+                    normalized[release_key] = {
+                        "reviewer": str(value).strip(),
+                        "checker": "",
+                    }
+            return normalized
+        return {}
+    except Exception as exc:
+        logging.warning("Release monitor: failed to load reviewer assignments: %s", exc)
+        return {}
+
+
+def _save_reviewer_assignments(assignments):
+    try:
+        _ensure_snapshot_dir()
+        REVIEWERS_FILE.write_text(
+            json.dumps(assignments, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        logging.warning("Release monitor: failed to save reviewer assignments: %s", exc)
+
+
+def _apply_reviewer_assignments(items):
+    assignments = _load_reviewer_assignments()
+    for item in items:
+        assignment_key = item.get("row_key") or item.get("release_key")
+        release_assignment = assignments.get(assignment_key) or assignments.get(item.get("release_key"), {})
+        item["psi_owner"] = release_assignment.get("reviewer", "")
+        item["psi_checker"] = release_assignment.get("checker", "")
+    return items
 
 
 def _normalize_text(value):
@@ -408,7 +457,8 @@ def _execute_issue_keys_search(domain, token, issue_keys, fields_to_load):
     return issues
 
 
-def _extract_release_io_key(issue):
+def _extract_release_io_keys(issue):
+    keys = []
     for link in issue.get("fields", {}).get("issuelinks", []):
         link_type = link.get("type", {})
         inward_issue = link.get("inwardIssue")
@@ -416,9 +466,20 @@ def _extract_release_io_key(issue):
             continue
 
         if link_type.get("name") == "ReleaseIO" or link_type.get("inward") == "Introduction Order":
-            return inward_issue.get("key")
+            key = inward_issue.get("key")
+            if key:
+                keys.append(key)
 
-    return ""
+    def _sort_key(issue_key):
+        match = re.search(r"-(\d+)$", issue_key or "")
+        return int(match.group(1)) if match else -1
+
+    return sorted(list(dict.fromkeys(keys)), key=_sort_key)
+
+
+def _extract_release_io_key(issue):
+    keys = _extract_release_io_keys(issue)
+    return keys[-1] if keys else ""
 
 
 def _clean_release_summary(summary):
@@ -436,7 +497,7 @@ def _detect_system(prefix, summary, ke_name, system_info_text):
     return "Фокус"
 
 
-def _build_release_name_lines(summary, ke_name, ke_id, version):
+def _build_release_name_lines(summary, ke_name, ke_id, version, row_label="(Релиз)"):
     lines = []
     short_name = _clean_release_summary(summary)
     if short_name:
@@ -452,6 +513,9 @@ def _build_release_name_lines(summary, ke_name, ke_id, version):
 
     if version:
         lines.append(f"Сборка: {version}")
+
+    if len(lines) >= 1:
+        lines[-2 if version else -1] = row_label
 
     return lines
 
@@ -501,79 +565,92 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
     release_version = _extract_version(dist_item)
     ke_distributive = _format_ke_id((dist_item or {}).get("id") if isinstance(dist_item, dict) else "")
 
-    rov_key = _extract_release_io_key(issue)
-    rov_data = rov_map.get(rov_key, {})
-    rov_start = rov_data.get("start_dt")
-    rov_end = rov_data.get("end_dt")
-
-    release_year = _pick_release_year(rov_start, rov_end, planned_prom_start, planned_prom_end, created_dt)
-    if release_year not in {current_year, previous_year}:
-        return None
-
     normalized_status = _normalize_text(status_name)
     is_cancelled = normalized_status == _normalize_text(CANCELLED_RELEASE_STATUS)
     is_final = normalized_status == _normalize_text(FINAL_RELEASE_STATUS)
     is_non_final = not is_final and not is_cancelled
     is_pre_final = normalized_status in {_normalize_text(status) for status in PRE_FINAL_RELEASE_STATUSES}
-
-    today = datetime.now().date()
-    rov_end_date = rov_end.date() if rov_end else None
-    is_overdue = bool(rov_end_date and rov_end_date < today and is_non_final)
-    is_today = bool(rov_end_date and rov_end_date == today and is_non_final)
-
-    if is_final:
-        row_state = "final"
-    elif is_cancelled:
-        row_state = "cancelled"
-    elif is_overdue:
-        row_state = "overdue"
-    elif is_today:
-        row_state = "today"
-    else:
-        row_state = "planned"
-
-    days_overdue = (today - rov_end_date).days if is_overdue else 0
     ke_name = ke_object.get("name") or ""
     ke_id = ke_object.get("id") or ""
+    linked_rov_keys = _extract_release_io_keys(issue)
+    linked_rov_records = [rov_map.get(key, {}) for key in linked_rov_keys if rov_map.get(key)]
+    row_variants = linked_rov_records or [{}]
+    records = []
+    today = datetime.now().date()
 
-    return {
-        "year": release_year,
-        "release_number": "",
-        "release_key": issue.get("key"),
-        "release_url": f"{domain}/browse/{issue.get('key')}",
-        "release_status": status_name,
-        "release_status_normalized": normalized_status,
-        "release_summary": summary,
-        "release_name_lines": _build_release_name_lines(summary, ke_name, ke_id, release_version),
-        "zni_key": "",
-        "ke": ke_distributive,
-        "ke_name": ke_name,
-        "ke_id": ke_id,
-        "release_version": release_version,
-        "rov_key": rov_key,
-        "rov_url": rov_data.get("url", ""),
-        "rov_status": rov_data.get("status", ""),
-        "has_rov": bool(rov_key),
-        "deployment_start": rov_data.get("start", ""),
-        "deployment_start_iso": rov_data.get("start_iso", ""),
-        "deployment_end": rov_data.get("end", ""),
-        "deployment_end_iso": rov_data.get("end_iso", ""),
-        "psi_owner": "",
-        "row_state": row_state,
-        "is_final": is_final,
-        "is_cancelled": is_cancelled,
-        "is_non_final": is_non_final,
-        "is_pre_final": is_pre_final,
-        "is_overdue": is_overdue,
-        "is_today": is_today,
-        "days_overdue": days_overdue,
-        "waits_for_rov": not rov_key and not is_cancelled,
-        "source_prefix": prefix,
-        "system_name": _detect_system(prefix, summary, ke_name, system_info_text),
-        "sort_date": _pick_release_sort_dt(rov_start, rov_end, planned_prom_start, planned_prom_end).isoformat() if _pick_release_sort_dt(rov_start, rov_end, planned_prom_start, planned_prom_end) else "",
-        "created_sort_date": created_dt.isoformat() if created_dt else "",
-        "created": fields.get("created", ""),
-    }
+    for index, rov_data in enumerate(row_variants):
+        rov_key = rov_data.get("key", "")
+        rov_start = rov_data.get("start_dt")
+        rov_end = rov_data.get("end_dt")
+
+        release_year = _pick_release_year(rov_start, rov_end, planned_prom_start, planned_prom_end, created_dt)
+        if release_year not in {current_year, previous_year}:
+            continue
+
+        rov_end_date = rov_end.date() if rov_end else None
+        is_overdue = bool(rov_end_date and rov_end_date < today and is_non_final)
+        is_today = bool(rov_end_date and rov_end_date == today and is_non_final)
+
+        if is_final:
+            row_state = "final"
+        elif is_cancelled:
+            row_state = "cancelled"
+        elif is_overdue:
+            row_state = "overdue"
+        elif is_today:
+            row_state = "today"
+        else:
+            row_state = "planned"
+
+        days_overdue = (today - rov_end_date).days if is_overdue else 0
+        is_reroll = bool(rov_key and len(linked_rov_records) > 1 and index > 0)
+        row_label = "(Перераскатка)" if is_reroll else "(Релиз)"
+        row_key = f"{issue.get('key')}::{rov_key or 'no-rov'}"
+
+        records.append({
+            "row_key": row_key,
+            "year": release_year,
+            "release_number": "",
+            "release_key": issue.get("key"),
+            "release_url": f"{domain}/browse/{issue.get('key')}",
+            "release_status": status_name,
+            "release_status_normalized": normalized_status,
+            "release_summary": summary,
+            "release_name_lines": _build_release_name_lines(summary, ke_name, ke_id, release_version, row_label=row_label),
+            "is_reroll": is_reroll,
+            "row_label": row_label,
+            "zni_key": "",
+            "ke": ke_distributive,
+            "ke_name": ke_name,
+            "ke_id": ke_id,
+            "release_version": release_version,
+            "rov_key": rov_key,
+            "rov_url": rov_data.get("url", ""),
+            "rov_status": rov_data.get("status", ""),
+            "has_rov": bool(rov_key),
+            "deployment_start": rov_data.get("start", ""),
+            "deployment_start_iso": rov_data.get("start_iso", ""),
+            "deployment_end": rov_data.get("end", ""),
+            "deployment_end_iso": rov_data.get("end_iso", ""),
+            "psi_owner": "",
+            "psi_checker": "",
+            "row_state": row_state,
+            "is_final": is_final,
+            "is_cancelled": is_cancelled,
+            "is_non_final": is_non_final,
+            "is_pre_final": is_pre_final,
+            "is_overdue": is_overdue,
+            "is_today": is_today,
+            "days_overdue": days_overdue,
+            "waits_for_rov": not rov_key and not is_cancelled,
+            "source_prefix": prefix,
+            "system_name": _detect_system(prefix, summary, ke_name, system_info_text),
+            "sort_date": _pick_release_sort_dt(rov_start, rov_end, planned_prom_start, planned_prom_end).isoformat() if _pick_release_sort_dt(rov_start, rov_end, planned_prom_start, planned_prom_end) else "",
+            "created_sort_date": created_dt.isoformat() if created_dt else "",
+            "created": fields.get("created", ""),
+        })
+
+    return records
 
 
 def _sort_datetime_value(item, field_name="sort_date"):
@@ -707,6 +784,7 @@ def _build_summary(records, current_year, previous_year):
 def _compose_release_payload(all_records, mode):
     current_year = datetime.now().year
     previous_year = current_year - 1
+    _apply_reviewer_assignments(all_records)
     _sort_and_number_records(all_records)
     payload = {
         "items": all_records,
@@ -781,9 +859,10 @@ def _fetch_release_monitor_data():
 
         rov_keys = sorted(
             {
-                _extract_release_io_key(issue)
+                rov_key
                 for _, issue in domain_release_issues
-                if _extract_release_io_key(issue)
+                for rov_key in _extract_release_io_keys(issue)
+                if rov_key
             }
         )
         rov_map = {}
@@ -806,7 +885,7 @@ def _fetch_release_monitor_data():
                 logging.error("Release monitor: failed to load linked ROV issues from %s: %s", domain, exc)
 
         for prefix, issue in domain_release_issues:
-            record = _build_release_record(
+            records = _build_release_record(
                 issue,
                 domain,
                 prefix,
@@ -815,8 +894,8 @@ def _fetch_release_monitor_data():
                 current_year,
                 previous_year,
             )
-            if record:
-                all_records.append(record)
+            if records:
+                all_records.extend(records)
 
     return _compose_release_payload(all_records, "full")
 
@@ -824,15 +903,23 @@ def _fetch_release_monitor_data():
 def _merge_release_records(existing_items, updated_items):
     current_year = datetime.now().year
     previous_year = current_year - 1
+    updated_release_keys = {
+        item.get("release_key")
+        for item in (updated_items or [])
+        if item.get("release_key")
+    }
     records_by_key = {
-        item.get("release_key"): dict(item)
+        item.get("row_key") or item.get("release_key"): dict(item)
         for item in (existing_items or [])
-        if item.get("release_key") and item.get("year") in {current_year, previous_year}
+        if (item.get("row_key") or item.get("release_key"))
+        and item.get("year") in {current_year, previous_year}
+        and item.get("release_key") not in updated_release_keys
     }
 
     for item in updated_items:
-        if item and item.get("release_key"):
-            records_by_key[item["release_key"]] = item
+        item_key = item.get("row_key") or item.get("release_key")
+        if item and item_key:
+            records_by_key[item_key] = item
 
     merged_items = list(records_by_key.values())
     return _compose_release_payload(merged_items, "quick")
@@ -891,9 +978,10 @@ def _fetch_quick_release_monitor_data(base_items=None):
 
         rov_keys = sorted(
             {
-                _extract_release_io_key(issue)
+                rov_key
                 for _, issue in domain_release_issues
-                if _extract_release_io_key(issue)
+                for rov_key in _extract_release_io_keys(issue)
+                if rov_key
             }
         )
         rov_map = {}
@@ -916,7 +1004,7 @@ def _fetch_quick_release_monitor_data(base_items=None):
                 logging.error("Release monitor: quick refresh failed to load linked ROV issues from %s: %s", domain, exc)
 
         for prefix, issue in domain_release_issues:
-            record = _build_release_record(
+            records = _build_release_record(
                 issue,
                 domain,
                 prefix,
@@ -925,8 +1013,8 @@ def _fetch_quick_release_monitor_data(base_items=None):
                 current_year,
                 previous_year,
             )
-            if record:
-                updated_records.append(record)
+            if records:
+                updated_records.extend(records)
 
     return _merge_release_records(base_items or [], updated_records)
 
@@ -1256,8 +1344,85 @@ def get_release_monitor_snapshot():
                 return _build_empty_release_monitor_payload()
 
         payload = _get_cached_payload_copy()
+        _apply_reviewer_assignments(payload.get("items", []))
         payload["meta"] = {
             **payload.get("meta", {}),
             "is_cached": True,
         }
         return payload
+
+
+def get_release_monitor_reviewer_options():
+    return list(OPLOT_VALUES)
+
+
+def set_release_monitor_reviewer(release_key, reviewer):
+    global _cached_data
+
+    release_key = (release_key or "").strip()
+    reviewer = (reviewer or "").strip()
+    if not release_key:
+        raise ValueError("Не указан ключ релиза")
+
+    if reviewer and reviewer not in OPLOT_VALUES:
+        raise ValueError("Выбранный проверяющий отсутствует в списке ОПЛОТ")
+
+    assignments = _load_reviewer_assignments()
+    current_assignment = dict(assignments.get(release_key, {}))
+    current_assignment["reviewer"] = reviewer
+
+    if current_assignment.get("reviewer") or current_assignment.get("checker"):
+        assignments[release_key] = current_assignment
+    else:
+        assignments.pop(release_key, None)
+    _save_reviewer_assignments(assignments)
+
+    with _cache_lock:
+        if _cached_data is not None:
+            for item in _cached_data.get("items", []):
+                item_key = item.get("row_key") or item.get("release_key")
+                if item_key == release_key:
+                    item["psi_owner"] = reviewer
+                    item["psi_checker"] = current_assignment.get("checker", "")
+                    break
+            _save_snapshot_to_disk(_cached_data)
+
+    return reviewer
+
+
+def set_release_monitor_assignment(release_key, reviewer, checker):
+    global _cached_data
+
+    release_key = (release_key or "").strip()
+    reviewer = (reviewer or "").strip()
+    checker = (checker or "").strip()
+    if not release_key:
+        raise ValueError("Не указан ключ релиза")
+
+    if reviewer and reviewer not in OPLOT_VALUES:
+        raise ValueError("Выбранный дежурный отсутствует в списке ОПЛОТ")
+
+    assignments = _load_reviewer_assignments()
+    if reviewer or checker:
+        assignments[release_key] = {
+            "reviewer": reviewer,
+            "checker": checker,
+        }
+    else:
+        assignments.pop(release_key, None)
+    _save_reviewer_assignments(assignments)
+
+    with _cache_lock:
+        if _cached_data is not None:
+            for item in _cached_data.get("items", []):
+                item_key = item.get("row_key") or item.get("release_key")
+                if item_key == release_key:
+                    item["psi_owner"] = reviewer
+                    item["psi_checker"] = checker
+                    break
+            _save_snapshot_to_disk(_cached_data)
+
+    return {
+        "reviewer": reviewer,
+        "checker": checker,
+    }
