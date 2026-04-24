@@ -190,14 +190,23 @@ def _load_reviewer_assignments():
             for key, value in payload.items():
                 release_key = str(key)
                 if isinstance(value, dict):
+                    raw_responsibles = value.get("responsibles", [])
+                    if not isinstance(raw_responsibles, list):
+                        raw_responsibles = [raw_responsibles] if raw_responsibles else []
                     normalized[release_key] = {
                         "reviewer": str(value.get("reviewer", "") or "").strip(),
                         "checker": str(value.get("checker", "") or "").strip(),
+                        "responsibles": [
+                            str(item or "").strip()
+                            for item in raw_responsibles
+                            if str(item or "").strip()
+                        ],
                     }
                 elif value:
                     normalized[release_key] = {
                         "reviewer": str(value).strip(),
                         "checker": "",
+                        "responsibles": [],
                     }
             return normalized
         return {}
@@ -224,6 +233,7 @@ def _apply_reviewer_assignments(items):
         release_assignment = assignments.get(assignment_key) or assignments.get(item.get("release_key"), {})
         item["psi_owner"] = release_assignment.get("reviewer", "")
         item["psi_checker"] = release_assignment.get("checker", "")
+        item["psi_responsibles"] = list(release_assignment.get("responsibles", []))
     return items
 
 
@@ -633,6 +643,7 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
             "deployment_end": rov_data.get("end", ""),
             "deployment_end_iso": rov_data.get("end_iso", ""),
             "psi_owner": "",
+            "psi_responsibles": [],
             "psi_checker": "",
             "row_state": row_state,
             "is_final": is_final,
@@ -1371,7 +1382,7 @@ def set_release_monitor_reviewer(release_key, reviewer):
     current_assignment = dict(assignments.get(release_key, {}))
     current_assignment["reviewer"] = reviewer
 
-    if current_assignment.get("reviewer") or current_assignment.get("checker"):
+    if current_assignment.get("reviewer") or current_assignment.get("checker") or current_assignment.get("responsibles"):
         assignments[release_key] = current_assignment
     else:
         assignments.pop(release_key, None)
@@ -1384,13 +1395,14 @@ def set_release_monitor_reviewer(release_key, reviewer):
                 if item_key == release_key:
                     item["psi_owner"] = reviewer
                     item["psi_checker"] = current_assignment.get("checker", "")
+                    item["psi_responsibles"] = list(current_assignment.get("responsibles", []))
                     break
             _save_snapshot_to_disk(_cached_data)
 
     return reviewer
 
 
-def set_release_monitor_assignment(release_key, reviewer, checker):
+def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=None):
     global _cached_data
 
     release_key = (release_key or "").strip()
@@ -1402,11 +1414,22 @@ def set_release_monitor_assignment(release_key, reviewer, checker):
     if reviewer and reviewer not in OPLOT_VALUES:
         raise ValueError("Выбранный дежурный отсутствует в списке ОПЛОТ")
 
+    normalized_responsibles = []
+    for responsible in (responsibles or []):
+        responsible_name = str(responsible or "").strip()
+        if not responsible_name:
+            continue
+        if responsible_name not in OPLOT_VALUES:
+            raise ValueError("Выбранный ответственный отсутствует в списке ОПЛОТ")
+        if responsible_name not in normalized_responsibles:
+            normalized_responsibles.append(responsible_name)
+
     assignments = _load_reviewer_assignments()
-    if reviewer or checker:
+    if reviewer or checker or normalized_responsibles:
         assignments[release_key] = {
             "reviewer": reviewer,
             "checker": checker,
+            "responsibles": normalized_responsibles,
         }
     else:
         assignments.pop(release_key, None)
@@ -1419,10 +1442,12 @@ def set_release_monitor_assignment(release_key, reviewer, checker):
                 if item_key == release_key:
                     item["psi_owner"] = reviewer
                     item["psi_checker"] = checker
+                    item["psi_responsibles"] = list(normalized_responsibles)
                     break
             _save_snapshot_to_disk(_cached_data)
 
     return {
         "reviewer": reviewer,
         "checker": checker,
+        "responsibles": normalized_responsibles,
     }

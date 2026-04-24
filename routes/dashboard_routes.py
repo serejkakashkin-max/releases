@@ -227,12 +227,14 @@ def update_release_monitor_reviewer():
         release_key = data.get("release_key", "")
         reviewer = data.get("reviewer", "")
         checker = data.get("checker", "")
-        saved_assignment = set_release_monitor_assignment(release_key, reviewer, checker)
+        responsibles = data.get("responsibles", [])
+        saved_assignment = set_release_monitor_assignment(release_key, reviewer, checker, responsibles)
         return jsonify({
             "success": True,
             "release_key": release_key,
             "reviewer": saved_assignment.get("reviewer", ""),
             "checker": saved_assignment.get("checker", ""),
+            "responsibles": saved_assignment.get("responsibles", []),
         })
     except Exception as e:
         logging.error(f"Ошибка сохранения назначения по релизу: {e}")

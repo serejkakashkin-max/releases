@@ -413,13 +413,13 @@
 
         .reviewer-select {
             width: 100%;
-            min-width: 220px;
-            padding: 0.5rem 0.7rem;
+            min-width: 0;
+            padding: 0.42rem 0.58rem;
             border-radius: 10px;
             border: 1px solid var(--border-color);
             background: var(--bg-secondary);
             color: var(--text-primary);
-            font-size: 0.84rem;
+            font-size: 0.8rem;
             transition: border-color 0.2s ease, box-shadow 0.2s ease;
         }
 
@@ -435,14 +435,14 @@
         }
 
         .reviewer-cell {
-            min-width: 190px;
+            min-width: 172px;
             display: flex;
             flex-direction: column;
-            gap: 0.45rem;
+            gap: 0.38rem;
         }
 
         .reviewer-block-label {
-            font-size: 0.74rem;
+            font-size: 0.69rem;
             font-weight: 700;
             color: var(--text-secondary);
             text-transform: uppercase;
@@ -451,13 +451,13 @@
 
         .checker-input {
             width: 100%;
-            min-width: 170px;
-            padding: 0.5rem 0.7rem;
+            min-width: 0;
+            padding: 0.42rem 0.58rem;
             border-radius: 10px;
             border: 1px solid var(--border-color);
             background: var(--bg-secondary);
             color: var(--text-primary);
-            font-size: 0.84rem;
+            font-size: 0.8rem;
             transition: border-color 0.2s ease, box-shadow 0.2s ease;
         }
 
@@ -470,6 +470,55 @@
         .checker-input.saving {
             opacity: 0.7;
             cursor: wait;
+        }
+
+        .responsibles-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 0.32rem;
+        }
+
+        .responsible-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.4rem;
+            margin-bottom: 0.1rem;
+        }
+
+        .responsible-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 28px;
+            gap: 0.32rem;
+            align-items: center;
+        }
+
+        .responsible-row.single {
+            grid-template-columns: minmax(0, 1fr);
+        }
+
+        .responsible-icon-btn {
+            width: 28px;
+            height: 28px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            border-radius: 9px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            padding: 0;
+        }
+
+        .responsible-icon-btn:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+
+        .responsible-icon-btn.remove:hover {
+            border-color: var(--danger);
+            color: var(--danger);
         }
 
         .release-doc-btn {
@@ -940,14 +989,42 @@
             return `<a href="${escapeHtml(url)}" target="_blank" class="release-key-link">${escapeHtml(key)}</a>`;
         }
 
-        function buildReviewerCell(item) {
+function buildReviewerCell(item) {
             const currentReviewer = item.psi_owner || '';
             const currentChecker = item.psi_checker || '';
+            const responsibles = (Array.isArray(item.psi_responsibles) && item.psi_responsibles.length)
+                ? item.psi_responsibles
+                : [''];
             return `
                 <div class="reviewer-cell">
                     <div>
+                        <div class="responsible-header">
+                            <div class="reviewer-block-label">Ответственный</div>
+                            <button type="button" class="responsible-icon-btn" onclick="addResponsibleAssignment('${escapeHtml(item.row_key || item.release_key)}')" title="Добавить ответственного">
+                                <i class="bi bi-plus-lg"></i>
+                            </button>
+                        </div>
+                        <div class="responsibles-stack">
+                            ${responsibles.map((responsible, index) => `
+                                <div class="responsible-row ${responsibles.length === 1 ? 'single' : ''}">
+                                    <select class="reviewer-select responsible-select" onchange="updateResponsibleAssignment('${escapeHtml(item.row_key || item.release_key)}', ${index}, this.value)">
+                                        <option value="">Не назначен</option>
+                                        ${RELEASE_REVIEWER_OPTIONS.map(option => `
+                                            <option value="${escapeHtml(option)}" ${option === responsible ? 'selected' : ''}>${escapeHtml(option)}</option>
+                                        `).join('')}
+                                    </select>
+                                    ${responsibles.length > 1 ? `
+                                        <button type="button" class="responsible-icon-btn remove" onclick="removeResponsibleAssignment('${escapeHtml(item.row_key || item.release_key)}', ${index})" title="Убрать ответственного">
+                                            <i class="bi bi-dash"></i>
+                                        </button>
+                                    ` : ''}
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                    <div>
                         <div class="reviewer-block-label">Дежурный</div>
-                        <select class="reviewer-select" onchange="updateReleaseAssignment('${escapeHtml(item.row_key || item.release_key)}', this)">
+                        <select class="reviewer-select duty-select" onchange="updateReleaseAssignment('${escapeHtml(item.row_key || item.release_key)}', this)">
                             <option value="">Не назначен</option>
                             ${RELEASE_REVIEWER_OPTIONS.map(option => `
                                 <option value="${escapeHtml(option)}" ${option === currentReviewer ? 'selected' : ''}>${escapeHtml(option)}</option>
@@ -1642,13 +1719,97 @@
             }
         }
 
+        function getReleaseItemResponsibles(releaseKey) {
+            const item = getReleaseMonitorItem(releaseKey);
+            return Array.isArray(item?.psi_responsibles) ? [...item.psi_responsibles] : [];
+        }
+
+        function addResponsibleAssignment(releaseKey) {
+            releaseMonitorItems = releaseMonitorItems.map(item => (
+                (item.row_key || item.release_key) === releaseKey
+                    ? {
+                        ...item,
+                        psi_responsibles: ['', ...(Array.isArray(item.psi_responsibles) ? item.psi_responsibles : [])]
+                    }
+                    : item
+            ));
+            applyReleaseFilters();
+        }
+
+        function removeResponsibleAssignment(releaseKey, index) {
+            const responsibles = getReleaseItemResponsibles(releaseKey);
+            if (index < 0 || index >= responsibles.length) {
+                return;
+            }
+            responsibles.splice(index, 1);
+            saveReleaseAssignment(releaseKey, null, null, responsibles);
+        }
+
+        function updateResponsibleAssignment(releaseKey, index, value) {
+            const responsibles = getReleaseItemResponsibles(releaseKey);
+            while (responsibles.length <= index) {
+                responsibles.push('');
+            }
+            responsibles[index] = value || '';
+            saveReleaseAssignment(releaseKey, null, null, responsibles);
+        }
+
+        async function saveReleaseAssignment(releaseKey, reviewerOverride = null, checkerOverride = null, responsiblesOverride = null) {
+            if (!releaseKey) {
+                return;
+            }
+
+            const item = getReleaseMonitorItem(releaseKey);
+            const reviewer = reviewerOverride !== null ? reviewerOverride : (item?.psi_owner || '');
+            const checker = checkerOverride !== null ? checkerOverride : (item?.psi_checker || '');
+            const responsibles = responsiblesOverride !== null
+                ? responsiblesOverride
+                : (Array.isArray(item?.psi_responsibles) ? item.psi_responsibles : []);
+
+            const filteredResponsibles = responsibles
+                .map(value => String(value || '').trim())
+                .filter(Boolean);
+
+            try {
+                const response = await fetch(BASE_PATH + '/dashboard/release-monitor/reviewer', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        release_key: releaseKey,
+                        reviewer: reviewer,
+                        checker: checker,
+                        responsibles: filteredResponsibles
+                    })
+                });
+                const data = await response.json();
+                if (!data.success) {
+                    throw new Error(data.error || 'Не удалось сохранить назначение');
+                }
+
+                releaseMonitorItems = releaseMonitorItems.map(item => (
+                    (item.row_key || item.release_key) === releaseKey
+                        ? {
+                            ...item,
+                            psi_owner: data.reviewer || '',
+                            psi_checker: data.checker || '',
+                            psi_responsibles: Array.isArray(data.responsibles) ? data.responsibles : []
+                        }
+                        : item
+                ));
+                applyReleaseFilters();
+            } catch (error) {
+                console.error('Release assignment save error:', error);
+                alert('Ошибка сохранения назначения: ' + error.message);
+            }
+        }
+
         async function updateReleaseAssignment(releaseKey, changedElement) {
             if (!releaseKey || !changedElement) {
                 return;
             }
 
             const cell = changedElement.closest('.reviewer-cell');
-            const reviewerSelect = cell?.querySelector('.reviewer-select');
+            const reviewerSelect = cell?.querySelector('.duty-select');
             const checkerInput = cell?.querySelector('.checker-input');
             const reviewer = reviewerSelect?.value || '';
             const checker = checkerInput?.value || '';
@@ -1662,29 +1823,7 @@
             });
 
             try {
-                const response = await fetch(BASE_PATH + '/dashboard/release-monitor/reviewer', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        release_key: releaseKey,
-                        reviewer: reviewer,
-                        checker: checker
-                    })
-                });
-                const data = await response.json();
-                if (!data.success) {
-                    throw new Error(data.error || 'Не удалось сохранить назначение');
-                }
-
-                releaseMonitorItems = releaseMonitorItems.map(item => (
-                    (item.row_key || item.release_key) === releaseKey
-                        ? {
-                            ...item,
-                            psi_owner: data.reviewer || '',
-                            psi_checker: data.checker || ''
-                        }
-                        : item
-                ));
+                await saveReleaseAssignment(releaseKey, reviewer, checker);
             } catch (error) {
                 console.error('Release assignment update error:', error);
                 alert('Ошибка сохранения назначения: ' + error.message);
