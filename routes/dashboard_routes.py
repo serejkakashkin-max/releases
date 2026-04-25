@@ -14,6 +14,7 @@ from services.release_monitor_service import (
     start_release_monitor_refresh,
     get_release_monitor_refresh_status,
     get_release_monitor_reviewer_options,
+    sync_release_monitor_assignments_from_confluence,
     set_release_monitor_assignment,
     set_release_monitor_reviewer,
 )
@@ -238,6 +239,29 @@ def update_release_monitor_reviewer():
         })
     except Exception as e:
         logging.error(f"Ошибка сохранения назначения по релизу: {e}")
+        return jsonify({"success": False, "error": str(e)}), 400
+
+
+@dashboard_bp.route('/dashboard/release-monitor/confluence-sync', methods=['POST'])
+def sync_release_monitor_confluence():
+    """Синхронизирует ответственных и проверяющих из эталонной страницы Confluence."""
+    try:
+        data = request.get_json(silent=True) or {}
+        year = int(data.get("year") or datetime.now().year)
+        sync_result = sync_release_monitor_assignments_from_confluence(year)
+        payload = sync_result.get("data", {})
+        return jsonify({
+            "success": True,
+            "message": f"Синхронизировано строк: {sync_result.get('matched_rows', 0)}",
+            "matched_rows": sync_result.get("matched_rows", 0),
+            "source_rows": sync_result.get("source_rows", 0),
+            "year": sync_result.get("year"),
+            "release_monitor": payload.get("items", []),
+            "release_monitor_summary": payload.get("summary", {}),
+            "release_monitor_meta": payload.get("meta", {}),
+        })
+    except Exception as e:
+        logging.error(f"Ошибка синхронизации релизов с Confluence: {e}")
         return jsonify({"success": False, "error": str(e)}), 400
 
 

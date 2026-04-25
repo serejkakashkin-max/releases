@@ -356,8 +356,8 @@
 
         .release-monitor-actions {
             display: flex;
-            gap: 0.6rem;
-            align-items: center;
+            gap: 0.75rem;
+            align-items: flex-end;
             flex-wrap: wrap;
         }
 
@@ -366,6 +366,26 @@
             flex-direction: column;
             gap: 0.25rem;
             align-items: flex-end;
+        }
+
+        .release-monitor-action-groups {
+            display: flex;
+            flex-direction: column;
+            gap: 0.55rem;
+            align-items: flex-end;
+        }
+
+        .release-monitor-primary-actions {
+            display: flex;
+            gap: 0.6rem;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .release-monitor-secondary-actions {
+            display: flex;
+            justify-content: flex-end;
+            width: 100%;
         }
 
         .release-monitor-btn {
@@ -409,6 +429,25 @@
 
         .release-monitor-btn.full {
             border-color: rgba(25, 135, 84, 0.22);
+        }
+
+        #releaseMonitorQuickRefreshBtn {
+            order: 1;
+        }
+
+        #releaseMonitorRefreshBtn {
+            order: 2;
+        }
+
+        #releaseMonitorConfluenceSyncBtn {
+            order: 3;
+            flex-basis: 100%;
+            margin-top: 0.15rem;
+            justify-content: center;
+        }
+
+        #releaseMonitorToggleBtn {
+            display: none !important;
         }
 
         .reviewer-select {
@@ -822,9 +861,16 @@
                             Полное: <strong id="releaseMonitorLastFullSync">{{ release_monitor_meta.last_full_sync or 'еще не выполнялось' }}</strong>
                         </div>
                         <div class="release-monitor-meta">
+                            Confluence: <strong id="releaseMonitorLastConfluenceSync">{{ release_monitor_meta.last_confluence_sync or 'еще не выполнялось' }}</strong>
+                        </div>
+                        <div class="release-monitor-meta">
                             Автопересборка: ежедневно в <strong>{{ '%02d:00'|format(release_monitor_meta.auto_full_refresh_hour or 6) }}</strong>
                         </div>
                     </div>
+                    <button id="releaseMonitorConfluenceSyncBtn" class="release-monitor-btn" onclick="syncReleaseMonitorFromConfluence()">
+                        <i class="bi bi-cloud-arrow-down"></i>
+                        Синхронизировать Confluence
+                    </button>
                     <button id="releaseMonitorQuickRefreshBtn" class="release-monitor-btn quick" onclick="refreshReleaseMonitor('quick')">
                         <i class="bi bi-lightning-charge"></i>
                         Быстрое обновление
@@ -1648,6 +1694,7 @@ function buildReviewerCell(item) {
             const lastUpdated = document.getElementById('releaseMonitorLastUpdated');
             const lastQuickSync = document.getElementById('releaseMonitorLastQuickSync');
             const lastFullSync = document.getElementById('releaseMonitorLastFullSync');
+            const lastConfluenceSync = document.getElementById('releaseMonitorLastConfluenceSync');
             const yearSelect = document.getElementById('releaseYearFilter');
 
             releaseMonitorItems = Array.isArray(items) ? items : [];
@@ -1670,9 +1717,8 @@ function buildReviewerCell(item) {
             if (lastFullSync) {
                 lastFullSync.textContent = meta?.last_full_sync || 'еще не выполнялось';
             }
-
-            if (tableWrap) {
-                tableWrap.classList.toggle('compact', !isReleaseMonitorExpanded);
+            if (lastConfluenceSync) {
+                lastConfluenceSync.textContent = meta?.last_confluence_sync || 'еще не выполнялось';
             }
 
             if (emptyState && !releaseMonitorItems.length) {
@@ -1705,7 +1751,7 @@ function buildReviewerCell(item) {
         }
 
         function toggleReleaseMonitorExpand() {
-            isReleaseMonitorExpanded = !isReleaseMonitorExpanded;
+            return;
             const tableWrap = document.getElementById('releaseTableWrap');
             const toggleBtn = document.getElementById('releaseMonitorToggleBtn');
 
@@ -1839,7 +1885,7 @@ function buildReviewerCell(item) {
         }
 
         function setReleaseRefreshButtonsLoading(isLoading) {
-            ['releaseMonitorQuickRefreshBtn', 'releaseMonitorRefreshBtn'].forEach(id => {
+            ['releaseMonitorQuickRefreshBtn', 'releaseMonitorRefreshBtn', 'releaseMonitorConfluenceSyncBtn'].forEach(id => {
                 const btn = document.getElementById(id);
                 if (!btn) {
                     return;
@@ -1847,6 +1893,31 @@ function buildReviewerCell(item) {
                 btn.disabled = isLoading;
                 btn.classList.toggle('spinning', isLoading && id === 'releaseMonitorRefreshBtn');
             });
+        }
+
+        async function syncReleaseMonitorFromConfluence() {
+            const selectedYear = getSelectedReleaseYear();
+            setReleaseRefreshButtonsLoading(true);
+
+            try {
+                const response = await fetch(BASE_PATH + '/dashboard/release-monitor/confluence-sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ year: selectedYear })
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Не удалось выполнить синхронизацию с Confluence');
+                }
+
+                renderReleaseMonitor(data.release_monitor || [], data.release_monitor_meta || {});
+                alert(`Синхронизация завершена. Обновлено строк: ${data.matched_rows || 0}`);
+            } catch (error) {
+                console.error('Release monitor Confluence sync error:', error);
+                alert('Ошибка синхронизации с Confluence: ' + error.message);
+            } finally {
+                setReleaseRefreshButtonsLoading(false);
+            }
         }
 
         async function refreshReleaseMonitor(mode = 'full') {
@@ -1985,7 +2056,6 @@ function buildReviewerCell(item) {
             }
             if (tableWrap) {
                 tableWrap.style.display = filteredItems.length ? '' : 'none';
-                tableWrap.classList.toggle('compact', !isReleaseMonitorExpanded);
             }
             if (emptyState) {
                 emptyState.style.display = filteredItems.length ? 'none' : '';

@@ -6,11 +6,12 @@ import threading
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta
+from html.parser import HTMLParser
 from pathlib import Path
 
 import requests
 
-from config import DASHBOARD_CACHE_TTL, OPLOT_VALUES
+from config import DASHBOARD_CACHE_TTL, OPLOT_VALUES, TOKENS
 from services.jira_service import get_jira_domain_and_token
 
 
@@ -33,6 +34,7 @@ AUTO_REFRESH_CHECK_INTERVAL = 300
 SNAPSHOT_DIR = Path(__file__).resolve().parent.parent / "cache"
 SNAPSHOT_FILE = SNAPSHOT_DIR / "release_monitor_snapshot.json"
 REVIEWERS_FILE = SNAPSHOT_DIR / "release_monitor_reviewers.json"
+CONFLUENCE_DELTA_BASE = "https://confluence.delta.sbrf.ru"
 
 FIELD_FALLBACKS = {
     "planned_prom_start": None,
@@ -142,6 +144,7 @@ def _build_empty_release_monitor_payload():
             "last_updated": None,
             "last_full_sync": None,
             "last_quick_sync": None,
+            "last_confluence_sync": None,
             "last_sync_mode": None,
             "quick_refresh_days": QUICK_REFRESH_DAYS,
             "auto_full_refresh_hour": AUTO_FULL_REFRESH_HOUR,
@@ -229,12 +232,25 @@ def _save_reviewer_assignments(assignments):
 def _apply_reviewer_assignments(items):
     assignments = _load_reviewer_assignments()
     for item in items:
-        assignment_key = item.get("row_key") or item.get("release_key")
+        assignment_key = _get_assignment_key_for_item(item)
         release_assignment = assignments.get(assignment_key) or assignments.get(item.get("release_key"), {})
         item["psi_owner"] = release_assignment.get("reviewer", "")
         item["psi_checker"] = release_assignment.get("checker", "")
         item["psi_responsibles"] = list(release_assignment.get("responsibles", []))
     return items
+
+
+def _get_assignment_key_for_item(item):
+    if not isinstance(item, dict):
+        return ""
+    if item.get("row_key"):
+        return str(item.get("row_key"))
+
+    release_key = str(item.get("release_key") or "").strip()
+    rov_key = str(item.get("rov_key") or "").strip()
+    if release_key:
+        return f"{release_key}::{rov_key or 'no-rov'}"
+    return ""
 
 
 def _normalize_text(value):
@@ -261,6 +277,218 @@ def _parse_jira_date(value):
         except ValueError:
             continue
     return None
+
+
+def _normalize_cell_text(value):
+    value = (value or "").replace("\xa0", " ")
+    value = re.sub(r"\s*\n\s*", "\n", value)
+    value = re.sub(r"[ \t]+", " ", value)
+    return value.strip()
+
+
+class _ConfluenceTableParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.tables = []
+        self._table_depth = 0
+        self._current_table = None
+        self._current_row = None
+        self._current_cell = None
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "table":
+            self._table_depth += 1
+            if self._table_depth == 1:
+                self._current_table = []
+            return
+
+        if self._table_depth != 1:
+            return
+
+        if tag == "tr":
+            self._current_row = []
+        elif tag in {"td", "th"}:
+            self._current_cell = {"text_parts": [], "links": []}
+        elif tag == "a" and self._current_cell is not None:
+            href = dict(attrs).get("href")
+            if href:
+                self._current_cell["links"].append(href)
+        elif tag in {"br", "p", "div", "li"} and self._current_cell is not None:
+            self._current_cell["text_parts"].append("\n")
+
+    def handle_data(self, data):
+        if self._table_depth == 1 and self._current_cell is not None:
+            self._current_cell["text_parts"].append(data)
+
+    def handle_endtag(self, tag):
+        if tag == "table":
+            if self._table_depth == 1 and self._current_table is not None:
+                self.tables.append(self._current_table)
+                self._current_table = None
+            self._table_depth = max(0, self._table_depth - 1)
+            return
+
+        if self._table_depth != 1:
+            return
+
+        if tag in {"td", "th"} and self._current_row is not None and self._current_cell is not None:
+            self._current_row.append(
+                {
+                    "text": _normalize_cell_text("".join(self._current_cell["text_parts"])),
+                    "links": list(self._current_cell["links"]),
+                }
+            )
+            self._current_cell = None
+        elif tag == "tr" and self._current_table is not None and self._current_row is not None:
+            if self._current_row:
+                self._current_table.append(self._current_row)
+            self._current_row = None
+
+
+def _extract_issue_key_from_cell(cell):
+    cell = cell or {}
+    for href in cell.get("links", []):
+        match = re.search(r"/browse/([A-Z]+-\d+)", href or "")
+        if match:
+            return match.group(1)
+
+    match = re.search(r"([A-Z]+-\d+)", cell.get("text", "") or "")
+    return match.group(1) if match else ""
+
+
+def _match_oplot_name(raw_name):
+    normalized_raw = _normalize_text(raw_name).replace(".", "")
+    if not normalized_raw:
+        return ""
+
+    exact_map = {
+        _normalize_text(option).replace(".", ""): option
+        for option in OPLOT_VALUES
+    }
+    if normalized_raw in exact_map:
+        return exact_map[normalized_raw]
+
+    surname_match = re.match(r"^([а-яёa-z-]+)\s+([а-яёa-z])", normalized_raw, re.IGNORECASE)
+    if not surname_match:
+        return ""
+
+    surname = surname_match.group(1)
+    first_initial = surname_match.group(2)
+    candidates = []
+    for option in OPLOT_VALUES:
+        normalized_option = _normalize_text(option).replace(".", "")
+        option_match = re.match(r"^([а-яёa-z-]+)\s+([а-яёa-z])", normalized_option, re.IGNORECASE)
+        if option_match and option_match.group(1) == surname and option_match.group(2) == first_initial:
+            candidates.append(option)
+
+    return candidates[0] if len(candidates) == 1 else ""
+
+
+def _parse_confluence_assignment_cell(cell_text):
+    responsibles = []
+    checker_lines = []
+    mode = "responsibles"
+
+    lines = [
+        line.strip(" /")
+        for line in re.split(r"[\n\r]+", cell_text or "")
+        if line.strip(" /")
+    ]
+
+    for line in lines:
+        normalized_line = _normalize_text(line)
+
+        if normalized_line.startswith("проверяет"):
+            mode = "checker"
+            remainder = line.split(":", 1)[1].strip() if ":" in line else ""
+            if remainder and "отсутств" not in _normalize_text(remainder):
+                checker_lines.append(remainder)
+            continue
+
+        if normalized_line.startswith("устанавливает"):
+            mode = "ignore"
+            continue
+
+        if "проверки отсутств" in normalized_line:
+            checker_lines = []
+            mode = "ignore"
+            continue
+
+        if mode == "responsibles":
+            for part in [chunk.strip(" /") for chunk in line.split("/")]:
+                if part:
+                    matched_name = _match_oplot_name(part)
+                    if matched_name and matched_name not in responsibles:
+                        responsibles.append(matched_name)
+        elif mode == "checker":
+            checker_lines.append(line.strip())
+
+    checker = " ".join(checker_lines).strip()
+    return responsibles, checker
+
+
+def _find_release_assignment_table(storage_html):
+    parser = _ConfluenceTableParser()
+    parser.feed(storage_html or "")
+
+    for table in parser.tables:
+        if not table:
+            continue
+        headers = [_normalize_text(cell.get("text", "")) for cell in table[0]]
+        if (
+            any("id релиза" in header for header in headers)
+            and any("id распоряжения" in header for header in headers)
+            and any("ответственный" in header for header in headers)
+        ):
+            return table
+    return []
+
+
+def _load_confluence_release_assignments(year):
+    page_id = str(TOKENS.get(f"confluence_release_page_id_{year}", "") or "").strip()
+    token = str(TOKENS.get("confluence_delta_token", "") or "").strip()
+    if not page_id:
+        raise ValueError(f"Не настроен pageId Confluence для {year} года")
+    if not token:
+        raise ValueError("Не настроен токен доступа к Confluence")
+
+    url = f"{CONFLUENCE_DELTA_BASE}/rest/api/content/{page_id}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    params = {"expand": "body.storage,version"}
+    response = requests.get(url, headers=headers, params=params, verify=False, timeout=60)
+    response.raise_for_status()
+    data = response.json()
+    storage_html = (((data.get("body") or {}).get("storage") or {}).get("value") or "")
+    table = _find_release_assignment_table(storage_html)
+    if not table:
+        raise ValueError("Не удалось найти таблицу релизов на странице Confluence")
+
+    assignments = {}
+    for row in table[1:]:
+        if len(row) < 9:
+            continue
+        release_key = _extract_issue_key_from_cell(row[4])
+        rov_key = _extract_issue_key_from_cell(row[5])
+        if not release_key:
+            continue
+
+        responsibles, checker = _parse_confluence_assignment_cell(row[8].get("text", ""))
+        if not responsibles and not checker:
+            continue
+
+        row_key = f"{release_key}::{rov_key or 'no-rov'}"
+        assignments[row_key] = {
+            "release_key": release_key,
+            "rov_key": rov_key,
+            "responsibles": responsibles,
+            "checker": checker,
+        }
+
+    return assignments
 
 
 def _format_timestamp(dt=None):
@@ -810,6 +1038,7 @@ def _compose_release_payload(all_records, mode):
             "current_year": current_year,
             "last_updated": _format_timestamp(),
             "last_sync_mode": mode,
+            "last_confluence_sync": None,
             "quick_refresh_days": QUICK_REFRESH_DAYS,
             "auto_full_refresh_hour": AUTO_FULL_REFRESH_HOUR,
             "is_cached": True,
@@ -1219,6 +1448,7 @@ def get_release_monitor_data(force_refresh=False):
     data = _fetch_release_monitor_data()
     data["meta"]["last_full_sync"] = data["meta"].get("last_updated")
     data["meta"]["last_quick_sync"] = (_cached_data or {}).get("meta", {}).get("last_quick_sync")
+    data["meta"]["last_confluence_sync"] = (_cached_data or {}).get("meta", {}).get("last_confluence_sync")
 
     with _cache_lock:
         _cached_data = data
@@ -1256,6 +1486,7 @@ def _run_release_monitor_refresh(mode="full", trigger="manual"):
         meta["auto_full_refresh_hour"] = AUTO_FULL_REFRESH_HOUR
         meta["last_full_sync"] = now_str if mode == "full" else current_meta.get("last_full_sync")
         meta["last_quick_sync"] = now_str if mode == "quick" else current_meta.get("last_quick_sync")
+        meta["last_confluence_sync"] = current_meta.get("last_confluence_sync")
         data["meta"] = meta
 
         with _cache_lock:
@@ -1367,6 +1598,91 @@ def get_release_monitor_reviewer_options():
     return list(OPLOT_VALUES)
 
 
+def sync_release_monitor_assignments_from_confluence(year):
+    global _cached_data, _last_cache_update
+
+    year = int(year or datetime.now().year)
+    confluence_assignments = _load_confluence_release_assignments(year)
+
+    with _cache_lock:
+        _ensure_scheduler_started()
+        if _cached_data is None:
+            disk_payload = _load_snapshot_from_disk()
+            if disk_payload:
+                _cached_data = disk_payload
+                _last_cache_update = time.time()
+
+        if _cached_data is None:
+            raise ValueError("Таблица релизов еще не загружена. Сначала выполните обновление релизов.")
+
+        assignments = _load_reviewer_assignments()
+        matched_rows = 0
+
+        for item in _cached_data.get("items", []):
+            if int(item.get("year", 0) or 0) != year:
+                continue
+
+            row_key = _get_assignment_key_for_item(item)
+            release_key = item.get("release_key")
+            fallback_row_key = f"{release_key}::no-rov" if release_key else ""
+            source = (
+                confluence_assignments.get(row_key)
+                or confluence_assignments.get(fallback_row_key)
+            )
+            if not source:
+                continue
+
+            current_assignment = dict(assignments.get(row_key) or assignments.get(release_key) or {})
+            current_responsibles = current_assignment.get("responsibles")
+            if not isinstance(current_responsibles, list):
+                current_responsibles = []
+            current_responsibles = [str(value or "").strip() for value in current_responsibles if str(value or "").strip()]
+            current_checker = str(current_assignment.get("checker", "") or "").strip()
+
+            item_responsibles = item.get("psi_responsibles")
+            if not isinstance(item_responsibles, list):
+                item_responsibles = []
+            item_responsibles = [str(value or "").strip() for value in item_responsibles if str(value or "").strip()]
+            item_checker = str(item.get("psi_checker", "") or "").strip()
+
+            effective_responsibles = current_responsibles or item_responsibles
+            effective_checker = current_checker or item_checker
+            applied = False
+
+            if not effective_responsibles and source.get("responsibles"):
+                new_responsibles = list(source.get("responsibles", []))
+                current_assignment["responsibles"] = new_responsibles
+                item["psi_responsibles"] = new_responsibles
+                applied = True
+
+            if not effective_checker and source.get("checker"):
+                new_checker = str(source.get("checker", "") or "").strip()
+                current_assignment["checker"] = new_checker
+                item["psi_checker"] = new_checker
+                applied = True
+
+            if (
+                current_assignment.get("reviewer")
+                or current_assignment.get("checker")
+                or current_assignment.get("responsibles")
+            ):
+                assignments[row_key] = current_assignment
+
+            if applied:
+                matched_rows += 1
+
+        _save_reviewer_assignments(assignments)
+        _cached_data.setdefault("meta", {})["last_confluence_sync"] = _format_timestamp()
+        _save_snapshot_to_disk(_cached_data)
+
+        return {
+            "matched_rows": matched_rows,
+            "source_rows": len(confluence_assignments),
+            "year": year,
+            "data": _get_cached_payload_copy() or _build_empty_release_monitor_payload(),
+        }
+
+
 def set_release_monitor_reviewer(release_key, reviewer):
     global _cached_data
 
@@ -1391,7 +1707,7 @@ def set_release_monitor_reviewer(release_key, reviewer):
     with _cache_lock:
         if _cached_data is not None:
             for item in _cached_data.get("items", []):
-                item_key = item.get("row_key") or item.get("release_key")
+                item_key = _get_assignment_key_for_item(item)
                 if item_key == release_key:
                     item["psi_owner"] = reviewer
                     item["psi_checker"] = current_assignment.get("checker", "")
@@ -1438,7 +1754,7 @@ def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=
     with _cache_lock:
         if _cached_data is not None:
             for item in _cached_data.get("items", []):
-                item_key = item.get("row_key") or item.get("release_key")
+                item_key = _get_assignment_key_for_item(item)
                 if item_key == release_key:
                     item["psi_owner"] = reviewer
                     item["psi_checker"] = checker
