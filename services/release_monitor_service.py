@@ -157,9 +157,27 @@ def _ensure_snapshot_dir():
     os.makedirs(SNAPSHOT_DIR, exist_ok=True)
 
 
+def _count_payload_items(payload):
+    if not isinstance(payload, dict):
+        return 0
+    items = payload.get("items", [])
+    return len(items) if isinstance(items, list) else 0
+
+
 def _save_snapshot_to_disk(payload):
     try:
         _ensure_snapshot_dir()
+        current_disk_payload = _load_snapshot_from_disk()
+        incoming_items = _count_payload_items(payload)
+        existing_items = _count_payload_items(current_disk_payload)
+
+        if incoming_items == 0 and existing_items > 0:
+            logging.warning(
+                "Release monitor: skipped overwriting non-empty snapshot with empty payload (existing_items=%s)",
+                existing_items,
+            )
+            return
+
         SNAPSHOT_FILE.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2),
             encoding="utf-8",
@@ -180,6 +198,31 @@ def _load_snapshot_from_disk():
     except Exception as exc:
         logging.warning("Release monitor: failed to load snapshot from disk: %s", exc)
         return None
+
+
+def _get_snapshot_mtime():
+    try:
+        if SNAPSHOT_FILE.exists():
+            return SNAPSHOT_FILE.stat().st_mtime
+    except Exception:
+        logging.exception("Release monitor: failed to read snapshot mtime")
+    return None
+
+
+def _reload_snapshot_from_disk_if_newer():
+    global _cached_data, _last_cache_update
+
+    disk_mtime = _get_snapshot_mtime()
+    if disk_mtime is None:
+        return
+
+    if _cached_data is not None and _last_cache_update is not None and disk_mtime <= _last_cache_update:
+        return
+
+    disk_payload = _load_snapshot_from_disk()
+    if disk_payload is not None:
+        _cached_data = disk_payload
+        _last_cache_update = disk_mtime
 
 
 def _load_reviewer_assignments():
@@ -1560,10 +1603,10 @@ def get_release_monitor_refresh_status():
 
     with _cache_lock:
         _ensure_scheduler_started()
-        if _cached_data is None:
-            disk_payload = _load_snapshot_from_disk()
-            if disk_payload:
-                _cached_data = disk_payload
+        disk_payload = _load_snapshot_from_disk()
+        if disk_payload is not None:
+            _cached_data = disk_payload
+            _last_cache_update = _get_snapshot_mtime() or time.time()
 
         payload = {
             "status": dict(_refresh_status),
@@ -1577,13 +1620,12 @@ def get_release_monitor_snapshot():
 
     with _cache_lock:
         _ensure_scheduler_started()
+        disk_payload = _load_snapshot_from_disk()
+        if disk_payload is not None:
+            _cached_data = disk_payload
+            _last_cache_update = _get_snapshot_mtime() or time.time()
         if _cached_data is None:
-            disk_payload = _load_snapshot_from_disk()
-            if disk_payload:
-                _cached_data = disk_payload
-                _last_cache_update = time.time()
-            else:
-                return _build_empty_release_monitor_payload()
+            return _build_empty_release_monitor_payload()
 
         payload = _get_cached_payload_copy()
         _apply_reviewer_assignments(payload.get("items", []))

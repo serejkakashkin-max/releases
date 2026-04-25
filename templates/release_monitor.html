@@ -196,6 +196,81 @@
             margin-bottom: 1rem;
         }
 
+        .release-extra-controls {
+            display: flex;
+            justify-content: flex-start;
+            margin: -0.2rem 0 0.95rem;
+        }
+
+        .release-toggle-card {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.85rem;
+            padding: 0.72rem 0.95rem;
+            border-radius: 14px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+
+        .release-toggle-copy {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .release-toggle-title {
+            font-size: 0.88rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            line-height: 1.25;
+        }
+
+        .release-switch {
+            position: relative;
+            width: 50px;
+            height: 28px;
+            flex: 0 0 auto;
+        }
+
+        .release-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .release-switch-track {
+            position: absolute;
+            inset: 0;
+            cursor: pointer;
+            background: rgba(128, 128, 128, 0.28);
+            border: 1px solid rgba(128, 128, 128, 0.22);
+            border-radius: 999px;
+            transition: all 0.2s ease;
+        }
+
+        .release-switch-track::before {
+            content: '';
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            left: 3px;
+            top: 3px;
+            border-radius: 50%;
+            background: #fff;
+            box-shadow: 0 3px 10px rgba(15, 23, 42, 0.18);
+            transition: transform 0.2s ease;
+        }
+
+        .release-switch input:checked + .release-switch-track {
+            background: rgba(13, 110, 253, 0.22);
+            border-color: rgba(13, 110, 253, 0.38);
+        }
+
+        .release-switch input:checked + .release-switch-track::before {
+            transform: translateX(22px);
+            background: var(--primary);
+        }
+
         .release-search-box {
             position: relative;
         }
@@ -429,6 +504,73 @@
 
         .release-monitor-btn.full {
             border-color: rgba(25, 135, 84, 0.22);
+        }
+
+        .release-scroll-nav {
+            position: fixed;
+            left: 1.2rem;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 1040;
+            display: flex;
+            flex-direction: column;
+            gap: 0.7rem;
+        }
+
+        .release-scroll-btn {
+            width: 52px;
+            height: 52px;
+            border-radius: 16px;
+            border: 1px solid rgba(88, 166, 255, 0.22);
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(246, 248, 250, 0.9));
+            color: var(--text-primary);
+            box-shadow: 0 16px 34px rgba(15, 23, 42, 0.16);
+            backdrop-filter: blur(12px);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
+        }
+
+        [data-theme="dark"] .release-scroll-btn {
+            background:
+                linear-gradient(180deg, rgba(33, 38, 45, 0.94), rgba(22, 27, 34, 0.92));
+            border-color: rgba(88, 166, 255, 0.28);
+            box-shadow: 0 18px 36px rgba(0, 0, 0, 0.28);
+        }
+
+        .release-scroll-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            border-color: var(--primary);
+            box-shadow: 0 20px 40px rgba(13, 110, 253, 0.18);
+        }
+
+        .release-scroll-btn:disabled {
+            opacity: 0.45;
+            cursor: default;
+            box-shadow: none;
+        }
+
+        .release-scroll-btn i {
+            font-size: 1.15rem;
+        }
+
+        @media (max-width: 991px) {
+            .release-scroll-nav {
+                left: auto;
+                right: 1rem;
+                bottom: 1rem;
+                top: auto;
+                transform: none;
+            }
+
+            .release-scroll-btn {
+                width: 48px;
+                height: 48px;
+                border-radius: 14px;
+            }
         }
 
         #releaseMonitorQuickRefreshBtn {
@@ -814,6 +956,29 @@
     </nav>
 
     <div class="page-shell">
+        <div class="release-scroll-nav" aria-label="Быстрая навигация по таблице релизов">
+            <button
+                type="button"
+                class="release-scroll-btn"
+                id="releaseScrollTopBtn"
+                onclick="scrollReleasePageToTop()"
+                title="Наверх страницы"
+                aria-label="Наверх страницы"
+            >
+                <i class="bi bi-arrow-up"></i>
+            </button>
+            <button
+                type="button"
+                class="release-scroll-btn"
+                id="releaseScrollFinalBtn"
+                onclick="scrollToInstalledPromRelease()"
+                title="К первому релизу в статусе Установлен на ПРОМ"
+                aria-label="К первому релизу в статусе Установлен на ПРОМ"
+            >
+                <i class="bi bi-arrow-down"></i>
+            </button>
+        </div>
+
         <div class="page-hero">
             <div class="page-hero-top">
                 <div class="page-title-wrap">
@@ -933,6 +1098,18 @@
                     </select>
                 </div>
 
+                <div class="release-extra-controls">
+                    <div class="release-toggle-card">
+                        <div class="release-toggle-copy">
+                            <div class="release-toggle-title">Показывать релизы, по которым не создан РОВ</div>
+                        </div>
+                        <label class="release-switch" for="releaseNoRovToggle">
+                            <input type="checkbox" id="releaseNoRovToggle" onchange="handleReleaseNoRovToggle()">
+                            <span class="release-switch-track"></span>
+                        </label>
+                    </div>
+                </div>
+
                 <div class="release-visible-counter">
                     Видимых релизов: <strong id="releaseVisibleCount">{{ release_monitor|length }}</strong>
                 </div>
@@ -990,6 +1167,7 @@
     <script>
         let currentReleaseYearFilter = String(new Date().getFullYear());
         let currentReleaseViewFilter = 'all';
+        let showReleaseRowsWithoutRov = false;
         let isReleaseMonitorExpanded = true;
         let releaseMonitorItems = [];
         let releaseMonitorMeta = {};
@@ -1107,7 +1285,12 @@ function buildReviewerCell(item) {
 
         function buildReleaseRow(item) {
             return `
-                <tr class="release-row state-${escapeHtml(item.row_state || 'planned')}" data-year="${escapeHtml(item.year)}" data-status="${escapeHtml(item.release_status || '')}">
+                <tr
+                    class="release-row state-${escapeHtml(item.row_state || 'planned')}"
+                    data-year="${escapeHtml(item.year)}"
+                    data-status="${escapeHtml(item.release_status || '')}"
+                    data-final-installed="${item.is_final && !item.is_cancelled ? 'true' : 'false'}"
+                >
                     <td><strong>${escapeHtml(item.release_number || '')}</strong></td>
                     <td>${getReleaseNameHtml(item)}</td>
                     <td>${item.zni_key ? escapeHtml(item.zni_key) : '<span style="color: var(--text-muted);">-</span>'}</td>
@@ -1721,6 +1904,11 @@ function buildReviewerCell(item) {
                 lastConfluenceSync.textContent = meta?.last_confluence_sync || 'еще не выполнялось';
             }
 
+            const noRovToggle = document.getElementById('releaseNoRovToggle');
+            if (noRovToggle) {
+                noRovToggle.checked = showReleaseRowsWithoutRov;
+            }
+
             if (emptyState && !releaseMonitorItems.length) {
                 emptyState.style.display = '';
                 updateReleaseEmptyState('initial');
@@ -1748,6 +1936,43 @@ function buildReviewerCell(item) {
 
         function handleReleaseSearch() {
             applyReleaseFilters();
+        }
+
+        function handleReleaseNoRovToggle() {
+            showReleaseRowsWithoutRov = Boolean(document.getElementById('releaseNoRovToggle')?.checked);
+            applyReleaseFilters();
+        }
+
+        function scrollReleasePageToTop() {
+            window.scrollTo({
+                top: 0,
+                behavior: 'smooth'
+            });
+        }
+
+        function scrollToInstalledPromRelease() {
+            const targetRow = document.querySelector('#releaseMonitorBody tr[data-final-installed="true"]');
+            if (!targetRow) {
+                return;
+            }
+
+            const rowRect = targetRow.getBoundingClientRect();
+            const viewportOffset = Math.max(140, Math.round(window.innerHeight * 0.42));
+            const targetTop = rowRect.top + window.scrollY - viewportOffset;
+            window.scrollTo({
+                top: Math.max(0, targetTop),
+                behavior: 'smooth'
+            });
+        }
+
+        function updateReleaseScrollButtons() {
+            const finalButton = document.getElementById('releaseScrollFinalBtn');
+            if (!finalButton) {
+                return;
+            }
+
+            const hasFinalInstalled = Boolean(document.querySelector('#releaseMonitorBody tr[data-final-installed="true"]'));
+            finalButton.disabled = !hasFinalInstalled;
         }
 
         function toggleReleaseMonitorExpand() {
@@ -2019,6 +2244,7 @@ function buildReviewerCell(item) {
             const statusValue = document.getElementById('releaseStatusFilter')?.value || 'all';
             const yearItems = getYearFilteredReleaseItems(releaseMonitorItems);
             const filteredItems = yearItems.filter(item => {
+                const matchesRovVisibility = showReleaseRowsWithoutRov || Boolean(item.rov_key);
                 const matchesView = (
                     currentReleaseViewFilter === 'all' ||
                     (currentReleaseViewFilter === 'non_final' && item.is_non_final) ||
@@ -2037,7 +2263,7 @@ function buildReviewerCell(item) {
                     ...(Array.isArray(item.release_name_lines) ? item.release_name_lines : [])
                 ].join(' ').toLowerCase();
                 const matchesSearch = !searchValue || haystack.includes(searchValue);
-                return matchesView && matchesStatus && matchesSearch;
+                return matchesRovVisibility && matchesView && matchesStatus && matchesSearch;
             });
 
             if (body) {
@@ -2067,6 +2293,8 @@ function buildReviewerCell(item) {
                     updateReleaseEmptyState('empty-filter');
                 }
             }
+
+            updateReleaseScrollButtons();
         }
 
         renderReleaseMonitor(
