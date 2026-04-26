@@ -34,6 +34,7 @@ AUTO_REFRESH_CHECK_INTERVAL = 300
 SNAPSHOT_DIR = Path(__file__).resolve().parent.parent / "cache"
 SNAPSHOT_FILE = SNAPSHOT_DIR / "release_monitor_snapshot.json"
 REVIEWERS_FILE = SNAPSHOT_DIR / "release_monitor_reviewers.json"
+ORDER_FILE = SNAPSHOT_DIR / "release_monitor_order.json"
 CONFLUENCE_DELTA_BASE = "https://confluence.delta.sbrf.ru"
 
 FIELD_FALLBACKS = {
@@ -83,6 +84,7 @@ FIELD_ALIASES = {
 _cache_lock = threading.Lock()
 _cached_data = None
 _last_cache_update = None
+_manual_order_cache = None
 _field_map_cache = {}
 _refresh_thread = None
 _scheduler_thread = None
@@ -270,6 +272,62 @@ def _save_reviewer_assignments(assignments):
         )
     except Exception as exc:
         logging.warning("Release monitor: failed to save reviewer assignments: %s", exc)
+
+
+def _load_manual_order():
+    global _manual_order_cache
+
+    if isinstance(_manual_order_cache, dict):
+        return _manual_order_cache
+
+    if not ORDER_FILE.exists():
+        _manual_order_cache = {}
+        return {}
+
+    try:
+        payload = json.loads(ORDER_FILE.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            _manual_order_cache = {}
+            return {}
+
+        normalized = {}
+        for year, value in payload.items():
+            year_key = str(year or "").strip()
+            if not year_key or not isinstance(value, dict):
+                continue
+
+            normalized[year_key] = {
+                "waiting": [
+                    str(item or "").strip()
+                    for item in (value.get("waiting") or [])
+                    if str(item or "").strip()
+                ],
+                "numbered": [
+                    str(item or "").strip()
+                    for item in (value.get("numbered") or [])
+                    if str(item or "").strip()
+                ],
+            }
+        _manual_order_cache = normalized
+        return normalized
+    except Exception as exc:
+        logging.warning("Release monitor: failed to load manual order: %s", exc)
+        _manual_order_cache = {}
+        return {}
+
+
+def _save_manual_order(order_payload):
+    global _manual_order_cache
+
+    try:
+        _ensure_snapshot_dir()
+        _manual_order_cache = dict(order_payload or {})
+        ORDER_FILE.write_text(
+            json.dumps(order_payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        logging.warning("Release monitor: failed to save manual order: %s", exc)
 
 
 def _apply_reviewer_assignments(items):
@@ -946,6 +1004,38 @@ def _sort_datetime_value(item, field_name="sort_date"):
     return datetime.min
 
 
+def _apply_group_manual_order(year, group_name, items):
+    if not items:
+        return items
+
+    manual_order = _load_manual_order()
+    year_payload = manual_order.get(str(year), {}) if isinstance(manual_order, dict) else {}
+    ordered_row_keys = year_payload.get(group_name, []) if isinstance(year_payload, dict) else []
+    ordered_row_keys = [str(value or "").strip() for value in ordered_row_keys if str(value or "").strip()]
+    if not ordered_row_keys:
+        return items
+
+    item_by_key = {
+        str(item.get("row_key") or "").strip(): item
+        for item in items
+        if str(item.get("row_key") or "").strip()
+    }
+
+    ordered_items = []
+    used_keys = set()
+    for row_key in ordered_row_keys:
+        item = item_by_key.get(row_key)
+        if item:
+            ordered_items.append(item)
+            used_keys.add(row_key)
+
+    ordered_items.extend(
+        item for item in items
+        if str(item.get("row_key") or "").strip() not in used_keys
+    )
+    return ordered_items
+
+
 def _sort_and_number_records(records):
     records_by_year = defaultdict(list)
     for item in records:
@@ -960,7 +1050,8 @@ def _sort_and_number_records(records):
                 _sort_datetime_value(item, "sort_date"),
                 _sort_datetime_value(item, "created_sort_date"),
                 item.get("release_key", ""),
-            )
+            ),
+            reverse=True,
         )
 
         waiting_items.sort(
@@ -972,22 +1063,81 @@ def _sort_and_number_records(records):
             reverse=True,
         )
 
-        for index, item in enumerate(numbered_items, start=1):
-            item["release_number"] = index
+        waiting_items = _apply_group_manual_order(year_items[0]["year"], "waiting", waiting_items)
+        numbered_items = _apply_group_manual_order(year_items[0]["year"], "numbered", numbered_items)
 
-        for item in waiting_items:
+        total_numbered = len(numbered_items)
+        for index, item in enumerate(numbered_items):
+            item["release_number"] = total_numbered - index
+            item["_group_rank"] = index
+
+        for index, item in enumerate(waiting_items):
             item["release_number"] = ""
+            item["_group_rank"] = index
 
     records.sort(
         key=lambda item: (
             -item.get("year", 0),
             0 if item.get("waits_for_rov") else 1,
-            -_sort_datetime_value(item, "sort_date").timestamp() if _sort_datetime_value(item, "sort_date") != datetime.min else float("inf"),
-            -(item.get("release_number") or 0),
-            item.get("release_key", ""),
+            item.get("_group_rank", 0),
         )
     )
     return records
+
+
+def save_release_monitor_manual_order(year, waiting_row_keys=None, numbered_row_keys=None):
+    global _cached_data, _last_cache_update
+
+    year = int(year or datetime.now().year)
+    normalized_waiting = []
+    normalized_numbered = []
+
+    for row_key in (waiting_row_keys or []):
+        row_key = str(row_key or "").strip()
+        if row_key and row_key not in normalized_waiting:
+            normalized_waiting.append(row_key)
+
+    for row_key in (numbered_row_keys or []):
+        row_key = str(row_key or "").strip()
+        if row_key and row_key not in normalized_numbered:
+            normalized_numbered.append(row_key)
+
+    with _cache_lock:
+        manual_order = _load_manual_order()
+        manual_order[str(year)] = {
+            "waiting": normalized_waiting,
+            "numbered": normalized_numbered,
+        }
+        _save_manual_order(manual_order)
+
+        if _cached_data is None:
+            disk_payload = _load_snapshot_from_disk()
+            if disk_payload:
+                _cached_data = disk_payload
+                _last_cache_update = _get_snapshot_mtime() or time.time()
+
+        if _cached_data is not None:
+            items = list(_cached_data.get("items", []))
+            _apply_reviewer_assignments(items)
+            _sort_and_number_records(items)
+            _cached_data["items"] = items
+            _save_snapshot_to_disk(_cached_data)
+            disk_payload = _load_snapshot_from_disk()
+            if disk_payload is not None:
+                _cached_data = disk_payload
+                _last_cache_update = _get_snapshot_mtime() or time.time()
+
+        payload = _get_cached_payload_copy() or _build_empty_release_monitor_payload()
+        if not payload.get("items"):
+            disk_payload = _load_snapshot_from_disk()
+            if disk_payload and disk_payload.get("items"):
+                _cached_data = disk_payload
+                _last_cache_update = _get_snapshot_mtime() or time.time()
+                payload = _get_cached_payload_copy() or disk_payload
+        return {
+            "year": year,
+            "data": payload,
+        }
 
 
 def _build_summary(records, current_year, previous_year):
@@ -1598,6 +1748,21 @@ def start_release_monitor_refresh(mode="full", trigger="manual"):
         }
 
 
+def _normalize_release_payload(payload):
+    if not isinstance(payload, dict):
+        return _build_empty_release_monitor_payload()
+
+    normalized_items = [dict(item) for item in (payload.get("items") or []) if isinstance(item, dict)]
+    _apply_reviewer_assignments(normalized_items)
+    _sort_and_number_records(normalized_items)
+
+    return {
+        "items": normalized_items,
+        "summary": dict(payload.get("summary", {})),
+        "meta": dict(payload.get("meta", {})),
+    }
+
+
 def get_release_monitor_refresh_status():
     global _cached_data
 
@@ -1611,7 +1776,7 @@ def get_release_monitor_refresh_status():
         payload = {
             "status": dict(_refresh_status),
         }
-        payload["data"] = _get_cached_payload_copy() or _build_empty_release_monitor_payload()
+        payload["data"] = _normalize_release_payload(_get_cached_payload_copy() or _build_empty_release_monitor_payload())
         return payload
 
 
@@ -1627,8 +1792,7 @@ def get_release_monitor_snapshot():
         if _cached_data is None:
             return _build_empty_release_monitor_payload()
 
-        payload = _get_cached_payload_copy()
-        _apply_reviewer_assignments(payload.get("items", []))
+        payload = _normalize_release_payload(_get_cached_payload_copy())
         payload["meta"] = {
             **payload.get("meta", {}),
             "is_cached": True,

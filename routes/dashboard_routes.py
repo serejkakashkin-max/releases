@@ -15,6 +15,7 @@ from services.release_monitor_service import (
     get_release_monitor_refresh_status,
     get_release_monitor_reviewer_options,
     sync_release_monitor_assignments_from_confluence,
+    save_release_monitor_manual_order,
     set_release_monitor_assignment,
     set_release_monitor_reviewer,
 )
@@ -239,6 +240,28 @@ def update_release_monitor_reviewer():
         })
     except Exception as e:
         logging.error(f"Ошибка сохранения назначения по релизу: {e}")
+        return jsonify({"success": False, "error": str(e)}), 400
+
+
+@dashboard_bp.route('/dashboard/release-monitor/order', methods=['POST'])
+def save_release_monitor_order():
+    """Сохраняет ручной порядок релизов внутри групп выбранного года."""
+    try:
+        data = request.get_json(silent=True) or {}
+        year = int(data.get("year") or datetime.now().year)
+        waiting_row_keys = data.get("waiting_row_keys", [])
+        numbered_row_keys = data.get("numbered_row_keys", [])
+        result = save_release_monitor_manual_order(year, waiting_row_keys, numbered_row_keys)
+        payload = result.get("data", {})
+        return jsonify({
+            "success": True,
+            "year": result.get("year"),
+            "release_monitor": payload.get("items", []),
+            "release_monitor_summary": payload.get("summary", {}),
+            "release_monitor_meta": payload.get("meta", {}),
+        })
+    except Exception as e:
+        logging.error(f"Ошибка сохранения ручного порядка релизов: {e}")
         return jsonify({"success": False, "error": str(e)}), 400
 
 

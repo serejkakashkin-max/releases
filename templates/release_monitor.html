@@ -506,6 +506,12 @@
             border-color: rgba(25, 135, 84, 0.22);
         }
 
+        .release-monitor-btn.active-order {
+            border-color: rgba(13, 110, 253, 0.34);
+            color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.08);
+        }
+
         .release-scroll-nav {
             position: fixed;
             left: 1.2rem;
@@ -620,6 +626,42 @@
             display: flex;
             flex-direction: column;
             gap: 0.38rem;
+        }
+
+        .release-number-cell {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+        }
+
+        .release-order-controls {
+            display: inline-flex;
+            flex-direction: column;
+            gap: 0.2rem;
+        }
+
+        .release-order-step-btn {
+            width: 24px;
+            height: 24px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            border-radius: 7px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            transition: all 0.2s ease;
+        }
+
+        .release-order-step-btn:hover:not(:disabled) {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+
+        .release-order-step-btn:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
         }
 
         .reviewer-block-label {
@@ -1044,6 +1086,18 @@
                         <i class="bi bi-arrow-repeat"></i>
                         Полное обновление
                     </button>
+                    <button id="releaseMonitorOrderBtn" class="release-monitor-btn" onclick="toggleReleaseOrderMode()">
+                        <i class="bi bi-list-ol"></i>
+                        Изменить порядок
+                    </button>
+                    <button id="releaseMonitorOrderSaveBtn" class="release-monitor-btn full" style="display: none;" onclick="saveReleaseOrder()">
+                        <i class="bi bi-check2-circle"></i>
+                        Сохранить порядок
+                    </button>
+                    <button id="releaseMonitorOrderCancelBtn" class="release-monitor-btn" style="display: none;" onclick="cancelReleaseOrderMode()">
+                        <i class="bi bi-x-circle"></i>
+                        Отменить
+                    </button>
                     <button id="releaseMonitorToggleBtn" class="release-monitor-btn" onclick="toggleReleaseMonitorExpand()">
                         <i class="bi bi-arrows-collapse"></i>
                         Свернуть
@@ -1113,6 +1167,9 @@
                 <div class="release-visible-counter">
                     Видимых релизов: <strong id="releaseVisibleCount">{{ release_monitor|length }}</strong>
                 </div>
+                <div id="releaseOrderModeHint" class="release-visible-counter" style="display: none; margin-top: -0.35rem;">
+                    Используйте кнопки вверх и вниз в строке. Изменения сохраняются только после нажатия «Сохранить порядок».
+                </div>
 
                 <div id="releaseMonitorEmptyState" class="empty-state-small" {% if release_monitor %}style="display: none;"{% endif %}>
                     <i class="bi bi-cloud-arrow-down"></i>
@@ -1169,6 +1226,9 @@
         let currentReleaseViewFilter = 'all';
         let showReleaseRowsWithoutRov = false;
         let isReleaseMonitorExpanded = true;
+        let isReleaseOrderMode = false;
+        let releaseOrderDraft = null;
+        let releaseOrderDirty = false;
         let releaseMonitorItems = [];
         let releaseMonitorMeta = {};
         let releaseMonitorRefreshPoll = null;
@@ -1283,6 +1343,46 @@ function buildReviewerCell(item) {
             `;
         }
 
+        function buildReleaseOrderControls(item) {
+            if (!isReleaseOrderMode) {
+                return '';
+            }
+
+            const rowKey = item.row_key || item.release_key;
+            const groupName = item.waits_for_rov ? 'waiting' : 'numbered';
+            const draft = releaseOrderDraft && String(releaseOrderDraft.year) === String(getSelectedReleaseYear())
+                ? releaseOrderDraft
+                : null;
+            const groupItems = Array.isArray(draft?.[groupName]) ? draft[groupName] : [];
+            const rowIndex = groupItems.indexOf(rowKey);
+            if (rowIndex === -1) {
+                return '';
+            }
+
+            return `
+                <div class="release-order-controls">
+                    <button
+                        type="button"
+                        class="release-order-step-btn"
+                        title="Поднять выше"
+                        onclick="moveReleaseRow('${escapeHtml(rowKey)}', 'up')"
+                        ${rowIndex === 0 ? 'disabled' : ''}
+                    >
+                        <i class="bi bi-chevron-up"></i>
+                    </button>
+                    <button
+                        type="button"
+                        class="release-order-step-btn"
+                        title="Опустить ниже"
+                        onclick="moveReleaseRow('${escapeHtml(rowKey)}', 'down')"
+                        ${rowIndex === groupItems.length - 1 ? 'disabled' : ''}
+                    >
+                        <i class="bi bi-chevron-down"></i>
+                    </button>
+                </div>
+            `;
+        }
+
         function buildReleaseRow(item) {
             return `
                 <tr
@@ -1291,7 +1391,12 @@ function buildReviewerCell(item) {
                     data-status="${escapeHtml(item.release_status || '')}"
                     data-final-installed="${item.is_final && !item.is_cancelled ? 'true' : 'false'}"
                 >
-                    <td><strong>${escapeHtml(item.release_number || '')}</strong></td>
+                    <td>
+                        <div class="release-number-cell">
+                            ${buildReleaseOrderControls(item)}
+                            <strong>${escapeHtml(item.release_number || '')}</strong>
+                        </div>
+                    </td>
                     <td>${getReleaseNameHtml(item)}</td>
                     <td>${item.zni_key ? escapeHtml(item.zni_key) : '<span style="color: var(--text-muted);">-</span>'}</td>
                     <td>${item.ke ? escapeHtml(item.ke) : '<span style="color: var(--text-muted);">-</span>'}</td>
@@ -1943,6 +2048,183 @@ function buildReviewerCell(item) {
             applyReleaseFilters();
         }
 
+        function buildReleaseOrderDraft(yearItems) {
+            return {
+                year: getSelectedReleaseYear(),
+                waiting: yearItems.filter(item => item.waits_for_rov).map(item => item.row_key || item.release_key),
+                numbered: yearItems.filter(item => !item.waits_for_rov).map(item => item.row_key || item.release_key),
+            };
+        }
+
+        function applyReleaseOrderDraft(yearItems) {
+            if (!releaseOrderDraft || String(releaseOrderDraft.year) !== String(getSelectedReleaseYear())) {
+                return yearItems;
+            }
+
+            const splitItems = {
+                waiting: yearItems.filter(item => item.waits_for_rov),
+                numbered: yearItems.filter(item => !item.waits_for_rov),
+            };
+
+            return ['waiting', 'numbered'].flatMap(groupName => {
+                const groupItems = splitItems[groupName];
+                const itemByKey = new Map(groupItems.map(item => [item.row_key || item.release_key, item]));
+                const orderedItems = [];
+                const usedKeys = new Set();
+
+                (releaseOrderDraft[groupName] || []).forEach(rowKey => {
+                    const item = itemByKey.get(rowKey);
+                    if (item) {
+                        orderedItems.push(item);
+                        usedKeys.add(rowKey);
+                    }
+                });
+
+                groupItems.forEach(item => {
+                    const rowKey = item.row_key || item.release_key;
+                    if (!usedKeys.has(rowKey)) {
+                        orderedItems.push(item);
+                    }
+                });
+
+                return orderedItems;
+            });
+        }
+
+        function refreshReleaseOrderModeUi() {
+            const orderBtn = document.getElementById('releaseMonitorOrderBtn');
+            const saveBtn = document.getElementById('releaseMonitorOrderSaveBtn');
+            const cancelBtn = document.getElementById('releaseMonitorOrderCancelBtn');
+            const hint = document.getElementById('releaseOrderModeHint');
+
+            if (orderBtn) {
+                orderBtn.classList.toggle('active-order', isReleaseOrderMode);
+                orderBtn.innerHTML = isReleaseOrderMode
+                    ? '<i class="bi bi-list-check"></i> Режим порядка'
+                    : '<i class="bi bi-list-ol"></i> Изменить порядок';
+            }
+            if (saveBtn) {
+                saveBtn.style.display = isReleaseOrderMode ? '' : 'none';
+                saveBtn.disabled = !releaseOrderDirty;
+            }
+            if (cancelBtn) {
+                cancelBtn.style.display = isReleaseOrderMode ? '' : 'none';
+            }
+            if (hint) {
+                hint.style.display = isReleaseOrderMode ? '' : 'none';
+            }
+        }
+
+        function toggleReleaseOrderMode() {
+            const searchValue = (document.getElementById('releaseSearchInput')?.value || '').trim();
+            const statusValue = document.getElementById('releaseStatusFilter')?.value || 'all';
+            const viewValue = document.getElementById('releaseViewFilter')?.value || 'all';
+
+            if (!isReleaseOrderMode) {
+                if (searchValue || statusValue !== 'all' || viewValue !== 'all') {
+                    alert('Режим порядка доступен только без поиска и дополнительных фильтров.');
+                    return;
+                }
+                releaseOrderDraft = buildReleaseOrderDraft(getYearFilteredReleaseItems(releaseMonitorItems));
+                releaseOrderDirty = false;
+                isReleaseOrderMode = true;
+            } else {
+                cancelReleaseOrderMode();
+                return;
+            }
+
+            refreshReleaseOrderModeUi();
+            applyReleaseFilters();
+        }
+
+        function cancelReleaseOrderMode() {
+            isReleaseOrderMode = false;
+            releaseOrderDraft = null;
+            releaseOrderDirty = false;
+            refreshReleaseOrderModeUi();
+            applyReleaseFilters();
+        }
+
+        function moveReleaseRow(rowKey, direction) {
+            if (!isReleaseOrderMode || !releaseOrderDraft) {
+                return;
+            }
+
+            ['waiting', 'numbered'].some(groupName => {
+                const groupItems = releaseOrderDraft[groupName];
+                const currentIndex = groupItems.indexOf(rowKey);
+                if (currentIndex === -1) {
+                    return false;
+                }
+
+                const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+                if (targetIndex < 0 || targetIndex >= groupItems.length) {
+                    return true;
+                }
+
+                const swapValue = groupItems[targetIndex];
+                groupItems[targetIndex] = groupItems[currentIndex];
+                groupItems[currentIndex] = swapValue;
+                releaseOrderDirty = true;
+                refreshReleaseOrderModeUi();
+                applyReleaseFilters();
+                return true;
+            });
+        }
+
+        async function saveReleaseOrder() {
+            if (!isReleaseOrderMode || !releaseOrderDraft || !releaseOrderDirty) {
+                return;
+            }
+
+            const saveBtn = document.getElementById('releaseMonitorOrderSaveBtn');
+            const cancelBtn = document.getElementById('releaseMonitorOrderCancelBtn');
+            const orderBtn = document.getElementById('releaseMonitorOrderBtn');
+            [saveBtn, cancelBtn, orderBtn].forEach(btn => {
+                if (btn) {
+                    btn.disabled = true;
+                }
+            });
+
+            try {
+                const response = await fetch(BASE_PATH + '/dashboard/release-monitor/order', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        year: getSelectedReleaseYear(),
+                        waiting_row_keys: releaseOrderDraft.waiting || [],
+                        numbered_row_keys: releaseOrderDraft.numbered || [],
+                    })
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Не удалось сохранить порядок релизов');
+                }
+
+                const statusResponse = await fetch(BASE_PATH + '/dashboard/release-monitor/status');
+                const statusData = await statusResponse.json();
+                if (!statusResponse.ok || !statusData.success) {
+                    throw new Error(statusData.error || 'Не удалось перечитать таблицу релизов после сохранения порядка');
+                }
+
+                isReleaseOrderMode = false;
+                releaseOrderDraft = null;
+                releaseOrderDirty = false;
+                renderReleaseMonitor(statusData.release_monitor || [], statusData.release_monitor_meta || {});
+                refreshReleaseOrderModeUi();
+                alert('Порядок релизов сохранен');
+            } catch (error) {
+                console.error('Release order save error:', error);
+                alert('Ошибка сохранения порядка: ' + error.message);
+            } finally {
+                [saveBtn, cancelBtn, orderBtn].forEach(btn => {
+                    if (btn) {
+                        btn.disabled = false;
+                    }
+                });
+            }
+        }
+
         function scrollReleasePageToTop() {
             window.scrollTo({
                 top: 0,
@@ -2242,7 +2524,8 @@ function buildReviewerCell(item) {
             const visibleCounter = document.getElementById('releaseVisibleCount');
             const searchValue = (document.getElementById('releaseSearchInput')?.value || '').toLowerCase().trim();
             const statusValue = document.getElementById('releaseStatusFilter')?.value || 'all';
-            const yearItems = getYearFilteredReleaseItems(releaseMonitorItems);
+            const rawYearItems = getYearFilteredReleaseItems(releaseMonitorItems);
+            const yearItems = applyReleaseOrderDraft(rawYearItems);
             const filteredItems = yearItems.filter(item => {
                 const matchesRovVisibility = showReleaseRowsWithoutRov || Boolean(item.rov_key);
                 const matchesView = (
@@ -2295,6 +2578,7 @@ function buildReviewerCell(item) {
             }
 
             updateReleaseScrollButtons();
+            refreshReleaseOrderModeUi();
         }
 
         renderReleaseMonitor(
