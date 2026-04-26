@@ -353,7 +353,15 @@
             background: rgba(248, 81, 73, 0.08);
         }
 
+        .release-row.state-overdue td {
+            background: rgba(248, 81, 73, 0.08);
+        }
+
         .release-row.state-today {
+            background: rgba(255, 193, 7, 0.10);
+        }
+
+        .release-row.state-today td {
             background: rgba(255, 193, 7, 0.10);
         }
 
@@ -361,7 +369,15 @@
             background: rgba(63, 185, 80, 0.10);
         }
 
+        .release-row.state-final td {
+            background: rgba(63, 185, 80, 0.10);
+        }
+
         .release-row.state-cancelled {
+            background: rgba(248, 81, 73, 0.12);
+        }
+
+        .release-row.state-cancelled td {
             background: rgba(248, 81, 73, 0.12);
         }
 
@@ -1247,17 +1263,23 @@
 
         function getReleaseNameHtml(item) {
             const lines = Array.isArray(item.release_name_lines) ? item.release_name_lines : [];
+            const buildLink = item.release_version
+                ? item.release_dist_url
+                    ? `<div class="release-name-line">сборка: <a href="${escapeHtml(item.release_dist_url)}" target="_blank" class="release-key-link">${escapeHtml(item.release_version)}</a></div>`
+                    : `<div class="release-name-line">сборка: ${escapeHtml(item.release_version)}</div>`
+                : '';
             const statusBadge = item.release_status
-                ? `<div class="release-micro-meta"><span class="release-badge ${item.is_final ? 'state-planned' : item.is_cancelled ? 'state-overdue' : item.is_overdue ? 'state-overdue' : item.is_today ? 'state-today' : 'state-planned'}">${escapeHtml(item.release_status)}</span>${item.is_pre_final ? '<span class="release-badge pre-final">Установка на ПРОМ</span>' : ''}</div>`
+                ? `<div class="release-micro-meta"><span class="release-badge ${item.is_final ? 'state-planned' : item.is_cancelled ? 'state-overdue' : item.is_overdue ? 'state-overdue' : item.is_today ? 'state-today' : 'state-planned'}">${escapeHtml(item.release_status)}</span>${item.is_pre_final ? '<span class="release-badge pre-final">\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0430 \u043d\u0430 \u041f\u0420\u041e\u041c</span>' : ''}</div>`
                 : '';
 
             if (!lines.length) {
-                return statusBadge || '<span style="color: var(--text-muted);">Не указано</span>';
+                return (buildLink + statusBadge) || '<span style="color: var(--text-muted);">\u041d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d\u043e</span>';
             }
 
             return `
                 <div class="release-name-cell">
                     ${lines.map(line => `<div class="release-name-line">${escapeHtml(line)}</div>`).join('')}
+                    ${buildLink}
                     ${statusBadge}
                 </div>
             `;

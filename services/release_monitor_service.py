@@ -1,4 +1,4 @@
-import logging
+﻿import logging
 import json
 import os
 import re
@@ -15,15 +15,15 @@ from config import DASHBOARD_CACHE_TTL, OPLOT_VALUES, TOKENS
 from services.jira_service import get_jira_domain_and_token
 
 
-FINAL_RELEASE_STATUS = "Установлен на ПРОМ"
-CANCELLED_RELEASE_STATUS = "Отменено"
+FINAL_RELEASE_STATUS = "\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u043b\u0435\u043d \u043d\u0430 \u041f\u0420\u041e\u041c"
+CANCELLED_RELEASE_STATUS = "\u041e\u0442\u043c\u0435\u043d\u0435\u043d\u043e"
 FINAL_RELEASE_STATUSES = (
     FINAL_RELEASE_STATUS,
     CANCELLED_RELEASE_STATUS,
 )
 PRE_FINAL_RELEASE_STATUSES = (
-    "Установка на ПРОМ",
-    "Готов к установке на ПРОМ",
+    "\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0430 \u043d\u0430 \u041f\u0420\u041e\u041c",
+    "\u0413\u043e\u0442\u043e\u0432 \u043a \u0443\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0435 \u043d\u0430 \u041f\u0420\u041e\u041c",
 )
 RELEASE_PREFIXES = ("EMRM", "SMECLM", "SMECSC", "HELPERAI", "AIGAS")
 RELEASE_ISSUE_TYPE = "Release 2.0"
@@ -50,34 +50,33 @@ FIELD_FALLBACKS = {
 
 FIELD_ALIASES = {
     "planned_prom_start": (
-        "начало внедрения",
-        "дата начала внедрения",
-        "начало внедрения план",
+        "\u043d\u0430\u0447\u0430\u043b\u043e \u0432\u043d\u0435\u0434\u0440\u0435\u043d\u0438\u044f",
+        "\u0434\u0430\u0442\u0430 \u043d\u0430\u0447\u0430\u043b\u0430 \u0432\u043d\u0435\u0434\u0440\u0435\u043d\u0438\u044f",
+        "\u043d\u0430\u0447\u0430\u043b\u043e \u0432\u043d\u0435\u0434\u0440\u0435\u043d\u0438\u044f \u043f\u043b\u0430\u043d",
     ),
     "planned_prom_end": (
-        "дата завершения установки в пром",
-        "дата установки в пром",
+        "\u0434\u0430\u0442\u0430 \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043d\u0438\u044f \u0443\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0438 \u0432 \u043f\u0440\u043e\u043c",
+        "\u0434\u0430\u0442\u0430 \u0443\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0438 \u0432 \u043f\u0440\u043e\u043c",
     ),
     "system_info": (
-        "ит-услуга",
-        "кэ",
+        "\u0438\u0442-\u0443\u0441\u043b\u0443\u0433\u0430",
     ),
     "ke_object": (
-        "кэ",
+        "\u043a\u044d",
     ),
     "release_distributive": (
-        "кэ дистрибутива",
-        "кэ дистрибутивов",
+        "\u043a\u044d \u0434\u0438\u0441\u0442\u0440\u0438\u0431\u0443\u0442\u0438\u0432\u0430",
+        "\u043a\u044d \u0434\u0438\u0441\u0442\u0440\u0438\u0431\u0443\u0442\u0438\u0432\u043e\u0432",
     ),
     "rov_start": (
-        "дата/время начала работ по внедрению",
-        "дата время начала работ по внедрению",
-        "начало работ по внедрению",
+        "\u0434\u0430\u0442\u0430/\u0432\u0440\u0435\u043c\u044f \u043d\u0430\u0447\u0430\u043b\u0430 \u0440\u0430\u0431\u043e\u0442 \u043f\u043e \u0432\u043d\u0435\u0434\u0440\u0435\u043d\u0438\u044e",
+        "\u0434\u0430\u0442\u0430 \u0432\u0440\u0435\u043c\u044f \u043d\u0430\u0447\u0430\u043b\u0430 \u0440\u0430\u0431\u043e\u0442 \u043f\u043e \u0432\u043d\u0435\u0434\u0440\u0435\u043d\u0438\u044e",
+        "\u043d\u0430\u0447\u0430\u043b\u043e \u0440\u0430\u0431\u043e\u0442 \u043f\u043e \u0432\u043d\u0435\u0434\u0440\u0435\u043d\u0438\u044e",
     ),
     "rov_end": (
-        "дата/время окончания работ по внедрению",
-        "дата время окончания работ по внедрению",
-        "окончание работ по внедрению",
+        "\u0434\u0430\u0442\u0430/\u0432\u0440\u0435\u043c\u044f \u043e\u043a\u043e\u043d\u0447\u0430\u043d\u0438\u044f \u0440\u0430\u0431\u043e\u0442 \u043f\u043e \u0432\u043d\u0435\u0434\u0440\u0435\u043d\u0438\u044e",
+        "\u0434\u0430\u0442\u0430 \u0432\u0440\u0435\u043c\u044f \u043e\u043a\u043e\u043d\u0447\u0430\u043d\u0438\u044f \u0440\u0430\u0431\u043e\u0442 \u043f\u043e \u0432\u043d\u0435\u0434\u0440\u0435\u043d\u0438\u044e",
+        "\u043e\u043a\u043e\u043d\u0447\u0430\u043d\u0438\u0435 \u0440\u0430\u0431\u043e\u0442 \u043f\u043e \u0432\u043d\u0435\u0434\u0440\u0435\u043d\u0438\u044e",
     ),
 }
 
@@ -355,7 +354,7 @@ def _get_assignment_key_for_item(item):
 
 
 def _normalize_text(value):
-    return (value or "").strip().lower().replace("ё", "е")
+    return (value or "").strip().lower().replace("С‘", "Рµ")
 
 
 def _parse_jira_date(value):
@@ -469,7 +468,7 @@ def _match_oplot_name(raw_name):
     if normalized_raw in exact_map:
         return exact_map[normalized_raw]
 
-    surname_match = re.match(r"^([а-яёa-z-]+)\s+([а-яёa-z])", normalized_raw, re.IGNORECASE)
+    surname_match = re.match(r"^([Р°-СЏС‘a-z-]+)\s+([Р°-СЏС‘a-z])", normalized_raw, re.IGNORECASE)
     if not surname_match:
         return ""
 
@@ -478,7 +477,7 @@ def _match_oplot_name(raw_name):
     candidates = []
     for option in OPLOT_VALUES:
         normalized_option = _normalize_text(option).replace(".", "")
-        option_match = re.match(r"^([а-яёa-z-]+)\s+([а-яёa-z])", normalized_option, re.IGNORECASE)
+        option_match = re.match(r"^([Р°-СЏС‘a-z-]+)\s+([Р°-СЏС‘a-z])", normalized_option, re.IGNORECASE)
         if option_match and option_match.group(1) == surname and option_match.group(2) == first_initial:
             candidates.append(option)
 
@@ -499,18 +498,18 @@ def _parse_confluence_assignment_cell(cell_text):
     for line in lines:
         normalized_line = _normalize_text(line)
 
-        if normalized_line.startswith("проверяет"):
+        if normalized_line.startswith("РїСЂРѕРІРµСЂСЏРµС‚"):
             mode = "checker"
             remainder = line.split(":", 1)[1].strip() if ":" in line else ""
-            if remainder and "отсутств" not in _normalize_text(remainder):
+            if remainder and "РѕС‚СЃСѓС‚СЃС‚РІ" not in _normalize_text(remainder):
                 checker_lines.append(remainder)
             continue
 
-        if normalized_line.startswith("устанавливает"):
+        if normalized_line.startswith("СѓСЃС‚Р°РЅР°РІР»РёРІР°РµС‚"):
             mode = "ignore"
             continue
 
-        if "проверки отсутств" in normalized_line:
+        if "РїСЂРѕРІРµСЂРєРё РѕС‚СЃСѓС‚СЃС‚РІ" in normalized_line:
             checker_lines = []
             mode = "ignore"
             continue
@@ -537,9 +536,9 @@ def _find_release_assignment_table(storage_html):
             continue
         headers = [_normalize_text(cell.get("text", "")) for cell in table[0]]
         if (
-            any("id релиза" in header for header in headers)
-            and any("id распоряжения" in header for header in headers)
-            and any("ответственный" in header for header in headers)
+            any("id СЂРµР»РёР·Р°" in header for header in headers)
+            and any("id СЂР°СЃРїРѕСЂСЏР¶РµРЅРёСЏ" in header for header in headers)
+            and any("РѕС‚РІРµС‚СЃС‚РІРµРЅРЅС‹Р№" in header for header in headers)
         ):
             return table
     return []
@@ -549,9 +548,9 @@ def _load_confluence_release_assignments(year):
     page_id = str(TOKENS.get(f"confluence_release_page_id_{year}", "") or "").strip()
     token = str(TOKENS.get("confluence_delta_token", "") or "").strip()
     if not page_id:
-        raise ValueError(f"Не настроен pageId Confluence для {year} года")
+        raise ValueError(f"РќРµ РЅР°СЃС‚СЂРѕРµРЅ pageId Confluence РґР»СЏ {year} РіРѕРґР°")
     if not token:
-        raise ValueError("Не настроен токен доступа к Confluence")
+        raise ValueError("РќРµ РЅР°СЃС‚СЂРѕРµРЅ С‚РѕРєРµРЅ РґРѕСЃС‚СѓРїР° Рє Confluence")
 
     url = f"{CONFLUENCE_DELTA_BASE}/rest/api/content/{page_id}"
     headers = {
@@ -566,7 +565,7 @@ def _load_confluence_release_assignments(year):
     storage_html = (((data.get("body") or {}).get("storage") or {}).get("value") or "")
     table = _find_release_assignment_table(storage_html)
     if not table:
-        raise ValueError("Не удалось найти таблицу релизов на странице Confluence")
+        raise ValueError("РќРµ СѓРґР°Р»РѕСЃСЊ РЅР°Р№С‚Рё С‚Р°Р±Р»РёС†Сѓ СЂРµР»РёР·РѕРІ РЅР° СЃС‚СЂР°РЅРёС†Рµ Confluence")
 
     assignments = {}
     for row in table[1:]:
@@ -655,6 +654,29 @@ def _extract_version(dist_item):
     return ""
 
 
+def _extract_dist_url(dist_item):
+    if not dist_item:
+        return ""
+
+    candidate_values = []
+    if isinstance(dist_item, dict):
+        for key in ("url", "value", "downloadUrl", "artifactUrl", "link"):
+            value = dist_item.get(key)
+            if value:
+                candidate_values.append(str(value))
+    else:
+        candidate_values.append(str(dist_item))
+
+    for value in candidate_values:
+        match = re.search(r"https?://\S+", value)
+        if match:
+            return match.group(0).rstrip('",)')
+        if value.startswith("http://") or value.startswith("https://"):
+            return value
+
+    return ""
+
+
 def _extract_ke_object(fields, resolved_fields):
     raw_ke_object = fields.get(resolved_fields["ke_object"])
     item = _first_list_item(raw_ke_object)
@@ -726,11 +748,19 @@ def _resolve_field_ids(domain, token):
         if not aliases:
             continue
 
+        normalized_aliases = [_normalize_text(alias) for alias in aliases if alias]
+
         for field_id, field_name in field_name_map.items():
             normalized_name = _normalize_text(field_name)
-            if any(_normalize_text(alias) in normalized_name for alias in aliases):
+            if normalized_name in normalized_aliases:
                 resolved[logical_name] = field_id
                 break
+        else:
+            for field_id, field_name in field_name_map.items():
+                normalized_name = _normalize_text(field_name)
+                if any(alias in normalized_name for alias in normalized_aliases):
+                    resolved[logical_name] = field_id
+                    break
 
     return resolved
 
@@ -822,39 +852,31 @@ def _extract_release_io_key(issue):
 
 
 def _clean_release_summary(summary):
-    cleaned = re.sub(r"^\s*Релиз#\d+\s*", "", summary or "", flags=re.IGNORECASE)
+    cleaned = re.sub(r"^\s*Р РµР»РёР·#\d+\s*", "", summary or "", flags=re.IGNORECASE)
     return cleaned.strip()
 
 
 def _detect_system(prefix, summary, ke_name, system_info_text):
     searchable = _normalize_text(f"{summary} {ke_name} {system_info_text}")
 
-    if "аист" in searchable or "aist" in searchable:
-        return "АИСТ"
+    if "Р°РёСЃС‚" in searchable or "aist" in searchable:
+        return "РђРРЎРў"
     if "clm" in searchable or prefix in {"SMECLM", "SMECSC"}:
         return "CLM"
-    return "Фокус"
+    return "Р¤РѕРєСѓСЃ"
 
 
-def _build_release_name_lines(summary, ke_name, ke_id, version, row_label="(Релиз)"):
+def _build_release_name_lines(summary, release_ke_line, row_label="(\u0420\u0435\u043b\u0438\u0437)"):
     lines = []
     short_name = _clean_release_summary(summary)
     if short_name:
         lines.append(short_name)
 
-    if ke_name:
-        if ke_id:
-            lines.append(f"{ke_name}({ke_id})")
-        else:
-            lines.append(ke_name)
+    if release_ke_line:
+        lines.append(release_ke_line)
 
     lines.append("(Релиз)")
-
-    if version:
-        lines.append(f"Сборка: {version}")
-
-    if len(lines) >= 1:
-        lines[-2 if version else -1] = row_label
+    lines[-1] = row_label
 
     return lines
 
@@ -902,6 +924,7 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
     ke_object = _extract_ke_object(fields, resolved_fields)
     dist_item = _extract_release_dist(fields, resolved_fields)
     release_version = _extract_version(dist_item)
+    release_dist_url = _extract_dist_url(dist_item)
     ke_distributive = _format_ke_id((dist_item or {}).get("id") if isinstance(dist_item, dict) else "")
 
     normalized_status = _normalize_text(status_name)
@@ -911,6 +934,9 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
     is_pre_final = normalized_status in {_normalize_text(status) for status in PRE_FINAL_RELEASE_STATUSES}
     ke_name = ke_object.get("name") or ""
     ke_id = ke_object.get("id") or ""
+    release_ke_line = f"{ke_name}({ke_id})" if ke_name and ke_id else (ke_name or "")
+    if not release_ke_line:
+        release_ke_line = (system_info_text or "").strip()
     linked_rov_keys = _extract_release_io_keys(issue)
     linked_rov_records = [rov_map.get(key, {}) for key in linked_rov_keys if rov_map.get(key)]
     row_variants = linked_rov_records or [{}]
@@ -943,7 +969,7 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
 
         days_overdue = (today - rov_end_date).days if is_overdue else 0
         is_reroll = bool(rov_key and len(linked_rov_records) > 1 and index > 0)
-        row_label = "(Перераскатка)" if is_reroll else "(Релиз)"
+        row_label = "(\u041f\u0435\u0440\u0435\u0440\u0430\u0441\u043a\u0430\u0442\u043a\u0430)" if is_reroll else "(\u0420\u0435\u043b\u0438\u0437)"
         row_key = f"{issue.get('key')}::{rov_key or 'no-rov'}"
 
         records.append({
@@ -955,7 +981,7 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
             "release_status": status_name,
             "release_status_normalized": normalized_status,
             "release_summary": summary,
-            "release_name_lines": _build_release_name_lines(summary, ke_name, ke_id, release_version, row_label=row_label),
+            "release_name_lines": _build_release_name_lines(summary, release_ke_line, row_label=row_label),
             "is_reroll": is_reroll,
             "row_label": row_label,
             "zni_key": "",
@@ -963,6 +989,7 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
             "ke_name": ke_name,
             "ke_id": ke_id,
             "release_version": release_version,
+            "release_dist_url": release_dist_url,
             "rov_key": rov_key,
             "rov_url": rov_data.get("url", ""),
             "rov_status": rov_data.get("status", ""),
@@ -1185,7 +1212,7 @@ def _build_summary(records, current_year, previous_year):
                 "cancelled": 0,
             },
         )
-        summary["by_status"][item["release_status"] or "Не указан"] += 1
+        summary["by_status"][item["release_status"] or "РќРµ СѓРєР°Р·Р°РЅ"] += 1
         year_bucket["total"] += 1
 
         if item["is_non_final"]:
@@ -1482,7 +1509,7 @@ def _run_release_monitor_refresh():
             _refresh_status.update(
                 {
                     "state": "completed",
-                    "message": "Данные по релизам обновлены",
+                    "message": "Р”Р°РЅРЅС‹Рµ РїРѕ СЂРµР»РёР·Р°Рј РѕР±РЅРѕРІР»РµРЅС‹",
                     "started_at": _refresh_status.get("started_at"),
                     "finished_at": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
                     "error": None,
@@ -1495,7 +1522,7 @@ def _run_release_monitor_refresh():
             _refresh_status.update(
                 {
                     "state": "failed",
-                    "message": "Ошибка обновления релизов",
+                    "message": "РћС€РёР±РєР° РѕР±РЅРѕРІР»РµРЅРёСЏ СЂРµР»РёР·РѕРІ",
                     "finished_at": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
                     "error": str(exc),
                 }
@@ -1515,7 +1542,7 @@ def start_release_monitor_refresh():
         _refresh_status.update(
             {
                 "state": "refreshing",
-                "message": "Идет обновление релизов из Jira",
+                "message": "РРґРµС‚ РѕР±РЅРѕРІР»РµРЅРёРµ СЂРµР»РёР·РѕРІ РёР· Jira",
                 "started_at": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
                 "finished_at": None,
                 "error": None,
@@ -1689,7 +1716,7 @@ def _run_release_monitor_refresh(mode="full", trigger="manual"):
             _refresh_status.update(
                 {
                     "state": "completed",
-                    "message": "Данные по релизам обновлены",
+                    "message": "Р”Р°РЅРЅС‹Рµ РїРѕ СЂРµР»РёР·Р°Рј РѕР±РЅРѕРІР»РµРЅС‹",
                     "started_at": _refresh_status.get("started_at"),
                     "finished_at": now_str,
                     "error": None,
@@ -1704,7 +1731,7 @@ def _run_release_monitor_refresh(mode="full", trigger="manual"):
             _refresh_status.update(
                 {
                     "state": "failed",
-                    "message": "Ошибка обновления релизов",
+                    "message": "РћС€РёР±РєР° РѕР±РЅРѕРІР»РµРЅРёСЏ СЂРµР»РёР·РѕРІ",
                     "finished_at": _format_timestamp(),
                     "error": str(exc),
                     "mode": mode,
@@ -1727,7 +1754,7 @@ def start_release_monitor_refresh(mode="full", trigger="manual"):
         _refresh_status.update(
             {
                 "state": "refreshing",
-                "message": "Идет полное обновление релизов из Jira" if mode == "full" else f"Идет быстрое обновление релизов за последние {QUICK_REFRESH_DAYS} дней",
+                "message": "РРґРµС‚ РїРѕР»РЅРѕРµ РѕР±РЅРѕРІР»РµРЅРёРµ СЂРµР»РёР·РѕРІ РёР· Jira" if mode == "full" else f"РРґРµС‚ Р±С‹СЃС‚СЂРѕРµ РѕР±РЅРѕРІР»РµРЅРёРµ СЂРµР»РёР·РѕРІ Р·Р° РїРѕСЃР»РµРґРЅРёРµ {QUICK_REFRESH_DAYS} РґРЅРµР№",
                 "started_at": _format_timestamp(),
                 "finished_at": None,
                 "error": None,
@@ -1819,7 +1846,7 @@ def sync_release_monitor_assignments_from_confluence(year):
                 _last_cache_update = time.time()
 
         if _cached_data is None:
-            raise ValueError("Таблица релизов еще не загружена. Сначала выполните обновление релизов.")
+            raise ValueError("РўР°Р±Р»РёС†Р° СЂРµР»РёР·РѕРІ РµС‰Рµ РЅРµ Р·Р°РіСЂСѓР¶РµРЅР°. РЎРЅР°С‡Р°Р»Р° РІС‹РїРѕР»РЅРёС‚Рµ РѕР±РЅРѕРІР»РµРЅРёРµ СЂРµР»РёР·РѕРІ.")
 
         assignments = _load_reviewer_assignments()
         matched_rows = 0
@@ -1895,10 +1922,10 @@ def set_release_monitor_reviewer(release_key, reviewer):
     release_key = (release_key or "").strip()
     reviewer = (reviewer or "").strip()
     if not release_key:
-        raise ValueError("Не указан ключ релиза")
+        raise ValueError("РќРµ СѓРєР°Р·Р°РЅ РєР»СЋС‡ СЂРµР»РёР·Р°")
 
     if reviewer and reviewer not in OPLOT_VALUES:
-        raise ValueError("Выбранный проверяющий отсутствует в списке ОПЛОТ")
+        raise ValueError("Р’С‹Р±СЂР°РЅРЅС‹Р№ РїСЂРѕРІРµСЂСЏСЋС‰РёР№ РѕС‚СЃСѓС‚СЃС‚РІСѓРµС‚ РІ СЃРїРёСЃРєРµ РћРџР›РћРў")
 
     assignments = _load_reviewer_assignments()
     current_assignment = dict(assignments.get(release_key, {}))
@@ -1931,10 +1958,10 @@ def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=
     reviewer = (reviewer or "").strip()
     checker = (checker or "").strip()
     if not release_key:
-        raise ValueError("Не указан ключ релиза")
+        raise ValueError("РќРµ СѓРєР°Р·Р°РЅ РєР»СЋС‡ СЂРµР»РёР·Р°")
 
     if reviewer and reviewer not in OPLOT_VALUES:
-        raise ValueError("Выбранный дежурный отсутствует в списке ОПЛОТ")
+        raise ValueError("Р’С‹Р±СЂР°РЅРЅС‹Р№ РґРµР¶СѓСЂРЅС‹Р№ РѕС‚СЃСѓС‚СЃС‚РІСѓРµС‚ РІ СЃРїРёСЃРєРµ РћРџР›РћРў")
 
     normalized_responsibles = []
     for responsible in (responsibles or []):
@@ -1942,7 +1969,7 @@ def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=
         if not responsible_name:
             continue
         if responsible_name not in OPLOT_VALUES:
-            raise ValueError("Выбранный ответственный отсутствует в списке ОПЛОТ")
+            raise ValueError("Р’С‹Р±СЂР°РЅРЅС‹Р№ РѕС‚РІРµС‚СЃС‚РІРµРЅРЅС‹Р№ РѕС‚СЃСѓС‚СЃС‚РІСѓРµС‚ РІ СЃРїРёСЃРєРµ РћРџР›РћРў")
         if responsible_name not in normalized_responsibles:
             normalized_responsibles.append(responsible_name)
 
