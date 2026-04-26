@@ -107,33 +107,6 @@
             overflow: hidden;
         }
 
-        .release-monitor-header {
-            display: flex;
-            justify-content: space-between;
-            gap: 1rem;
-            align-items: flex-start;
-            padding: 1.35rem 1.5rem 1rem;
-            border-bottom: 1px solid var(--border-color);
-            background: linear-gradient(135deg, var(--bg-card) 0%, var(--bg-secondary) 100%);
-        }
-
-        .release-monitor-title h2 {
-            margin: 0;
-            font-size: 1.25rem;
-            color: var(--text-primary);
-            display: flex;
-            align-items: center;
-            gap: 0.6rem;
-        }
-
-        .release-monitor-subtitle {
-            margin-top: 0.45rem;
-            font-size: 0.92rem;
-            color: var(--text-secondary);
-            max-width: 880px;
-            line-height: 1.5;
-        }
-
         .release-monitor-content {
             padding: 1.25rem 1.5rem 1.5rem;
         }
@@ -198,19 +171,24 @@
 
         .release-extra-controls {
             display: flex;
-            justify-content: flex-start;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 0.9rem;
             margin: -0.2rem 0 0.95rem;
+            flex-wrap: wrap;
         }
 
         .release-toggle-card {
             display: inline-flex;
             align-items: center;
             gap: 0.85rem;
-            padding: 0.72rem 0.95rem;
-            border-radius: 14px;
+            padding: 0.65rem 0.95rem;
+            border-radius: 10px;
             border: 1px solid var(--border-color);
             background: var(--bg-secondary);
             color: var(--text-primary);
+            min-height: 46px;
+            align-self: flex-start;
         }
 
         .release-toggle-copy {
@@ -219,16 +197,16 @@
         }
 
         .release-toggle-title {
-            font-size: 0.88rem;
-            font-weight: 700;
+            font-size: 0.86rem;
+            font-weight: 600;
             color: var(--text-primary);
             line-height: 1.25;
         }
 
         .release-switch {
             position: relative;
-            width: 50px;
-            height: 28px;
+            width: 46px;
+            height: 26px;
             flex: 0 0 auto;
         }
 
@@ -251,8 +229,8 @@
         .release-switch-track::before {
             content: '';
             position: absolute;
-            width: 20px;
-            height: 20px;
+            width: 18px;
+            height: 18px;
             left: 3px;
             top: 3px;
             border-radius: 50%;
@@ -267,7 +245,7 @@
         }
 
         .release-switch input:checked + .release-switch-track::before {
-            transform: translateX(22px);
+            transform: translateX(20px);
             background: var(--primary);
         }
 
@@ -447,36 +425,47 @@
 
         .release-monitor-actions {
             display: flex;
-            gap: 0.75rem;
-            align-items: flex-end;
-            flex-wrap: wrap;
+            justify-content: flex-end;
+            min-width: 0;
         }
 
-        .release-monitor-sync-stack {
+        .release-monitor-button-row {
+            display: flex;
+            gap: 0.7rem;
+            flex-wrap: wrap;
+            align-items: flex-start;
+            justify-content: flex-end;
+            align-self: start;
+        }
+
+        .release-action-stack {
             display: flex;
             flex-direction: column;
-            gap: 0.25rem;
-            align-items: flex-end;
+            align-items: stretch;
+            gap: 0.3rem;
         }
 
-        .release-monitor-action-groups {
-            display: flex;
-            flex-direction: column;
-            gap: 0.55rem;
-            align-items: flex-end;
-        }
-
-        .release-monitor-primary-actions {
-            display: flex;
-            gap: 0.6rem;
-            flex-wrap: wrap;
+        .release-action-stack.compact {
             justify-content: flex-end;
         }
 
-        .release-monitor-secondary-actions {
+        .release-order-actions {
             display: flex;
-            justify-content: flex-end;
-            width: 100%;
+            flex-direction: column;
+            gap: 0.4rem;
+        }
+
+        .release-action-meta {
+            font-size: 0.77rem;
+            line-height: 1.25;
+            color: var(--text-secondary);
+            text-align: center;
+            min-height: 1.95rem;
+        }
+
+        .release-action-meta strong {
+            color: var(--text-primary);
+            font-weight: 700;
         }
 
         .release-monitor-btn {
@@ -510,8 +499,9 @@
 
         .release-monitor-meta {
             color: var(--text-secondary);
-            font-size: 0.82rem;
+            font-size: 0.81rem;
             white-space: nowrap;
+            line-height: 1.35;
         }
 
         .release-monitor-btn.quick {
@@ -526,6 +516,16 @@
             border-color: rgba(13, 110, 253, 0.34);
             color: var(--primary);
             box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.08);
+        }
+
+        .release-monitor-btn.confluence {
+            min-width: 0;
+            justify-content: center;
+        }
+
+        .release-monitor-btn.confluence:hover {
+            color: var(--primary);
+            border-color: rgba(88, 166, 255, 0.34);
         }
 
         .release-scroll-nav {
@@ -593,21 +593,6 @@
                 height: 48px;
                 border-radius: 14px;
             }
-        }
-
-        #releaseMonitorQuickRefreshBtn {
-            order: 1;
-        }
-
-        #releaseMonitorRefreshBtn {
-            order: 2;
-        }
-
-        #releaseMonitorConfluenceSyncBtn {
-            order: 3;
-            flex-basis: 100%;
-            margin-top: 0.15rem;
-            justify-content: center;
         }
 
         #releaseMonitorToggleBtn {
@@ -788,10 +773,7 @@
         }
 
         .release-doc-note {
-            margin-top: 0.4rem;
-            font-size: 0.7rem;
-            color: var(--text-muted);
-            line-height: 1.35;
+            display: none;
         }
 
         .release-doc-modal .modal-dialog {
@@ -973,6 +955,12 @@
                 grid-template-columns: 1fr 1fr;
             }
 
+            .release-monitor-actions {
+                min-width: 0;
+                width: 100%;
+                justify-content: flex-start;
+            }
+
             .release-doc-summary {
                 grid-template-columns: 1fr;
             }
@@ -988,9 +976,13 @@
                 grid-template-columns: 1fr;
             }
 
-            .release-monitor-header,
             .page-hero-top {
                 flex-direction: column;
+            }
+
+            .release-monitor-button-row {
+                flex-direction: column;
+                align-items: stretch;
             }
         }
     </style>
@@ -1046,7 +1038,7 @@
                         <span class="beta-pill">BETA</span>
                     </h1>
                     <div class="page-subtitle">
-                        Отдельный экран контроля релизов `EMRM`, `SMECLM`, `SMECSC` с годовой таблицей, фильтрами и мониторингом просрочки по связанным РОВ.
+                        Экран контроля релизов с годовой таблицей.
                     </div>
                 </div>
                 <div class="page-meta">
@@ -1062,65 +1054,6 @@
         {% endif %}
 
         <div class="release-monitor-section" id="releaseMonitorSection">
-            <div class="release-monitor-header">
-                <div class="release-monitor-title">
-                    <h2>
-                        <i class="bi bi-table"></i>
-                        Контроль релизов
-                    </h2>
-                    <div class="release-monitor-subtitle">
-                        Годовая таблица релизов с акцентом на просроченные и нефинальные релизы по данным распоряжений о внедрении.
-                    </div>
-                </div>
-                <div class="release-monitor-actions">
-                    <div class="release-monitor-sync-stack">
-                        <div class="release-monitor-meta">
-                            Обновлено: <strong id="releaseMonitorLastUpdated">{{ release_monitor_meta.last_updated or 'еще не загружалось' }}</strong>
-                        </div>
-                        <div class="release-monitor-meta">
-                            Быстрое: <strong id="releaseMonitorLastQuickSync">{{ release_monitor_meta.last_quick_sync or 'еще не выполнялось' }}</strong>
-                        </div>
-                        <div class="release-monitor-meta">
-                            Полное: <strong id="releaseMonitorLastFullSync">{{ release_monitor_meta.last_full_sync or 'еще не выполнялось' }}</strong>
-                        </div>
-                        <div class="release-monitor-meta">
-                            Confluence: <strong id="releaseMonitorLastConfluenceSync">{{ release_monitor_meta.last_confluence_sync or 'еще не выполнялось' }}</strong>
-                        </div>
-                        <div class="release-monitor-meta">
-                            Автопересборка: ежедневно в <strong>{{ '%02d:00'|format(release_monitor_meta.auto_full_refresh_hour or 6) }}</strong>
-                        </div>
-                    </div>
-                    <button id="releaseMonitorConfluenceSyncBtn" class="release-monitor-btn" onclick="syncReleaseMonitorFromConfluence()">
-                        <i class="bi bi-cloud-arrow-down"></i>
-                        Синхронизировать Confluence
-                    </button>
-                    <button id="releaseMonitorQuickRefreshBtn" class="release-monitor-btn quick" onclick="refreshReleaseMonitor('quick')">
-                        <i class="bi bi-lightning-charge"></i>
-                        Быстрое обновление
-                    </button>
-                    <button id="releaseMonitorRefreshBtn" class="release-monitor-btn full" onclick="refreshReleaseMonitor('full')">
-                        <i class="bi bi-arrow-repeat"></i>
-                        Полное обновление
-                    </button>
-                    <button id="releaseMonitorOrderBtn" class="release-monitor-btn" onclick="toggleReleaseOrderMode()">
-                        <i class="bi bi-list-ol"></i>
-                        Изменить порядок
-                    </button>
-                    <button id="releaseMonitorOrderSaveBtn" class="release-monitor-btn full" style="display: none;" onclick="saveReleaseOrder()">
-                        <i class="bi bi-check2-circle"></i>
-                        Сохранить порядок
-                    </button>
-                    <button id="releaseMonitorOrderCancelBtn" class="release-monitor-btn" style="display: none;" onclick="cancelReleaseOrderMode()">
-                        <i class="bi bi-x-circle"></i>
-                        Отменить
-                    </button>
-                    <button id="releaseMonitorToggleBtn" class="release-monitor-btn" onclick="toggleReleaseMonitorExpand()">
-                        <i class="bi bi-arrows-collapse"></i>
-                        Свернуть
-                    </button>
-                </div>
-            </div>
-
             <div class="release-monitor-content">
                 <div class="release-monitor-summary">
                     <div class="release-summary-card">
@@ -1134,7 +1067,7 @@
                         <div class="release-summary-note">РОВ завершился, а статус не финальный</div>
                     </div>
                     <div class="release-summary-card today">
-                        <div class="release-summary-label">Не в финале</div>
+                        <div class="release-summary-label">Не в финальном статусе</div>
                         <div class="release-summary-value" id="releaseSummaryNonFinal">0</div>
                         <div class="release-summary-note">релизы без статусов Установлен на ПРОМ и Отменено</div>
                     </div>
@@ -1157,7 +1090,7 @@
                     </select>
                     <select id="releaseViewFilter" class="release-filter-select" onchange="handleReleaseViewFilter()">
                         <option value="all">Все релизы года</option>
-                        <option value="non_final">Только не в финале</option>
+                        <option value="non_final">Только не в финальном статусе</option>
                         <option value="overdue">Просроченные по РОВ</option>
                         <option value="today">На сегодня</option>
                         <option value="final">Установлен на ПРОМ</option>
@@ -1171,12 +1104,61 @@
                 <div class="release-extra-controls">
                     <div class="release-toggle-card">
                         <div class="release-toggle-copy">
-                            <div class="release-toggle-title">Показывать релизы, по которым не создан РОВ</div>
+                            <div class="release-toggle-title">Показывать релизы по которым не создан РОВ</div>
                         </div>
                         <label class="release-switch" for="releaseNoRovToggle">
                             <input type="checkbox" id="releaseNoRovToggle" onchange="handleReleaseNoRovToggle()">
                             <span class="release-switch-track"></span>
                         </label>
+                    </div>
+                    <div class="release-monitor-button-row">
+                        <div class="release-action-stack compact">
+                            <button id="releaseMonitorOrderBtn" class="release-monitor-btn" onclick="toggleReleaseOrderMode()">
+                                <i class="bi bi-list-ol"></i>
+                                Изменить порядок
+                            </button>
+                            <div class="release-order-actions">
+                                <button id="releaseMonitorOrderSaveBtn" class="release-monitor-btn full" style="display: none;" onclick="saveReleaseOrder()">
+                                    <i class="bi bi-check2-circle"></i>
+                                    Сохранить порядок
+                                </button>
+                                <button id="releaseMonitorOrderCancelBtn" class="release-monitor-btn" style="display: none;" onclick="cancelReleaseOrderMode()">
+                                    <i class="bi bi-x-circle"></i>
+                                    Отменить
+                                </button>
+                            </div>
+                            <div class="release-action-meta">
+                                Обновлено: <strong id="releaseMonitorLastUpdated">{{ release_monitor_meta.last_updated or 'еще не загружалось' }}</strong>
+                            </div>
+                        </div>
+                        <div class="release-action-stack">
+                            <button id="releaseMonitorQuickRefreshBtn" class="release-monitor-btn quick" onclick="refreshReleaseMonitor('quick')">
+                                <i class="bi bi-lightning-charge"></i>
+                                Быстрое обновление
+                            </button>
+                            <div class="release-action-meta">
+                                Быстрое: <strong id="releaseMonitorLastQuickSync">{{ release_monitor_meta.last_quick_sync or 'еще не выполнялось' }}</strong>
+                            </div>
+                        </div>
+                        <div class="release-action-stack">
+                            <button id="releaseMonitorRefreshBtn" class="release-monitor-btn full" onclick="refreshReleaseMonitor('full')">
+                                <i class="bi bi-arrow-repeat"></i>
+                                Полное обновление
+                            </button>
+                            <div class="release-action-meta">
+                                Полное: <strong id="releaseMonitorLastFullSync">{{ release_monitor_meta.last_full_sync or 'еще не выполнялось' }}</strong><br>
+                                Автопересборка: <strong>{{ '%02d:00'|format(release_monitor_meta.auto_full_refresh_hour or 6) }}</strong>
+                            </div>
+                        </div>
+                        <div class="release-action-stack">
+                            <button id="releaseMonitorConfluenceSyncBtn" class="release-monitor-btn confluence" onclick="syncReleaseMonitorFromConfluence()">
+                                <i class="bi bi-cloud-arrow-down"></i>
+                                Синхронизировать Confluence
+                            </button>
+                            <div class="release-action-meta">
+                                Confluence: <strong id="releaseMonitorLastConfluenceSync">{{ release_monitor_meta.last_confluence_sync or 'еще не выполнялось' }}</strong>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -1358,9 +1340,6 @@ function buildReviewerCell(item) {
                         <i class="bi bi-file-earmark-zip"></i>
                         Сформировать документы
                     </button>
-                    <div class="release-doc-note">
-                        Использует данные релиза, РОВ и назначений из этой таблицы.
-                    </div>
                 </div>
             `;
         }
@@ -1745,7 +1724,7 @@ function buildReviewerCell(item) {
                 content += `
                     <div class="release-doc-step-title">Предыдущая версия</div>
                     <div class="release-doc-step-description">
-                        Укажите версию или дистрибутив отката. Это единственное обязательное поле, которого нет в таблице релизов.
+                        Укажите версию дистрибутива отката.
                     </div>
                     <label class="release-doc-field-label" for="releaseDocumentPrevVersion">Предыдущая версия</label>
                     <input id="releaseDocumentPrevVersion" type="text" class="form-control" value="${escapeHtml(state.form.prev_version)}" placeholder="Например: D-01.00.00-285">
@@ -1754,7 +1733,7 @@ function buildReviewerCell(item) {
                 content += `
                     <div class="release-doc-step-title">Ссылка на инструкцию</div>
                     <div class="release-doc-step-description">
-                        Поле обязательно к подтверждению по логике генератора, но ссылку можно оставить пустой, если инструкции пока нет.
+                        Ссылку можно оставить пустой, если инструкции пока нет.
                     </div>
                     <label class="release-doc-field-label" for="releaseDocumentInstructionLink">Ссылка на инструкцию</label>
                     <input id="releaseDocumentInstructionLink" type="text" class="form-control" value="${escapeHtml(state.form.instruction_link)}" placeholder="https://...">
@@ -1764,7 +1743,7 @@ function buildReviewerCell(item) {
                 content += `
                     <div class="release-doc-step-title">Дата релиза</div>
                     <div class="release-doc-step-description">
-                        По умолчанию берем дату начала внедрения из таблицы релизов. При необходимости ее можно скорректировать перед формированием документов.
+                        По умолчанию используется дата начала внедрения из таблицы релизов.
                     </div>
                     <label class="release-doc-field-label" for="releaseDocumentDate">Дата релиза</label>
                     <input id="releaseDocumentDate" type="date" class="form-control" value="${escapeHtml(state.form.date)}">
