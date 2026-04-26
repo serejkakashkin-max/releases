@@ -17,6 +17,7 @@ from services.jira_service import (
     get_release_version, get_issues_from_jira, get_ke_from_release, 
     get_pob_from_release, extract_sm_id_and_summary, get_distributives_info
 )
+from services.release_monitor_service import get_release_monitor_snapshot
 from services.docx_service import replace_keys_in_doc, check_document
 from services.gigachat_service import GIGA_HELPER
 from services.counter_service import increment_counter  # НОВОЕ: импорт счетчика
@@ -97,6 +98,96 @@ def detect_release_template(release_id: str):
             return {"found": False, "candidates": candidates_list}
 
     return {"found": False, "candidates": []}
+
+
+def _safe_int(value):
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+def _get_previous_version_from_monitor_snapshot(row_key: str, release_id: str):
+    snapshot = get_release_monitor_snapshot() or {}
+    items = snapshot.get("items") or []
+    if not items:
+        return ""
+
+    normalized_row_key = (row_key or "").strip()
+    normalized_release_id = (release_id or "").strip()
+    current_item = None
+
+    if normalized_row_key:
+        current_item = next(
+            (item for item in items if str(item.get("row_key") or "").strip() == normalized_row_key),
+            None,
+        )
+
+    if current_item is None and normalized_release_id:
+        current_item = next(
+            (item for item in items if str(item.get("release_key") or "").strip() == normalized_release_id),
+            None,
+        )
+
+    if not current_item:
+        return ""
+
+    current_release_number = _safe_int(current_item.get("release_number"))
+    current_ke_id = (current_item.get("ke_id") or "").strip()
+    current_year = current_item.get("year")
+    current_is_reroll = bool(current_item.get("is_reroll"))
+
+    def _candidate_version(item):
+        return str(item.get("release_version") or "").strip()
+
+    def _candidate_sort_key(item):
+        return (
+            _safe_int(item.get("release_number")) or -1,
+            str(item.get("release_key") or ""),
+            str(item.get("row_key") or ""),
+        )
+
+    numbered_items = [
+        item for item in items
+        if _safe_int(item.get("release_number")) is not None
+    ]
+
+    if current_release_number is not None and current_ke_id:
+        same_ke_current_year_candidates = [
+            item for item in numbered_items
+            if (item.get("ke_id") or "").strip() == current_ke_id
+            and item.get("year") == current_year
+            and _safe_int(item.get("release_number")) is not None
+            and _safe_int(item.get("release_number")) < current_release_number
+            and _candidate_version(item)
+        ]
+        if same_ke_current_year_candidates:
+            return _candidate_version(max(same_ke_current_year_candidates, key=_candidate_sort_key))
+
+        previous_year = _safe_int(current_year)
+        previous_year = previous_year - 1 if previous_year is not None else None
+        same_ke_previous_year_candidates = [
+            item for item in numbered_items
+            if (item.get("ke_id") or "").strip() == current_ke_id
+            and previous_year is not None
+            and _safe_int(item.get("year")) == previous_year
+            and _candidate_version(item)
+        ]
+        if same_ke_previous_year_candidates:
+            return _candidate_version(max(same_ke_previous_year_candidates, key=_candidate_sort_key))
+
+    if current_is_reroll and current_release_number is not None:
+        previous_numbered_candidates = [
+            item for item in numbered_items
+            if item.get("year") == current_year
+            and _safe_int(item.get("release_number")) is not None
+            and _safe_int(item.get("release_number")) < current_release_number
+            and _candidate_version(item)
+        ]
+        if previous_numbered_candidates:
+            return _candidate_version(max(previous_numbered_candidates, key=_candidate_sort_key))
+
+    return ""
 
 
 def _normalize_release_date(raw_date: str):
@@ -212,6 +303,7 @@ def auto_detect():
 def release_monitor_init():
     data = request.get_json(silent=True) or {}
     release_id = (data.get("release_id") or "").strip()
+    row_key = (data.get("row_key") or "").strip()
     if not release_id:
         return jsonify({"success": False, "error": "Не указан номер релиза"}), 400
 
@@ -232,6 +324,7 @@ def release_monitor_init():
         "oplot": (data.get("oplot") or "").strip(),
         "checker": (data.get("checker") or "").strip(),
         "date": (data.get("date") or "").strip(),
+        "prev_version": _get_previous_version_from_monitor_snapshot(row_key, release_id),
     })
 
 

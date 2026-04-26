@@ -1613,6 +1613,7 @@ function buildReviewerCell(item) {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
+                        row_key: item.row_key || '',
                         release_id: item.release_key,
                         ke: item.ke || '',
                         oplot: item.psi_owner || '',
@@ -1627,6 +1628,7 @@ function buildReviewerCell(item) {
 
                 releaseDocumentWizardState.initData = data;
                 releaseDocumentWizardState.form.ke = data.ke || releaseDocumentWizardState.form.ke;
+                releaseDocumentWizardState.form.prev_version = data.prev_version || releaseDocumentWizardState.form.prev_version;
                 if (!data.detection?.found && !(Array.isArray(data.detection?.candidates) && data.detection.candidates.length)) {
                     throw new Error('Не удалось автоопределить шаблон релиза. Для этого релиза используйте основной генератор документов.');
                 }
