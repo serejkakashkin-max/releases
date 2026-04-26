@@ -468,7 +468,7 @@ def _match_oplot_name(raw_name):
     if normalized_raw in exact_map:
         return exact_map[normalized_raw]
 
-    surname_match = re.match(r"^([Р°-СЏС‘a-z-]+)\s+([Р°-СЏС‘a-z])", normalized_raw, re.IGNORECASE)
+    surname_match = re.match(r"^([\u0430-\u044f\u0451a-z-]+)\s+([\u0430-\u044f\u0451a-z])", normalized_raw, re.IGNORECASE)
     if not surname_match:
         return ""
 
@@ -477,7 +477,7 @@ def _match_oplot_name(raw_name):
     candidates = []
     for option in OPLOT_VALUES:
         normalized_option = _normalize_text(option).replace(".", "")
-        option_match = re.match(r"^([Р°-СЏС‘a-z-]+)\s+([Р°-СЏС‘a-z])", normalized_option, re.IGNORECASE)
+        option_match = re.match(r"^([\u0430-\u044f\u0451a-z-]+)\s+([\u0430-\u044f\u0451a-z])", normalized_option, re.IGNORECASE)
         if option_match and option_match.group(1) == surname and option_match.group(2) == first_initial:
             candidates.append(option)
 
@@ -498,18 +498,18 @@ def _parse_confluence_assignment_cell(cell_text):
     for line in lines:
         normalized_line = _normalize_text(line)
 
-        if normalized_line.startswith("РїСЂРѕРІРµСЂСЏРµС‚"):
+        if normalized_line.startswith("\u043f\u0440\u043e\u0432\u0435\u0440\u044f\u0435\u0442"):
             mode = "checker"
             remainder = line.split(":", 1)[1].strip() if ":" in line else ""
-            if remainder and "РѕС‚СЃСѓС‚СЃС‚РІ" not in _normalize_text(remainder):
+            if remainder and "\u043e\u0442\u0441\u0443\u0442\u0441\u0442\u0432" not in _normalize_text(remainder):
                 checker_lines.append(remainder)
             continue
 
-        if normalized_line.startswith("СѓСЃС‚Р°РЅР°РІР»РёРІР°РµС‚"):
+        if normalized_line.startswith("\u0443\u0441\u0442\u0430\u043d\u0430\u0432\u043b\u0438\u0432\u0430\u0435\u0442"):
             mode = "ignore"
             continue
 
-        if "РїСЂРѕРІРµСЂРєРё РѕС‚СЃСѓС‚СЃС‚РІ" in normalized_line:
+        if "\u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0438 \u043e\u0442\u0441\u0443\u0442\u0441\u0442\u0432" in normalized_line:
             checker_lines = []
             mode = "ignore"
             continue
@@ -536,9 +536,9 @@ def _find_release_assignment_table(storage_html):
             continue
         headers = [_normalize_text(cell.get("text", "")) for cell in table[0]]
         if (
-            any("id СЂРµР»РёР·Р°" in header for header in headers)
-            and any("id СЂР°СЃРїРѕСЂСЏР¶РµРЅРёСЏ" in header for header in headers)
-            and any("РѕС‚РІРµС‚СЃС‚РІРµРЅРЅС‹Р№" in header for header in headers)
+            any("id \u0440\u0435\u043b\u0438\u0437\u0430" in header for header in headers)
+            and any("id \u0440\u0430\u0441\u043f\u043e\u0440\u044f\u0436\u0435\u043d\u0438\u044f" in header for header in headers)
+            and any("\u043e\u0442\u0432\u0435\u0442\u0441\u0442\u0432\u0435\u043d\u043d\u044b\u0439" in header for header in headers)
         ):
             return table
     return []
@@ -969,7 +969,13 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
 
         days_overdue = (today - rov_end_date).days if is_overdue else 0
         is_reroll = bool(rov_key and len(linked_rov_records) > 1 and index > 0)
-        row_label = "(\u041f\u0435\u0440\u0435\u0440\u0430\u0441\u043a\u0430\u0442\u043a\u0430)" if is_reroll else "(\u0420\u0435\u043b\u0438\u0437)"
+        is_hotfix = str(release_version or "").upper().startswith("P-")
+        if is_reroll:
+            row_label = "(\u041f\u0435\u0440\u0435\u0440\u0430\u0441\u043a\u0430\u0442\u043a\u0430)"
+        elif is_hotfix:
+            row_label = "(\u0425\u043e\u0442\u0444\u0438\u043a\u0441)"
+        else:
+            row_label = "(\u0420\u0435\u043b\u0438\u0437)"
         row_key = f"{issue.get('key')}::{rov_key or 'no-rov'}"
 
         records.append({
