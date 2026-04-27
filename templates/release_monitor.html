@@ -1159,6 +1159,16 @@
                                 Confluence: <strong id="releaseMonitorLastConfluenceSync">{{ release_monitor_meta.last_confluence_sync or 'еще не выполнялось' }}</strong>
                             </div>
                         </div>
+                        <div class="release-action-stack">
+                            <button id="releaseMonitorDutyUploadBtn" class="release-monitor-btn" onclick="openReleaseDutySchedulePicker()">
+                                <i class="bi bi-calendar-week"></i>
+                                Загрузить графики
+                            </button>
+                            <div class="release-action-meta">
+                                Графики: <strong id="releaseMonitorLastDutyUpload">{{ release_monitor_meta.last_duty_schedule_upload or 'еще не загружались' }}</strong>
+                            </div>
+                            <input type="file" id="releaseMonitorDutyUploadInput" multiple accept=".xlsx,.xlsm" style="display: none;" onchange="handleReleaseDutyScheduleUpload(event)">
+                        </div>
                     </div>
                 </div>
 
@@ -1350,7 +1360,7 @@ function buildReviewerCell(item) {
             }
 
             const rowKey = item.row_key || item.release_key;
-            const groupName = item.waits_for_rov ? 'waiting' : 'numbered';
+            const groupName = item.is_unnumbered ? 'waiting' : 'numbered';
             const draft = releaseOrderDraft && String(releaseOrderDraft.year) === String(getSelectedReleaseYear())
                 ? releaseOrderDraft
                 : null;
@@ -1986,6 +1996,7 @@ function buildReviewerCell(item) {
             const lastQuickSync = document.getElementById('releaseMonitorLastQuickSync');
             const lastFullSync = document.getElementById('releaseMonitorLastFullSync');
             const lastConfluenceSync = document.getElementById('releaseMonitorLastConfluenceSync');
+            const lastDutyUpload = document.getElementById('releaseMonitorLastDutyUpload');
             const yearSelect = document.getElementById('releaseYearFilter');
 
             releaseMonitorItems = Array.isArray(items) ? items : [];
@@ -2010,6 +2021,10 @@ function buildReviewerCell(item) {
             }
             if (lastConfluenceSync) {
                 lastConfluenceSync.textContent = meta?.last_confluence_sync || 'еще не выполнялось';
+            }
+
+            if (lastDutyUpload) {
+                lastDutyUpload.textContent = meta?.last_duty_schedule_upload || 'еще не загружались';
             }
 
             const noRovToggle = document.getElementById('releaseNoRovToggle');
@@ -2054,8 +2069,8 @@ function buildReviewerCell(item) {
         function buildReleaseOrderDraft(yearItems) {
             return {
                 year: getSelectedReleaseYear(),
-                waiting: yearItems.filter(item => item.waits_for_rov).map(item => item.row_key || item.release_key),
-                numbered: yearItems.filter(item => !item.waits_for_rov).map(item => item.row_key || item.release_key),
+                waiting: yearItems.filter(item => item.is_unnumbered).map(item => item.row_key || item.release_key),
+                numbered: yearItems.filter(item => !item.is_unnumbered).map(item => item.row_key || item.release_key),
             };
         }
 
@@ -2065,8 +2080,8 @@ function buildReviewerCell(item) {
             }
 
             const splitItems = {
-                waiting: yearItems.filter(item => item.waits_for_rov),
-                numbered: yearItems.filter(item => !item.waits_for_rov),
+                waiting: yearItems.filter(item => item.is_unnumbered),
+                numbered: yearItems.filter(item => !item.is_unnumbered),
             };
 
             return ['waiting', 'numbered'].flatMap(groupName => {
@@ -2395,7 +2410,7 @@ function buildReviewerCell(item) {
         }
 
         function setReleaseRefreshButtonsLoading(isLoading) {
-            ['releaseMonitorQuickRefreshBtn', 'releaseMonitorRefreshBtn', 'releaseMonitorConfluenceSyncBtn'].forEach(id => {
+            ['releaseMonitorQuickRefreshBtn', 'releaseMonitorRefreshBtn', 'releaseMonitorConfluenceSyncBtn', 'releaseMonitorDutyUploadBtn'].forEach(id => {
                 const btn = document.getElementById(id);
                 if (!btn) {
                     return;
@@ -2403,6 +2418,59 @@ function buildReviewerCell(item) {
                 btn.disabled = isLoading;
                 btn.classList.toggle('spinning', isLoading && id === 'releaseMonitorRefreshBtn');
             });
+        }
+
+        function openReleaseDutySchedulePicker() {
+            const input = document.getElementById('releaseMonitorDutyUploadInput');
+            if (!input) {
+                return;
+            }
+            input.value = '';
+            input.click();
+        }
+
+        async function handleReleaseDutyScheduleUpload(event) {
+            const input = event?.target;
+            const files = Array.from(input?.files || []);
+            if (!files.length) {
+                return;
+            }
+
+            const formData = new FormData();
+            files.forEach(file => formData.append('files', file));
+            setReleaseRefreshButtonsLoading(true);
+
+            try {
+                const response = await fetch(BASE_PATH + '/dashboard/release-monitor/duty-schedules/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Не удалось загрузить графики дежурств');
+                }
+
+                renderReleaseMonitor(data.release_monitor || [], data.release_monitor_meta || {});
+
+                const parsedMonths = (data.parsed_months || []).join(', ');
+                const warnings = Array.isArray(data.warnings) ? data.warnings.filter(Boolean) : [];
+                let message = `Графики загружены. Автопроставлено дежурных: ${data.applied_count || 0}.`;
+                if (parsedMonths) {
+                    message += ` Месяцы: ${parsedMonths}.`;
+                }
+                if (warnings.length) {
+                    message += `\n\nПредупреждения:\n- ${warnings.join('\n- ')}`;
+                }
+                alert(message);
+            } catch (error) {
+                console.error('Duty schedule upload error:', error);
+                alert('Ошибка загрузки графиков дежурств: ' + error.message);
+            } finally {
+                if (input) {
+                    input.value = '';
+                }
+                setReleaseRefreshButtonsLoading(false);
+            }
         }
 
         async function syncReleaseMonitorFromConfluence() {
@@ -2530,7 +2598,7 @@ function buildReviewerCell(item) {
             const rawYearItems = getYearFilteredReleaseItems(releaseMonitorItems);
             const yearItems = applyReleaseOrderDraft(rawYearItems);
             const filteredItems = yearItems.filter(item => {
-                const matchesRovVisibility = showReleaseRowsWithoutRov || Boolean(item.rov_key);
+                const matchesRovVisibility = showReleaseRowsWithoutRov || !item.is_unnumbered;
                 const matchesView = (
                     currentReleaseViewFilter === 'all' ||
                     (currentReleaseViewFilter === 'non_final' && item.is_non_final) ||

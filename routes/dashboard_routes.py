@@ -14,6 +14,7 @@ from services.release_monitor_service import (
     start_release_monitor_refresh,
     get_release_monitor_refresh_status,
     get_release_monitor_reviewer_options,
+    upload_release_monitor_duty_schedules,
     sync_release_monitor_assignments_from_confluence,
     save_release_monitor_manual_order,
     set_release_monitor_assignment,
@@ -285,6 +286,29 @@ def sync_release_monitor_confluence():
         })
     except Exception as e:
         logging.error(f"Ошибка синхронизации релизов с Confluence: {e}")
+        return jsonify({"success": False, "error": str(e)}), 400
+
+
+@dashboard_bp.route('/dashboard/release-monitor/duty-schedules/upload', methods=['POST'])
+def upload_release_monitor_duty_files():
+    """Загружает Excel-графики дежурств и автопроставляет дежурного в пустые релизы."""
+    try:
+        uploaded_files = request.files.getlist('files')
+        result = upload_release_monitor_duty_schedules(uploaded_files)
+        payload = result.get("data", {})
+        return jsonify({
+            "success": True,
+            "message": f"Загружено графиков: {len(result.get('uploaded_files', []))}",
+            "uploaded_files": result.get("uploaded_files", []),
+            "parsed_months": result.get("parsed_months", []),
+            "warnings": result.get("warnings", []),
+            "applied_count": result.get("applied_count", 0),
+            "release_monitor": payload.get("items", []),
+            "release_monitor_summary": payload.get("summary", {}),
+            "release_monitor_meta": payload.get("meta", {}),
+        })
+    except Exception as e:
+        logging.error(f"Ошибка загрузки графиков дежурств: {e}")
         return jsonify({"success": False, "error": str(e)}), 400
 
 

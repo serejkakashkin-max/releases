@@ -7,9 +7,11 @@ import time
 from collections import defaultdict
 from datetime import datetime, timedelta
 from html.parser import HTMLParser
+from io import BytesIO
 from pathlib import Path
 
 import requests
+from openpyxl import load_workbook
 
 from config import DASHBOARD_CACHE_TTL, OPLOT_VALUES, TOKENS
 from services.jira_service import get_jira_domain_and_token
@@ -35,7 +37,23 @@ SNAPSHOT_DIR = Path(__file__).resolve().parent.parent / "cache"
 SNAPSHOT_FILE = SNAPSHOT_DIR / "release_monitor_snapshot.json"
 REVIEWERS_FILE = SNAPSHOT_DIR / "release_monitor_reviewers.json"
 ORDER_FILE = SNAPSHOT_DIR / "release_monitor_order.json"
+DUTY_SCHEDULE_FILE = SNAPSHOT_DIR / "release_monitor_duty_schedule.json"
 CONFLUENCE_DELTA_BASE = "https://confluence.delta.sbrf.ru"
+
+MONTH_NAME_MAP = {
+    "\u044f\u043d\u0432\u0430\u0440": 1,
+    "\u0444\u0435\u0432\u0440\u0430\u043b": 2,
+    "\u043c\u0430\u0440\u0442": 3,
+    "\u0430\u043f\u0440\u0435\u043b": 4,
+    "\u043c\u0430\u0439": 5,
+    "\u0438\u044e\u043d": 6,
+    "\u0438\u044e\u043b": 7,
+    "\u0430\u0432\u0433\u0443\u0441\u0442": 8,
+    "\u0441\u0435\u043d\u0442\u044f\u0431": 9,
+    "\u043e\u043a\u0442\u044f\u0431": 10,
+    "\u043d\u043e\u044f\u0431": 11,
+    "\u0434\u0435\u043a\u0430\u0431": 12,
+}
 
 FIELD_FALLBACKS = {
     "planned_prom_start": None,
@@ -146,6 +164,7 @@ def _build_empty_release_monitor_payload():
             "last_full_sync": None,
             "last_quick_sync": None,
             "last_confluence_sync": None,
+            "last_duty_schedule_upload": None,
             "last_sync_mode": None,
             "quick_refresh_days": QUICK_REFRESH_DAYS,
             "auto_full_refresh_hour": AUTO_FULL_REFRESH_HOUR,
@@ -329,6 +348,304 @@ def _save_manual_order(order_payload):
         logging.warning("Release monitor: failed to save manual order: %s", exc)
 
 
+def _build_empty_duty_schedule_payload():
+    return {
+        "dates": {},
+        "months": [],
+        "files": [],
+        "last_upload": None,
+    }
+
+
+def _load_duty_schedule_payload():
+    if not DUTY_SCHEDULE_FILE.exists():
+        return _build_empty_duty_schedule_payload()
+
+    try:
+        payload = json.loads(DUTY_SCHEDULE_FILE.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            return _build_empty_duty_schedule_payload()
+
+        dates = {
+            str(date_key).strip(): str(reviewer).strip()
+            for date_key, reviewer in (payload.get("dates") or {}).items()
+            if str(date_key).strip() and str(reviewer).strip()
+        }
+        months = [
+            str(month_label).strip()
+            for month_label in (payload.get("months") or [])
+            if str(month_label).strip()
+        ]
+        files = [
+            dict(file_info)
+            for file_info in (payload.get("files") or [])
+            if isinstance(file_info, dict)
+        ]
+        return {
+            "dates": dates,
+            "months": list(dict.fromkeys(months)),
+            "files": files,
+            "last_upload": str(payload.get("last_upload") or "").strip() or None,
+        }
+    except Exception as exc:
+        logging.warning("Release monitor: failed to load duty schedules: %s", exc)
+        return _build_empty_duty_schedule_payload()
+
+
+def _save_duty_schedule_payload(payload):
+    try:
+        _ensure_snapshot_dir()
+        DUTY_SCHEDULE_FILE.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        logging.warning("Release monitor: failed to save duty schedules: %s", exc)
+
+
+def _parse_release_monitor_date(value):
+    if not value:
+        return None
+
+    parsed = _parse_jira_date(str(value))
+    if parsed:
+        return parsed
+
+    for fmt in ("%d.%m.%Y", "%d.%m.%Y %H:%M", "%d.%m.%Y %H:%M:%S"):
+        try:
+            return datetime.strptime(str(value), fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _extract_schedule_month_year(sheet_title):
+    normalized_title = _normalize_text(sheet_title)
+    year_match = re.search(r"(20\d{2})", normalized_title)
+    if not year_match:
+        return None, None
+
+    month = None
+    for month_token, month_number in MONTH_NAME_MAP.items():
+        if month_token in normalized_title:
+            month = month_number
+            break
+
+    if month is None:
+        return None, None
+
+    return month, int(year_match.group(1))
+
+
+def _coerce_schedule_day(value):
+    if isinstance(value, int):
+        return value if 1 <= value <= 31 else None
+    if isinstance(value, float) and value.is_integer():
+        day_value = int(value)
+        return day_value if 1 <= day_value <= 31 else None
+
+    text_value = str(value or "").strip()
+    if text_value.isdigit():
+        day_value = int(text_value)
+        return day_value if 1 <= day_value <= 31 else None
+    return None
+
+
+def _detect_schedule_day_columns(worksheet):
+    max_scan_row = min(12, worksheet.max_row)
+    max_scan_col = min(50, worksheet.max_column)
+
+    for row_index in range(1, max_scan_row + 1):
+        detected = []
+        for col_index in range(2, max_scan_col + 1):
+            day_value = _coerce_schedule_day(worksheet.cell(row_index, col_index).value)
+            if day_value is not None:
+                detected.append((col_index, day_value))
+
+        if len(detected) >= 20:
+            return row_index, detected
+
+    return None, []
+
+
+def _parse_duty_schedule_sheet(worksheet, filename):
+    month, year = _extract_schedule_month_year(worksheet.title)
+    if not month or not year:
+        return {"dates": {}, "months": [], "warnings": []}
+
+    day_row_index, day_columns = _detect_schedule_day_columns(worksheet)
+    if not day_row_index or not day_columns:
+        return {"dates": {}, "months": [], "warnings": []}
+
+    daily_candidates = defaultdict(list)
+    max_scan_row = min(worksheet.max_row, day_row_index + 40)
+
+    for row_index in range(day_row_index + 1, max_scan_row + 1):
+        raw_name = str(worksheet.cell(row_index, 1).value or "").strip()
+        if not raw_name:
+            continue
+
+        matched_name = _match_oplot_name(raw_name)
+        for col_index, day_number in day_columns:
+            marker = _normalize_text(worksheet.cell(row_index, col_index).value)
+            if marker != "\u0432\u0434":
+                continue
+
+            if not matched_name:
+                daily_candidates[day_number].append({"name": raw_name, "matched": ""})
+            else:
+                daily_candidates[day_number].append({"name": raw_name, "matched": matched_name})
+
+    parsed_dates = {}
+    warnings = []
+    month_label = f"{year:04d}-{month:02d}"
+
+    for day_number, entries in daily_candidates.items():
+        try:
+            day_date = datetime(year, month, day_number).date()
+        except ValueError:
+            continue
+
+        if day_date.weekday() >= 5:
+            continue
+
+        matched_names = [entry["matched"] for entry in entries if entry.get("matched")]
+        unique_names = list(dict.fromkeys(matched_names))
+
+        if len(unique_names) == 1:
+            parsed_dates[day_date.isoformat()] = unique_names[0]
+            continue
+
+        if not unique_names:
+            source_names = ", ".join(entry.get("name", "") for entry in entries if entry.get("name"))
+            warnings.append(
+                f"{worksheet.title}: не удалось сопоставить ВД за {day_date.strftime('%d.%m.%Y')} ({source_names})"
+            )
+        else:
+            warnings.append(
+                f"{worksheet.title}: найдено несколько ВД за {day_date.strftime('%d.%m.%Y')} ({', '.join(unique_names)})"
+            )
+
+    if not parsed_dates:
+        return {"dates": {}, "months": [], "warnings": warnings}
+
+    return {
+        "dates": parsed_dates,
+        "months": [month_label],
+        "warnings": warnings,
+    }
+
+
+def _parse_duty_schedule_workbook(file_bytes, filename):
+    workbook = load_workbook(BytesIO(file_bytes), data_only=True)
+    merged_dates = {}
+    parsed_months = []
+    warnings = []
+
+    for worksheet in workbook.worksheets:
+        parsed_sheet = _parse_duty_schedule_sheet(worksheet, filename)
+        merged_dates.update(parsed_sheet.get("dates", {}))
+        parsed_months.extend(parsed_sheet.get("months", []))
+        warnings.extend(parsed_sheet.get("warnings", []))
+
+    if not merged_dates:
+        raise ValueError(f"\u0412 \u0444\u0430\u0439\u043b\u0435 {filename} \u043d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u043d\u0430\u0439\u0442\u0438 \u043b\u0438\u0441\u0442\u044b \u0441 \u0433\u0440\u0430\u0444\u0438\u043a\u043e\u043c \u0434\u0435\u0436\u0443\u0440\u0441\u0442\u0432")
+
+    return {
+        "dates": merged_dates,
+        "months": list(dict.fromkeys(parsed_months)),
+        "warnings": warnings,
+        "files": [{
+            "name": filename,
+            "uploaded_at": _format_timestamp(),
+            "months": list(dict.fromkeys(parsed_months)),
+        }],
+    }
+
+
+def _merge_duty_schedule_payload(base_payload, incoming_payload):
+    merged = _build_empty_duty_schedule_payload()
+    merged["dates"] = dict((base_payload or {}).get("dates") or {})
+    merged["dates"].update((incoming_payload or {}).get("dates") or {})
+    merged["months"] = list(
+        dict.fromkeys(
+            list((base_payload or {}).get("months") or [])
+            + list((incoming_payload or {}).get("months") or [])
+        )
+    )
+    merged["files"] = list((base_payload or {}).get("files") or []) + list((incoming_payload or {}).get("files") or [])
+    merged["last_upload"] = (
+        (incoming_payload or {}).get("last_upload")
+        or (base_payload or {}).get("last_upload")
+    )
+    return merged
+
+
+def _apply_duty_schedule_assignments(items, persist=False):
+    assignments = _load_reviewer_assignments()
+    duty_payload = _load_duty_schedule_payload()
+    duty_dates = duty_payload.get("dates") or {}
+    changed = False
+    applied_count = 0
+
+    for item in items:
+        if str(item.get("psi_owner") or "").strip():
+            continue
+
+        deployment_dt = _parse_release_monitor_date(item.get("deployment_start_iso") or item.get("deployment_start"))
+        if not deployment_dt:
+            continue
+
+        deployment_date = deployment_dt.date()
+        if deployment_date.weekday() >= 5:
+            continue
+
+        reviewer_name = str(duty_dates.get(deployment_date.isoformat()) or "").strip()
+        if not reviewer_name:
+            continue
+
+        if reviewer_name not in OPLOT_VALUES:
+            reviewer_name = _match_oplot_name(reviewer_name)
+        if not reviewer_name:
+            continue
+
+        assignment_key = _get_assignment_key_for_item(item)
+        current_assignment = dict(assignments.get(assignment_key) or {})
+        if str(current_assignment.get("reviewer") or "").strip():
+            continue
+
+        current_assignment["reviewer"] = reviewer_name
+        current_assignment["checker"] = str(current_assignment.get("checker", "") or "").strip()
+        raw_responsibles = current_assignment.get("responsibles") or []
+        if not isinstance(raw_responsibles, list):
+            raw_responsibles = [raw_responsibles] if raw_responsibles else []
+        current_assignment["responsibles"] = [
+            str(value or "").strip()
+            for value in raw_responsibles
+            if str(value or "").strip()
+        ]
+        assignments[assignment_key] = current_assignment
+
+        item["psi_owner"] = reviewer_name
+        item["psi_checker"] = current_assignment["checker"]
+        item["psi_responsibles"] = list(current_assignment["responsibles"])
+        changed = True
+        applied_count += 1
+
+    if changed and persist:
+        _save_reviewer_assignments(assignments)
+
+    return applied_count
+
+
+def _append_duty_schedule_meta(meta):
+    duty_payload = _load_duty_schedule_payload()
+    meta["last_duty_schedule_upload"] = duty_payload.get("last_upload")
+    meta["duty_schedule_months"] = list(duty_payload.get("months") or [])
+    meta["duty_schedule_files"] = list(duty_payload.get("files") or [])
+    return meta
+
+
 def _apply_reviewer_assignments(items):
     assignments = _load_reviewer_assignments()
     for item in items:
@@ -354,7 +671,7 @@ def _get_assignment_key_for_item(item):
 
 
 def _normalize_text(value):
-    return (value or "").strip().lower().replace("С‘", "Рµ")
+    return str(value or "").strip().lower().replace("С‘", "Рµ")
 
 
 def _parse_jira_date(value):
@@ -830,12 +1147,25 @@ def _extract_release_io_keys(issue):
     keys = []
     for link in issue.get("fields", {}).get("issuelinks", []):
         link_type = link.get("type", {})
-        inward_issue = link.get("inwardIssue")
-        if not inward_issue:
+        linked_issues = []
+        if link.get("inwardIssue"):
+            linked_issues.append(link.get("inwardIssue"))
+        if link.get("outwardIssue"):
+            linked_issues.append(link.get("outwardIssue"))
+
+        link_name = str(link_type.get("name") or "")
+        inward_name = str(link_type.get("inward") or "")
+        outward_name = str(link_type.get("outward") or "")
+        is_release_io = (
+            link_name == "ReleaseIO"
+            or "Introduction Order" in inward_name
+            or "Introduction Order" in outward_name
+        )
+        if not is_release_io:
             continue
 
-        if link_type.get("name") == "ReleaseIO" or link_type.get("inward") == "Introduction Order":
-            key = inward_issue.get("key")
+        for linked_issue in linked_issues:
+            key = linked_issue.get("key")
             if key:
                 keys.append(key)
 
@@ -849,6 +1179,22 @@ def _extract_release_io_keys(issue):
 def _extract_release_io_key(issue):
     keys = _extract_release_io_keys(issue)
     return keys[-1] if keys else ""
+
+
+def _sort_rov_records_for_release(rov_records):
+    def _record_sort_key(rov_record):
+        if not isinstance(rov_record, dict):
+            return (datetime.min, datetime.min, "")
+
+        start_dt = rov_record.get("start_dt") or datetime.min
+        end_dt = rov_record.get("end_dt") or datetime.min
+        issue_key = str(rov_record.get("key") or "")
+        return (start_dt, end_dt, issue_key)
+
+    return sorted(
+        [record for record in (rov_records or []) if isinstance(record, dict)],
+        key=_record_sort_key,
+    )
 
 
 def _clean_release_summary(summary):
@@ -938,10 +1284,13 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
     if not release_ke_line:
         release_ke_line = (system_info_text or "").strip()
     linked_rov_keys = _extract_release_io_keys(issue)
-    linked_rov_records = [rov_map.get(key, {}) for key in linked_rov_keys if rov_map.get(key)]
+    linked_rov_records = _sort_rov_records_for_release(
+        [rov_map.get(key, {}) for key in linked_rov_keys if rov_map.get(key)]
+    )
     row_variants = linked_rov_records or [{}]
     records = []
     today = datetime.now().date()
+    latest_rov_index = len(linked_rov_records) - 1 if linked_rov_records else -1
 
     for index, rov_data in enumerate(row_variants):
         rov_key = rov_data.get("key", "")
@@ -953,13 +1302,23 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
             continue
 
         rov_end_date = rov_end.date() if rov_end else None
-        is_overdue = bool(rov_end_date and rov_end_date < today and is_non_final)
-        is_today = bool(rov_end_date and rov_end_date == today and is_non_final)
+        is_reroll = bool(rov_key and len(linked_rov_records) > 1 and index > 0)
+        is_latest_rov = bool(rov_key and index == latest_rov_index)
+        row_is_cancelled = is_cancelled
+        if is_reroll and is_final:
+            row_is_final = not is_latest_rov or bool(rov_end_date and rov_end_date < today)
+        else:
+            row_is_final = is_final
+        row_is_non_final = not row_is_final and not row_is_cancelled
+        row_is_pre_final = is_pre_final and not row_is_final
 
-        if is_final:
-            row_state = "final"
-        elif is_cancelled:
+        is_overdue = bool(rov_end_date and rov_end_date < today and row_is_non_final)
+        is_today = bool(rov_end_date and rov_end_date == today and row_is_non_final)
+
+        if row_is_cancelled:
             row_state = "cancelled"
+        elif row_is_final:
+            row_state = "final"
         elif is_overdue:
             row_state = "overdue"
         elif is_today:
@@ -968,7 +1327,6 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
             row_state = "planned"
 
         days_overdue = (today - rov_end_date).days if is_overdue else 0
-        is_reroll = bool(rov_key and len(linked_rov_records) > 1 and index > 0)
         is_hotfix = str(release_version or "").upper().startswith("P-")
         if is_reroll:
             row_label = "(\u041f\u0435\u0440\u0435\u0440\u0430\u0441\u043a\u0430\u0442\u043a\u0430)"
@@ -977,6 +1335,8 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
         else:
             row_label = "(\u0420\u0435\u043b\u0438\u0437)"
         row_key = f"{issue.get('key')}::{rov_key or 'no-rov'}"
+
+        is_unnumbered = (not rov_key and not row_is_cancelled) or (row_is_cancelled and not ke_distributive)
 
         records.append({
             "row_key": row_key,
@@ -1008,14 +1368,15 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
             "psi_responsibles": [],
             "psi_checker": "",
             "row_state": row_state,
-            "is_final": is_final,
-            "is_cancelled": is_cancelled,
-            "is_non_final": is_non_final,
-            "is_pre_final": is_pre_final,
+            "is_final": row_is_final,
+            "is_cancelled": row_is_cancelled,
+            "is_non_final": row_is_non_final,
+            "is_pre_final": row_is_pre_final,
             "is_overdue": is_overdue,
             "is_today": is_today,
             "days_overdue": days_overdue,
             "waits_for_rov": not rov_key and not is_cancelled,
+            "is_unnumbered": is_unnumbered,
             "source_prefix": prefix,
             "system_name": _detect_system(prefix, summary, ke_name, system_info_text),
             "sort_date": _pick_release_sort_dt(rov_start, rov_end, planned_prom_start, planned_prom_end).isoformat() if _pick_release_sort_dt(rov_start, rov_end, planned_prom_start, planned_prom_end) else "",
@@ -1053,20 +1414,24 @@ def _apply_group_manual_order(year, group_name, items):
         for item in items
         if str(item.get("row_key") or "").strip()
     }
+    present_manual_keys = [row_key for row_key in ordered_row_keys if row_key in item_by_key]
+    if not present_manual_keys:
+        return items
 
-    ordered_items = []
-    used_keys = set()
-    for row_key in ordered_row_keys:
-        item = item_by_key.get(row_key)
-        if item:
-            ordered_items.append(item)
-            used_keys.add(row_key)
+    manual_key_set = set(present_manual_keys)
+    manual_slot_indexes = [
+        index
+        for index, item in enumerate(items)
+        if str(item.get("row_key") or "").strip() in manual_key_set
+    ]
+    if not manual_slot_indexes:
+        return items
 
-    ordered_items.extend(
-        item for item in items
-        if str(item.get("row_key") or "").strip() not in used_keys
-    )
-    return ordered_items
+    ordered_manual_items = [item_by_key[row_key] for row_key in present_manual_keys]
+    merged_items = list(items)
+    for slot_index, manual_item in zip(manual_slot_indexes, ordered_manual_items):
+        merged_items[slot_index] = manual_item
+    return merged_items
 
 
 def _sort_and_number_records(records):
@@ -1075,8 +1440,8 @@ def _sort_and_number_records(records):
         records_by_year[item["year"]].append(item)
 
     for year_items in records_by_year.values():
-        numbered_items = [item for item in year_items if not item.get("waits_for_rov")]
-        waiting_items = [item for item in year_items if item.get("waits_for_rov")]
+        numbered_items = [item for item in year_items if not item.get("is_unnumbered")]
+        waiting_items = [item for item in year_items if item.get("is_unnumbered")]
 
         numbered_items.sort(
             key=lambda item: (
@@ -1111,7 +1476,7 @@ def _sort_and_number_records(records):
     records.sort(
         key=lambda item: (
             -item.get("year", 0),
-            0 if item.get("waits_for_rov") else 1,
+            0 if item.get("is_unnumbered") else 1,
             item.get("_group_rank", 0),
         )
     )
@@ -1250,6 +1615,7 @@ def _compose_release_payload(all_records, mode):
     current_year = datetime.now().year
     previous_year = current_year - 1
     _apply_reviewer_assignments(all_records)
+    _apply_duty_schedule_assignments(all_records, persist=True)
     _sort_and_number_records(all_records)
     payload = {
         "items": all_records,
@@ -1265,11 +1631,13 @@ def _compose_release_payload(all_records, mode):
             "last_updated": _format_timestamp(),
             "last_sync_mode": mode,
             "last_confluence_sync": None,
+            "last_duty_schedule_upload": None,
             "quick_refresh_days": QUICK_REFRESH_DAYS,
             "auto_full_refresh_hour": AUTO_FULL_REFRESH_HOUR,
             "is_cached": True,
         },
     }
+    payload["meta"] = _append_duty_schedule_meta(payload["meta"])
     return payload
 
 
@@ -1787,12 +2155,13 @@ def _normalize_release_payload(payload):
 
     normalized_items = [dict(item) for item in (payload.get("items") or []) if isinstance(item, dict)]
     _apply_reviewer_assignments(normalized_items)
+    _apply_duty_schedule_assignments(normalized_items, persist=True)
     _sort_and_number_records(normalized_items)
 
     return {
         "items": normalized_items,
         "summary": dict(payload.get("summary", {})),
-        "meta": dict(payload.get("meta", {})),
+        "meta": _append_duty_schedule_meta(dict(payload.get("meta", {}))),
     }
 
 
@@ -1835,6 +2204,70 @@ def get_release_monitor_snapshot():
 
 def get_release_monitor_reviewer_options():
     return list(OPLOT_VALUES)
+
+
+def upload_release_monitor_duty_schedules(uploaded_files):
+    global _cached_data, _last_cache_update
+
+    files = [file_storage for file_storage in (uploaded_files or []) if getattr(file_storage, "filename", "")]
+    if not files:
+        raise ValueError("\u041d\u0435 \u0432\u044b\u0431\u0440\u0430\u043d\u044b \u0444\u0430\u0439\u043b\u044b \u0433\u0440\u0430\u0444\u0438\u043a\u0430")
+
+    existing_payload = _load_duty_schedule_payload()
+    merged_payload = dict(existing_payload)
+    uploaded_names = []
+    parsed_months = []
+    warnings = []
+
+    for file_storage in files:
+        filename = str(getattr(file_storage, "filename", "") or "").strip()
+        if not filename:
+            continue
+
+        file_bytes = file_storage.read()
+        if not file_bytes:
+            continue
+
+        parsed_payload = _parse_duty_schedule_workbook(file_bytes, filename)
+        parsed_payload["last_upload"] = _format_timestamp()
+        merged_payload = _merge_duty_schedule_payload(merged_payload, parsed_payload)
+        uploaded_names.append(filename)
+        parsed_months.extend(parsed_payload.get("months", []))
+        warnings.extend(parsed_payload.get("warnings", []))
+
+    if not uploaded_names:
+        raise ValueError("\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u043f\u0440\u043e\u0447\u0438\u0442\u0430\u0442\u044c \u043d\u0438 \u043e\u0434\u0438\u043d \u0444\u0430\u0439\u043b \u0433\u0440\u0430\u0444\u0438\u043a\u0430")
+
+    merged_payload["last_upload"] = _format_timestamp()
+    _save_duty_schedule_payload(merged_payload)
+
+    with _cache_lock:
+        _ensure_scheduler_started()
+        if _cached_data is None:
+            disk_payload = _load_snapshot_from_disk()
+            if disk_payload is not None:
+                _cached_data = disk_payload
+                _last_cache_update = _get_snapshot_mtime() or time.time()
+
+        applied_count = 0
+        if _cached_data is not None:
+            items = _cached_data.get("items") or []
+            _apply_reviewer_assignments(items)
+            applied_count = _apply_duty_schedule_assignments(items, persist=True)
+            _sort_and_number_records(items)
+            meta = _cached_data.setdefault("meta", {})
+            meta["last_duty_schedule_upload"] = merged_payload.get("last_upload")
+            _save_snapshot_to_disk(_cached_data)
+
+        payload = _normalize_release_payload(_get_cached_payload_copy() or _build_empty_release_monitor_payload())
+
+    return {
+        "uploaded_files": uploaded_names,
+        "parsed_months": list(dict.fromkeys(parsed_months)),
+        "warnings": warnings,
+        "applied_count": applied_count,
+        "data": payload,
+    }
 
 
 def sync_release_monitor_assignments_from_confluence(year):
