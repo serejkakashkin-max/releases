@@ -772,6 +772,45 @@
             cursor: wait;
         }
 
+        .release-row-edit-btn {
+            margin-top: 0.45rem;
+            width: 100%;
+            border: 1px solid var(--border-color);
+            background: transparent;
+            color: var(--text-secondary);
+            border-radius: 10px;
+            padding: 0.48rem 0.7rem;
+            font-size: 0.78rem;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.4rem;
+            transition: all 0.2s ease;
+        }
+
+        .release-row-edit-btn:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+
+        .release-date-cell {
+            min-width: 118px;
+        }
+
+        .release-date-badge {
+            display: inline-flex;
+            align-items: center;
+            margin-top: 0.32rem;
+            padding: 0.18rem 0.45rem;
+            border-radius: 999px;
+            background: rgba(13, 110, 253, 0.12);
+            color: var(--primary);
+            font-size: 0.68rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+        }
+
         .release-doc-note {
             display: none;
         }
@@ -1229,6 +1268,48 @@
         </div>
     </div>
 
+    <div class="modal fade release-doc-modal" id="releaseDateOverrideModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title">Корректировка даты внедрения</h5>
+                        <div class="release-doc-subtitle" id="releaseDateOverrideSubtitle"></div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="release-doc-summary mb-3">
+                        <div class="release-doc-summary-card">
+                            <span class="release-doc-summary-label">Дата начала из РОВ</span>
+                            <div class="release-doc-summary-value" id="releaseDateOverrideBaseStart">-</div>
+                        </div>
+                        <div class="release-doc-summary-card">
+                            <span class="release-doc-summary-label">Дата окончания из РОВ</span>
+                            <div class="release-doc-summary-value" id="releaseDateOverrideBaseEnd">-</div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Новая дата начала</label>
+                        <input type="date" class="form-control" id="releaseDateOverrideStartInput">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Новая дата окончания</label>
+                        <input type="date" class="form-control" id="releaseDateOverrideEndInput">
+                    </div>
+                    <div class="release-doc-field-help">
+                        Если дата в РОВ позже, после обновления будет использована она. Если в РОВ дата старее, останется ручная корректировка.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" onclick="resetReleaseDateOverride()">Сбросить корректировку</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-primary" id="releaseDateOverrideSaveBtn" onclick="saveReleaseDateOverride()">Сохранить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         let currentReleaseYearFilter = String(new Date().getFullYear());
         let currentReleaseViewFilter = 'all';
@@ -1243,6 +1324,8 @@
         const RELEASE_REVIEWER_OPTIONS = {{ reviewer_options | tojson | safe }};
         let releaseDocumentModalInstance = null;
         let releaseDocumentWizardState = null;
+        let releaseDateOverrideModalInstance = null;
+        let releaseDateOverrideState = null;
 
         function escapeHtml(value) {
             return String(value || '')
@@ -1350,8 +1433,27 @@ function buildReviewerCell(item) {
                         <i class="bi bi-file-earmark-zip"></i>
                         Сформировать документы
                     </button>
+                    <button class="release-row-edit-btn" onclick="openReleaseDateOverrideModal('${escapeHtml(item.row_key || item.release_key)}')">
+                        <i class="bi bi-calendar2-range"></i>
+                        Скорректировать дату
+                    </button>
                 </div>
             `;
+        }
+
+        function buildReleaseDateCell(item, kind) {
+            const value = kind === 'start' ? item.deployment_start : item.deployment_end;
+            const manualValue = kind === 'start' ? item.manual_deployment_start : item.manual_deployment_end;
+            const isManual = Boolean(manualValue && value === manualValue);
+            const mainValue = value
+                ? escapeHtml(value)
+                : '<span style="color: var(--text-muted);">-</span>';
+
+            if (!isManual) {
+                return mainValue;
+            }
+
+            return `${mainValue}<div class="release-date-badge">ручная дата</div>`;
         }
 
         function buildReleaseOrderControls(item) {
@@ -1413,8 +1515,8 @@ function buildReviewerCell(item) {
                     <td>${item.ke ? escapeHtml(item.ke) : '<span style="color: var(--text-muted);">-</span>'}</td>
                     <td>${buildReleaseLinkCell(item.release_url, item.release_key)}</td>
                     <td>${buildReleaseLinkCell(item.rov_url, item.rov_key)}</td>
-                    <td>${item.deployment_start ? escapeHtml(item.deployment_start) : '<span style="color: var(--text-muted);">-</span>'}</td>
-                    <td>${item.deployment_end ? escapeHtml(item.deployment_end) : '<span style="color: var(--text-muted);">-</span>'}</td>
+                    <td class="release-date-cell">${buildReleaseDateCell(item, 'start')}</td>
+                    <td class="release-date-cell">${buildReleaseDateCell(item, 'end')}</td>
                     <td>${buildReviewerCell(item)}</td>
                     <td>${buildGeneratorActionCell(item)}</td>
                 </tr>
@@ -1458,6 +1560,74 @@ function buildReviewerCell(item) {
                 return value;
             }
             return `${match[3]}.${match[2]}.${match[1]}`;
+        }
+
+        function ensureReleaseDateOverrideModal() {
+            if (!releaseDateOverrideModalInstance) {
+                releaseDateOverrideModalInstance = new bootstrap.Modal(document.getElementById('releaseDateOverrideModal'));
+            }
+            return releaseDateOverrideModalInstance;
+        }
+
+        function openReleaseDateOverrideModal(releaseKey) {
+            const item = getReleaseMonitorItem(releaseKey);
+            if (!item) {
+                alert('Не удалось найти релиз в текущей таблице.');
+                return;
+            }
+
+            releaseDateOverrideState = { item };
+            document.getElementById('releaseDateOverrideSubtitle').textContent = item.release_key || '';
+            document.getElementById('releaseDateOverrideBaseStart').textContent = item.source_deployment_start || item.deployment_start || '-';
+            document.getElementById('releaseDateOverrideBaseEnd').textContent = item.source_deployment_end || item.deployment_end || '-';
+            document.getElementById('releaseDateOverrideStartInput').value = item.manual_deployment_start ? dateToInputValue(item.manual_deployment_start) : '';
+            document.getElementById('releaseDateOverrideEndInput').value = item.manual_deployment_end ? dateToInputValue(item.manual_deployment_end) : '';
+            ensureReleaseDateOverrideModal().show();
+        }
+
+        async function saveReleaseDateOverride(reset = false) {
+            if (!releaseDateOverrideState?.item) {
+                return;
+            }
+
+            const saveBtn = document.getElementById('releaseDateOverrideSaveBtn');
+            const startInput = document.getElementById('releaseDateOverrideStartInput');
+            const endInput = document.getElementById('releaseDateOverrideEndInput');
+
+            if (saveBtn) {
+                saveBtn.disabled = true;
+            }
+
+            try {
+                const response = await fetch(BASE_PATH + '/dashboard/release-monitor/date-override', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        release_key: releaseDateOverrideState.item.row_key || releaseDateOverrideState.item.release_key,
+                        start: reset ? '' : inputValueToDisplayDate(startInput?.value || ''),
+                        end: reset ? '' : inputValueToDisplayDate(endInput?.value || ''),
+                        reset
+                    })
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Не удалось сохранить корректировку даты');
+                }
+
+                renderReleaseMonitor(data.release_monitor || [], data.release_monitor_meta || {});
+                ensureReleaseDateOverrideModal().hide();
+            } catch (error) {
+                console.error('Release date override error:', error);
+                alert('Ошибка сохранения корректировки даты: ' + error.message);
+            } finally {
+                if (saveBtn) {
+                    saveBtn.disabled = false;
+                }
+            }
+        }
+
+        function resetReleaseDateOverride() {
+            saveReleaseDateOverride(true);
         }
 
         function getReleaseDocumentSummaryCards(state) {

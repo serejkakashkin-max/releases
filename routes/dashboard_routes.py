@@ -18,6 +18,7 @@ from services.release_monitor_service import (
     sync_release_monitor_assignments_from_confluence,
     save_release_monitor_manual_order,
     set_release_monitor_assignment,
+    set_release_monitor_date_override,
     set_release_monitor_reviewer,
 )
 from config import DASHBOARD_CACHE_TTL, DASHBOARD_ASSIGNEES_DISPLAY
@@ -241,6 +242,27 @@ def update_release_monitor_reviewer():
         })
     except Exception as e:
         logging.error(f"Ошибка сохранения назначения по релизу: {e}")
+        return jsonify({"success": False, "error": str(e)}), 400
+
+
+@dashboard_bp.route('/dashboard/release-monitor/date-override', methods=['POST'])
+def update_release_monitor_date_override():
+    """Сохраняет ручную корректировку дат внедрения по строке релиза."""
+    try:
+        data = request.get_json(silent=True) or {}
+        release_key = data.get("release_key", "")
+        start_value = data.get("start", "")
+        end_value = data.get("end", "")
+        reset = bool(data.get("reset"))
+        payload = set_release_monitor_date_override(release_key, start_value, end_value, reset=reset)
+        return jsonify({
+            "success": True,
+            "release_monitor": payload.get("items", []),
+            "release_monitor_summary": payload.get("summary", {}),
+            "release_monitor_meta": payload.get("meta", {}),
+        })
+    except Exception as e:
+        logging.error(f"Ошибка сохранения корректировки даты релиза: {e}")
         return jsonify({"success": False, "error": str(e)}), 400
 
 

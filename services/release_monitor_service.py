@@ -38,6 +38,7 @@ SNAPSHOT_FILE = SNAPSHOT_DIR / "release_monitor_snapshot.json"
 REVIEWERS_FILE = SNAPSHOT_DIR / "release_monitor_reviewers.json"
 ORDER_FILE = SNAPSHOT_DIR / "release_monitor_order.json"
 DUTY_SCHEDULE_FILE = SNAPSHOT_DIR / "release_monitor_duty_schedule.json"
+DATE_OVERRIDES_FILE = SNAPSHOT_DIR / "release_monitor_date_overrides.json"
 CONFLUENCE_DELTA_BASE = "https://confluence.delta.sbrf.ru"
 
 MONTH_NAME_MAP = {
@@ -403,6 +404,48 @@ def _save_duty_schedule_payload(payload):
         logging.warning("Release monitor: failed to save duty schedules: %s", exc)
 
 
+def _load_date_overrides():
+    if not DATE_OVERRIDES_FILE.exists():
+        return {}
+
+    try:
+        payload = json.loads(DATE_OVERRIDES_FILE.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            return {}
+
+        normalized = {}
+        for row_key, value in payload.items():
+            key = str(row_key or "").strip()
+            if not key or not isinstance(value, dict):
+                continue
+
+            start_value = str(value.get("start", "") or "").strip()
+            end_value = str(value.get("end", "") or "").strip()
+            if not start_value and not end_value:
+                continue
+
+            normalized[key] = {
+                "start": start_value,
+                "end": end_value,
+                "updated_at": str(value.get("updated_at", "") or "").strip(),
+            }
+        return normalized
+    except Exception as exc:
+        logging.warning("Release monitor: failed to load date overrides: %s", exc)
+        return {}
+
+
+def _save_date_overrides(payload):
+    try:
+        _ensure_snapshot_dir()
+        DATE_OVERRIDES_FILE.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        logging.warning("Release monitor: failed to save date overrides: %s", exc)
+
+
 def _parse_release_monitor_date(value):
     if not value:
         return None
@@ -417,6 +460,16 @@ def _parse_release_monitor_date(value):
         except ValueError:
             continue
     return None
+
+
+def _format_release_monitor_date(dt_value):
+    return dt_value.strftime("%d.%m.%Y") if dt_value else ""
+
+
+def _resolve_effective_release_date(base_dt, manual_dt):
+    if base_dt and manual_dt:
+        return manual_dt if manual_dt > base_dt else base_dt
+    return manual_dt or base_dt
 
 
 def _extract_schedule_month_year(sheet_title):
@@ -644,6 +697,65 @@ def _append_duty_schedule_meta(meta):
     meta["duty_schedule_months"] = list(duty_payload.get("months") or [])
     meta["duty_schedule_files"] = list(duty_payload.get("files") or [])
     return meta
+
+
+def _apply_date_overrides(items):
+    overrides = _load_date_overrides()
+    for item in items:
+        row_key = _get_assignment_key_for_item(item)
+        override = overrides.get(row_key)
+        if not override:
+            item["has_manual_date_override"] = False
+            item["manual_deployment_start"] = ""
+            item["manual_deployment_end"] = ""
+            continue
+
+        manual_start_dt = _parse_release_monitor_date(override.get("start"))
+        manual_end_dt = _parse_release_monitor_date(override.get("end"))
+        base_start_dt = _parse_release_monitor_date(
+            item.get("source_deployment_start_iso")
+            or item.get("source_deployment_start")
+            or item.get("deployment_start_iso")
+            or item.get("deployment_start")
+        )
+        base_end_dt = _parse_release_monitor_date(
+            item.get("source_deployment_end_iso")
+            or item.get("source_deployment_end")
+            or item.get("deployment_end_iso")
+            or item.get("deployment_end")
+        )
+
+        effective_start_dt = _resolve_effective_release_date(base_start_dt, manual_start_dt)
+        effective_end_dt = _resolve_effective_release_date(base_end_dt, manual_end_dt)
+
+        if effective_start_dt:
+            item["deployment_start"] = _format_release_monitor_date(effective_start_dt)
+            item["deployment_start_iso"] = effective_start_dt.isoformat()
+            item["sort_date"] = effective_start_dt.isoformat()
+        if effective_end_dt:
+            item["deployment_end"] = _format_release_monitor_date(effective_end_dt)
+            item["deployment_end_iso"] = effective_end_dt.isoformat()
+
+        row_is_non_final = bool(item.get("is_non_final"))
+        if row_is_non_final:
+            today = datetime.now().date()
+            effective_end_date = effective_end_dt.date() if effective_end_dt else None
+            item["is_overdue"] = bool(effective_end_date and effective_end_date < today)
+            item["is_today"] = bool(effective_end_date and effective_end_date == today)
+            item["days_overdue"] = (today - effective_end_date).days if item["is_overdue"] else 0
+
+            if item.get("is_overdue"):
+                item["row_state"] = "overdue"
+            elif item.get("is_today"):
+                item["row_state"] = "today"
+            else:
+                item["row_state"] = "planned"
+
+        item["has_manual_date_override"] = True
+        item["manual_deployment_start"] = override.get("start", "")
+        item["manual_deployment_end"] = override.get("end", "")
+
+    return items
 
 
 def _apply_reviewer_assignments(items):
@@ -1364,6 +1476,10 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
             "deployment_start_iso": rov_data.get("start_iso", ""),
             "deployment_end": rov_data.get("end", ""),
             "deployment_end_iso": rov_data.get("end_iso", ""),
+            "source_deployment_start": rov_data.get("start", ""),
+            "source_deployment_start_iso": rov_data.get("start_iso", ""),
+            "source_deployment_end": rov_data.get("end", ""),
+            "source_deployment_end_iso": rov_data.get("end_iso", ""),
             "psi_owner": "",
             "psi_responsibles": [],
             "psi_checker": "",
@@ -1616,6 +1732,7 @@ def _compose_release_payload(all_records, mode):
     previous_year = current_year - 1
     _apply_reviewer_assignments(all_records)
     _apply_duty_schedule_assignments(all_records, persist=True)
+    _apply_date_overrides(all_records)
     _sort_and_number_records(all_records)
     payload = {
         "items": all_records,
@@ -2156,11 +2273,14 @@ def _normalize_release_payload(payload):
     normalized_items = [dict(item) for item in (payload.get("items") or []) if isinstance(item, dict)]
     _apply_reviewer_assignments(normalized_items)
     _apply_duty_schedule_assignments(normalized_items, persist=True)
+    _apply_date_overrides(normalized_items)
     _sort_and_number_records(normalized_items)
+    current_year = datetime.now().year
+    previous_year = current_year - 1
 
     return {
         "items": normalized_items,
-        "summary": dict(payload.get("summary", {})),
+        "summary": _build_summary(normalized_items, current_year, previous_year),
         "meta": _append_duty_schedule_meta(dict(payload.get("meta", {}))),
     }
 
@@ -2268,6 +2388,43 @@ def upload_release_monitor_duty_schedules(uploaded_files):
         "applied_count": applied_count,
         "data": payload,
     }
+
+
+def set_release_monitor_date_override(release_key, start_value="", end_value="", reset=False):
+    global _cached_data
+
+    release_key = str(release_key or "").strip()
+    if not release_key:
+        raise ValueError("Не указан ключ строки релиза")
+
+    overrides = _load_date_overrides()
+    if reset:
+        overrides.pop(release_key, None)
+    else:
+        normalized_start = _format_release_monitor_date(_parse_release_monitor_date(start_value)) if start_value else ""
+        normalized_end = _format_release_monitor_date(_parse_release_monitor_date(end_value)) if end_value else ""
+        if not normalized_start and not normalized_end:
+            overrides.pop(release_key, None)
+        else:
+            overrides[release_key] = {
+                "start": normalized_start,
+                "end": normalized_end,
+                "updated_at": _format_timestamp(),
+            }
+
+    _save_date_overrides(overrides)
+
+    with _cache_lock:
+        if _cached_data is not None:
+            items = _cached_data.get("items") or []
+            _apply_reviewer_assignments(items)
+            _apply_duty_schedule_assignments(items, persist=True)
+            _apply_date_overrides(items)
+            _sort_and_number_records(items)
+            _save_snapshot_to_disk(_cached_data)
+
+        payload = _normalize_release_payload(_get_cached_payload_copy() or _build_empty_release_monitor_payload())
+        return payload
 
 
 def sync_release_monitor_assignments_from_confluence(year):
