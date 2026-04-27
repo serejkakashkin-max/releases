@@ -444,6 +444,7 @@ class DashboardChatBot {
             'Помогаю быстро находить задачи, собирать статистику и готовить сводки для передачи смены.\n\n' +
             'Могу:\n' +
             '• найти задачи по ключевым словам, тегам, заголовку или описанию\n' +
+            '• собрать статистику по релизам и сформировать HTML-отчет\n' +
             '• сформировать статистику по сотрудникам в HTML\n' +
             '• подготовить сводку для передачи дневной или вечерней смены\n\n' +
             'Если период не указан, по умолчанию использую текущий квартал.'
@@ -465,12 +466,14 @@ class DashboardChatBot {
     getDashboardContext() {
         // Собираем контекст из страницы дашборда
         const context = {
+            page_context: window.dashboardData?.page_context || 'dashboard',
             sup_tasks: window.dashboardData?.sup_tasks || [],
             logi_tasks: window.dashboardData?.logi_tasks || [],
             vnedrenie_prom_tasks: window.dashboardData?.vnedrenie_prom_tasks || [],
             vnedrenie_psi_tasks: window.dashboardData?.vnedrenie_psi_tasks || [],
             release_monitor: window.dashboardData?.release_monitor || [],
             release_monitor_summary: window.dashboardData?.release_monitor_summary || {},
+            release_monitor_meta: window.dashboardData?.release_monitor_meta || {},
             assignee_stats: window.dashboardData?.assignee_stats || {}
         };
         

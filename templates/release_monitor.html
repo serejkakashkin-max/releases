@@ -6,6 +6,7 @@
     <title>Блок релизов</title>
     <link href="/static/css/bootstrap.min.css" rel="stylesheet">
     <link href="/static/css/bootstrap-icons.css" rel="stylesheet">
+    <link href="/static/css/chatbot.css" rel="stylesheet">
     <script src="/static/js/bootstrap.bundle.min.js"></script>
     {% include 'base_styles.html' %}
     <style>
@@ -2172,6 +2173,11 @@ function buildReviewerCell(item) {
             releaseMonitorItems = Array.isArray(items) ? items : [];
             releaseMonitorMeta = meta || {};
 
+            window.dashboardData = window.dashboardData || {};
+            window.dashboardData.release_monitor = releaseMonitorItems;
+            window.dashboardData.release_monitor_meta = releaseMonitorMeta;
+            window.dashboardData.release_monitor_summary = buildReleaseYearSummary(getYearFilteredReleaseItems(releaseMonitorItems));
+
             if (yearSelect) {
                 const years = Array.isArray(meta?.years) && meta.years.length ? meta.years : [meta?.current_year || new Date().getFullYear()];
                 const previousValue = currentReleaseYearFilter || String(meta?.current_year || years[0]);
@@ -2822,10 +2828,24 @@ function buildReviewerCell(item) {
             refreshReleaseOrderModeUi();
         }
 
+        window.CHATBOT_BASE_PATH = {{ basepath | tojson | safe }};
+        window.dashboardData = {
+            page_context: 'release_monitor',
+            sup_tasks: [],
+            logi_tasks: [],
+            vnedrenie_prom_tasks: [],
+            vnedrenie_psi_tasks: [],
+            assignee_stats: {},
+            release_monitor: {{ release_monitor | tojson | safe }},
+            release_monitor_summary: {{ release_monitor_summary | tojson | safe }},
+            release_monitor_meta: {{ release_monitor_meta | tojson | safe }}
+        };
+
         renderReleaseMonitor(
-            {{ release_monitor | tojson | safe }},
-            {{ release_monitor_meta | tojson | safe }}
+            window.dashboardData.release_monitor || [],
+            window.dashboardData.release_monitor_meta || {}
         );
     </script>
+    <script src="/static/js/chatbot.js"></script>
 </body>
 </html>

@@ -19,6 +19,9 @@ from services.dashboard_service import (
 from services.jira_service import get_jira_domain_and_token
 from services.chatbot_search_service import get_search_service
 import requests
+from services.report_service import save_report_to_disk
+from services.release_monitor_service import get_release_monitor_snapshot
+from services.release_report_service import get_release_report_service
 
 
 @dataclass
@@ -106,6 +109,8 @@ class DashboardChatBot:
                 local_intent,
                 dashboard_context
             )
+            if self._is_release_report_request((normalized_message or message).lower(), dashboard_context):
+                resolved_intent = IntentType.GENERATE_REPORT
 
             params = self._extract_params(normalized_message, resolved_intent)
 
@@ -626,6 +631,9 @@ class DashboardChatBot:
             message_lower = original_message.lower()
 
             # Проверяем тип отчёта
+            if self._is_release_report_request(message_lower, dashboard_context):
+                return self._handle_release_statistics(params, dashboard_context, original_message)
+
             is_assignee_report = any(phrase in message_lower for phrase in [
                 'по сотрудникам', 'статистика', 'сататист', 'сформируй', 'сгенерируй',
                 'закрытые задачи.*сотрудник', 'эффективность', 'производительность'
@@ -650,6 +658,125 @@ class DashboardChatBot:
                 'metadata': {'error': str(e)}
             }
     
+    def _is_release_report_request(self, message_lower: str, dashboard_context: Dict = None) -> bool:
+        """Определяет, относится ли запрос к аналитике по релизной таблице."""
+        release_items = (dashboard_context or {}).get('release_monitor') or []
+        if not release_items:
+            return False
+
+        release_markers = [
+            'релиз', 'релизы', 'ров', 'перераскат', 'хотфикс',
+            'установлен', 'установлено', 'отменено', 'пром',
+            'smecsc', 'smeclm', 'emrm', 'aigas', 'helperai',
+        ]
+        if any(marker in message_lower for marker in release_markers):
+            return True
+
+        if (dashboard_context or {}).get('page_context') == 'release_monitor':
+            dashboard_only_markers = ['сотрудник', 'задач', 'смен', 'дежурн', 'сводк']
+            if not any(marker in message_lower for marker in dashboard_only_markers):
+                return True
+
+        return False
+
+    def _handle_release_statistics(self, params: Dict, dashboard_context: Dict = None, original_message: str = '') -> Dict:
+        """Строит сводку и HTML-отчет по релизной таблице."""
+        try:
+            release_items = list((dashboard_context or {}).get('release_monitor') or [])
+            if not release_items:
+                snapshot = get_release_monitor_snapshot() or {}
+                release_items = list(snapshot.get('items') or [])
+
+            if not release_items:
+                return {
+                    'text': '📊 В таблице релизов пока нет данных для построения отчета.',
+                    'metadata': {'total_tasks': 0, 'report_type': 'release_monitor'}
+                }
+
+            report_service = get_release_report_service()
+            report_data = report_service.generate_release_report(
+                release_items,
+                quarter=params.get('quarter'),
+                year=params.get('year'),
+                days=params.get('days'),
+                original_message=original_message,
+            )
+
+            if not report_data['items']:
+                return {
+                    'text': f"📊 За период *{report_data['period']['label']}* подходящих релизов не найдено.",
+                    'metadata': {
+                        'total_tasks': 0,
+                        'report_type': 'release_monitor',
+                        'period': report_data['period'],
+                        'filters': report_data.get('filters', {}),
+                    }
+                }
+
+            html_content = report_service.generate_html_report(report_data)
+            report_id = save_report_to_disk(html_content)
+            download_url = f"/dashboard/api/chat/report/download/{report_id}"
+
+            stats = report_data['statistics']
+            period = report_data['period']
+            filters = report_data.get('filters', {})
+            filter_title = {
+                'all': 'всех релизов периода',
+                'installed': 'установленных релизов',
+                'reroll': 'перераскаток',
+                'hotfix': 'хотфиксов',
+                'cancelled': 'отмененных релизов',
+            }.get(filters.get('kind', 'all'), 'релизов')
+
+            text = f"📊 *Отчет по релизам*\n*{period['label']}*\n\n"
+            text += f"Фильтр: {filter_title}\n"
+            if filters.get('system'):
+                text += f"Система: {filters['system']}\n"
+
+            text += "\n*Итоги:*\n"
+            text += f"• Строк в отчете: {stats['total']}\n"
+            text += f"• Установлен на ПРОМ: {stats['installed']}\n"
+            text += f"• Перераскаток: {stats['rerolls']}\n"
+            text += f"• Хотфиксов: {stats['hotfixes']}\n"
+            text += f"• Отменено: {stats['cancelled']}\n"
+
+            if stats.get('systems'):
+                text += "\n*По системам:*\n"
+                for name, count in list(stats['systems'].items())[:5]:
+                    text += f"• {name}: {count}\n"
+
+            text += "\n*Первые релизы в отчете:*\n"
+            preview_items = report_data['items'][:5]
+            for item in preview_items:
+                release_key = item.get('release_key') or '—'
+                rov_key = item.get('rov_key') or 'без РОВ'
+                date_value = item.get('deployment_end') or item.get('deployment_start') or 'без даты'
+                text += f"• [{release_key}]({item.get('release_url', '')}) / {rov_key} — {date_value}\n"
+
+            if len(report_data['items']) > len(preview_items):
+                text += f"• ... и еще {len(report_data['items']) - len(preview_items)} строк\n"
+
+            text += f"\n📥 *Скачать HTML-отчет:*\n[Нажмите здесь для скачивания отчета]({download_url})"
+
+            return {
+                'text': text,
+                'metadata': {
+                    'total_tasks': stats['total'],
+                    'period': period,
+                    'report_generated': True,
+                    'report_id': report_id,
+                    'download_url': download_url,
+                    'report_type': 'release_monitor',
+                    'filters': filters,
+                }
+            }
+        except Exception as e:
+            logging.error(f"Ошибка генерации релизного отчета: {e}")
+            return {
+                'text': f'❌ Ошибка при генерации отчета по релизам: {str(e)}',
+                'metadata': {'error': str(e), 'report_type': 'release_monitor'}
+            }
+
     def _handle_shift_handover(self, params: Dict, dashboard_context: Dict = None, original_message: str = '') -> Dict:
         """Обрабатывает сводку для передачи смены (дневная/вечерняя)"""
         try:
