@@ -17,6 +17,70 @@ EM_DASH = "\u2014"
 class ReleaseReportService:
     """Generate analytics and HTML reports for the release monitor table."""
 
+    def generate_current_week_plan_report(self, items: List[Dict[str, Any]]) -> Dict[str, Any]:
+        normalized_items = list(items or [])
+        period = self._get_current_week_period()
+
+        filtered_items: List[Dict[str, Any]] = []
+        for item in normalized_items:
+            if bool(item.get("is_unnumbered")):
+                continue
+            if bool(item.get("is_cancelled")):
+                continue
+
+            event_date = self._get_item_week_datetime(item)
+            if event_date is None:
+                continue
+            if not (period["start"] <= event_date <= period["end"]):
+                continue
+
+            filtered_items.append(item)
+
+        filtered_items.sort(
+            key=lambda item: (
+                self._get_item_week_datetime(item) or datetime.min,
+                str(item.get("release_key") or ""),
+                str(item.get("rov_key") or ""),
+            ),
+            reverse=False,
+        )
+
+        final_items = [item for item in filtered_items if bool(item.get("is_final"))]
+        reroll_items = [item for item in filtered_items if bool(item.get("is_reroll"))]
+        hotfix_items = [item for item in filtered_items if self._is_hotfix(item)]
+        system_counter = Counter()
+        status_counter = Counter()
+
+        for item in filtered_items:
+            system_name = self._normalize_system_name(item.get("system_name"), item.get("source_prefix"))
+            system_counter[system_name] += 1
+            status_name = str(item.get("release_status") or "Не указан").strip() or "Не указан"
+            status_counter[status_name] += 1
+
+        return {
+            "report_mode": "current_week_plan",
+            "period": {
+                "start": period["start"].strftime("%Y-%m-%d"),
+                "end": period["end"].strftime("%Y-%m-%d"),
+                "label": period["label"],
+                "mode": "current_week_plan",
+            },
+            "filters": {
+                "kind": "current_week_plan",
+                "system": "",
+            },
+            "statistics": {
+                "total": len(filtered_items),
+                "installed": len(final_items),
+                "rerolls": len(reroll_items),
+                "hotfixes": len(hotfix_items),
+                "systems": dict(system_counter.most_common()),
+                "statuses": dict(status_counter.most_common()),
+            },
+            "items": filtered_items,
+            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
+
     def generate_release_report(
         self,
         items: List[Dict[str, Any]],
@@ -110,6 +174,9 @@ class ReleaseReportService:
         }
 
     def generate_html_report(self, report_data: Dict[str, Any]) -> str:
+        if report_data.get("report_mode") == "current_week_plan":
+            return self.generate_current_week_plan_html(report_data)
+
         period = report_data["period"]
         stats = report_data["statistics"]
         filters = report_data.get("filters", {})
@@ -585,6 +652,381 @@ class ReleaseReportService:
 </body>
 </html>"""
 
+    def generate_current_week_plan_html(self, report_data: Dict[str, Any]) -> str:
+        period = report_data["period"]
+        stats = report_data["statistics"]
+        items = report_data.get("items", [])
+        rows_html = self._render_week_rows(items)
+
+        def render_counter_list(title: str, data: Dict[str, int], filter_type: str = "") -> str:
+            if not data:
+                return f'<div class="mini-card"><h4>{html.escape(title)}</h4><p>Нет данных</p></div>'
+            entries_parts = []
+            for name, count in list(data.items())[:8]:
+                label = html.escape(name)
+                if filter_type:
+                    entries_parts.append(
+                        f'<li><button type="button" class="counter-filter" '
+                        f'data-filter-type="{html.escape(filter_type)}" '
+                        f'data-filter-value="{label}"><span class="counter-filter-label">{label}</span><strong>{count}</strong></button></li>'
+                    )
+                else:
+                    entries_parts.append(f"<li><span>{label}</span><strong>{count}</strong></li>")
+            entries = "".join(entries_parts)
+            return f"""
+            <div class="mini-card">
+                <h4>{html.escape(title)}</h4>
+                <ul class="counter-list">{entries}</ul>
+            </div>
+            """
+
+        return f"""<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Релизы текущей недели — {html.escape(period['label'])}</title>
+    <style>
+        * {{
+            box-sizing: border-box;
+        }}
+        body {{
+            margin: 0;
+            font-family: "Segoe UI", Tahoma, sans-serif;
+            background: linear-gradient(180deg, #eef3ff 0%, #f8fafc 100%);
+            color: #18212f;
+            padding: 24px;
+        }}
+        .container {{
+            max-width: 1320px;
+            margin: 0 auto;
+        }}
+        .hero {{
+            background: #ffffff;
+            border-radius: 22px;
+            padding: 28px 32px;
+            box-shadow: 0 18px 44px rgba(15, 23, 42, 0.08);
+            margin-bottom: 22px;
+        }}
+        .hero h1 {{
+            margin: 0 0 10px;
+            font-size: 32px;
+        }}
+        .hero .meta {{
+            color: #526071;
+            font-size: 15px;
+            line-height: 1.6;
+        }}
+        .summary-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+            margin-bottom: 22px;
+        }}
+        .summary-card {{
+            background: #ffffff;
+            border-radius: 18px;
+            padding: 22px;
+            box-shadow: 0 16px 36px rgba(15, 23, 42, 0.07);
+        }}
+        .summary-card-button {{
+            width: 100%;
+            border: 0;
+            background: transparent;
+            padding: 0;
+            text-align: left;
+            font: inherit;
+            color: inherit;
+            cursor: pointer;
+        }}
+        .summary-card-button:hover h3,
+        .summary-card-button:hover .value {{
+            color: #0d6efd;
+        }}
+        .summary-card h3 {{
+            margin: 0 0 10px;
+            color: #5b6878;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }}
+        .summary-card .value {{
+            font-size: 38px;
+            font-weight: 800;
+        }}
+        .detail-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 16px;
+            margin-bottom: 22px;
+        }}
+        .mini-card {{
+            background: #ffffff;
+            border-radius: 18px;
+            padding: 20px 22px;
+            box-shadow: 0 14px 34px rgba(15, 23, 42, 0.07);
+        }}
+        .mini-card h4 {{
+            margin: 0 0 14px;
+            font-size: 16px;
+        }}
+        .counter-list {{
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: grid;
+            gap: 10px;
+        }}
+        .counter-filter {{
+            width: 100%;
+            border: 0;
+            background: transparent;
+            padding: 0;
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            color: #394657;
+            font: inherit;
+            text-align: left;
+            cursor: pointer;
+        }}
+        .counter-filter-label {{
+            flex: 1 1 auto;
+            padding-right: 18px;
+        }}
+        .counter-filter:hover span {{
+            color: #0d6efd;
+            text-decoration: underline;
+        }}
+        .counter-list strong {{
+            color: #0d6efd;
+        }}
+        .table-card {{
+            background: #ffffff;
+            border-radius: 22px;
+            padding: 22px;
+            box-shadow: 0 18px 44px rgba(15, 23, 42, 0.08);
+            overflow: hidden;
+        }}
+        .table-card h3 {{
+            margin: 0 0 8px;
+            font-size: 22px;
+        }}
+        .hint {{
+            margin: 0 0 16px;
+            color: #607083;
+            font-size: 14px;
+        }}
+        .report-toolbar {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }}
+        .report-filter-state {{
+            color: #607083;
+            font-size: 14px;
+        }}
+        .report-filter-state strong {{
+            color: #1d2a3a;
+        }}
+        .clear-filter-btn {{
+            border: 1px solid #d7e1ef;
+            border-radius: 999px;
+            background: #ffffff;
+            color: #1d2a3a;
+            padding: 8px 14px;
+            font: inherit;
+            cursor: pointer;
+        }}
+        .clear-filter-btn[hidden] {{
+            display: none;
+        }}
+        table {{
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+        }}
+        th, td {{
+            padding: 12px 10px;
+            text-align: left;
+            border-bottom: 1px solid #e6ebf3;
+            vertical-align: top;
+            white-space: normal;
+            word-break: break-word;
+            overflow-wrap: anywhere;
+        }}
+        th {{
+            background: #f5f8fe;
+            color: #546274;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }}
+        th:nth-child(1), td:nth-child(1) {{ width: 54px; }}
+        th:nth-child(2), td:nth-child(2) {{ width: 28%; }}
+        th:nth-child(3), td:nth-child(3), th:nth-child(4), td:nth-child(4) {{ width: 10%; }}
+        th:nth-child(5), td:nth-child(5) {{ width: 10%; }}
+        th:nth-child(6), td:nth-child(6) {{ width: 9%; }}
+        th:nth-child(7), td:nth-child(7), th:nth-child(8), td:nth-child(8) {{ width: 9%; }}
+        th:nth-child(9), td:nth-child(9) {{ width: 8%; }}
+        tr.state-overdue {{ background: rgba(224, 49, 49, 0.07); }}
+        tr.state-today {{ background: rgba(245, 159, 0, 0.08); }}
+        .footer {{
+            color: #6b7785;
+            text-align: center;
+            padding: 14px 0 4px;
+            font-size: 14px;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <section class="hero">
+            <h1>Предстоящие релизы текущей недели</h1>
+            <div class="meta">
+                Период: <strong>{html.escape(period['label'])}</strong><br>
+                В отчет включены только видимые релизы текущей недели, включая уже установленные на ПРОМ строки.
+            </div>
+        </section>
+
+        <section class="summary-grid">
+            {self._render_summary_card("Всего релизов недели", stats['total'], "summary", "all")}
+            {self._render_summary_card("Установлен на ПРОМ", stats['installed'], "summary", "installed")}
+            {self._render_summary_card("Перераскатки", stats['rerolls'], "summary", "reroll")}
+            {self._render_summary_card("Хотфиксы", stats['hotfixes'], "summary", "hotfix")}
+        </section>
+
+        <section class="detail-grid">
+            {render_counter_list("По системам", stats["systems"], "system")}
+            {render_counter_list("По статусам", stats["statuses"], "status")}
+        </section>
+
+        <section class="table-card">
+            <h3>Список релизов недели</h3>
+            <p class="hint">Скрытые по умолчанию релизы в отчет не включаются. Установленные на ПРОМ строки текущей недели учитываются.</p>
+            <div class="report-toolbar">
+                <div class="report-filter-state">Фильтр: <strong id="activeFilterLabel">не выбран</strong></div>
+                <button type="button" class="clear-filter-btn" id="clearReportFilter" hidden>Сбросить фильтр</button>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>№</th>
+                        <th>Название</th>
+                        <th>ID релиза</th>
+                        <th>ID РОВ</th>
+                        <th>Сборка</th>
+                        <th>Тип</th>
+                        <th>Дата начала</th>
+                        <th>Дата окончания</th>
+                        <th>Система</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows_html if rows_html else '<tr><td colspan="9">На текущую неделю предстоящие релизы не найдены.</td></tr>'}
+                </tbody>
+            </table>
+        </section>
+
+        <div class="footer">Отчет сформирован: {html.escape(report_data['generated_at'])}</div>
+    </div>
+    <script>
+        (function () {{
+            const filterButtons = Array.from(document.querySelectorAll('.counter-filter'));
+            const summaryButtons = Array.from(document.querySelectorAll('.summary-card-button'));
+            const clearButton = document.getElementById('clearReportFilter');
+            const labelNode = document.getElementById('activeFilterLabel');
+            let currentType = '';
+            let currentValue = '';
+
+            function normalize(value) {{
+                return String(value || '').trim().toLowerCase();
+            }}
+
+            function applyFilter() {{
+                const rows = Array.from(document.querySelectorAll('tbody tr[data-system], tbody tr[data-status]'));
+                rows.forEach((row) => {{
+                    if (!currentType || !currentValue) {{
+                        row.hidden = false;
+                        return;
+                    }}
+                    const system = normalize(row.dataset.system);
+                    const status = normalize(row.dataset.status);
+                    const isReroll = row.dataset.reroll === '1';
+                    const isHotfix = row.dataset.hotfix === '1';
+                    let matched = false;
+
+                    if (currentType === 'summary') {{
+                        if (currentValue === 'all') {{
+                            matched = true;
+                        }} else if (currentValue === 'installed') {{
+                            matched = row.dataset.final === '1';
+                        }} else if (currentValue === 'reroll') {{
+                            matched = isReroll;
+                        }} else if (currentValue === 'hotfix') {{
+                            matched = isHotfix;
+                        }}
+                    }} else if (currentType === 'system') {{
+                        matched = system === normalize(currentValue);
+                    }} else if (currentType === 'status') {{
+                        matched = status === normalize(currentValue);
+                    }}
+
+                    row.hidden = !matched;
+                }});
+
+                if (!currentType || !currentValue) {{
+                    labelNode.textContent = 'не выбран';
+                    clearButton.hidden = true;
+                }} else {{
+                    let suffix = '';
+                    if (currentType === 'summary') {{
+                        const summaryLabels = {{
+                            all: ' (все релизы недели)',
+                            installed: ' (установлен на ПРОМ)',
+                            reroll: ' (перераскатки)',
+                            hotfix: ' (хотфиксы)',
+                        }};
+                        suffix = summaryLabels[currentValue] || '';
+                    }} else if (currentType === 'system') {{
+                        suffix = ' (система)';
+                    }} else if (currentType === 'status') {{
+                        suffix = ' (статус)';
+                    }}
+                    labelNode.textContent = currentValue + suffix;
+                    clearButton.hidden = false;
+                }}
+            }}
+
+            filterButtons.forEach((button) => {{
+                button.addEventListener('click', () => {{
+                    currentType = button.dataset.filterType || '';
+                    currentValue = button.dataset.filterValue || '';
+                    applyFilter();
+                }});
+            }});
+
+            summaryButtons.forEach((button) => {{
+                button.addEventListener('click', () => {{
+                    currentType = button.dataset.filterType || '';
+                    currentValue = button.dataset.filterValue || '';
+                    applyFilter();
+                }});
+            }});
+
+            clearButton.addEventListener('click', () => {{
+                currentType = '';
+                currentValue = '';
+                applyFilter();
+            }});
+        }})();
+    </script>
+</body>
+</html>"""
+
     def _build_table(self, rows_html: str) -> str:
         return f"""
         <table>
@@ -649,6 +1091,38 @@ class ReleaseReportService:
                     <td>{html.escape(system_name)}</td>
                     <td>{html.escape(duty_owner)}</td>
                     <td>{html.escape(responsibles)}</td>
+                </tr>
+                """
+            )
+        return "".join(rows)
+
+    def _render_week_rows(self, rows_source: List[Dict[str, Any]]) -> str:
+        rows = []
+        for index, item in enumerate(rows_source, start=1):
+            row_kind = self._get_item_kind_label(item)
+            row_state = "overdue" if item.get("is_overdue") else "today" if item.get("is_today") else "active"
+            row_title = " / ".join(
+                [part for part in (item.get("release_name_lines") or [])[:2] if str(part or "").strip()]
+            ) or str(item.get("release_summary") or "")
+            system_name = self._normalize_system_name(item.get("system_name"), item.get("source_prefix"))
+            status_name = str(item.get("release_status") or "Не указан").strip() or "Не указан"
+            rows.append(
+                f"""
+                <tr class="state-{row_state}"
+                    data-system="{html.escape(system_name.lower())}"
+                    data-status="{html.escape(status_name.lower())}"
+                    data-final="{'1' if bool(item.get('is_final')) else '0'}"
+                    data-reroll="{'1' if bool(item.get('is_reroll')) else '0'}"
+                    data-hotfix="{'1' if self._is_hotfix(item) else '0'}">
+                    <td>{index}</td>
+                    <td>{html.escape(row_title)}</td>
+                    <td>{html.escape(str(item.get('release_key') or EM_DASH))}</td>
+                    <td>{html.escape(str(item.get('rov_key') or EM_DASH))}</td>
+                    <td>{html.escape(str(item.get('release_version') or EM_DASH))}</td>
+                    <td>{html.escape(row_kind)}</td>
+                    <td>{html.escape(str(item.get('deployment_start') or EM_DASH))}</td>
+                    <td>{html.escape(str(item.get('deployment_end') or EM_DASH))}</td>
+                    <td>{html.escape(system_name)}</td>
                 </tr>
                 """
             )
@@ -815,6 +1289,17 @@ class ReleaseReportService:
                 continue
         return None
 
+    def _get_item_week_datetime(self, item: Dict[str, Any]) -> Optional[datetime]:
+        for key in ("deployment_start_iso", "deployment_end_iso", "sort_date", "created_sort_date"):
+            raw_value = str(item.get(key) or "").strip()
+            if not raw_value:
+                continue
+            try:
+                return datetime.fromisoformat(raw_value)
+            except ValueError:
+                continue
+        return None
+
     def _get_item_kind_label(self, item: Dict[str, Any]) -> str:
         if item.get("is_reroll"):
             return "Перераскатка"
@@ -865,6 +1350,16 @@ class ReleaseReportService:
         if "CLM" in upper_normalized:
             return "CLM"
         return normalized or "Не указано"
+
+    def _get_current_week_period(self) -> Dict[str, Any]:
+        now = datetime.now()
+        week_start = datetime(now.year, now.month, now.day) - timedelta(days=now.weekday())
+        week_end = week_start + timedelta(days=6, hours=23, minutes=59, seconds=59)
+        return {
+            "start": week_start,
+            "end": week_end,
+            "label": f"{week_start.strftime('%d.%m.%Y')} - {week_end.strftime('%d.%m.%Y')}",
+        }
 
     def _render_summary_card(self, title: str, value: int, filter_type: str, filter_value: str) -> str:
         return f"""

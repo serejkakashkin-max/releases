@@ -66,6 +66,13 @@
             flex-wrap: wrap;
         }
 
+        .page-hero-side {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 0.8rem;
+        }
+
         .page-title-wrap h1 {
             display: flex;
             align-items: center;
@@ -98,6 +105,38 @@
             color: var(--text-secondary);
             font-size: 0.92rem;
             white-space: nowrap;
+        }
+
+        .hero-week-report-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.55rem;
+            padding: 0.82rem 1.15rem;
+            border-radius: 16px;
+            border: 1px solid rgba(59, 130, 246, 0.22);
+            background: linear-gradient(135deg, rgba(37, 99, 235, 0.1), rgba(59, 130, 246, 0.18));
+            color: var(--text-primary);
+            font-weight: 700;
+            box-shadow: 0 12px 24px rgba(37, 99, 235, 0.12);
+            transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+        }
+
+        .hero-week-report-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 16px 30px rgba(37, 99, 235, 0.16);
+            border-color: rgba(59, 130, 246, 0.34);
+        }
+
+        .hero-week-report-btn:disabled {
+            opacity: 0.65;
+            cursor: default;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .hero-week-report-btn i {
+            font-size: 1rem;
+            color: #2563eb;
         }
 
         .release-monitor-section {
@@ -309,6 +348,26 @@
             padding: 0.85rem 0.9rem;
             border-bottom: 1px solid var(--border-color);
             vertical-align: top;
+        }
+
+        .release-th-filter {
+            display: flex;
+            flex-direction: column;
+            gap: 0.45rem;
+        }
+
+        .release-th-filter select {
+            width: 100%;
+            min-width: 0;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-card);
+            color: var(--text-primary);
+            padding: 0.4rem 0.55rem;
+            font-size: 0.78rem;
+            font-weight: 500;
+            text-transform: none;
+            letter-spacing: normal;
         }
 
         .release-monitor-table th {
@@ -1020,6 +1079,11 @@
                 flex-direction: column;
             }
 
+            .page-hero-side {
+                width: 100%;
+                align-items: flex-start;
+            }
+
             .release-monitor-button-row {
                 flex-direction: column;
                 align-items: stretch;
@@ -1081,8 +1145,14 @@
                         Экран контроля релизов с годовой таблицей.
                     </div>
                 </div>
-                <div class="page-meta">
-                    Открыто: <strong>{{ last_update }}</strong>
+                <div class="page-hero-side">
+                    <div class="page-meta">
+                        Открыто: <strong>{{ last_update }}</strong>
+                    </div>
+                    <button id="releaseMonitorCurrentWeekReportBtn" class="hero-week-report-btn" onclick="generateCurrentWeekReleaseReport()">
+                        <i class="bi bi-file-earmark-bar-graph"></i>
+                        Выгрузка текущей недели
+                    </button>
                 </div>
             </div>
         </div>
@@ -1314,6 +1384,7 @@
     <script>
         let currentReleaseYearFilter = String(new Date().getFullYear());
         let currentReleaseViewFilter = 'all';
+        let currentReleaseResponsibleFilter = 'all';
         let showReleaseRowsWithoutRov = false;
         let isReleaseMonitorExpanded = true;
         let isReleaseOrderMode = false;
@@ -2172,19 +2243,22 @@ function buildReviewerCell(item) {
 
             releaseMonitorItems = Array.isArray(items) ? items : [];
             releaseMonitorMeta = meta || {};
+            ensureResponsibleHeaderFilter();
 
             window.dashboardData = window.dashboardData || {};
             window.dashboardData.release_monitor = releaseMonitorItems;
             window.dashboardData.release_monitor_meta = releaseMonitorMeta;
             window.dashboardData.release_monitor_summary = buildReleaseYearSummary(getYearFilteredReleaseItems(releaseMonitorItems));
 
-            if (yearSelect) {
+              if (yearSelect) {
                 const years = Array.isArray(meta?.years) && meta.years.length ? meta.years : [meta?.current_year || new Date().getFullYear()];
                 const previousValue = currentReleaseYearFilter || String(meta?.current_year || years[0]);
                 yearSelect.innerHTML = years.map(year => `<option value="${escapeHtml(year)}">${escapeHtml(year)}</option>`).join('');
                 currentReleaseYearFilter = years.map(String).includes(String(previousValue)) ? String(previousValue) : String(meta?.current_year || years[0]);
                 yearSelect.value = currentReleaseYearFilter;
-            }
+              }
+
+              populateResponsibleFilterOptions();
 
             if (lastUpdated) {
                 lastUpdated.textContent = meta?.last_updated || 'еще не загружалось';
@@ -2223,6 +2297,7 @@ function buildReviewerCell(item) {
 
         function handleReleaseYearFilter() {
             currentReleaseYearFilter = getSelectedReleaseYear();
+            populateResponsibleFilterOptions();
             updateReleaseStatusFilterOptions(getYearFilteredReleaseItems(releaseMonitorItems));
             applyReleaseFilters();
         }
@@ -2248,6 +2323,65 @@ function buildReviewerCell(item) {
                 waiting: yearItems.filter(item => item.is_unnumbered).map(item => item.row_key || item.release_key),
                 numbered: yearItems.filter(item => !item.is_unnumbered).map(item => item.row_key || item.release_key),
             };
+        }
+
+        function ensureResponsibleHeaderFilter() {
+            const tableHead = document.querySelector('.release-monitor-table thead tr');
+            if (!tableHead) {
+                return;
+            }
+            const targetTh = tableHead.children[8];
+            if (!targetTh || targetTh.querySelector('#releaseResponsibleFilter')) {
+                return;
+            }
+
+            targetTh.innerHTML = `
+                <div class="release-th-filter">
+                    <span>Ответственный<br>за ПСИ/Проверки</span>
+                    <select id="releaseResponsibleFilter" onchange="handleReleaseResponsibleFilter()">
+                        <option value="all">Все ФИО</option>
+                    </select>
+                </div>
+            `;
+        }
+
+        function populateResponsibleFilterOptions() {
+            ensureResponsibleHeaderFilter();
+            const select = document.getElementById('releaseResponsibleFilter');
+            if (!select) {
+                return;
+            }
+
+            const selectedYear = String(getSelectedReleaseYear());
+            const values = Array.from(new Set(
+                releaseMonitorItems
+                    .filter(item => String(item?.year ?? '') === selectedYear)
+                    .flatMap(item => Array.isArray(item?.psi_responsibles) ? item.psi_responsibles : [])
+                    .map(value => String(value || '').trim())
+                    .filter(Boolean)
+            )).sort((a, b) => a.localeCompare(b, 'ru'));
+
+            const currentValue = values.includes(currentReleaseResponsibleFilter) ? currentReleaseResponsibleFilter : 'all';
+            select.innerHTML = `
+                <option value="all">Все ФИО</option>
+                ${values.map(value => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join('')}
+            `;
+            select.value = currentValue;
+            currentReleaseResponsibleFilter = currentValue;
+        }
+
+        function handleReleaseResponsibleFilter() {
+            currentReleaseResponsibleFilter = document.getElementById('releaseResponsibleFilter')?.value || 'all';
+            const viewSelect = document.getElementById('releaseViewFilter');
+            const statusSelect = document.getElementById('releaseStatusFilter');
+            if (viewSelect) {
+                viewSelect.value = 'all';
+                currentReleaseViewFilter = 'all';
+            }
+            if (statusSelect) {
+                statusSelect.value = 'all';
+            }
+            applyReleaseFilters();
         }
 
         function applyReleaseOrderDraft(yearItems) {
@@ -2586,7 +2720,7 @@ function buildReviewerCell(item) {
         }
 
         function setReleaseRefreshButtonsLoading(isLoading) {
-            ['releaseMonitorQuickRefreshBtn', 'releaseMonitorRefreshBtn', 'releaseMonitorConfluenceSyncBtn', 'releaseMonitorDutyUploadBtn'].forEach(id => {
+            ['releaseMonitorQuickRefreshBtn', 'releaseMonitorRefreshBtn', 'releaseMonitorConfluenceSyncBtn', 'releaseMonitorDutyUploadBtn', 'releaseMonitorCurrentWeekReportBtn'].forEach(id => {
                 const btn = document.getElementById(id);
                 if (!btn) {
                     return;
@@ -2669,6 +2803,30 @@ function buildReviewerCell(item) {
             } catch (error) {
                 console.error('Release monitor Confluence sync error:', error);
                 alert('Ошибка синхронизации с Confluence: ' + error.message);
+            } finally {
+                setReleaseRefreshButtonsLoading(false);
+            }
+        }
+
+        async function generateCurrentWeekReleaseReport() {
+            setReleaseRefreshButtonsLoading(true);
+
+            try {
+                const response = await fetch(BASE_PATH + '/dashboard/release-monitor/report/current-week', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Не удалось сформировать выгрузку текущей недели');
+                }
+
+                if (data.download_url) {
+                    window.open(data.download_url, '_blank', 'noopener');
+                }
+            } catch (error) {
+                console.error('Current week release report error:', error);
+                alert('Ошибка формирования выгрузки текущей недели: ' + error.message);
             } finally {
                 setReleaseRefreshButtonsLoading(false);
             }
@@ -2771,10 +2929,16 @@ function buildReviewerCell(item) {
             const visibleCounter = document.getElementById('releaseVisibleCount');
             const searchValue = (document.getElementById('releaseSearchInput')?.value || '').toLowerCase().trim();
             const statusValue = document.getElementById('releaseStatusFilter')?.value || 'all';
+            const responsibleValue = currentReleaseResponsibleFilter || 'all';
             const rawYearItems = getYearFilteredReleaseItems(releaseMonitorItems);
             const yearItems = applyReleaseOrderDraft(rawYearItems);
             const filteredItems = yearItems.filter(item => {
                 const matchesRovVisibility = showReleaseRowsWithoutRov || !item.is_unnumbered;
+                const itemResponsibles = Array.isArray(item.psi_responsibles) ? item.psi_responsibles : [];
+                const matchesResponsible = (
+                    responsibleValue === 'all' ||
+                    itemResponsibles.some(value => String(value || '').trim() === responsibleValue)
+                );
                 const matchesView = (
                     currentReleaseViewFilter === 'all' ||
                     (currentReleaseViewFilter === 'non_final' && item.is_non_final) ||
@@ -2793,7 +2957,7 @@ function buildReviewerCell(item) {
                     ...(Array.isArray(item.release_name_lines) ? item.release_name_lines : [])
                 ].join(' ').toLowerCase();
                 const matchesSearch = !searchValue || haystack.includes(searchValue);
-                return matchesRovVisibility && matchesView && matchesStatus && matchesSearch;
+                return matchesRovVisibility && matchesResponsible && matchesView && matchesStatus && matchesSearch;
             });
 
             if (body) {

@@ -21,6 +21,8 @@ from services.release_monitor_service import (
     set_release_monitor_date_override,
     set_release_monitor_reviewer,
 )
+from services.report_service import save_report_to_disk
+from services.release_report_service import get_release_report_service
 from config import DASHBOARD_CACHE_TTL, DASHBOARD_ASSIGNEES_DISPLAY
 
 BASE_PATH = os.getenv("BASE_PATH", "")
@@ -150,6 +152,30 @@ def refresh_dashboard():
         return jsonify({"success": True, "message": "Данные обновлены"})
     except Exception as e:
         logging.error(f"Ошибка принудительного обновления: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@dashboard_bp.route('/dashboard/release-monitor/report/current-week', methods=['POST'])
+def generate_release_monitor_current_week_report():
+    """Формирует HTML-отчет по предстоящим релизам текущей недели."""
+    try:
+        snapshot = get_release_monitor_snapshot() or {}
+        items = snapshot.get('items', []) if isinstance(snapshot, dict) else []
+        report_service = get_release_report_service()
+        report_data = report_service.generate_current_week_plan_report(items)
+        html_content = report_service.generate_current_week_plan_html(report_data)
+        report_id = save_report_to_disk(html_content)
+
+        return jsonify({
+            "success": True,
+            "download_url": f"{BASE_PATH}/dashboard/api/chat/report/download/{report_id}",
+            "report_summary": {
+                "total": report_data.get("statistics", {}).get("total", 0),
+                "period": report_data.get("period", {}).get("label", ""),
+            },
+        })
+    except Exception as e:
+        logging.exception("Ошибка формирования недельного отчета по релизам")
         return jsonify({"success": False, "error": str(e)}), 500
 
 @dashboard_bp.route('/dashboard/api/data', methods=['GET'])
@@ -487,6 +513,30 @@ def show_task_api():
     except Exception as e:
         logging.error(f"Ошибка восстановления задачи: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+@dashboard_bp.route('/dashboard/release-monitor/report/current-week-legacy', methods=['POST'])
+def generate_release_monitor_current_week_report_legacy():
+    """Формирует HTML-отчет по предстоящим релизам текущей недели."""
+    try:
+        snapshot = get_release_monitor_snapshot() or {}
+        items = snapshot.get('items', []) if isinstance(snapshot, dict) else []
+        report_service = get_release_report_service()
+        report_data = report_service.generate_current_week_plan_report(items)
+        html_content = report_service.generate_current_week_plan_html(report_data)
+        report_id = save_report_to_disk(html_content)
+
+        return jsonify({
+            "success": True,
+            "download_url": f"{BASE_PATH}/dashboard/api/chat/report/download/{report_id}",
+            "report_summary": {
+                "total": report_data.get("statistics", {}).get("total", 0),
+                "period": report_data.get("period", {}).get("label", ""),
+            },
+        })
+    except Exception as e:
+        logging.exception("Ошибка формирования недельного отчета по релизам")
+        return jsonify({"success": False, "error": str(e)}), 500
+
 
 @dashboard_bp.route('/dashboard/api/hidden-tasks/restore-all', methods=['POST'])
 def restore_all_tasks_api():
