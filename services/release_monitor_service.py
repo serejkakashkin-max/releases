@@ -1448,7 +1448,7 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
             row_label = "(\u0420\u0435\u043b\u0438\u0437)"
         row_key = f"{issue.get('key')}::{rov_key or 'no-rov'}"
 
-        is_unnumbered = (not rov_key and not row_is_cancelled) or (row_is_cancelled and not ke_distributive)
+        is_unnumbered = (not rov_key) or (row_is_cancelled and not ke_distributive)
 
         records.append({
             "row_key": row_key,
