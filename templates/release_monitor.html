@@ -1150,8 +1150,8 @@
                         Открыто: <strong>{{ last_update }}</strong>
                     </div>
                     <button id="releaseMonitorCurrentWeekReportBtn" class="hero-week-report-btn" onclick="generateCurrentWeekReleaseReport()">
-                        <i class="bi bi-file-earmark-bar-graph"></i>
-                        Выгрузка текущей недели
+                        <i class="bi bi-calendar-week"></i>
+                        Релизы текущей недели
                     </button>
                 </div>
             </div>
@@ -2809,27 +2809,7 @@ function buildReviewerCell(item) {
         }
 
         async function generateCurrentWeekReleaseReport() {
-            setReleaseRefreshButtonsLoading(true);
-
-            try {
-                const response = await fetch(BASE_PATH + '/dashboard/release-monitor/report/current-week', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
-                });
-                const data = await response.json();
-                if (!response.ok || !data.success) {
-                    throw new Error(data.error || 'Не удалось сформировать выгрузку текущей недели');
-                }
-
-                if (data.download_url) {
-                    window.open(data.download_url, '_blank', 'noopener');
-                }
-            } catch (error) {
-                console.error('Current week release report error:', error);
-                alert('Ошибка формирования выгрузки текущей недели: ' + error.message);
-            } finally {
-                setReleaseRefreshButtonsLoading(false);
-            }
+            window.open(BASE_PATH + '/dashboard/release-monitor/current-week', '_blank', 'noopener');
         }
 
         async function refreshReleaseMonitor(mode = 'full') {

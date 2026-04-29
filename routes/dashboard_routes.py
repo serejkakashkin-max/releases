@@ -1,7 +1,7 @@
 import os
 import logging
 from datetime import datetime
-from flask import Blueprint, render_template, jsonify, request
+from flask import Blueprint, render_template, jsonify, request, make_response
 
 from services.dashboard_service import (
     get_dashboard_data, force_refresh_cache, 
@@ -177,6 +177,26 @@ def generate_release_monitor_current_week_report():
     except Exception as e:
         logging.exception("Ошибка формирования недельного отчета по релизам")
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+@dashboard_bp.route('/dashboard/release-monitor/current-week', methods=['GET'])
+def current_week_release_monitor_page():
+    """Постоянная HTML-страница мониторинга релизов текущей недели."""
+    try:
+        snapshot = get_release_monitor_snapshot() or {}
+        items = snapshot.get('items', []) if isinstance(snapshot, dict) else []
+        report_service = get_release_report_service()
+        report_data = report_service.generate_current_week_plan_report(items)
+        html_content = report_service.generate_current_week_plan_html(report_data)
+        response = make_response(html_content)
+        response.headers["Content-Type"] = "text/html; charset=utf-8"
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+    except Exception as e:
+        logging.exception("Ошибка открытия мониторинга релизов текущей недели")
+        return f"Ошибка открытия мониторинга релизов текущей недели: {str(e)}", 500
 
 @dashboard_bp.route('/dashboard/api/data', methods=['GET'])
 def api_dashboard_data():

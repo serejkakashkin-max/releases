@@ -45,7 +45,8 @@ class ReleaseReportService:
             reverse=False,
         )
 
-        final_items = [item for item in filtered_items if bool(item.get("is_final"))]
+        final_items = [item for item in filtered_items if self._is_week_effectively_installed(item)]
+        upcoming_items = [item for item in filtered_items if not self._is_week_effectively_installed(item)]
         reroll_items = [item for item in filtered_items if bool(item.get("is_reroll"))]
         hotfix_items = [item for item in filtered_items if self._is_hotfix(item)]
         system_counter = Counter()
@@ -71,6 +72,7 @@ class ReleaseReportService:
             },
             "statistics": {
                 "total": len(filtered_items),
+                "upcoming": len(upcoming_items),
                 "installed": len(final_items),
                 "rerolls": len(reroll_items),
                 "hotfixes": len(hotfix_items),
@@ -364,7 +366,8 @@ class ReleaseReportService:
         .report-filter-state strong {{
             color: #1d2a3a;
         }}
-        .clear-filter-btn {{
+        .clear-filter-btn,
+        .refresh-page-btn {{
             border: 1px solid #d7e1ef;
             border-radius: 999px;
             background: #ffffff;
@@ -375,6 +378,11 @@ class ReleaseReportService:
         }}
         .clear-filter-btn[hidden] {{
             display: none;
+        }}
+        .refresh-page-btn {{
+            background: #0d6efd;
+            border-color: #0d6efd;
+            color: #ffffff;
         }}
         .counter-list strong {{
             color: #0d6efd;
@@ -489,6 +497,14 @@ class ReleaseReportService:
         }}
         tr.state-cancelled {{
             background: rgba(224, 49, 49, 0.07);
+        }}
+        .monitor-link {{
+            color: #0d6efd;
+            font-weight: 700;
+            text-decoration: none;
+        }}
+        .monitor-link:hover {{
+            text-decoration: underline;
         }}
         .footer {{
             color: #6b7785;
@@ -832,7 +848,8 @@ class ReleaseReportService:
         .report-filter-state strong {{
             color: #1d2a3a;
         }}
-        .clear-filter-btn {{
+        .clear-filter-btn,
+        .refresh-page-btn {{
             border: 1px solid #d7e1ef;
             border-radius: 999px;
             background: #ffffff;
@@ -843,6 +860,11 @@ class ReleaseReportService:
         }}
         .clear-filter-btn[hidden] {{
             display: none;
+        }}
+        .refresh-page-btn {{
+            background: #0d6efd;
+            border-color: #0d6efd;
+            color: #ffffff;
         }}
         table {{
             width: 100%;
@@ -866,14 +888,39 @@ class ReleaseReportService:
             letter-spacing: 0.06em;
         }}
         th:nth-child(1), td:nth-child(1) {{ width: 54px; }}
-        th:nth-child(2), td:nth-child(2) {{ width: 28%; }}
-        th:nth-child(3), td:nth-child(3), th:nth-child(4), td:nth-child(4) {{ width: 10%; }}
-        th:nth-child(5), td:nth-child(5) {{ width: 10%; }}
+        th:nth-child(2), td:nth-child(2) {{ width: 24%; }}
+        th:nth-child(3), td:nth-child(3) {{ width: 7%; }}
+        th:nth-child(4), td:nth-child(4), th:nth-child(5), td:nth-child(5) {{ width: 9%; }}
         th:nth-child(6), td:nth-child(6) {{ width: 9%; }}
-        th:nth-child(7), td:nth-child(7), th:nth-child(8), td:nth-child(8) {{ width: 9%; }}
-        th:nth-child(9), td:nth-child(9) {{ width: 8%; }}
+        th:nth-child(7), td:nth-child(7) {{ width: 8%; }}
+        th:nth-child(8), td:nth-child(8), th:nth-child(9), td:nth-child(9) {{ width: 8%; }}
+        th:nth-child(10), td:nth-child(10) {{ width: 8%; }}
+        .monitor-link {{
+            color: #0d6efd;
+            font-weight: 700;
+            text-decoration: none;
+        }}
+        .monitor-link:hover {{
+            text-decoration: underline;
+        }}
+        .final-toggle {{
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            border: 1px solid #d7e1ef;
+            border-radius: 999px;
+            background: #f8fbff;
+            color: #1d2a3a;
+            padding: 8px 14px;
+            font: inherit;
+            cursor: pointer;
+        }}
+        .final-toggle input {{
+            accent-color: #0d6efd;
+        }}
         tr.state-overdue {{ background: rgba(224, 49, 49, 0.07); }}
         tr.state-today {{ background: rgba(245, 159, 0, 0.08); }}
+        tr.state-final {{ background: rgba(25, 135, 84, 0.07); }}
         .footer {{
             color: #6b7785;
             text-align: center;
@@ -885,15 +932,15 @@ class ReleaseReportService:
 <body>
     <div class="container">
         <section class="hero">
-            <h1>Предстоящие релизы текущей недели</h1>
+            <h1>Релизы текущей недели</h1>
             <div class="meta">
-                Период: <strong>{html.escape(period['label'])}</strong><br>
-                В отчет включены только видимые релизы текущей недели, включая уже установленные на ПРОМ строки.
+                Период: <strong>{html.escape(period['label'])}</strong>
             </div>
         </section>
 
         <section class="summary-grid">
-            {self._render_summary_card("Всего релизов недели", stats['total'], "summary", "all")}
+            {self._render_summary_card("Предстоящие релизы", stats.get('upcoming', stats['total'] - stats['installed']), "summary", "all")}
+            {self._render_summary_card("Всего релизов недели", stats['total'], "summary", "all_with_final")}
             {self._render_summary_card("Установлен на ПРОМ", stats['installed'], "summary", "installed")}
             {self._render_summary_card("Перераскатки", stats['rerolls'], "summary", "reroll")}
             {self._render_summary_card("Хотфиксы", stats['hotfixes'], "summary", "hotfix")}
@@ -906,9 +953,14 @@ class ReleaseReportService:
 
         <section class="table-card">
             <h3>Список релизов недели</h3>
-            <p class="hint">Скрытые по умолчанию релизы в отчет не включаются. Установленные на ПРОМ строки текущей недели учитываются.</p>
+            <p class="hint">По умолчанию показаны предстоящие релизы. Установлленные на ПРОМ остаются в мониторинге и открываются переключателем.</p>
             <div class="report-toolbar">
                 <div class="report-filter-state">Фильтр: <strong id="activeFilterLabel">не выбран</strong></div>
+                <label class="final-toggle">
+                    <input type="checkbox" id="showFinalRows">
+                    Показать установленные на ПРОМ ({stats['installed']})
+                </label>
+                <button type="button" class="refresh-page-btn" onclick="window.location.reload()">Обновить</button>
                 <button type="button" class="clear-filter-btn" id="clearReportFilter" hidden>Сбросить фильтр</button>
             </div>
             <table>
@@ -916,6 +968,7 @@ class ReleaseReportService:
                     <tr>
                         <th>№</th>
                         <th>Название</th>
+                        <th>№ ЗНИ</th>
                         <th>ID релиза</th>
                         <th>ID РОВ</th>
                         <th>Сборка</th>
@@ -926,7 +979,7 @@ class ReleaseReportService:
                     </tr>
                 </thead>
                 <tbody>
-                    {rows_html if rows_html else '<tr><td colspan="9">На текущую неделю предстоящие релизы не найдены.</td></tr>'}
+                    {rows_html if rows_html else '<tr><td colspan="10">На текущую неделю релизы не найдены.</td></tr>'}
                 </tbody>
             </table>
         </section>
@@ -939,6 +992,7 @@ class ReleaseReportService:
             const summaryButtons = Array.from(document.querySelectorAll('.summary-card-button'));
             const clearButton = document.getElementById('clearReportFilter');
             const labelNode = document.getElementById('activeFilterLabel');
+            const showFinalRows = document.getElementById('showFinalRows');
             let currentType = '';
             let currentValue = '';
 
@@ -949,6 +1003,14 @@ class ReleaseReportService:
             function applyFilter() {{
                 const rows = Array.from(document.querySelectorAll('tbody tr[data-system], tbody tr[data-status]'));
                 rows.forEach((row) => {{
+                    const isFinal = row.dataset.final === '1';
+                    const finalAllowed = Boolean(showFinalRows && showFinalRows.checked)
+                        || (currentType === 'summary' && currentValue === 'installed')
+                        || (currentType === 'summary' && currentValue === 'all_with_final');
+                    if (isFinal && !finalAllowed) {{
+                        row.hidden = true;
+                        return;
+                    }}
                     if (!currentType || !currentValue) {{
                         row.hidden = false;
                         return;
@@ -961,6 +1023,8 @@ class ReleaseReportService:
 
                     if (currentType === 'summary') {{
                         if (currentValue === 'all') {{
+                            matched = row.dataset.final !== '1';
+                        }} else if (currentValue === 'all_with_final') {{
                             matched = true;
                         }} else if (currentValue === 'installed') {{
                             matched = row.dataset.final === '1';
@@ -978,6 +1042,8 @@ class ReleaseReportService:
                     row.hidden = !matched;
                 }});
 
+                renumberVisibleRows(rows);
+
                 if (!currentType || !currentValue) {{
                     labelNode.textContent = 'не выбран';
                     clearButton.hidden = true;
@@ -985,7 +1051,8 @@ class ReleaseReportService:
                     let suffix = '';
                     if (currentType === 'summary') {{
                         const summaryLabels = {{
-                            all: ' (все релизы недели)',
+                            all: ' (предстоящие релизы)',
+                            all_with_final: ' (включая финальные)',
                             installed: ' (установлен на ПРОМ)',
                             reroll: ' (перераскатки)',
                             hotfix: ' (хотфиксы)',
@@ -999,6 +1066,20 @@ class ReleaseReportService:
                     labelNode.textContent = currentValue + suffix;
                     clearButton.hidden = false;
                 }}
+            }}
+
+            function renumberVisibleRows(rows) {{
+                let visibleIndex = 1;
+                rows.forEach((row) => {{
+                    if (row.hidden) {{
+                        return;
+                    }}
+                    const numberCell = row.querySelector('.week-row-number');
+                    if (numberCell) {{
+                        numberCell.textContent = String(visibleIndex);
+                    }}
+                    visibleIndex += 1;
+                }});
             }}
 
             filterButtons.forEach((button) => {{
@@ -1022,6 +1103,26 @@ class ReleaseReportService:
                 currentValue = '';
                 applyFilter();
             }});
+
+            if (showFinalRows) {{
+                showFinalRows.addEventListener('change', applyFilter);
+            }}
+
+            applyFilter();
+
+            function millisecondsUntilNextMorningRefresh() {{
+                const now = new Date();
+                const next = new Date(now);
+                next.setHours(6, 30, 0, 0);
+                if (next <= now) {{
+                    next.setDate(next.getDate() + 1);
+                }}
+                return next.getTime() - now.getTime();
+            }}
+
+            window.setTimeout(() => {{
+                window.location.reload();
+            }}, millisecondsUntilNextMorningRefresh());
         }})();
     </script>
 </body>
@@ -1063,6 +1164,8 @@ class ReleaseReportService:
                 [part for part in (item.get("release_name_lines") or [])[:2] if str(part or "").strip()]
             ) or str(item.get("release_summary") or "")
             system_name = self._normalize_system_name(item.get("system_name"), item.get("source_prefix"))
+            release_key_html = self._render_key_link(item.get("release_url"), item.get("release_key"))
+            rov_key_html = self._render_key_link(item.get("rov_url"), item.get("rov_key"))
             responsibles_attr = "|".join(
                 str(value or "").strip().lower()
                 for value in (item.get("psi_responsibles") or [])
@@ -1081,8 +1184,8 @@ class ReleaseReportService:
                     data-hotfix="{'1' if self._is_hotfix(item) else '0'}">
                     <td>{html.escape(str(item.get('release_number') or EM_DASH))}</td>
                     <td>{html.escape(row_title)}</td>
-                    <td>{html.escape(str(item.get('release_key') or EM_DASH))}</td>
-                    <td>{html.escape(str(item.get('rov_key') or EM_DASH))}</td>
+                    <td>{release_key_html}</td>
+                    <td>{rov_key_html}</td>
                     <td>{html.escape(str(item.get('release_version') or EM_DASH))}</td>
                     <td>{html.escape(row_kind)}</td>
                     <td>{html.escape(str(item.get('release_status') or EM_DASH))}</td>
@@ -1100,24 +1203,28 @@ class ReleaseReportService:
         rows = []
         for index, item in enumerate(rows_source, start=1):
             row_kind = self._get_item_kind_label(item)
-            row_state = "overdue" if item.get("is_overdue") else "today" if item.get("is_today") else "active"
+            is_effectively_installed = self._is_week_effectively_installed(item)
+            row_state = "final" if is_effectively_installed else "overdue" if item.get("is_overdue") else "today" if item.get("is_today") else "active"
             row_title = " / ".join(
                 [part for part in (item.get("release_name_lines") or [])[:2] if str(part or "").strip()]
             ) or str(item.get("release_summary") or "")
             system_name = self._normalize_system_name(item.get("system_name"), item.get("source_prefix"))
             status_name = str(item.get("release_status") or "Не указан").strip() or "Не указан"
+            release_key_html = self._render_key_link(item.get("release_url"), item.get("release_key"))
+            rov_key_html = self._render_key_link(item.get("rov_url"), item.get("rov_key"))
             rows.append(
                 f"""
                 <tr class="state-{row_state}"
                     data-system="{html.escape(system_name.lower())}"
                     data-status="{html.escape(status_name.lower())}"
-                    data-final="{'1' if bool(item.get('is_final')) else '0'}"
+                    data-final="{'1' if is_effectively_installed else '0'}"
                     data-reroll="{'1' if bool(item.get('is_reroll')) else '0'}"
                     data-hotfix="{'1' if self._is_hotfix(item) else '0'}">
-                    <td>{index}</td>
+                    <td class="week-row-number">{index}</td>
                     <td>{html.escape(row_title)}</td>
-                    <td>{html.escape(str(item.get('release_key') or EM_DASH))}</td>
-                    <td>{html.escape(str(item.get('rov_key') or EM_DASH))}</td>
+                    <td>{html.escape(str(item.get('zni_key') or EM_DASH))}</td>
+                    <td>{release_key_html}</td>
+                    <td>{rov_key_html}</td>
                     <td>{html.escape(str(item.get('release_version') or EM_DASH))}</td>
                     <td>{html.escape(row_kind)}</td>
                     <td>{html.escape(str(item.get('deployment_start') or EM_DASH))}</td>
@@ -1127,6 +1234,37 @@ class ReleaseReportService:
                 """
             )
         return "".join(rows)
+
+    def _render_key_link(self, url_value: Any, key_value: Any) -> str:
+        key = str(key_value or "").strip()
+        if not key:
+            return html.escape(EM_DASH)
+        url = str(url_value or "").strip()
+        if not url:
+            return html.escape(key)
+        return (
+            f'<a class="monitor-link" href="{html.escape(url, quote=True)}" '
+            f'target="_blank" rel="noopener noreferrer">{html.escape(key)}</a>'
+        )
+
+    def _is_week_effectively_installed(self, item: Dict[str, Any]) -> bool:
+        if bool(item.get("is_final")):
+            return True
+        if not bool(item.get("is_reroll")):
+            return False
+
+        event_date = None
+        for key in ("deployment_end_iso", "deployment_start_iso", "sort_date"):
+            raw_value = str(item.get(key) or "").strip()
+            if not raw_value:
+                continue
+            try:
+                event_date = datetime.fromisoformat(raw_value)
+                break
+            except ValueError:
+                continue
+
+        return bool(event_date and event_date < datetime.now())
 
     def _resolve_period(
         self,
