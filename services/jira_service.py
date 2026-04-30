@@ -6,6 +6,66 @@ from datetime import datetime, timedelta
 from config import TOKENS
 
 
+def _iter_nested_values(value):
+    if isinstance(value, dict):
+        yield value
+        for nested_value in value.values():
+            yield from _iter_nested_values(nested_value)
+    elif isinstance(value, list):
+        for nested_item in value:
+            yield from _iter_nested_values(nested_item)
+    elif value is not None:
+        yield value
+
+
+def _format_ke_id(raw_ke_id):
+    if not raw_ke_id:
+        return ""
+
+    raw_value = str(raw_ke_id).strip()
+    if raw_value.upper().startswith("CI"):
+        digits = re.sub(r"\D", "", raw_value[2:])
+    else:
+        digits = re.sub(r"\D", "", raw_value)
+
+    if not digits:
+        return ""
+    return f"CI{digits.zfill(8)}"
+
+
+def _extract_ke_from_distributive_field(raw_value):
+    for value in _iter_nested_values(raw_value):
+        if not isinstance(value, dict):
+            continue
+
+        for key in ("id", "smId", "PARENT_CI"):
+            ke = _format_ke_id(value.get(key))
+            if ke:
+                return ke
+    return ""
+
+
+def _extract_version_from_distributive_field(raw_value):
+    version_pattern = re.compile(r"[DP]-\d+\.\d+\.\d+-\d+")
+
+    for value in _iter_nested_values(raw_value):
+        if isinstance(value, dict):
+            for key in ("version", "buildVersion", "release_version", "releases_version", "value", "url"):
+                raw_version = value.get(key)
+                if not raw_version:
+                    continue
+
+                match = version_pattern.search(str(raw_version))
+                if match:
+                    return match.group(0)
+        else:
+            match = version_pattern.search(str(value))
+            if match:
+                return match.group(0)
+
+    return ""
+
+
 def get_jira_domain_and_token(release_id):
     # ИЗМЕНЕНО: релизы из delta-домена
     delta_prefixes = ("SMECSC", "SMEPG", "HELPERAI", "AIGAS")
@@ -25,21 +85,18 @@ def get_release_version(release_id):
         response.raise_for_status()
         data = response.json()
         
-        # Сначала пробуем получить версию из структурированных полей
-        customfield_21710 = data.get("fields", {}).get("customfield_21710", [])
-        
-        if customfield_21710 and isinstance(customfield_21710, list) and len(customfield_21710) > 0:
-            # Берём первый элемент с валидной версией
-            for dist in customfield_21710:
-                version = dist.get("version")
-                if version and isinstance(version, str):
-                    # Проверяем, что версия соответствует ожидаемому формату
-                    if re.match(r'[DP]-\d+\.\d+\.\d+-\d+', version):
-                        logging.info(f"Версия релиза {release_id} найдена в customfield_21710: {version}")
-                        return version
+        # Сначала пробуем получить версию из структурированных полей дистрибутива.
+        # Для CLM/Delta версия может лежать как в customfield_21710, так и в customfield_27011,
+        # иногда внутри вложенного объекта или текстового value/url.
+        fields = data.get("fields", {})
+        for field_id in ("customfield_21710", "customfield_27011"):
+            version = _extract_version_from_distributive_field(fields.get(field_id, []))
+            if version:
+                logging.info(f"Версия релиза {release_id} найдена в {field_id}: {version}")
+                return version
         
         # Fallback на customfield_21713
-        customfield_21713 = data.get("fields", {}).get("customfield_21713", "")
+        customfield_21713 = fields.get("customfield_21713", "")
         if customfield_21713:
             match = re.search(r'[DP]-\d+\.\d+\.\d+-\d+', customfield_21713)
             if match:
@@ -101,23 +158,12 @@ def get_ke_from_release(release_id):
         response = requests.get(url, headers=headers, verify=False)
         response.raise_for_status()
         data = response.json()
-        customfield_21710 = data.get("fields", {}).get("customfield_21710", [])
-        if customfield_21710 and isinstance(customfield_21710, list) and len(customfield_21710) > 0:
-            ke = customfield_21710[0].get("id", "")
+        fields = data.get("fields", {})
+        for field_id in ("customfield_21710", "customfield_27011"):
+            ke = _extract_ke_from_distributive_field(fields.get(field_id, []))
             if ke:
-                if len(ke) == 7:
-                    return "CI0" + ke
-                elif len(ke) == 8:
-                    return "CI" + ke
-        
-        customfield_27011 = data.get("fields", {}).get("customfield_27011", [])
-        if customfield_27011 and isinstance(customfield_27011, list) and len(customfield_27011) > 0:
-            ke = customfield_27011[0].get("id", "")
-            if ke:
-                if len(ke) == 7:
-                    return "CI0" + ke
-                elif len(ke) == 8:
-                    return "CI" + ke
+                logging.info(f"КЭ релиза {release_id} найден в {field_id}: {ke}")
+                return ke
         return ""
     except Exception as e:
         logging.error(f"Ошибка получения КЭ: {e}")

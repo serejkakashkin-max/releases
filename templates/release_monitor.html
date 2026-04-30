@@ -2242,6 +2242,7 @@ function buildReviewerCell(item) {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         release_id: state.form.release_id,
+                        release_version: state.item?.release_version || '',
                         prev_version: state.form.prev_version,
                         oplot: state.form.oplot,
                         checker: state.form.checker,
@@ -3146,7 +3147,7 @@ function buildReviewerCell(item) {
                     currentReleaseViewFilter === 'all' ||
                     (currentReleaseViewFilter === 'non_final' && item.is_non_final) ||
                     (currentReleaseViewFilter === 'overdue' && item.is_overdue) ||
-                    (currentReleaseViewFilter === 'today' && item.is_today) ||
+                    (currentReleaseViewFilter === 'today' && item.is_ready_for_prom) ||
                     (currentReleaseViewFilter === 'final' && item.is_final) ||
                     (currentReleaseViewFilter === 'cancelled' && item.is_cancelled)
                 );

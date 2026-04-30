@@ -20,13 +20,14 @@ from services.jira_oplot_issue_service import create_oplot_release_issue
 
 FINAL_RELEASE_STATUS = "\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u043b\u0435\u043d \u043d\u0430 \u041f\u0420\u041e\u041c"
 CANCELLED_RELEASE_STATUS = "\u041e\u0442\u043c\u0435\u043d\u0435\u043d\u043e"
+READY_FOR_PROM_STATUS = "\u0413\u043e\u0442\u043e\u0432 \u043a \u0443\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0435 \u043d\u0430 \u041f\u0420\u041e\u041c"
 FINAL_RELEASE_STATUSES = (
     FINAL_RELEASE_STATUS,
     CANCELLED_RELEASE_STATUS,
 )
 PRE_FINAL_RELEASE_STATUSES = (
     "\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0430 \u043d\u0430 \u041f\u0420\u041e\u041c",
-    "\u0413\u043e\u0442\u043e\u0432 \u043a \u0443\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0435 \u043d\u0430 \u041f\u0420\u041e\u041c",
+    READY_FOR_PROM_STATUS,
 )
 RELEASE_PREFIXES = ("EMRM", "SMECLM", "SMECSC", "HELPERAI", "AIGAS")
 RELEASE_ISSUE_TYPE = "Release 2.0"
@@ -1147,6 +1148,32 @@ def _extract_version(dist_item):
     return ""
 
 
+def _iter_nested_values(value):
+    if isinstance(value, dict):
+        yield value
+        for nested_value in value.values():
+            yield from _iter_nested_values(nested_value)
+    elif isinstance(value, list):
+        for nested_item in value:
+            yield from _iter_nested_values(nested_item)
+    elif value is not None:
+        yield value
+
+
+def _extract_nested_version(dist_item):
+    for value in _iter_nested_values(dist_item):
+        if isinstance(value, dict):
+            for key in ("version", "buildVersion"):
+                raw_value = value.get(key)
+                if raw_value and re.search(r"[DP]-\d+\.\d+\.\d+-\d+", str(raw_value)):
+                    return str(raw_value)
+        else:
+            match = re.search(r"[DP]-\d+\.\d+\.\d+-\d+", str(value))
+            if match:
+                return match.group(0)
+    return _extract_version(dist_item)
+
+
 def _extract_dist_url(dist_item):
     if not dist_item:
         return ""
@@ -1170,6 +1197,25 @@ def _extract_dist_url(dist_item):
     return ""
 
 
+def _extract_nested_dist_url(dist_item):
+    for value in _iter_nested_values(dist_item):
+        if isinstance(value, dict):
+            for key in ("url", "downloadUrl", "artifactUrl", "link", "value"):
+                raw_value = value.get(key)
+                if not raw_value:
+                    continue
+                match = re.search(r"https?://\S+", str(raw_value))
+                if match:
+                    return match.group(0).rstrip('",)')
+                if str(raw_value).startswith(("http://", "https://")):
+                    return str(raw_value)
+        else:
+            match = re.search(r"https?://\S+", str(value))
+            if match:
+                return match.group(0).rstrip('",)')
+    return _extract_dist_url(dist_item)
+
+
 def _extract_ke_object(fields, resolved_fields):
     raw_ke_object = fields.get(resolved_fields["ke_object"])
     item = _first_list_item(raw_ke_object)
@@ -1191,12 +1237,29 @@ def _extract_ke_object(fields, resolved_fields):
     return {"id": "", "name": ""}
 
 
+def _dist_item_score(item):
+    if not item:
+        return 0
+    score = 0
+    if _extract_nested_version(item):
+        score += 4
+    if _extract_nested_dist_url(item):
+        score += 3
+    if isinstance(item, dict) and (item.get("id") or item.get("PARENT_CI") or item.get("smId")):
+        score += 2
+    return score
+
+
 def _extract_release_dist(fields, resolved_fields):
+    candidates = []
     for logical_name in ("release_distributive", "delta_release_distributive"):
         raw_dist = fields.get(resolved_fields[logical_name])
-        item = _first_list_item(raw_dist)
-        if item:
-            return item
+        if isinstance(raw_dist, list):
+            candidates.extend(item for item in raw_dist if item)
+        elif raw_dist:
+            candidates.append(raw_dist)
+    if candidates:
+        return max(candidates, key=_dist_item_score)
     return None
 
 
@@ -1379,13 +1442,15 @@ def _clean_release_summary(summary):
 
 
 def _detect_system(prefix, summary, ke_name, system_info_text):
-    searchable = _normalize_text(f"{summary} {ke_name} {system_info_text}")
+    raw_searchable = str(f"{summary} {ke_name} {system_info_text}" or "").lower()
+    searchable = _normalize_text(raw_searchable)
 
-    if "Р°РёСЃС‚" in searchable or "aist" in searchable:
-        return "РђРРЎРў"
+    aist_markers = ("\u0430\u0438\u0441\u0442", "aist", "Р°РёСЃС‚".lower(), "РђРРЎРў".lower())
+    if any(marker in raw_searchable or marker in searchable for marker in aist_markers):
+        return "\u0410\u0418\u0421\u0422"
     if "clm" in searchable or prefix in {"SMECLM", "SMECSC"}:
         return "CLM"
-    return "Р¤РѕРєСѓСЃ"
+    return "\u0424\u043e\u043a\u0443\u0441"
 
 
 def _build_release_name_lines(summary, release_ke_line, row_label="(\u0420\u0435\u043b\u0438\u0437)"):
@@ -1445,17 +1510,23 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
 
     ke_object = _extract_ke_object(fields, resolved_fields)
     dist_item = _extract_release_dist(fields, resolved_fields)
-    release_version = _extract_version(dist_item)
-    release_dist_url = _extract_dist_url(dist_item)
-    ke_distributive = _format_ke_id((dist_item or {}).get("id") if isinstance(dist_item, dict) else "")
+    release_version = _extract_nested_version(dist_item)
+    release_dist_url = _extract_nested_dist_url(dist_item)
+    dist_ke_raw = ""
+    if isinstance(dist_item, dict):
+        dist_ke_raw = dist_item.get("id") or dist_item.get("smId") or dist_item.get("PARENT_CI") or ""
+    ke_distributive = _format_ke_id(dist_ke_raw)
 
     normalized_status = _normalize_text(status_name)
     is_cancelled = normalized_status == _normalize_text(CANCELLED_RELEASE_STATUS)
     is_final = normalized_status == _normalize_text(FINAL_RELEASE_STATUS)
+    is_ready_for_prom = normalized_status == _normalize_text(READY_FOR_PROM_STATUS)
     is_non_final = not is_final and not is_cancelled
     is_pre_final = normalized_status in {_normalize_text(status) for status in PRE_FINAL_RELEASE_STATUSES}
     ke_name = ke_object.get("name") or ""
     ke_id = ke_object.get("id") or ""
+    if not ke_distributive and ke_id:
+        ke_distributive = _format_ke_id(ke_id)
     release_ke_line = f"{ke_name}({ke_id})" if ke_name and ke_id else (ke_name or "")
     if not release_ke_line:
         release_ke_line = (system_info_text or "").strip()
@@ -1553,6 +1624,7 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
             "is_cancelled": row_is_cancelled,
             "is_non_final": row_is_non_final,
             "is_pre_final": row_is_pre_final,
+            "is_ready_for_prom": is_ready_for_prom and not row_is_final,
             "is_overdue": is_overdue,
             "is_today": is_today,
             "days_overdue": days_overdue,

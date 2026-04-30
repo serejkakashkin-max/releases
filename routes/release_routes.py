@@ -206,6 +206,7 @@ def _generate_release_zip_buffer(
     category: str,
     release_full: str,
     release_id: str,
+    release_version: str = "",
     prev_version: str,
     oplot: str,
     checker: str,
@@ -229,7 +230,7 @@ def _generate_release_zip_buffer(
     if not template_files:
         raise ValueError(f"Шаблоны не найдены в директории: {template_dir}")
 
-    release_version = get_release_version(release_id)
+    release_version = (release_version or get_release_version(release_id) or "").strip()
     jira_issues = get_issues_from_jira(release_id)
     instruction_block = "Выполнить пункты инструкции по внедрению ИНСТРУКЦИЯ" if instruction_link else "Отсутствуют"
     pob = get_pob_from_release(release_id)
@@ -237,6 +238,8 @@ def _generate_release_zip_buffer(
 
     context = {
         "RELEASE_VERSION": release_version,
+        "release_version": release_version,
+        "releases_version": release_version,
         "PREV_VERSION": prev_version,
         "RELEASE_ID": release_id,
         "OPLOT": oplot,
@@ -313,12 +316,14 @@ def release_monitor_init():
 
     release_full = detection.get("release_full", "")
     playbooks_required = release_uses_playbooks(release_full) if detection.get("found") else None
+    jira_ke = get_ke_from_release(release_id)
+    incoming_ke = (data.get("ke") or "").strip()
 
     return jsonify({
         "success": True,
         "release_id": release_id,
         "detection": detection,
-        "ke": (data.get("ke") or get_ke_from_release(release_id) or "").strip(),
+        "ke": (jira_ke or incoming_ke).strip(),
         "playbooks_required": playbooks_required,
         "playbooks": DEFAULT_BH_PLAYBOOKS,
         "oplot": (data.get("oplot") or "").strip(),
@@ -332,6 +337,7 @@ def release_monitor_init():
 def release_monitor_generate():
     data = request.get_json(silent=True) or {}
     release_id = (data.get("release_id") or "").strip()
+    release_version = (data.get("release_version") or "").strip()
     prev_version = (data.get("prev_version") or "").strip()
     oplot = (data.get("oplot") or "").strip()
     checker = (data.get("checker") or "").strip()
@@ -372,6 +378,7 @@ def release_monitor_generate():
             category=category,
             release_full=release_full,
             release_id=release_id,
+            release_version=release_version,
             prev_version=prev_version,
             oplot=oplot,
             checker=checker,
@@ -433,6 +440,8 @@ def release():
         
         context = {
             "RELEASE_VERSION": release_version,
+            "release_version": release_version,
+            "releases_version": release_version,
             "PREV_VERSION": prev_version,
             "RELEASE_ID": release_id,
             "OPLOT": oplot,
