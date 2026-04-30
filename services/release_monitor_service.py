@@ -15,6 +15,7 @@ from openpyxl import load_workbook
 
 from config import DASHBOARD_CACHE_TTL, OPLOT_VALUES, TOKENS
 from services.jira_service import get_jira_domain_and_token
+from services.jira_oplot_issue_service import create_oplot_release_issue
 
 
 FINAL_RELEASE_STATUS = "\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u043b\u0435\u043d \u043d\u0430 \u041f\u0420\u041e\u041c"
@@ -39,6 +40,7 @@ REVIEWERS_FILE = SNAPSHOT_DIR / "release_monitor_reviewers.json"
 ORDER_FILE = SNAPSHOT_DIR / "release_monitor_order.json"
 DUTY_SCHEDULE_FILE = SNAPSHOT_DIR / "release_monitor_duty_schedule.json"
 DATE_OVERRIDES_FILE = SNAPSHOT_DIR / "release_monitor_date_overrides.json"
+ZNI_FILE = SNAPSHOT_DIR / "release_monitor_zni.json"
 CONFLUENCE_DELTA_BASE = "https://confluence.delta.sbrf.ru"
 
 MONTH_NAME_MAP = {
@@ -291,6 +293,56 @@ def _save_reviewer_assignments(assignments):
         )
     except Exception as exc:
         logging.warning("Release monitor: failed to save reviewer assignments: %s", exc)
+
+
+def _load_zni_assignments():
+    if not ZNI_FILE.exists():
+        return {}
+
+    try:
+        payload = json.loads(ZNI_FILE.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            return {}
+        normalized = {}
+        for key, value in payload.items():
+            row_key = str(key or "").strip()
+            if not row_key:
+                continue
+            if isinstance(value, dict):
+                zni_key = str(value.get("key") or value.get("zni_key") or "").strip()
+                if zni_key:
+                    normalized[row_key] = {
+                        "key": zni_key,
+                        "url": str(value.get("url") or "").strip(),
+                        "summary": str(value.get("summary") or "").strip(),
+                        "created_at": str(value.get("created_at") or "").strip(),
+                        "assignee": str(value.get("assignee") or "").strip(),
+                        "reporter": str(value.get("reporter") or "").strip(),
+                    }
+            elif value:
+                normalized[row_key] = {
+                    "key": str(value).strip(),
+                    "url": "",
+                    "summary": "",
+                    "created_at": "",
+                    "assignee": "",
+                    "reporter": "",
+                }
+        return normalized
+    except Exception as exc:
+        logging.warning("Release monitor: failed to load ZNI assignments: %s", exc)
+        return {}
+
+
+def _save_zni_assignments(assignments):
+    try:
+        _ensure_snapshot_dir()
+        ZNI_FILE.write_text(
+            json.dumps(assignments, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        logging.warning("Release monitor: failed to save ZNI assignments: %s", exc)
 
 
 def _load_manual_order():
@@ -766,6 +818,18 @@ def _apply_reviewer_assignments(items):
         item["psi_owner"] = release_assignment.get("reviewer", "")
         item["psi_checker"] = release_assignment.get("checker", "")
         item["psi_responsibles"] = list(release_assignment.get("responsibles", []))
+    return items
+
+
+def _apply_zni_assignments(items):
+    assignments = _load_zni_assignments()
+    for item in items:
+        assignment_key = _get_assignment_key_for_item(item)
+        zni_assignment = assignments.get(assignment_key) or assignments.get(item.get("release_key"), {})
+        zni_key = str(zni_assignment.get("key") or "").strip() if isinstance(zni_assignment, dict) else ""
+        zni_url = str(zni_assignment.get("url") or "").strip() if isinstance(zni_assignment, dict) else ""
+        item["zni_key"] = zni_key
+        item["zni_url"] = zni_url
     return items
 
 
@@ -1463,6 +1527,7 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
             "is_reroll": is_reroll,
             "row_label": row_label,
             "zni_key": "",
+            "zni_url": "",
             "ke": ke_distributive,
             "ke_name": ke_name,
             "ke_id": ke_id,
@@ -2272,6 +2337,7 @@ def _normalize_release_payload(payload):
 
     normalized_items = [dict(item) for item in (payload.get("items") or []) if isinstance(item, dict)]
     _apply_reviewer_assignments(normalized_items)
+    _apply_zni_assignments(normalized_items)
     _apply_duty_schedule_assignments(normalized_items, persist=True)
     _apply_date_overrides(normalized_items)
     _sort_and_number_records(normalized_items)
@@ -2386,6 +2452,77 @@ def upload_release_monitor_duty_schedules(uploaded_files):
         "parsed_months": list(dict.fromkeys(parsed_months)),
         "warnings": warnings,
         "applied_count": applied_count,
+        "data": payload,
+    }
+
+
+def create_release_monitor_zni(release_key, reporter=""):
+    global _cached_data, _last_cache_update
+
+    release_key = str(release_key or "").strip()
+    reporter = str(reporter or "").strip()
+    if not release_key:
+        raise ValueError("Не указан ключ строки релиза")
+
+    with _cache_lock:
+        _ensure_scheduler_started()
+        if _cached_data is None:
+            disk_payload = _load_snapshot_from_disk()
+            if disk_payload is not None:
+                _cached_data = disk_payload
+                _last_cache_update = _get_snapshot_mtime() or time.time()
+
+        if _cached_data is None:
+            raise ValueError("Таблица релизов еще не загружена")
+
+        items = _cached_data.get("items") or []
+        _apply_reviewer_assignments(items)
+        _apply_zni_assignments(items)
+        target_item = None
+        for item in items:
+            if _get_assignment_key_for_item(item) == release_key:
+                target_item = item
+                break
+
+        if not target_item:
+            raise ValueError("Не удалось найти строку релиза")
+        if target_item.get("zni_key"):
+            return {
+                "issue": {
+                    "key": target_item.get("zni_key"),
+                    "url": target_item.get("zni_url", ""),
+                    "already_exists": True,
+                },
+                "data": _normalize_release_payload(_get_cached_payload_copy() or _build_empty_release_monitor_payload()),
+            }
+
+    issue = create_oplot_release_issue(target_item, reporter_name=reporter)
+
+    with _cache_lock:
+        assignments = _load_zni_assignments()
+        assignments[release_key] = {
+            "key": issue.get("key", ""),
+            "url": issue.get("url", ""),
+            "summary": issue.get("summary", ""),
+            "created_at": _format_timestamp(),
+            "assignee": issue.get("assignee", ""),
+            "reporter": issue.get("reporter", ""),
+        }
+        _save_zni_assignments(assignments)
+
+        if _cached_data is not None:
+            items = _cached_data.get("items") or []
+            for item in items:
+                if _get_assignment_key_for_item(item) == release_key:
+                    item["zni_key"] = issue.get("key", "")
+                    item["zni_url"] = issue.get("url", "")
+                    break
+            _save_snapshot_to_disk(_cached_data)
+
+        payload = _normalize_release_payload(_get_cached_payload_copy() or _build_empty_release_monitor_payload())
+
+    return {
+        "issue": issue,
         "data": payload,
     }
 

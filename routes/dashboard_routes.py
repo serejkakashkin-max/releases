@@ -20,6 +20,7 @@ from services.release_monitor_service import (
     set_release_monitor_assignment,
     set_release_monitor_date_override,
     set_release_monitor_reviewer,
+    create_release_monitor_zni,
 )
 from services.report_service import save_report_to_disk
 from services.release_report_service import get_release_report_service
@@ -288,6 +289,27 @@ def update_release_monitor_reviewer():
         })
     except Exception as e:
         logging.error(f"Ошибка сохранения назначения по релизу: {e}")
+        return jsonify({"success": False, "error": str(e)}), 400
+
+
+@dashboard_bp.route('/dashboard/release-monitor/zni', methods=['POST'])
+def create_release_monitor_zni_issue():
+    """Создает Jira OPLOT задачу для выбранной строки релиза."""
+    try:
+        data = request.get_json(silent=True) or {}
+        release_key = data.get("release_key", "")
+        reporter = data.get("reporter", "")
+        result = create_release_monitor_zni(release_key, reporter=reporter)
+        payload = result.get("data", {})
+        return jsonify({
+            "success": True,
+            "issue": result.get("issue", {}),
+            "release_monitor": payload.get("items", []),
+            "release_monitor_summary": payload.get("summary", {}),
+            "release_monitor_meta": payload.get("meta", {}),
+        })
+    except Exception as e:
+        logging.error(f"Ошибка создания ЗНИ по релизу: {e}")
         return jsonify({"success": False, "error": str(e)}), 400
 
 

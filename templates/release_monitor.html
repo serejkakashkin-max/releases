@@ -317,7 +317,7 @@
         }
 
         .release-table-wrap {
-            overflow-x: auto;
+            overflow-x: hidden;
             border: 1px solid var(--border-color);
             border-radius: 14px;
         }
@@ -340,14 +340,73 @@
         .release-monitor-table {
             width: 100%;
             border-collapse: collapse;
-            min-width: 1300px;
+            table-layout: fixed;
         }
 
         .release-monitor-table th,
         .release-monitor-table td {
-            padding: 0.85rem 0.9rem;
+            padding: 0.64rem 0.58rem;
             border-bottom: 1px solid var(--border-color);
             vertical-align: top;
+            overflow-wrap: anywhere;
+            word-break: normal;
+        }
+
+        .release-monitor-table th:nth-child(1),
+        .release-monitor-table td:nth-child(1) {
+            width: 3.8%;
+        }
+
+        .release-monitor-table th:nth-child(2),
+        .release-monitor-table td:nth-child(2) {
+            width: 22.6%;
+        }
+
+        .release-monitor-table th:nth-child(3),
+        .release-monitor-table td:nth-child(3) {
+            width: 7%;
+        }
+
+        .release-monitor-table th:nth-child(4),
+        .release-monitor-table td:nth-child(4) {
+            width: 7%;
+        }
+
+        .release-monitor-table th:nth-child(5),
+        .release-monitor-table td:nth-child(5) {
+            width: 7.2%;
+        }
+
+        .release-monitor-table th:nth-child(6),
+        .release-monitor-table td:nth-child(6) {
+            width: 7.8%;
+        }
+
+        .release-monitor-table th:nth-child(7),
+        .release-monitor-table td:nth-child(7),
+        .release-monitor-table th:nth-child(8),
+        .release-monitor-table td:nth-child(8) {
+            width: 6.4%;
+        }
+
+        .release-monitor-table th:nth-child(9),
+        .release-monitor-table td:nth-child(9) {
+            width: 16.8%;
+        }
+
+        .release-monitor-table th:nth-child(10),
+        .release-monitor-table td:nth-child(10) {
+            width: 15.8%;
+        }
+
+        .release-monitor-table td:nth-child(3),
+        .release-monitor-table td:nth-child(4),
+        .release-monitor-table td:nth-child(5),
+        .release-monitor-table td:nth-child(6),
+        .release-monitor-table td:nth-child(7),
+        .release-monitor-table td:nth-child(8) {
+            font-size: 0.82rem;
+            line-height: 1.28;
         }
 
         .release-th-filter {
@@ -373,9 +432,9 @@
         .release-monitor-table th {
             background: var(--bg-secondary);
             color: var(--text-secondary);
-            font-size: 0.78rem;
+            font-size: 0.7rem;
             text-transform: uppercase;
-            letter-spacing: 0.04em;
+            letter-spacing: 0.02em;
             white-space: normal;
             line-height: 1.35;
             position: sticky;
@@ -423,6 +482,7 @@
             font-weight: 700;
             color: var(--primary);
             text-decoration: none;
+            font-size: inherit;
         }
 
         .release-key-link:hover {
@@ -431,8 +491,9 @@
 
         .release-name-line {
             display: block;
-            line-height: 1.35;
+            line-height: 1.28;
             margin-bottom: 0.15rem;
+            font-size: 0.84rem;
         }
 
         .release-micro-meta {
@@ -683,7 +744,7 @@
         }
 
         .reviewer-cell {
-            min-width: 172px;
+            min-width: 0;
             display: flex;
             flex-direction: column;
             gap: 0.38rem;
@@ -692,7 +753,11 @@
         .release-number-cell {
             display: flex;
             align-items: center;
-            gap: 0.45rem;
+            gap: 0.32rem;
+        }
+
+        .release-number-cell strong {
+            font-size: 0.86rem;
         }
 
         .release-order-controls {
@@ -811,14 +876,15 @@
             background: linear-gradient(135deg, rgba(13, 110, 253, 0.14), rgba(13, 110, 253, 0.05));
             color: var(--primary);
             border-radius: 12px;
-            padding: 0.62rem 0.7rem;
-            font-size: 0.82rem;
+            padding: 0.48rem 0.5rem;
+            font-size: 0.78rem;
             font-weight: 700;
             display: inline-flex;
             align-items: center;
             justify-content: center;
             gap: 0.45rem;
             transition: all 0.2s ease;
+            line-height: 1.2;
         }
 
         .release-doc-btn:hover {
@@ -855,7 +921,9 @@
         }
 
         .release-date-cell {
-            min-width: 118px;
+            min-width: 0;
+            font-size: 0.82rem;
+            line-height: 1.28;
         }
 
         .release-date-badge {
@@ -1298,12 +1366,12 @@
                     <table class="release-monitor-table">
                         <thead>
                             <tr>
-                                <th>Номер релиза</th>
+                                <th>№</th>
                                 <th>Название релиза</th>
                                 <th>№ ЗНИ</th>
                                 <th>КЭ</th>
-                                <th>ID Релиза</th>
-                                <th>ID Распоряжения</th>
+                                <th>ID релиза</th>
+                                <th>ID РОВ</th>
                                 <th>Дата начала<br>внедрения</th>
                                 <th>Дата окончания<br>внедрения</th>
                                 <th>Ответственный<br>за ПСИ/Проверки</th>
@@ -1440,6 +1508,18 @@
                 return escapeHtml(key);
             }
             return `<a href="${escapeHtml(url)}" target="_blank" class="release-key-link">${escapeHtml(key)}</a>`;
+        }
+
+        function buildReleaseZniCell(item) {
+            if (item.zni_key) {
+                return buildReleaseLinkCell(item.zni_url, item.zni_key);
+            }
+            return `
+                <button class="release-doc-btn" onclick="createReleaseZni('${escapeHtml(item.row_key || item.release_key)}')">
+                    <i class="bi bi-plus-circle"></i>
+                    Создать
+                </button>
+            `;
         }
 
 function buildReviewerCell(item) {
@@ -1583,7 +1663,7 @@ function buildReviewerCell(item) {
                         </div>
                     </td>
                     <td>${getReleaseNameHtml(item)}</td>
-                    <td>${item.zni_key ? escapeHtml(item.zni_key) : '<span style="color: var(--text-muted);">-</span>'}</td>
+                    <td>${buildReleaseZniCell(item)}</td>
                     <td>${item.ke ? escapeHtml(item.ke) : '<span style="color: var(--text-muted);">-</span>'}</td>
                     <td>${buildReleaseLinkCell(item.release_url, item.release_key)}</td>
                     <td>${buildReleaseLinkCell(item.rov_url, item.rov_key)}</td>
@@ -1830,7 +1910,9 @@ function buildReviewerCell(item) {
                     instruction_link: '',
                     date: dateToInputValue(item.deployment_start || ''),
                     ke: item.ke || '',
-                    playbooks: []
+                    playbooks: [],
+                    create_zni: false,
+                    zni_reporter: ''
                 }
             };
 
@@ -1872,6 +1954,36 @@ function buildReviewerCell(item) {
             }
         }
 
+        function syncReleaseDocumentZniForm(state) {
+            const createZniInput = document.getElementById('releaseDocumentCreateZni');
+            if (!createZniInput || !state) {
+                return true;
+            }
+            state.form.create_zni = createZniInput.checked;
+            const reporterSelect = document.getElementById('releaseDocumentZniReporter');
+            state.form.zni_reporter = reporterSelect?.value || '';
+            if (!state.form.create_zni) {
+                return true;
+            }
+
+            const responsibles = (Array.isArray(state.item?.psi_responsibles) ? state.item.psi_responsibles : [])
+                .map(value => String(value || '').trim())
+                .filter(Boolean);
+            if (!state.item?.psi_owner) {
+                alert('Перед созданием ЗНИ заполните дежурного ОПЛОТ.');
+                return false;
+            }
+            if (!responsibles.length) {
+                alert('Перед созданием ЗНИ заполните ответственного.');
+                return false;
+            }
+            if (responsibles.length > 1 && !state.form.zni_reporter) {
+                alert('Выберите автора ЗНИ.');
+                return false;
+            }
+            return true;
+        }
+
         function validateReleaseDocumentCurrentStep() {
             const state = releaseDocumentWizardState;
             if (!state) {
@@ -1896,7 +2008,7 @@ function buildReviewerCell(item) {
                 }
                 state.templateChoice = candidate;
                 state.steps = buildReleaseDocumentSteps(state);
-                return true;
+                return syncReleaseDocumentZniForm(state);
             }
 
             if (step.type === 'prev_version') {
@@ -1907,13 +2019,13 @@ function buildReviewerCell(item) {
                     return false;
                 }
                 state.form.prev_version = value;
-                return true;
+                return syncReleaseDocumentZniForm(state);
             }
 
             if (step.type === 'instruction_link') {
                 const input = document.getElementById('releaseDocumentInstructionLink');
                 state.form.instruction_link = (input?.value || '').trim();
-                return true;
+                return syncReleaseDocumentZniForm(state);
             }
 
             if (step.type === 'date') {
@@ -1924,16 +2036,14 @@ function buildReviewerCell(item) {
                     return false;
                 }
                 state.form.date = value;
-                return true;
+                return syncReleaseDocumentZniForm(state);
             }
 
             if (step.type === 'playbooks') {
                 state.form.playbooks = Array.from(document.querySelectorAll('input[name="releaseDocumentPlaybooks"]:checked'))
                     .map(input => input.value);
-                return true;
             }
-
-            return true;
+            return syncReleaseDocumentZniForm(state);
         }
 
         function getReleaseDocumentStepContent(state, step, stepNumber, totalSteps) {
@@ -2024,6 +2134,28 @@ function buildReviewerCell(item) {
                         `).join('')}
                     </div>
                 `;
+            }
+
+            if (stepNumber === totalSteps) {
+                const responsibles = (Array.isArray(item.psi_responsibles) ? item.psi_responsibles : [])
+                    .map(value => String(value || '').trim())
+                    .filter(Boolean);
+                const zniBlock = item.zni_key
+                    ? `<div class="release-doc-field-help">ЗНИ уже создана: ${buildReleaseLinkCell(item.zni_url, item.zni_key)}</div>`
+                    : `
+                        <div class="form-check mt-3">
+                            <input class="form-check-input" type="checkbox" id="releaseDocumentCreateZni" ${state.form.create_zni ? 'checked' : ''}>
+                            <label class="form-check-label" for="releaseDocumentCreateZni">Создать ЗНИ в Jira OPLOT после формирования документов</label>
+                        </div>
+                        ${responsibles.length > 1 ? `
+                            <label class="release-doc-field-label" for="releaseDocumentZniReporter">Автор ЗНИ</label>
+                            <select id="releaseDocumentZniReporter" class="form-control">
+                                ${responsibles.map(name => `<option value="${escapeHtml(name)}" ${state.form.zni_reporter === name ? 'selected' : ''}>${escapeHtml(name)}</option>`).join('')}
+                            </select>
+                        ` : ''}
+                        <div class="release-doc-field-help">Для создания ЗНИ должны быть заполнены дежурный ОПЛОТ и ответственный.</div>
+                    `;
+                content += zniBlock;
             }
 
             return content;
@@ -2142,6 +2274,14 @@ function buildReviewerCell(item) {
                 a.click();
                 a.remove();
                 window.URL.revokeObjectURL(url);
+                if (state.form.create_zni && !state.item.zni_key) {
+                    nextBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Создание ЗНИ...';
+                    await createReleaseZni(
+                        state.item.row_key || state.item.release_key,
+                        state.form.zni_reporter || undefined,
+                        { skipConfirm: true, silent: true }
+                    );
+                }
                 closeReleaseDocumentWizard();
             } catch (error) {
                 console.error('Release document generation error:', error);
@@ -2633,6 +2773,89 @@ function buildReviewerCell(item) {
             }
             responsibles[index] = value || '';
             saveReleaseAssignment(releaseKey, null, null, responsibles);
+        }
+
+        function chooseReleaseZniReporter(item) {
+            const responsibles = (Array.isArray(item?.psi_responsibles) ? item.psi_responsibles : [])
+                .map(value => String(value || '').trim())
+                .filter(Boolean);
+            if (responsibles.length <= 1) {
+                return responsibles[0] || '';
+            }
+
+            const optionsText = responsibles.map((name, index) => `${index + 1}. ${name}`).join('\n');
+            const answer = window.prompt(
+                `В строке несколько ответственных. Укажите номер автора задачи:\n\n${optionsText}`,
+                '1'
+            );
+            if (answer === null) {
+                return null;
+            }
+            const selectedIndex = Number(answer) - 1;
+            if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || selectedIndex >= responsibles.length) {
+                alert('Некорректный номер ответственного.');
+                return null;
+            }
+            return responsibles[selectedIndex];
+        }
+
+        async function createReleaseZni(releaseKey, reporterOverride = undefined, options = {}) {
+            const item = getReleaseMonitorItem(releaseKey);
+            if (!item) {
+                alert('Не удалось найти строку релиза.');
+                return null;
+            }
+            if (item.zni_key) {
+                return item.zni_key;
+            }
+            if (!item.psi_owner) {
+                alert('Перед созданием ЗНИ заполните дежурного ОПЛОТ.');
+                return null;
+            }
+            const responsibles = (Array.isArray(item.psi_responsibles) ? item.psi_responsibles : [])
+                .map(value => String(value || '').trim())
+                .filter(Boolean);
+            if (!responsibles.length) {
+                alert('Перед созданием ЗНИ заполните ответственного.');
+                return null;
+            }
+
+            const reporter = reporterOverride !== undefined ? reporterOverride : chooseReleaseZniReporter(item);
+            if (reporter === null) {
+                return null;
+            }
+
+            if (!options.skipConfirm) {
+                const confirmed = window.confirm(`Создать ЗНИ в Jira OPLOT для релиза ${item.release_key || ''}?`);
+                if (!confirmed) {
+                    return null;
+                }
+            }
+
+            try {
+                const response = await fetch(BASE_PATH + '/dashboard/release-monitor/zni', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        release_key: releaseKey,
+                        reporter
+                    })
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Не удалось создать ЗНИ');
+                }
+
+                renderReleaseMonitor(data.release_monitor || [], data.release_monitor_meta || {});
+                if (!options.silent) {
+                    alert(`ЗНИ создана: ${data.issue?.key || ''}`);
+                }
+                return data.issue?.key || null;
+            } catch (error) {
+                console.error('Release ZNI create error:', error);
+                alert('Ошибка создания ЗНИ: ' + error.message);
+                return null;
+            }
         }
 
         async function saveReleaseAssignment(releaseKey, reviewerOverride = null, checkerOverride = null, responsiblesOverride = null) {

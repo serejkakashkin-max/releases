@@ -1212,6 +1212,7 @@ class ReleaseReportService:
             status_name = str(item.get("release_status") or "Не указан").strip() or "Не указан"
             release_key_html = self._render_key_link(item.get("release_url"), item.get("release_key"))
             rov_key_html = self._render_key_link(item.get("rov_url"), item.get("rov_key"))
+            zni_key_html = self._render_key_link(item.get("zni_url"), item.get("zni_key"))
             rows.append(
                 f"""
                 <tr class="state-{row_state}"
@@ -1222,7 +1223,7 @@ class ReleaseReportService:
                     data-hotfix="{'1' if self._is_hotfix(item) else '0'}">
                     <td class="week-row-number">{index}</td>
                     <td>{html.escape(row_title)}</td>
-                    <td>{html.escape(str(item.get('zni_key') or EM_DASH))}</td>
+                    <td>{zni_key_html}</td>
                     <td>{release_key_html}</td>
                     <td>{rov_key_html}</td>
                     <td>{html.escape(str(item.get('release_version') or EM_DASH))}</td>
