@@ -3337,7 +3337,7 @@ function buildReviewerCell(item) {
                     currentReleaseViewFilter === 'all' ||
                     (currentReleaseViewFilter === 'non_final' && item.is_non_final) ||
                     (currentReleaseViewFilter === 'overdue' && item.is_overdue) ||
-                    (currentReleaseViewFilter === 'today' && item.is_ready_for_prom) ||
+                    (currentReleaseViewFilter === 'today' && item.is_pre_final) ||
                     (currentReleaseViewFilter === 'final' && item.is_final) ||
                     (currentReleaseViewFilter === 'cancelled' && item.is_cancelled)
                 );
