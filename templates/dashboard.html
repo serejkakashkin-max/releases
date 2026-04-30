@@ -259,10 +259,6 @@
             background: rgba(248, 81, 73, 0.08);
         }
 
-        .release-row.state-today {
-            background: rgba(255, 193, 7, 0.10);
-        }
-
         .release-row.state-final {
             background: rgba(63, 185, 80, 0.10);
         }
@@ -273,6 +269,10 @@
 
         .release-row.state-no_date {
             background: rgba(108, 117, 125, 0.08);
+        }
+
+        .release-row.has-rollout-notes {
+            background: rgba(255, 193, 7, 0.16);
         }
 
         .release-key-link {
@@ -2055,7 +2055,7 @@
 
         function buildReleaseRow(item) {
             return `
-                <tr class="release-row state-${escapeHtml(item.row_state || 'planned')}"
+                <tr class="release-row state-${escapeHtml(item.row_state || 'planned')} ${item.has_rollout_notes ? 'has-rollout-notes' : ''}"
                     data-year="${escapeHtml(item.year)}"
                     data-status="${escapeHtml(item.release_status || '')}">
                     <td><strong>${escapeHtml(item.release_number || '')}</strong></td>

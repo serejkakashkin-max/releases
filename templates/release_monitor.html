@@ -218,17 +218,27 @@
             flex-wrap: wrap;
         }
 
+        .release-toggle-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+            width: 188px;
+            align-self: flex-start;
+        }
+
         .release-toggle-card {
             display: inline-flex;
             align-items: center;
+            justify-content: space-between;
             gap: 0.85rem;
-            padding: 0.65rem 0.95rem;
+            padding: 0.42rem 0.62rem;
             border-radius: 10px;
             border: 1px solid var(--border-color);
             background: var(--bg-secondary);
             color: var(--text-primary);
-            min-height: 46px;
+            min-height: 31px;
             align-self: flex-start;
+            width: 100%;
         }
 
         .release-toggle-copy {
@@ -237,16 +247,17 @@
         }
 
         .release-toggle-title {
-            font-size: 0.86rem;
+            font-size: 0.76rem;
             font-weight: 600;
             color: var(--text-primary);
-            line-height: 1.25;
+            line-height: 1.15;
+            white-space: nowrap;
         }
 
         .release-switch {
             position: relative;
-            width: 46px;
-            height: 26px;
+            width: 34px;
+            height: 20px;
             flex: 0 0 auto;
         }
 
@@ -269,10 +280,10 @@
         .release-switch-track::before {
             content: '';
             position: absolute;
-            width: 18px;
-            height: 18px;
-            left: 3px;
-            top: 3px;
+            width: 14px;
+            height: 14px;
+            left: 2px;
+            top: 2px;
             border-radius: 50%;
             background: #fff;
             box-shadow: 0 3px 10px rgba(15, 23, 42, 0.18);
@@ -285,7 +296,7 @@
         }
 
         .release-switch input:checked + .release-switch-track::before {
-            transform: translateX(20px);
+            transform: translateX(14px);
             background: var(--primary);
         }
 
@@ -454,14 +465,6 @@
             background: rgba(248, 81, 73, 0.08);
         }
 
-        .release-row.state-today {
-            background: rgba(255, 193, 7, 0.10);
-        }
-
-        .release-row.state-today td {
-            background: rgba(255, 193, 7, 0.10);
-        }
-
         .release-row.state-final {
             background: rgba(63, 185, 80, 0.10);
         }
@@ -476,6 +479,11 @@
 
         .release-row.state-cancelled td {
             background: rgba(248, 81, 73, 0.12);
+        }
+
+        .release-row.has-rollout-notes,
+        .release-row.has-rollout-notes td {
+            background: rgba(255, 193, 7, 0.16);
         }
 
         .release-key-link {
@@ -920,6 +928,18 @@
             color: var(--primary);
         }
 
+        .release-row-edit-btn.active-warning {
+            border-color: rgba(255, 193, 7, 0.75);
+            background: rgba(255, 193, 7, 0.18);
+            color: #8a5a00;
+        }
+
+        .release-row-edit-btn.active-muted {
+            border-color: rgba(108, 117, 125, 0.6);
+            background: rgba(108, 117, 125, 0.14);
+            color: var(--text-secondary);
+        }
+
         .release-date-cell {
             min-width: 0;
             font-size: 0.82rem;
@@ -1280,14 +1300,25 @@
                 </div>
 
                 <div class="release-extra-controls">
-                    <div class="release-toggle-card">
+                    <div class="release-toggle-stack">
+                    <div class="release-toggle-card" title="Релизы без РОВ, отмененные без КЭ и вручную отправленные в ненумерованный отсек. По умолчанию скрыты.">
                         <div class="release-toggle-copy">
-                            <div class="release-toggle-title">Показывать релизы по которым не создан РОВ</div>
+                            <div class="release-toggle-title">Ненумерованные</div>
                         </div>
                         <label class="release-switch" for="releaseNoRovToggle">
                             <input type="checkbox" id="releaseNoRovToggle" onchange="handleReleaseNoRovToggle()">
                             <span class="release-switch-track"></span>
                         </label>
+                    </div>
+                    <div class="release-toggle-card" title="Показывает релизы, внедрение которых по РОВ запланировано позже чем через 14 дней от сегодняшней даты. Нумерация строк сохраняется.">
+                        <div class="release-toggle-copy">
+                            <div class="release-toggle-title">Дальние релизы</div>
+                        </div>
+                        <label class="release-switch" for="releaseFarFutureToggle">
+                            <input type="checkbox" id="releaseFarFutureToggle" onchange="handleReleaseFarFutureToggle()">
+                            <span class="release-switch-track"></span>
+                        </label>
+                    </div>
                     </div>
                     <div class="release-monitor-button-row">
                         <div class="release-action-stack compact">
@@ -1454,6 +1485,7 @@
         let currentReleaseViewFilter = 'all';
         let currentReleaseResponsibleFilter = 'all';
         let showReleaseRowsWithoutRov = false;
+        let showFarFutureReleases = false;
         let isReleaseMonitorExpanded = true;
         let isReleaseOrderMode = false;
         let releaseOrderDraft = null;
@@ -1579,6 +1611,22 @@ function buildReviewerCell(item) {
         }
 
         function buildGeneratorActionCell(item) {
+            const rolloutNotesTitle = item.has_rollout_notes
+                ? 'Снять желтую подсветку замечаний'
+                : 'Пометить замечания по раскатке';
+            const rolloutNotesText = item.has_rollout_notes ? 'Снять замечания' : 'Есть замечания';
+            const forceUnnumberedTitle = item.is_force_unnumbered
+                ? 'Вернуть релиз в нумерацию'
+                : 'Отправить релиз в ненумерной отсек';
+            const forceUnnumberedText = item.is_force_unnumbered ? 'Вернуть номер' : 'Не нумеровать';
+            const forceUnnumberedButton = (isReleaseOrderMode && (!item.is_natural_unnumbered || item.is_force_unnumbered))
+                ? `
+                    <button class="release-row-edit-btn ${item.is_force_unnumbered ? 'active-muted' : ''}" onclick="toggleReleaseForceUnnumbered('${escapeHtml(item.row_key || item.release_key)}')" title="${escapeHtml(forceUnnumberedTitle)}">
+                        <i class="bi bi-eye-slash"></i>
+                        ${escapeHtml(forceUnnumberedText)}
+                    </button>
+                `
+                : '';
             return `
                 <div>
                     <button class="release-doc-btn" onclick="openReleaseDocumentWizard('${escapeHtml(item.row_key || item.release_key)}')">
@@ -1589,6 +1637,11 @@ function buildReviewerCell(item) {
                         <i class="bi bi-calendar2-range"></i>
                         Скорректировать дату
                     </button>
+                    <button class="release-row-edit-btn ${item.has_rollout_notes ? 'active-warning' : ''}" onclick="toggleReleaseRolloutNotes('${escapeHtml(item.row_key || item.release_key)}')" title="${escapeHtml(rolloutNotesTitle)}">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        ${escapeHtml(rolloutNotesText)}
+                    </button>
+                    ${forceUnnumberedButton}
                 </div>
             `;
         }
@@ -1651,7 +1704,7 @@ function buildReviewerCell(item) {
         function buildReleaseRow(item) {
             return `
                 <tr
-                    class="release-row state-${escapeHtml(item.row_state || 'planned')}"
+                    class="release-row state-${escapeHtml(item.row_state || 'planned')} ${item.has_rollout_notes ? 'has-rollout-notes' : ''}"
                     data-year="${escapeHtml(item.year)}"
                     data-status="${escapeHtml(item.release_status || '')}"
                     data-final-installed="${item.is_final && !item.is_cancelled ? 'true' : 'false'}"
@@ -1766,6 +1819,9 @@ function buildReviewerCell(item) {
                     throw new Error(data.error || 'Не удалось сохранить корректировку даты');
                 }
 
+                isReleaseOrderMode = false;
+                releaseOrderDraft = null;
+                releaseOrderDirty = false;
                 renderReleaseMonitor(data.release_monitor || [], data.release_monitor_meta || {});
                 ensureReleaseDateOverrideModal().hide();
             } catch (error) {
@@ -2422,6 +2478,10 @@ function buildReviewerCell(item) {
             if (noRovToggle) {
                 noRovToggle.checked = showReleaseRowsWithoutRov;
             }
+            const farFutureToggle = document.getElementById('releaseFarFutureToggle');
+            if (farFutureToggle) {
+                farFutureToggle.checked = showFarFutureReleases;
+            }
 
             if (emptyState && !releaseMonitorItems.length) {
                 emptyState.style.display = '';
@@ -2458,11 +2518,17 @@ function buildReviewerCell(item) {
             applyReleaseFilters();
         }
 
+        function handleReleaseFarFutureToggle() {
+            showFarFutureReleases = Boolean(document.getElementById('releaseFarFutureToggle')?.checked);
+            applyReleaseFilters();
+        }
+
         function buildReleaseOrderDraft(yearItems) {
             return {
                 year: getSelectedReleaseYear(),
                 waiting: yearItems.filter(item => item.is_unnumbered).map(item => item.row_key || item.release_key),
                 numbered: yearItems.filter(item => !item.is_unnumbered).map(item => item.row_key || item.release_key),
+                force_unnumbered: yearItems.filter(item => item.is_force_unnumbered).map(item => item.row_key || item.release_key),
             };
         }
 
@@ -2530,9 +2596,21 @@ function buildReviewerCell(item) {
                 return yearItems;
             }
 
+            const forcedKeys = new Set(releaseOrderDraft.force_unnumbered || []);
+            const effectiveItems = yearItems.map(item => {
+                const rowKey = item.row_key || item.release_key;
+                const isForced = forcedKeys.has(rowKey);
+                const isNaturalUnnumbered = Boolean(item.is_natural_unnumbered);
+                return {
+                    ...item,
+                    is_force_unnumbered: isForced,
+                    is_unnumbered: isNaturalUnnumbered || isForced,
+                };
+            });
+
             const splitItems = {
-                waiting: yearItems.filter(item => item.is_unnumbered),
-                numbered: yearItems.filter(item => !item.is_unnumbered),
+                waiting: effectiveItems.filter(item => item.is_unnumbered),
+                numbered: effectiveItems.filter(item => !item.is_unnumbered),
             };
 
             return ['waiting', 'numbered'].flatMap(groupName => {
@@ -2663,6 +2741,7 @@ function buildReviewerCell(item) {
                         year: getSelectedReleaseYear(),
                         waiting_row_keys: releaseOrderDraft.waiting || [],
                         numbered_row_keys: releaseOrderDraft.numbered || [],
+                        force_unnumbered_row_keys: releaseOrderDraft.force_unnumbered || [],
                     })
                 });
                 const data = await response.json();
@@ -2859,13 +2938,76 @@ function buildReviewerCell(item) {
             }
         }
 
-        async function saveReleaseAssignment(releaseKey, reviewerOverride = null, checkerOverride = null, responsiblesOverride = null) {
+        async function toggleReleaseRolloutNotes(releaseKey) {
+            const item = getReleaseMonitorItem(releaseKey);
+            if (!item) {
+                alert('Не удалось найти строку релиза.');
+                return;
+            }
+
+            const enabled = !item.has_rollout_notes;
+            try {
+                const response = await fetch(BASE_PATH + '/dashboard/release-monitor/rollout-notes', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        release_key: releaseKey,
+                        enabled
+                    })
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Не удалось сохранить подсветку релиза');
+                }
+                renderReleaseMonitor(data.release_monitor || [], data.release_monitor_meta || {});
+            } catch (error) {
+                console.error('Release rollout notes save error:', error);
+                alert('Ошибка сохранения подсветки релиза: ' + error.message);
+            }
+        }
+
+        function toggleReleaseForceUnnumbered(releaseKey) {
+            if (!isReleaseOrderMode || !releaseOrderDraft) {
+                return;
+            }
+
+            const item = getReleaseMonitorItem(releaseKey);
+            if (!item) {
+                alert('Не удалось найти строку релиза.');
+                return;
+            }
+
+            releaseOrderDraft.force_unnumbered = Array.isArray(releaseOrderDraft.force_unnumbered)
+                ? releaseOrderDraft.force_unnumbered
+                : [];
+
+            const forceIndex = releaseOrderDraft.force_unnumbered.indexOf(releaseKey);
+            const enabled = forceIndex === -1;
+            if (enabled) {
+                releaseOrderDraft.force_unnumbered.push(releaseKey);
+                releaseOrderDraft.numbered = (releaseOrderDraft.numbered || []).filter(rowKey => rowKey !== releaseKey);
+                if (!(releaseOrderDraft.waiting || []).includes(releaseKey)) {
+                    releaseOrderDraft.waiting = [releaseKey, ...(releaseOrderDraft.waiting || [])];
+                }
+            } else {
+                releaseOrderDraft.force_unnumbered.splice(forceIndex, 1);
+                releaseOrderDraft.waiting = (releaseOrderDraft.waiting || []).filter(rowKey => rowKey !== releaseKey);
+                releaseOrderDraft.numbered = (releaseOrderDraft.numbered || []).filter(rowKey => rowKey !== releaseKey);
+            }
+
+            releaseOrderDirty = true;
+            refreshReleaseOrderModeUi();
+            applyReleaseFilters();
+        }
+
+        async function saveReleaseAssignment(releaseKey, reviewerOverride = null, checkerOverride = null, responsiblesOverride = null, reviewerSourceOverride = null) {
             if (!releaseKey) {
                 return;
             }
 
             const item = getReleaseMonitorItem(releaseKey);
             const reviewer = reviewerOverride !== null ? reviewerOverride : (item?.psi_owner || '');
+            const reviewerSource = reviewerSourceOverride !== null ? reviewerSourceOverride : (item?.psi_owner_source || '');
             const checker = checkerOverride !== null ? checkerOverride : (item?.psi_checker || '');
             const responsibles = responsiblesOverride !== null
                 ? responsiblesOverride
@@ -2882,6 +3024,7 @@ function buildReviewerCell(item) {
                     body: JSON.stringify({
                         release_key: releaseKey,
                         reviewer: reviewer,
+                        reviewer_source: reviewerSource,
                         checker: checker,
                         responsibles: filteredResponsibles
                     })
@@ -2896,6 +3039,8 @@ function buildReviewerCell(item) {
                         ? {
                             ...item,
                             psi_owner: data.reviewer || '',
+                            psi_owner_source: data.reviewer_source || '',
+                            psi_owner_date: data.reviewer_date || '',
                             psi_checker: data.checker || '',
                             psi_responsibles: Array.isArray(data.responsibles) ? data.responsibles : []
                         }
@@ -2918,6 +3063,10 @@ function buildReviewerCell(item) {
             const checkerInput = cell?.querySelector('.checker-input');
             const reviewer = reviewerSelect?.value || '';
             const checker = checkerInput?.value || '';
+            const currentItem = getReleaseMonitorItem(releaseKey);
+            const reviewerSource = changedElement.classList.contains('duty-select')
+                ? 'manual'
+                : (currentItem?.psi_owner_source || '');
 
             [reviewerSelect, checkerInput].forEach(element => {
                 if (!element) {
@@ -2928,7 +3077,7 @@ function buildReviewerCell(item) {
             });
 
             try {
-                await saveReleaseAssignment(releaseKey, reviewer, checker);
+                await saveReleaseAssignment(releaseKey, reviewer, checker, null, reviewerSource);
             } catch (error) {
                 console.error('Release assignment update error:', error);
                 alert('Ошибка сохранения назначения: ' + error.message);
@@ -2994,6 +3143,13 @@ function buildReviewerCell(item) {
                 }
                 if (warnings.length) {
                     message += `\n\nПредупреждения:\n- ${warnings.join('\n- ')}`;
+                }
+                const dutyDebugRows = Array.isArray(data.duty_debug_rows) ? data.duty_debug_rows : [];
+                if (dutyDebugRows.length) {
+                    const debugLines = dutyDebugRows.slice(0, 8).map(row => (
+                        `${row.release_key || row.row_key || '-'} | ${row.date || 'дата не найдена'} | график: ${row.scheduled || '-'} | стало: ${row.result || '-'}`
+                    ));
+                    message += `\n\nПроверка графика:\n- ${debugLines.join('\n- ')}`;
                 }
                 alert(message);
             } catch (error) {
@@ -3126,6 +3282,39 @@ function buildReviewerCell(item) {
             }
         }
 
+        function parseReleaseDateValue(value) {
+            const rawValue = String(value || '').trim();
+            if (!rawValue) {
+                return null;
+            }
+            const isoMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(rawValue);
+            if (isoMatch) {
+                return new Date(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3]));
+            }
+            const displayMatch = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(rawValue);
+            if (displayMatch) {
+                return new Date(Number(displayMatch[3]), Number(displayMatch[2]) - 1, Number(displayMatch[1]));
+            }
+            return null;
+        }
+
+        function isReleaseFarFuture(item) {
+            const deploymentDate = parseReleaseDateValue(
+                item?.source_deployment_start_iso ||
+                item?.source_deployment_start ||
+                item?.deployment_start_iso ||
+                item?.deployment_start
+            );
+            if (!deploymentDate) {
+                return false;
+            }
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const threshold = new Date(today);
+            threshold.setDate(threshold.getDate() + 14);
+            return deploymentDate > threshold;
+        }
+
         function applyReleaseFilters() {
             const body = document.getElementById('releaseMonitorBody');
             const tableWrap = document.getElementById('releaseTableWrap');
@@ -3138,6 +3327,7 @@ function buildReviewerCell(item) {
             const yearItems = applyReleaseOrderDraft(rawYearItems);
             const filteredItems = yearItems.filter(item => {
                 const matchesRovVisibility = showReleaseRowsWithoutRov || !item.is_unnumbered;
+                const matchesFarFutureVisibility = showFarFutureReleases || !isReleaseFarFuture(item);
                 const itemResponsibles = Array.isArray(item.psi_responsibles) ? item.psi_responsibles : [];
                 const matchesResponsible = (
                     responsibleValue === 'all' ||
@@ -3161,7 +3351,7 @@ function buildReviewerCell(item) {
                     ...(Array.isArray(item.release_name_lines) ? item.release_name_lines : [])
                 ].join(' ').toLowerCase();
                 const matchesSearch = !searchValue || haystack.includes(searchValue);
-                return matchesRovVisibility && matchesResponsible && matchesView && matchesStatus && matchesSearch;
+                return matchesRovVisibility && matchesFarFutureVisibility && matchesResponsible && matchesView && matchesStatus && matchesSearch;
             });
 
             if (body) {

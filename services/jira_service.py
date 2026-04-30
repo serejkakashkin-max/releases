@@ -6,6 +6,9 @@ from datetime import datetime, timedelta
 from config import TOKENS
 
 
+VERSION_PATTERN = re.compile(r"[DP]-\d+(?:\.\d+){2}(?:-[A-Za-z0-9_]+)+")
+
+
 def _iter_nested_values(value):
     if isinstance(value, dict):
         yield value
@@ -46,8 +49,6 @@ def _extract_ke_from_distributive_field(raw_value):
 
 
 def _extract_version_from_distributive_field(raw_value):
-    version_pattern = re.compile(r"[DP]-\d+\.\d+\.\d+-\d+")
-
     for value in _iter_nested_values(raw_value):
         if isinstance(value, dict):
             for key in ("version", "buildVersion", "release_version", "releases_version", "value", "url"):
@@ -55,11 +56,11 @@ def _extract_version_from_distributive_field(raw_value):
                 if not raw_version:
                     continue
 
-                match = version_pattern.search(str(raw_version))
+                match = VERSION_PATTERN.search(str(raw_version))
                 if match:
                     return match.group(0)
         else:
-            match = version_pattern.search(str(value))
+            match = VERSION_PATTERN.search(str(value))
             if match:
                 return match.group(0)
 
@@ -98,26 +99,18 @@ def get_release_version(release_id):
         # Fallback на customfield_21713
         customfield_21713 = fields.get("customfield_21713", "")
         if customfield_21713:
-            match = re.search(r'[DP]-\d+\.\d+\.\d+-\d+', customfield_21713)
+            match = VERSION_PATTERN.search(customfield_21713)
             if match:
                 version = match.group(0)
                 logging.info(f"Версия релиза {release_id} найдена в customfield_21713: {version}")
                 return version
         
-        # Fallback на полный текст ответа
-        text = response.text
-        match = re.search(r'[DP]-\d+\.\d+\.\d+-\d+', text)
-        if match:
-            version = match.group(0)
-            logging.info(f"Версия релиза {release_id} найдена в тексте ответа: {version}")
-            return version
-        
         logging.warning(f"Версия релиза {release_id} не найдена ни в одном источнике")
         return ""
-        
     except Exception as e:
         logging.error(f"Ошибка получения версии релиза: {e}")
         return ""
+
 
 def get_issues_from_jira(release_id):
     # ИСПРАВЛЕНО: Очищаем пробелы

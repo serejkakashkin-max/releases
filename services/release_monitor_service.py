@@ -1,4 +1,4 @@
-﻿import logging
+import logging
 import json
 import os
 import re
@@ -43,6 +43,7 @@ DUTY_SCHEDULE_FILE = SNAPSHOT_DIR / "release_monitor_duty_schedule.json"
 DATE_OVERRIDES_FILE = SNAPSHOT_DIR / "release_monitor_date_overrides.json"
 ZNI_FILE = SNAPSHOT_DIR / "release_monitor_zni.json"
 CONFLUENCE_DELTA_BASE = "https://confluence.delta.sbrf.ru"
+RELEASE_VERSION_PATTERN = re.compile(r"[DP]-\d+(?:\.\d+){2}(?:-[A-Za-z0-9_]+)+")
 
 MONTH_NAME_MAP = {
     "\u044f\u043d\u0432\u0430\u0440": 1,
@@ -265,6 +266,8 @@ def _load_reviewer_assignments():
                         raw_responsibles = [raw_responsibles] if raw_responsibles else []
                     normalized[release_key] = {
                         "reviewer": str(value.get("reviewer", "") or "").strip(),
+                        "reviewer_source": str(value.get("reviewer_source") or "").strip(),
+                        "reviewer_date": str(value.get("reviewer_date", "") or "").strip(),
                         "checker": str(value.get("checker", "") or "").strip(),
                         "responsibles": [
                             str(item or "").strip()
@@ -275,6 +278,8 @@ def _load_reviewer_assignments():
                 elif value:
                     normalized[release_key] = {
                         "reviewer": str(value).strip(),
+                        "reviewer_source": "manual",
+                        "reviewer_date": "",
                         "checker": "",
                         "responsibles": [],
                     }
@@ -296,54 +301,110 @@ def _save_reviewer_assignments(assignments):
         logging.warning("Release monitor: failed to save reviewer assignments: %s", exc)
 
 
-def _load_zni_assignments():
+def _normalize_zni_assignments(payload):
+    normalized = {}
+    if not isinstance(payload, dict):
+        return normalized
+
+    for key, value in payload.items():
+        row_key = str(key or "").strip()
+        if not row_key:
+            continue
+        if isinstance(value, dict):
+            zni_key = str(value.get("key") or value.get("zni_key") or "").strip()
+            if zni_key:
+                normalized[row_key] = {
+                    "key": zni_key,
+                    "url": str(value.get("url") or "").strip(),
+                    "summary": str(value.get("summary") or "").strip(),
+                    "created_at": str(value.get("created_at") or "").strip(),
+                    "assignee": str(value.get("assignee") or "").strip(),
+                    "reporter": str(value.get("reporter") or "").strip(),
+                }
+        elif value:
+            normalized[row_key] = {
+                "key": str(value).strip(),
+                "url": "",
+                "summary": "",
+                "created_at": "",
+                "assignee": "",
+                "reporter": "",
+            }
+    return normalized
+
+
+def _normalize_rollout_note_flags(payload):
+    normalized = {}
+    if not isinstance(payload, dict):
+        return normalized
+
+    for key, value in payload.items():
+        row_key = str(key or "").strip()
+        if not row_key or not isinstance(value, dict):
+            continue
+        enabled = bool(value.get("has_rollout_notes"))
+        if not enabled:
+            continue
+        normalized[row_key] = {
+            "has_rollout_notes": True,
+            "updated_at": str(value.get("updated_at") or "").strip(),
+        }
+    return normalized
+
+
+def _load_zni_payload():
     if not ZNI_FILE.exists():
-        return {}
+        return {"issues": {}, "flags": {}}
 
     try:
         payload = json.loads(ZNI_FILE.read_text(encoding="utf-8"))
         if not isinstance(payload, dict):
-            return {}
-        normalized = {}
-        for key, value in payload.items():
-            row_key = str(key or "").strip()
-            if not row_key:
-                continue
-            if isinstance(value, dict):
-                zni_key = str(value.get("key") or value.get("zni_key") or "").strip()
-                if zni_key:
-                    normalized[row_key] = {
-                        "key": zni_key,
-                        "url": str(value.get("url") or "").strip(),
-                        "summary": str(value.get("summary") or "").strip(),
-                        "created_at": str(value.get("created_at") or "").strip(),
-                        "assignee": str(value.get("assignee") or "").strip(),
-                        "reporter": str(value.get("reporter") or "").strip(),
-                    }
-            elif value:
-                normalized[row_key] = {
-                    "key": str(value).strip(),
-                    "url": "",
-                    "summary": "",
-                    "created_at": "",
-                    "assignee": "",
-                    "reporter": "",
-                }
-        return normalized
+            return {"issues": {}, "flags": {}}
+
+        if "issues" in payload or "flags" in payload:
+            return {
+                "issues": _normalize_zni_assignments(payload.get("issues") or {}),
+                "flags": _normalize_rollout_note_flags(payload.get("flags") or {}),
+            }
+
+        return {
+            "issues": _normalize_zni_assignments(payload),
+            "flags": {},
+        }
     except Exception as exc:
-        logging.warning("Release monitor: failed to load ZNI assignments: %s", exc)
-        return {}
+        logging.warning("Release monitor: failed to load ZNI payload: %s", exc)
+        return {"issues": {}, "flags": {}}
 
 
-def _save_zni_assignments(assignments):
+def _save_zni_payload(payload):
     try:
         _ensure_snapshot_dir()
         ZNI_FILE.write_text(
-            json.dumps(assignments, ensure_ascii=False, indent=2),
+            json.dumps(payload, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
     except Exception as exc:
-        logging.warning("Release monitor: failed to save ZNI assignments: %s", exc)
+        logging.warning("Release monitor: failed to save ZNI payload: %s", exc)
+
+
+def _load_zni_assignments():
+    return _load_zni_payload().get("issues", {})
+
+
+def _save_zni_assignments(assignments):
+    payload = _load_zni_payload()
+    payload["issues"] = _normalize_zni_assignments(assignments)
+    _save_zni_payload(payload)
+
+
+def _load_rollout_note_flags():
+    return _load_zni_payload().get("flags", {})
+
+
+def _save_rollout_note_flags(flags):
+    payload = _load_zni_payload()
+    payload["flags"] = _normalize_rollout_note_flags(flags)
+    _save_zni_payload(payload)
 
 
 def _load_manual_order():
@@ -379,6 +440,11 @@ def _load_manual_order():
                     for item in (value.get("numbered") or [])
                     if str(item or "").strip()
                 ],
+                "force_unnumbered": [
+                    str(item or "").strip()
+                    for item in (value.get("force_unnumbered") or [])
+                    if str(item or "").strip()
+                ],
             }
         _manual_order_cache = normalized
         return normalized
@@ -400,6 +466,29 @@ def _save_manual_order(order_payload):
         )
     except Exception as exc:
         logging.warning("Release monitor: failed to save manual order: %s", exc)
+
+
+def _remove_row_from_manual_order(row_key):
+    row_key = str(row_key or "").strip()
+    if not row_key:
+        return
+
+    manual_order = _load_manual_order()
+    changed = False
+    for year_payload in manual_order.values():
+        if not isinstance(year_payload, dict):
+            continue
+        for group_name in ("waiting", "numbered"):
+            values = year_payload.get(group_name)
+            if not isinstance(values, list):
+                continue
+            filtered_values = [value for value in values if str(value or "").strip() != row_key]
+            if len(filtered_values) != len(values):
+                year_payload[group_name] = filtered_values
+                changed = True
+
+    if changed:
+        _save_manual_order(manual_order)
 
 
 def _build_empty_duty_schedule_payload():
@@ -687,40 +776,98 @@ def _merge_duty_schedule_payload(base_payload, incoming_payload):
     return merged
 
 
-def _apply_duty_schedule_assignments(items, persist=False):
+def _is_explicit_manual_reviewer_assignment(assignment):
+    if not isinstance(assignment, dict):
+        return False
+    return (
+        str(assignment.get("reviewer_source") or "").strip() == "manual"
+        and str(assignment.get("reviewer_date") or "").strip() == "manual"
+    )
+
+
+def _apply_duty_schedule_assignments(items, persist=False, force=False, debug_limit=0):
     assignments = _load_reviewer_assignments()
     duty_payload = _load_duty_schedule_payload()
     duty_dates = duty_payload.get("dates") or {}
     changed = False
     applied_count = 0
+    debug_rows = []
 
     for item in items:
-        if str(item.get("psi_owner") or "").strip():
+        assignment_key = _get_assignment_key_for_item(item)
+        current_assignment = dict(assignments.get(assignment_key) or {})
+        current_reviewer = str(current_assignment.get("reviewer") or "").strip()
+        reviewer_source = str(current_assignment.get("reviewer_source") or "").strip()
+        if not force and current_reviewer and _is_explicit_manual_reviewer_assignment(current_assignment):
+            if debug_limit and len(debug_rows) < debug_limit:
+                debug_rows.append({
+                    "row_key": assignment_key,
+                    "release_key": item.get("release_key", ""),
+                    "date": "",
+                    "previous": current_reviewer,
+                    "scheduled": "",
+                    "result": current_reviewer,
+                    "reason": "manual",
+                })
             continue
 
         deployment_dt = _parse_release_monitor_date(item.get("deployment_start_iso") or item.get("deployment_start"))
-        if not deployment_dt:
+        if not deployment_dt or deployment_dt.date().weekday() >= 5:
+            if force or current_reviewer or reviewer_source == "duty_schedule":
+                current_assignment["reviewer"] = ""
+                current_assignment["reviewer_source"] = ""
+                current_assignment["reviewer_date"] = ""
+                current_assignment["checker"] = str(current_assignment.get("checker", "") or "").strip()
+                raw_responsibles = current_assignment.get("responsibles") or []
+                if not isinstance(raw_responsibles, list):
+                    raw_responsibles = [raw_responsibles] if raw_responsibles else []
+                current_assignment["responsibles"] = [
+                    str(value or "").strip()
+                    for value in raw_responsibles
+                    if str(value or "").strip()
+                ]
+                if current_assignment["checker"] or current_assignment["responsibles"]:
+                    assignments[assignment_key] = current_assignment
+                else:
+                    assignments.pop(assignment_key, None)
+                item["psi_owner"] = ""
+                item["psi_owner_source"] = ""
+                item["psi_owner_date"] = ""
+                item["psi_checker"] = current_assignment["checker"]
+                item["psi_responsibles"] = list(current_assignment["responsibles"])
+                changed = True
+            if debug_limit and len(debug_rows) < debug_limit:
+                debug_rows.append({
+                    "row_key": assignment_key,
+                    "release_key": item.get("release_key", ""),
+                    "date": deployment_dt.date().isoformat() if deployment_dt else "",
+                    "previous": current_reviewer,
+                    "scheduled": "",
+                    "result": "",
+                    "reason": "no-date-or-weekend",
+                })
             continue
 
         deployment_date = deployment_dt.date()
-        if deployment_date.weekday() >= 5:
-            continue
-
         reviewer_name = str(duty_dates.get(deployment_date.isoformat()) or "").strip()
-        if not reviewer_name:
-            continue
-
-        if reviewer_name not in OPLOT_VALUES:
+        if reviewer_name and reviewer_name not in OPLOT_VALUES:
             reviewer_name = _match_oplot_name(reviewer_name)
-        if not reviewer_name:
-            continue
+        reviewer_name = reviewer_name or ""
 
-        assignment_key = _get_assignment_key_for_item(item)
-        current_assignment = dict(assignments.get(assignment_key) or {})
-        if str(current_assignment.get("reviewer") or "").strip():
+        if (
+            current_reviewer == reviewer_name
+            and reviewer_source == "duty_schedule"
+            and str(current_assignment.get("reviewer_date") or "") == deployment_date.isoformat()
+            and not force
+        ):
+            item["psi_owner"] = reviewer_name
+            item["psi_owner_source"] = "duty_schedule"
+            item["psi_owner_date"] = deployment_date.isoformat()
             continue
 
         current_assignment["reviewer"] = reviewer_name
+        current_assignment["reviewer_source"] = "duty_schedule" if reviewer_name else ""
+        current_assignment["reviewer_date"] = deployment_date.isoformat() if reviewer_name else ""
         current_assignment["checker"] = str(current_assignment.get("checker", "") or "").strip()
         raw_responsibles = current_assignment.get("responsibles") or []
         if not isinstance(raw_responsibles, list):
@@ -730,17 +877,38 @@ def _apply_duty_schedule_assignments(items, persist=False):
             for value in raw_responsibles
             if str(value or "").strip()
         ]
-        assignments[assignment_key] = current_assignment
+        if current_assignment["reviewer"] or current_assignment["checker"] or current_assignment["responsibles"]:
+            assignments[assignment_key] = current_assignment
+        else:
+            assignments.pop(assignment_key, None)
 
         item["psi_owner"] = reviewer_name
+        item["psi_owner_source"] = current_assignment["reviewer_source"]
+        item["psi_owner_date"] = current_assignment["reviewer_date"]
         item["psi_checker"] = current_assignment["checker"]
         item["psi_responsibles"] = list(current_assignment["responsibles"])
         changed = True
-        applied_count += 1
+        if reviewer_name:
+            applied_count += 1
+        if debug_limit and len(debug_rows) < debug_limit:
+            debug_rows.append({
+                "row_key": assignment_key,
+                "release_key": item.get("release_key", ""),
+                "date": deployment_date.isoformat(),
+                "previous": current_reviewer,
+                "scheduled": reviewer_name,
+                "result": reviewer_name,
+                "reason": "updated" if reviewer_name else "no-duty-for-date",
+            })
 
     if changed and persist:
         _save_reviewer_assignments(assignments)
 
+    if debug_limit:
+        return {
+            "applied_count": applied_count,
+            "debug_rows": debug_rows,
+        }
     return applied_count
 
 
@@ -758,6 +926,31 @@ def _apply_date_overrides(items):
         row_key = _get_assignment_key_for_item(item)
         override = overrides.get(row_key)
         if not override:
+            source_start_dt = _parse_release_monitor_date(
+                item.get("source_deployment_start_iso") or item.get("source_deployment_start")
+            )
+            source_end_dt = _parse_release_monitor_date(
+                item.get("source_deployment_end_iso") or item.get("source_deployment_end")
+            )
+            if source_start_dt:
+                item["deployment_start"] = _format_release_monitor_date(source_start_dt)
+                item["deployment_start_iso"] = source_start_dt.isoformat()
+                item["sort_date"] = source_start_dt.isoformat()
+            if source_end_dt:
+                item["deployment_end"] = _format_release_monitor_date(source_end_dt)
+                item["deployment_end_iso"] = source_end_dt.isoformat()
+            if item.get("is_non_final"):
+                today = datetime.now().date()
+                source_end_date = source_end_dt.date() if source_end_dt else None
+                item["is_overdue"] = bool(source_end_date and source_end_date < today)
+                item["is_today"] = bool(source_end_date and source_end_date == today)
+                item["days_overdue"] = (today - source_end_date).days if item["is_overdue"] else 0
+                if item.get("is_overdue"):
+                    item["row_state"] = "overdue"
+                elif item.get("is_today"):
+                    item["row_state"] = "today"
+                else:
+                    item["row_state"] = "planned"
             item["has_manual_date_override"] = False
             item["manual_deployment_start"] = ""
             item["manual_deployment_end"] = ""
@@ -817,6 +1010,8 @@ def _apply_reviewer_assignments(items):
         assignment_key = _get_assignment_key_for_item(item)
         release_assignment = assignments.get(assignment_key) or assignments.get(item.get("release_key"), {})
         item["psi_owner"] = release_assignment.get("reviewer", "")
+        item["psi_owner_source"] = release_assignment.get("reviewer_source", "")
+        item["psi_owner_date"] = release_assignment.get("reviewer_date", "")
         item["psi_checker"] = release_assignment.get("checker", "")
         item["psi_responsibles"] = list(release_assignment.get("responsibles", []))
     return items
@@ -824,6 +1019,7 @@ def _apply_reviewer_assignments(items):
 
 def _apply_zni_assignments(items):
     assignments = _load_zni_assignments()
+    flags = _load_rollout_note_flags()
     for item in items:
         assignment_key = _get_assignment_key_for_item(item)
         zni_assignment = assignments.get(assignment_key) or assignments.get(item.get("release_key"), {})
@@ -831,6 +1027,10 @@ def _apply_zni_assignments(items):
         zni_url = str(zni_assignment.get("url") or "").strip() if isinstance(zni_assignment, dict) else ""
         item["zni_key"] = zni_key
         item["zni_url"] = zni_url
+        rollout_note = flags.get(assignment_key) or flags.get(item.get("release_key"), {})
+        item["has_rollout_notes"] = bool(
+            isinstance(rollout_note, dict) and rollout_note.get("has_rollout_notes")
+        )
     return items
 
 
@@ -1137,11 +1337,11 @@ def _extract_version(dist_item):
             value = dist_item.get(key)
             if not value:
                 continue
-            match = re.search(r"[DP]-\d+\.\d+\.\d+-\d+", str(value))
+            match = RELEASE_VERSION_PATTERN.search(str(value))
             if match:
                 return match.group(0)
     else:
-        match = re.search(r"[DP]-\d+\.\d+\.\d+-\d+", str(dist_item))
+        match = RELEASE_VERSION_PATTERN.search(str(dist_item))
         if match:
             return match.group(0)
 
@@ -1165,10 +1365,10 @@ def _extract_nested_version(dist_item):
         if isinstance(value, dict):
             for key in ("version", "buildVersion"):
                 raw_value = value.get(key)
-                if raw_value and re.search(r"[DP]-\d+\.\d+\.\d+-\d+", str(raw_value)):
+                if raw_value and RELEASE_VERSION_PATTERN.search(str(raw_value)):
                     return str(raw_value)
         else:
-            match = re.search(r"[DP]-\d+\.\d+\.\d+-\d+", str(value))
+            match = RELEASE_VERSION_PATTERN.search(str(value))
             if match:
                 return match.group(0)
     return _extract_version(dist_item)
@@ -1599,6 +1799,7 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
             "row_label": row_label,
             "zni_key": "",
             "zni_url": "",
+            "has_rollout_notes": False,
             "ke": ke_distributive,
             "ke_name": ke_name,
             "ke_id": ke_id,
@@ -1630,6 +1831,8 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
             "days_overdue": days_overdue,
             "waits_for_rov": not rov_key and not is_cancelled,
             "is_unnumbered": is_unnumbered,
+            "is_natural_unnumbered": is_unnumbered,
+            "is_force_unnumbered": False,
             "source_prefix": prefix,
             "system_name": _detect_system(prefix, summary, ke_name, system_info_text),
             "sort_date": _pick_release_sort_dt(rov_start, rov_end, planned_prom_start, planned_prom_end).isoformat() if _pick_release_sort_dt(rov_start, rov_end, planned_prom_start, planned_prom_end) else "",
@@ -1687,12 +1890,40 @@ def _apply_group_manual_order(year, group_name, items):
     return merged_items
 
 
+def _derive_natural_unnumbered(item):
+    if not isinstance(item, dict):
+        return False
+    has_rov = bool(item.get("has_rov") or str(item.get("rov_key") or "").strip())
+    is_cancelled = bool(item.get("is_cancelled"))
+    has_ke = bool(str(item.get("ke") or "").strip())
+    return (not has_rov) or (is_cancelled and not has_ke)
+
+
+def _apply_force_unnumbered_flags(year, items):
+    manual_order = _load_manual_order()
+    year_payload = manual_order.get(str(year), {}) if isinstance(manual_order, dict) else {}
+    forced_keys = {
+        str(row_key or "").strip()
+        for row_key in (year_payload.get("force_unnumbered") or [])
+        if str(row_key or "").strip()
+    }
+
+    for item in items:
+        row_key = str(item.get("row_key") or item.get("release_key") or "").strip()
+        is_natural_unnumbered = _derive_natural_unnumbered(item)
+        is_forced = row_key in forced_keys
+        item["is_natural_unnumbered"] = is_natural_unnumbered
+        item["is_force_unnumbered"] = is_forced
+        item["is_unnumbered"] = bool(is_natural_unnumbered or is_forced)
+
+
 def _sort_and_number_records(records):
     records_by_year = defaultdict(list)
     for item in records:
         records_by_year[item["year"]].append(item)
 
     for year_items in records_by_year.values():
+        _apply_force_unnumbered_flags(year_items[0]["year"], year_items)
         numbered_items = [item for item in year_items if not item.get("is_unnumbered")]
         waiting_items = [item for item in year_items if item.get("is_unnumbered")]
 
@@ -1736,12 +1967,13 @@ def _sort_and_number_records(records):
     return records
 
 
-def save_release_monitor_manual_order(year, waiting_row_keys=None, numbered_row_keys=None):
+def save_release_monitor_manual_order(year, waiting_row_keys=None, numbered_row_keys=None, force_unnumbered_row_keys=None):
     global _cached_data, _last_cache_update
 
     year = int(year or datetime.now().year)
     normalized_waiting = []
     normalized_numbered = []
+    normalized_force_unnumbered = []
 
     for row_key in (waiting_row_keys or []):
         row_key = str(row_key or "").strip()
@@ -1753,11 +1985,17 @@ def save_release_monitor_manual_order(year, waiting_row_keys=None, numbered_row_
         if row_key and row_key not in normalized_numbered:
             normalized_numbered.append(row_key)
 
+    for row_key in (force_unnumbered_row_keys or []):
+        row_key = str(row_key or "").strip()
+        if row_key and row_key not in normalized_force_unnumbered:
+            normalized_force_unnumbered.append(row_key)
+
     with _cache_lock:
         manual_order = _load_manual_order()
         manual_order[str(year)] = {
             "waiting": normalized_waiting,
             "numbered": normalized_numbered,
+            "force_unnumbered": normalized_force_unnumbered,
         }
         _save_manual_order(manual_order)
 
@@ -1770,6 +2008,8 @@ def save_release_monitor_manual_order(year, waiting_row_keys=None, numbered_row_
         if _cached_data is not None:
             items = list(_cached_data.get("items", []))
             _apply_reviewer_assignments(items)
+            _apply_date_overrides(items)
+            _apply_duty_schedule_assignments(items, persist=True)
             _sort_and_number_records(items)
             _cached_data["items"] = items
             _save_snapshot_to_disk(_cached_data)
@@ -1868,8 +2108,8 @@ def _compose_release_payload(all_records, mode):
     current_year = datetime.now().year
     previous_year = current_year - 1
     _apply_reviewer_assignments(all_records)
-    _apply_duty_schedule_assignments(all_records, persist=True)
     _apply_date_overrides(all_records)
+    _apply_duty_schedule_assignments(all_records, persist=True)
     _sort_and_number_records(all_records)
     payload = {
         "items": all_records,
@@ -2409,9 +2649,9 @@ def _normalize_release_payload(payload):
 
     normalized_items = [dict(item) for item in (payload.get("items") or []) if isinstance(item, dict)]
     _apply_reviewer_assignments(normalized_items)
-    _apply_zni_assignments(normalized_items)
-    _apply_duty_schedule_assignments(normalized_items, persist=True)
     _apply_date_overrides(normalized_items)
+    _apply_duty_schedule_assignments(normalized_items, persist=True)
+    _apply_zni_assignments(normalized_items)
     _sort_and_number_records(normalized_items)
     current_year = datetime.now().year
     previous_year = current_year - 1
@@ -2508,10 +2748,14 @@ def upload_release_monitor_duty_schedules(uploaded_files):
                 _last_cache_update = _get_snapshot_mtime() or time.time()
 
         applied_count = 0
+        duty_debug_rows = []
         if _cached_data is not None:
             items = _cached_data.get("items") or []
             _apply_reviewer_assignments(items)
-            applied_count = _apply_duty_schedule_assignments(items, persist=True)
+            _apply_date_overrides(items)
+            duty_result = _apply_duty_schedule_assignments(items, persist=True, force=True, debug_limit=20)
+            applied_count = duty_result.get("applied_count", 0) if isinstance(duty_result, dict) else int(duty_result or 0)
+            duty_debug_rows = duty_result.get("debug_rows", []) if isinstance(duty_result, dict) else []
             _sort_and_number_records(items)
             meta = _cached_data.setdefault("meta", {})
             meta["last_duty_schedule_upload"] = merged_payload.get("last_upload")
@@ -2524,6 +2768,7 @@ def upload_release_monitor_duty_schedules(uploaded_files):
         "parsed_months": list(dict.fromkeys(parsed_months)),
         "warnings": warnings,
         "applied_count": applied_count,
+        "duty_debug_rows": duty_debug_rows,
         "data": payload,
     }
 
@@ -2549,6 +2794,8 @@ def create_release_monitor_zni(release_key, reporter=""):
 
         items = _cached_data.get("items") or []
         _apply_reviewer_assignments(items)
+        _apply_date_overrides(items)
+        _apply_duty_schedule_assignments(items, persist=True)
         _apply_zni_assignments(items)
         target_item = None
         for item in items:
@@ -2599,8 +2846,48 @@ def create_release_monitor_zni(release_key, reporter=""):
     }
 
 
-def set_release_monitor_date_override(release_key, start_value="", end_value="", reset=False):
+def set_release_monitor_rollout_notes(release_key, enabled=False):
     global _cached_data
+
+    release_key = str(release_key or "").strip()
+    if not release_key:
+        raise ValueError("Не указан ключ строки релиза")
+
+    enabled = bool(enabled)
+
+    with _cache_lock:
+        flags = _load_rollout_note_flags()
+        if enabled:
+            flags[release_key] = {
+                "has_rollout_notes": True,
+                "updated_at": _format_timestamp(),
+            }
+        else:
+            flags.pop(release_key, None)
+        _save_rollout_note_flags(flags)
+
+        if _cached_data is None:
+            disk_payload = _load_snapshot_from_disk()
+            if disk_payload is not None:
+                _cached_data = disk_payload
+
+        if _cached_data is not None:
+            for item in _cached_data.get("items") or []:
+                if _get_assignment_key_for_item(item) == release_key:
+                    item["has_rollout_notes"] = enabled
+                    break
+
+        payload = _normalize_release_payload(_get_cached_payload_copy() or _build_empty_release_monitor_payload())
+
+    return {
+        "release_key": release_key,
+        "has_rollout_notes": enabled,
+        "data": payload,
+    }
+
+
+def set_release_monitor_date_override(release_key, start_value="", end_value="", reset=False):
+    global _cached_data, _last_cache_update
 
     release_key = str(release_key or "").strip()
     if not release_key:
@@ -2622,13 +2909,20 @@ def set_release_monitor_date_override(release_key, start_value="", end_value="",
             }
 
     _save_date_overrides(overrides)
+    _remove_row_from_manual_order(release_key)
 
     with _cache_lock:
+        if _cached_data is None:
+            disk_payload = _load_snapshot_from_disk()
+            if disk_payload:
+                _cached_data = disk_payload
+                _last_cache_update = _get_snapshot_mtime() or time.time()
+
         if _cached_data is not None:
             items = _cached_data.get("items") or []
             _apply_reviewer_assignments(items)
-            _apply_duty_schedule_assignments(items, persist=True)
             _apply_date_overrides(items)
+            _apply_duty_schedule_assignments(items, persist=True)
             _sort_and_number_records(items)
             _save_snapshot_to_disk(_cached_data)
 
@@ -2735,6 +3029,8 @@ def set_release_monitor_reviewer(release_key, reviewer):
     assignments = _load_reviewer_assignments()
     current_assignment = dict(assignments.get(release_key, {}))
     current_assignment["reviewer"] = reviewer
+    current_assignment["reviewer_source"] = "manual" if reviewer else ""
+    current_assignment["reviewer_date"] = "manual" if reviewer else ""
 
     if current_assignment.get("reviewer") or current_assignment.get("checker") or current_assignment.get("responsibles"):
         assignments[release_key] = current_assignment
@@ -2748,6 +3044,8 @@ def set_release_monitor_reviewer(release_key, reviewer):
                 item_key = _get_assignment_key_for_item(item)
                 if item_key == release_key:
                     item["psi_owner"] = reviewer
+                    item["psi_owner_source"] = current_assignment.get("reviewer_source", "")
+                    item["psi_owner_date"] = current_assignment.get("reviewer_date", "")
                     item["psi_checker"] = current_assignment.get("checker", "")
                     item["psi_responsibles"] = list(current_assignment.get("responsibles", []))
                     break
@@ -2756,7 +3054,7 @@ def set_release_monitor_reviewer(release_key, reviewer):
     return reviewer
 
 
-def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=None):
+def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=None, reviewer_source=None):
     global _cached_data
 
     release_key = (release_key or "").strip()
@@ -2779,9 +3077,22 @@ def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=
             normalized_responsibles.append(responsible_name)
 
     assignments = _load_reviewer_assignments()
+    current_assignment = dict(assignments.get(release_key, {}))
+    if reviewer_source is None:
+        reviewer_source = current_assignment.get("reviewer_source")
+    reviewer_source = str(reviewer_source or "").strip()
+    if reviewer_source == "duty_schedule" and reviewer:
+        resolved_reviewer_source = "duty_schedule"
+        reviewer_date = str(current_assignment.get("reviewer_date") or "").strip()
+    else:
+        resolved_reviewer_source = "manual" if reviewer else ""
+        reviewer_date = "manual" if reviewer else ""
+
     if reviewer or checker or normalized_responsibles:
         assignments[release_key] = {
             "reviewer": reviewer,
+            "reviewer_source": resolved_reviewer_source,
+            "reviewer_date": reviewer_date,
             "checker": checker,
             "responsibles": normalized_responsibles,
         }
@@ -2795,6 +3106,8 @@ def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=
                 item_key = _get_assignment_key_for_item(item)
                 if item_key == release_key:
                     item["psi_owner"] = reviewer
+                    item["psi_owner_source"] = resolved_reviewer_source
+                    item["psi_owner_date"] = reviewer_date
                     item["psi_checker"] = checker
                     item["psi_responsibles"] = list(normalized_responsibles)
                     break
@@ -2802,6 +3115,9 @@ def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=
 
     return {
         "reviewer": reviewer,
+        "reviewer_source": resolved_reviewer_source,
+        "reviewer_date": reviewer_date,
         "checker": checker,
         "responsibles": normalized_responsibles,
     }
+

@@ -230,7 +230,7 @@ def _generate_release_zip_buffer(
     if not template_files:
         raise ValueError(f"Шаблоны не найдены в директории: {template_dir}")
 
-    release_version = (release_version or get_release_version(release_id) or "").strip()
+    release_version = (get_release_version(release_id) or release_version or "").strip()
     jira_issues = get_issues_from_jira(release_id)
     instruction_block = "Выполнить пункты инструкции по внедрению ИНСТРУКЦИЯ" if instruction_link else "Отсутствуют"
     pob = get_pob_from_release(release_id)

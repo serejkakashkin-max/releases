@@ -21,6 +21,7 @@ from services.release_monitor_service import (
     set_release_monitor_date_override,
     set_release_monitor_reviewer,
     create_release_monitor_zni,
+    set_release_monitor_rollout_notes,
 )
 from services.report_service import save_report_to_disk
 from services.release_report_service import get_release_report_service
@@ -277,13 +278,16 @@ def update_release_monitor_reviewer():
         data = request.get_json(silent=True) or {}
         release_key = data.get("release_key", "")
         reviewer = data.get("reviewer", "")
+        reviewer_source = data.get("reviewer_source")
         checker = data.get("checker", "")
         responsibles = data.get("responsibles", [])
-        saved_assignment = set_release_monitor_assignment(release_key, reviewer, checker, responsibles)
+        saved_assignment = set_release_monitor_assignment(release_key, reviewer, checker, responsibles, reviewer_source=reviewer_source)
         return jsonify({
             "success": True,
             "release_key": release_key,
             "reviewer": saved_assignment.get("reviewer", ""),
+            "reviewer_source": saved_assignment.get("reviewer_source", ""),
+            "reviewer_date": saved_assignment.get("reviewer_date", ""),
             "checker": saved_assignment.get("checker", ""),
             "responsibles": saved_assignment.get("responsibles", []),
         })
@@ -334,6 +338,27 @@ def update_release_monitor_date_override():
         return jsonify({"success": False, "error": str(e)}), 400
 
 
+@dashboard_bp.route('/dashboard/release-monitor/rollout-notes', methods=['POST'])
+def update_release_monitor_rollout_notes():
+    try:
+        data = request.get_json(silent=True) or {}
+        release_key = data.get("release_key", "")
+        enabled = bool(data.get("enabled"))
+        result = set_release_monitor_rollout_notes(release_key, enabled=enabled)
+        payload = result.get("data", {})
+        return jsonify({
+            "success": True,
+            "release_key": result.get("release_key"),
+            "has_rollout_notes": result.get("has_rollout_notes"),
+            "release_monitor": payload.get("items", []),
+            "release_monitor_summary": payload.get("summary", {}),
+            "release_monitor_meta": payload.get("meta", {}),
+        })
+    except Exception as e:
+        logging.error(f"Ошибка сохранения ручной подсветки релиза: {e}")
+        return jsonify({"success": False, "error": str(e)}), 400
+
+
 @dashboard_bp.route('/dashboard/release-monitor/order', methods=['POST'])
 def save_release_monitor_order():
     """Сохраняет ручной порядок релизов внутри групп выбранного года."""
@@ -342,7 +367,13 @@ def save_release_monitor_order():
         year = int(data.get("year") or datetime.now().year)
         waiting_row_keys = data.get("waiting_row_keys", [])
         numbered_row_keys = data.get("numbered_row_keys", [])
-        result = save_release_monitor_manual_order(year, waiting_row_keys, numbered_row_keys)
+        force_unnumbered_row_keys = data.get("force_unnumbered_row_keys", [])
+        result = save_release_monitor_manual_order(
+            year,
+            waiting_row_keys,
+            numbered_row_keys,
+            force_unnumbered_row_keys,
+        )
         payload = result.get("data", {})
         return jsonify({
             "success": True,
@@ -393,6 +424,7 @@ def upload_release_monitor_duty_files():
             "parsed_months": result.get("parsed_months", []),
             "warnings": result.get("warnings", []),
             "applied_count": result.get("applied_count", 0),
+            "duty_debug_rows": result.get("duty_debug_rows", []),
             "release_monitor": payload.get("items", []),
             "release_monitor_summary": payload.get("summary", {}),
             "release_monitor_meta": payload.get("meta", {}),
