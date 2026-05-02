@@ -107,6 +107,32 @@ def _safe_int(value):
         return None
 
 
+def _normalize_monitor_text(value):
+    return re.sub(r"\s+", " ", str(value or "").lower()).strip()
+
+
+def _get_constructor_rollback_group(item):
+    if str(item.get("ke_id") or "").strip() != "3894421":
+        return ""
+
+    text_parts = [
+        item.get("release_summary", ""),
+        item.get("ke_name", ""),
+        item.get("release_version", ""),
+    ]
+    text_parts.extend(item.get("release_name_lines") or [])
+    searchable = _normalize_monitor_text(" ".join(str(part or "") for part in text_parts))
+    searchable = re.sub(r"[^0-9a-zа-яё]+", " ", searchable, flags=re.IGNORECASE)
+
+    has_bh = bool(re.search(r"(^|\s)bh(\s|$)", searchable))
+    has_pl = bool(re.search(r"(^|\s)pl(\s|$)", searchable))
+    if has_bh and not has_pl:
+        return "bh"
+    if has_pl and not has_bh:
+        return "pl"
+    return ""
+
+
 def _get_previous_version_from_monitor_snapshot(row_key: str, release_id: str):
     snapshot = get_release_monitor_snapshot() or {}
     items = snapshot.get("items") or []
@@ -133,9 +159,11 @@ def _get_previous_version_from_monitor_snapshot(row_key: str, release_id: str):
         return ""
 
     current_release_number = _safe_int(current_item.get("release_number"))
+    current_release_key = (current_item.get("release_key") or normalized_release_id or "").strip()
     current_ke_id = (current_item.get("ke_id") or "").strip()
     current_year = current_item.get("year")
     current_is_reroll = bool(current_item.get("is_reroll"))
+    current_rollback_group = _get_constructor_rollback_group(current_item)
 
     def _candidate_version(item):
         return str(item.get("release_version") or "").strip()
@@ -147,6 +175,14 @@ def _get_previous_version_from_monitor_snapshot(row_key: str, release_id: str):
             str(item.get("row_key") or ""),
         )
 
+    def _is_not_current_release(item):
+        return (item.get("release_key") or "").strip() != current_release_key
+
+    def _matches_rollback_group(item):
+        if not current_rollback_group:
+            return True
+        return _get_constructor_rollback_group(item) == current_rollback_group
+
     numbered_items = [
         item for item in items
         if _safe_int(item.get("release_number")) is not None
@@ -156,6 +192,8 @@ def _get_previous_version_from_monitor_snapshot(row_key: str, release_id: str):
         same_ke_current_year_candidates = [
             item for item in numbered_items
             if (item.get("ke_id") or "").strip() == current_ke_id
+            and _is_not_current_release(item)
+            and _matches_rollback_group(item)
             and item.get("year") == current_year
             and _safe_int(item.get("release_number")) is not None
             and _safe_int(item.get("release_number")) < current_release_number
@@ -169,6 +207,8 @@ def _get_previous_version_from_monitor_snapshot(row_key: str, release_id: str):
         same_ke_previous_year_candidates = [
             item for item in numbered_items
             if (item.get("ke_id") or "").strip() == current_ke_id
+            and _is_not_current_release(item)
+            and _matches_rollback_group(item)
             and previous_year is not None
             and _safe_int(item.get("year")) == previous_year
             and _candidate_version(item)
@@ -180,6 +220,8 @@ def _get_previous_version_from_monitor_snapshot(row_key: str, release_id: str):
         previous_numbered_candidates = [
             item for item in numbered_items
             if item.get("year") == current_year
+            and _is_not_current_release(item)
+            and _matches_rollback_group(item)
             and _safe_int(item.get("release_number")) is not None
             and _safe_int(item.get("release_number")) < current_release_number
             and _candidate_version(item)

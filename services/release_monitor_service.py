@@ -1725,8 +1725,6 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
     is_pre_final = normalized_status in {_normalize_text(status) for status in PRE_FINAL_RELEASE_STATUSES}
     ke_name = ke_object.get("name") or ""
     ke_id = ke_object.get("id") or ""
-    if not ke_distributive and ke_id:
-        ke_distributive = _format_ke_id(ke_id)
     release_ke_line = f"{ke_name}({ke_id})" if ke_name and ke_id else (ke_name or "")
     if not release_ke_line:
         release_ke_line = (system_info_text or "").strip()
