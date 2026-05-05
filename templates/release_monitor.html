@@ -552,6 +552,43 @@
             margin-bottom: 0.75rem;
         }
 
+        .release-update-banner {
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.8rem;
+            padding: 0.75rem 0.9rem;
+            margin-bottom: 0.9rem;
+            border: 1px solid rgba(255, 193, 7, 0.42);
+            border-radius: 12px;
+            background: rgba(255, 193, 7, 0.12);
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        .release-update-banner.show {
+            display: flex;
+        }
+
+        .release-update-banner-actions {
+            display: inline-flex;
+            gap: 0.45rem;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .release-update-banner button {
+            border: 1px solid rgba(255, 193, 7, 0.55);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border-radius: 9px;
+            padding: 0.42rem 0.65rem;
+            font-size: 0.82rem;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
         .release-monitor-actions {
             display: flex;
             justify-content: flex-end;
@@ -1381,6 +1418,14 @@
                     </div>
                 </div>
 
+                <div id="releaseUpdateBanner" class="release-update-banner" role="status" aria-live="polite">
+                    <div id="releaseUpdateBannerText">&#1044;&#1072;&#1085;&#1085;&#1099;&#1077; &#1088;&#1077;&#1083;&#1080;&#1079;&#1086;&#1074; &#1086;&#1073;&#1085;&#1086;&#1074;&#1080;&#1083;&#1080;&#1089;&#1100;. &#1054;&#1073;&#1085;&#1086;&#1074;&#1080;&#1090;&#1077; &#1089;&#1090;&#1088;&#1072;&#1085;&#1080;&#1094;&#1091;.</div>
+                    <div class="release-update-banner-actions">
+                        <button type="button" onclick="location.reload()">&#1054;&#1073;&#1085;&#1086;&#1074;&#1080;&#1090;&#1100;</button>
+                        <button type="button" onclick="dismissReleaseUpdateBanner()">&#1055;&#1086;&#1079;&#1078;&#1077;</button>
+                    </div>
+                </div>
+
                 <div class="release-visible-counter">
                     Видимых релизов: <strong id="releaseVisibleCount">{{ release_monitor|length }}</strong>
                 </div>
@@ -1493,6 +1538,14 @@
         let releaseMonitorItems = [];
         let releaseMonitorMeta = {};
         let releaseMonitorRefreshPoll = null;
+        let releaseMonitorGlobalStatusPoll = null;
+        let releaseMonitorKnownRevision = '';
+        let releaseMonitorDismissedRevision = '';
+        let releaseMonitorGlobalRefreshing = false;
+        let releaseMonitorLocalRefreshing = false;
+        let releaseMonitorActiveRefreshMode = '';
+        let releaseUpdateBannerMeta = null;
+        let releaseUpdateBannerTimer = null;
         const RELEASE_REVIEWER_OPTIONS = {{ reviewer_options | tojson | safe }};
         let releaseDocumentModalInstance = null;
         let releaseDocumentWizardState = null;
@@ -1506,6 +1559,130 @@
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#39;');
+        }
+
+        function getReleaseMonitorRevision(meta = releaseMonitorMeta) {
+            return String(meta?.data_revision || meta?.last_updated || '').trim();
+        }
+
+        function parseReleaseMonitorRevisionDate(meta = releaseMonitorMeta) {
+            const revision = String(meta?.data_revision || '').trim();
+            if (!/^\d+$/.test(revision)) {
+                return null;
+            }
+            const timestamp = Number(revision);
+            if (!Number.isFinite(timestamp) || timestamp <= 0) {
+                return null;
+            }
+            const dateValue = new Date(timestamp);
+            return Number.isNaN(dateValue.getTime()) ? null : dateValue;
+        }
+
+        function parseReleaseMonitorUpdatedAt(meta = releaseMonitorMeta) {
+            const revisionDate = parseReleaseMonitorRevisionDate(meta);
+            if (revisionDate) {
+                return revisionDate;
+            }
+            const value = String(meta?.last_updated || '').trim();
+            const match = value.match(/^(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})(?::(\d{2}))?$/);
+            if (!match) {
+                return null;
+            }
+            return new Date(
+                Number(match[3]),
+                Number(match[2]) - 1,
+                Number(match[1]),
+                Number(match[4]),
+                Number(match[5]),
+                Number(match[6] || 0)
+            );
+        }
+
+        function getReleaseMonitorUpdateTime(meta = releaseMonitorMeta) {
+            const updatedAt = parseReleaseMonitorUpdatedAt(meta);
+            if (updatedAt) {
+                return `${String(updatedAt.getHours()).padStart(2, '0')}:${String(updatedAt.getMinutes()).padStart(2, '0')}`;
+            }
+            const value = String(meta?.last_updated || '').trim();
+            const match = value.match(/(\d{2}:\d{2})(?::\d{2})?$/);
+            return match ? match[1] : '';
+        }
+
+        function formatReleaseUpdateAge(updatedAt) {
+            if (!updatedAt) {
+                return '';
+            }
+            const diffMs = Date.now() - updatedAt.getTime();
+            if (!Number.isFinite(diffMs) || diffMs < 0) {
+                return '';
+            }
+            const diffMinutes = Math.floor(diffMs / 60000);
+            if (diffMinutes < 1) {
+                return 'только что';
+            }
+            if (diffMinutes < 60) {
+                return `${diffMinutes} мин назад`;
+            }
+            const hours = Math.floor(diffMinutes / 60);
+            const minutes = diffMinutes % 60;
+            return minutes ? `${hours} ч ${minutes} мин назад` : `${hours} ч назад`;
+        }
+
+        function updateReleaseUpdateBannerText() {
+            const text = document.getElementById('releaseUpdateBannerText');
+            if (!text || !releaseUpdateBannerMeta) {
+                return;
+            }
+            const timeText = getReleaseMonitorUpdateTime(releaseUpdateBannerMeta);
+            const ageText = formatReleaseUpdateAge(parseReleaseMonitorUpdatedAt(releaseUpdateBannerMeta));
+            if (timeText && ageText) {
+                text.textContent = `Данные релизов обновились в ${timeText} (${ageText}). Обновите страницу.`;
+                return;
+            }
+            text.textContent = timeText
+                ? `Данные релизов обновились в ${timeText}. Обновите страницу.`
+                : 'Данные релизов обновились. Обновите страницу.';
+        }
+
+        function showReleaseUpdateBanner(meta = releaseMonitorMeta) {
+            const banner = document.getElementById('releaseUpdateBanner');
+            if (!banner) {
+                return;
+            }
+            releaseUpdateBannerMeta = meta || {};
+            updateReleaseUpdateBannerText();
+            banner.classList.add('show');
+            if (!releaseUpdateBannerTimer) {
+                releaseUpdateBannerTimer = setInterval(updateReleaseUpdateBannerText, 60000);
+            }
+        }
+
+        function hideReleaseUpdateBanner() {
+            const banner = document.getElementById('releaseUpdateBanner');
+            if (banner) {
+                banner.classList.remove('show');
+            }
+            releaseUpdateBannerMeta = null;
+            if (releaseUpdateBannerTimer) {
+                clearInterval(releaseUpdateBannerTimer);
+                releaseUpdateBannerTimer = null;
+            }
+        }
+
+        function dismissReleaseUpdateBanner() {
+            releaseMonitorDismissedRevision = releaseMonitorKnownRevision;
+            hideReleaseUpdateBanner();
+        }
+
+        function setReleaseMonitorGlobalRefreshing(isRefreshing) {
+            releaseMonitorGlobalRefreshing = Boolean(isRefreshing);
+            setReleaseRefreshButtonsLoading(releaseMonitorGlobalRefreshing);
+            document.querySelectorAll('.reviewer-select, .responsible-icon-btn, .release-doc-btn, .release-row-edit-btn, .release-order-step-btn').forEach(element => {
+                element.disabled = releaseMonitorGlobalRefreshing;
+            });
+            if (!releaseMonitorGlobalRefreshing && typeof refreshReleaseOrderModeUi === 'function') {
+                refreshReleaseOrderModeUi();
+            }
         }
 
         function getReleaseNameHtml(item) {
@@ -2440,6 +2617,8 @@ function buildReviewerCell(item) {
 
             releaseMonitorItems = Array.isArray(items) ? items : [];
             releaseMonitorMeta = meta || {};
+            releaseMonitorKnownRevision = getReleaseMonitorRevision(releaseMonitorMeta) || releaseMonitorKnownRevision;
+            hideReleaseUpdateBanner();
             ensureResponsibleHeaderFilter();
 
             window.dashboardData = window.dashboardData || {};
@@ -3034,6 +3213,11 @@ function buildReviewerCell(item) {
                     throw new Error(data.error || 'Не удалось сохранить назначение');
                 }
 
+                if (data.data_revision) {
+                    releaseMonitorKnownRevision = String(data.data_revision);
+                    releaseMonitorDismissedRevision = '';
+                }
+
                 releaseMonitorItems = releaseMonitorItems.map(item => (
                     (item.row_key || item.release_key) === releaseKey
                         ? {
@@ -3093,13 +3277,17 @@ function buildReviewerCell(item) {
         }
 
         function setReleaseRefreshButtonsLoading(isLoading) {
+            const effectiveLoading = Boolean(isLoading || releaseMonitorGlobalRefreshing || releaseMonitorLocalRefreshing);
             ['releaseMonitorQuickRefreshBtn', 'releaseMonitorRefreshBtn', 'releaseMonitorConfluenceSyncBtn', 'releaseMonitorDutyUploadBtn', 'releaseMonitorCurrentWeekReportBtn'].forEach(id => {
                 const btn = document.getElementById(id);
                 if (!btn) {
                     return;
                 }
-                btn.disabled = isLoading;
-                btn.classList.toggle('spinning', isLoading && id === 'releaseMonitorRefreshBtn');
+                btn.disabled = effectiveLoading;
+                const isActiveQuick = releaseMonitorActiveRefreshMode === 'quick' && id === 'releaseMonitorQuickRefreshBtn';
+                const isActiveFull = releaseMonitorActiveRefreshMode === 'full' && id === 'releaseMonitorRefreshBtn';
+                const isGlobalRefresh = !releaseMonitorActiveRefreshMode && releaseMonitorGlobalRefreshing && id === 'releaseMonitorRefreshBtn';
+                btn.classList.toggle('spinning', effectiveLoading && (isActiveQuick || isActiveFull || isGlobalRefresh));
             });
         }
 
@@ -3193,6 +3381,8 @@ function buildReviewerCell(item) {
         }
 
         async function refreshReleaseMonitor(mode = 'full') {
+            releaseMonitorLocalRefreshing = true;
+            releaseMonitorActiveRefreshMode = mode === 'quick' ? 'quick' : 'full';
             setReleaseRefreshButtonsLoading(true);
 
             try {
@@ -3208,6 +3398,8 @@ function buildReviewerCell(item) {
             } catch (error) {
                 console.error('Release monitor refresh error:', error);
                 alert('Ошибка обновления релизов: ' + error.message);
+                releaseMonitorLocalRefreshing = false;
+                releaseMonitorActiveRefreshMode = '';
                 setReleaseRefreshButtonsLoading(false);
                 return;
             }
@@ -3228,13 +3420,15 @@ function buildReviewerCell(item) {
                 }
 
                 const refreshStatus = data.refresh_status || {};
-                renderReleaseMonitor(data.release_monitor || [], data.release_monitor_meta || {});
 
                 if (refreshStatus.state === 'completed' || refreshStatus.state === 'idle') {
                     if (releaseMonitorRefreshPoll) {
                         clearInterval(releaseMonitorRefreshPoll);
                         releaseMonitorRefreshPoll = null;
                     }
+                    renderReleaseMonitor(data.release_monitor || [], data.release_monitor_meta || {});
+                    releaseMonitorLocalRefreshing = false;
+                    releaseMonitorActiveRefreshMode = '';
                     setReleaseRefreshButtonsLoading(false);
                     return refreshStatus.state;
                 }
@@ -3244,10 +3438,13 @@ function buildReviewerCell(item) {
                         clearInterval(releaseMonitorRefreshPoll);
                         releaseMonitorRefreshPoll = null;
                     }
+                    releaseMonitorLocalRefreshing = false;
+                    releaseMonitorActiveRefreshMode = '';
                     setReleaseRefreshButtonsLoading(false);
                     throw new Error(refreshStatus.error || 'Ошибка фонового обновления релизов');
                 }
 
+                setReleaseRefreshButtonsLoading(true);
                 return refreshStatus.state;
             };
 
@@ -3262,6 +3459,8 @@ function buildReviewerCell(item) {
                     clearInterval(releaseMonitorRefreshPoll);
                     releaseMonitorRefreshPoll = null;
                 }
+                releaseMonitorLocalRefreshing = false;
+                releaseMonitorActiveRefreshMode = '';
                 setReleaseRefreshButtonsLoading(false);
                 alert('Ошибка обновления релизов: ' + error.message);
                 return;
@@ -3275,11 +3474,50 @@ function buildReviewerCell(item) {
                         console.error('Release monitor status polling error:', error);
                         clearInterval(releaseMonitorRefreshPoll);
                         releaseMonitorRefreshPoll = null;
+                        releaseMonitorLocalRefreshing = false;
+                        releaseMonitorActiveRefreshMode = '';
                         setReleaseRefreshButtonsLoading(false);
                         alert('Ошибка обновления релизов: ' + error.message);
                     }
                 }, 2000);
             }
+        }
+
+        async function checkReleaseMonitorGlobalStatus() {
+            try {
+                const response = await fetch(BASE_PATH + '/dashboard/release-monitor/status');
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    return;
+                }
+
+                const refreshStatus = data.refresh_status || {};
+                const isRefreshing = refreshStatus.state === 'refreshing';
+                setReleaseMonitorGlobalRefreshing(isRefreshing);
+
+                const meta = data.release_monitor_meta || {};
+                const latestRevision = getReleaseMonitorRevision(meta);
+                if (
+                    latestRevision &&
+                    releaseMonitorKnownRevision &&
+                    latestRevision !== releaseMonitorKnownRevision &&
+                    latestRevision !== releaseMonitorDismissedRevision &&
+                    !releaseMonitorRefreshPoll
+                ) {
+                    releaseMonitorKnownRevision = latestRevision;
+                    showReleaseUpdateBanner(meta);
+                }
+            } catch (error) {
+                console.error('Release monitor background status error:', error);
+            }
+        }
+
+        function startReleaseMonitorGlobalStatusPolling() {
+            if (releaseMonitorGlobalStatusPoll) {
+                return;
+            }
+            checkReleaseMonitorGlobalStatus();
+            releaseMonitorGlobalStatusPoll = setInterval(checkReleaseMonitorGlobalStatus, 15000);
         }
 
         function parseReleaseDateValue(value) {
@@ -3337,7 +3575,7 @@ function buildReviewerCell(item) {
                     currentReleaseViewFilter === 'all' ||
                     (currentReleaseViewFilter === 'non_final' && item.is_non_final) ||
                     (currentReleaseViewFilter === 'overdue' && item.is_overdue) ||
-                    (currentReleaseViewFilter === 'today' && item.is_pre_final) ||
+                    (currentReleaseViewFilter === 'today' && (item.is_pre_final || item.is_today)) ||
                     (currentReleaseViewFilter === 'final' && item.is_final) ||
                     (currentReleaseViewFilter === 'cancelled' && item.is_cancelled)
                 );
@@ -3384,6 +3622,7 @@ function buildReviewerCell(item) {
 
             updateReleaseScrollButtons();
             refreshReleaseOrderModeUi();
+            setReleaseMonitorGlobalRefreshing(releaseMonitorGlobalRefreshing);
         }
 
         window.CHATBOT_BASE_PATH = {{ basepath | tojson | safe }};
@@ -3403,6 +3642,7 @@ function buildReviewerCell(item) {
             window.dashboardData.release_monitor || [],
             window.dashboardData.release_monitor_meta || {}
         );
+        startReleaseMonitorGlobalStatusPolling();
     </script>
     <script src="/static/js/chatbot.js"></script>
 </body>

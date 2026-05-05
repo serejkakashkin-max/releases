@@ -13,6 +13,7 @@ from services.release_monitor_service import (
     get_release_monitor_snapshot,
     start_release_monitor_refresh,
     get_release_monitor_refresh_status,
+    ensure_release_monitor_not_refreshing,
     get_release_monitor_reviewer_options,
     upload_release_monitor_duty_schedules,
     sync_release_monitor_assignments_from_confluence,
@@ -275,6 +276,7 @@ def release_monitor_status():
 def update_release_monitor_reviewer():
     """Сохраняет назначение по релизу: дежурный и проверяющий."""
     try:
+        ensure_release_monitor_not_refreshing()
         data = request.get_json(silent=True) or {}
         release_key = data.get("release_key", "")
         reviewer = data.get("reviewer", "")
@@ -290,6 +292,7 @@ def update_release_monitor_reviewer():
             "reviewer_date": saved_assignment.get("reviewer_date", ""),
             "checker": saved_assignment.get("checker", ""),
             "responsibles": saved_assignment.get("responsibles", []),
+            "data_revision": saved_assignment.get("data_revision", ""),
         })
     except Exception as e:
         logging.error(f"Ошибка сохранения назначения по релизу: {e}")
@@ -300,6 +303,7 @@ def update_release_monitor_reviewer():
 def create_release_monitor_zni_issue():
     """Создает Jira OPLOT задачу для выбранной строки релиза."""
     try:
+        ensure_release_monitor_not_refreshing()
         data = request.get_json(silent=True) or {}
         release_key = data.get("release_key", "")
         reporter = data.get("reporter", "")
@@ -321,6 +325,7 @@ def create_release_monitor_zni_issue():
 def update_release_monitor_date_override():
     """Сохраняет ручную корректировку дат внедрения по строке релиза."""
     try:
+        ensure_release_monitor_not_refreshing()
         data = request.get_json(silent=True) or {}
         release_key = data.get("release_key", "")
         start_value = data.get("start", "")
@@ -341,6 +346,7 @@ def update_release_monitor_date_override():
 @dashboard_bp.route('/dashboard/release-monitor/rollout-notes', methods=['POST'])
 def update_release_monitor_rollout_notes():
     try:
+        ensure_release_monitor_not_refreshing()
         data = request.get_json(silent=True) or {}
         release_key = data.get("release_key", "")
         enabled = bool(data.get("enabled"))
@@ -363,6 +369,7 @@ def update_release_monitor_rollout_notes():
 def save_release_monitor_order():
     """Сохраняет ручной порядок релизов внутри групп выбранного года."""
     try:
+        ensure_release_monitor_not_refreshing()
         data = request.get_json(silent=True) or {}
         year = int(data.get("year") or datetime.now().year)
         waiting_row_keys = data.get("waiting_row_keys", [])
@@ -391,6 +398,7 @@ def save_release_monitor_order():
 def sync_release_monitor_confluence():
     """Синхронизирует ответственных и проверяющих из эталонной страницы Confluence."""
     try:
+        ensure_release_monitor_not_refreshing()
         data = request.get_json(silent=True) or {}
         year = int(data.get("year") or datetime.now().year)
         sync_result = sync_release_monitor_assignments_from_confluence(year)
@@ -414,6 +422,7 @@ def sync_release_monitor_confluence():
 def upload_release_monitor_duty_files():
     """Загружает Excel-графики дежурств и автопроставляет дежурного в пустые релизы."""
     try:
+        ensure_release_monitor_not_refreshing()
         uploaded_files = request.files.getlist('files')
         result = upload_release_monitor_duty_schedules(uploaded_files)
         payload = result.get("data", {})
