@@ -102,7 +102,7 @@ DASHBOARD_CACHE_TTL = 3600
 
 # --- Загрузка токенов ---
 try:
-    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+    with open(CONFIG_FILE, "r", encoding="utf-8-sig") as f:
         TOKENS = json.load(f)
 except Exception as e:
     logging.error(f"Ошибка загрузки config.json: {e}")

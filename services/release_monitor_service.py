@@ -1,5 +1,6 @@
 import logging
 import json
+import html
 import os
 import re
 import threading
@@ -1328,8 +1329,259 @@ def _find_release_assignment_table(storage_html):
     return []
 
 
+def _get_confluence_release_page_id(year):
+    # Публикуем только в одну заранее зафиксированную страницу релизов.
+    return "18369778404"
+
+
+def _fetch_confluence_release_page(year):
+    page_id = _get_confluence_release_page_id(year)
+    token = str(TOKENS.get("confluence_delta_token", "") or "").strip()
+    if not page_id:
+        raise ValueError(f"Не настроен pageId Confluence для {year} года")
+    if not token:
+        raise ValueError("Не настроен token доступа к Confluence")
+
+    url = f"{CONFLUENCE_DELTA_BASE}/rest/api/content/{page_id}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    params = {"expand": "body.storage,version,title"}
+    response = requests.get(url, headers=headers, params=params, verify=False, timeout=60)
+    if not response.ok:
+        detail = _extract_confluence_error_detail(response)
+        raise ValueError(f"Confluence GET failed ({response.status_code}): {detail}")
+    data = response.json()
+    return {
+        "page_id": page_id,
+        "title": str(data.get("title") or "").strip(),
+        "version": int(((data.get("version") or {}).get("number")) or 0),
+        "storage_html": (((data.get("body") or {}).get("storage") or {}).get("value") or ""),
+        "raw": data,
+    }
+
+
+def _extract_confluence_error_detail(response):
+    try:
+        payload = response.json()
+        if isinstance(payload, dict):
+            for key in ("message", "errorMessage", "reason"):
+                value = str(payload.get(key) or "").strip()
+                if value:
+                    return value
+            errors = payload.get("errors")
+            if isinstance(errors, dict) and errors:
+                return "; ".join(f"{key}: {value}" for key, value in errors.items())
+            if isinstance(errors, list) and errors:
+                return "; ".join(str(item) for item in errors if str(item).strip())
+            return str(payload)[:1000]
+    except Exception:
+        pass
+
+    body = str(getattr(response, "text", "") or "").strip()
+    if body:
+        return body[:1000]
+    return str(getattr(response, "reason", "") or "empty response")
+
+
+def _render_confluence_release_link(url, text):
+    label = html.escape(str(text or "").strip()) or html.escape("—")
+    href = str(url or "").strip()
+    if not href:
+        return label
+    return f'<a href="{html.escape(href, quote=True)}">{label}</a>'
+
+
+def _render_confluence_release_name_lines(item):
+    lines = [str(line or "").strip() for line in (item.get("release_name_lines") or []) if str(line or "").strip()]
+    if not lines:
+        fallback = str(item.get("release_summary") or "").strip()
+        if fallback:
+            lines = [fallback]
+    if not lines:
+        return html.escape("—")
+    return "".join(f"<div>{html.escape(line)}</div>" for line in lines)
+
+
+def _render_confluence_release_name_cell(item):
+    lines = [str(line or "").strip() for line in (item.get("release_name_lines") or []) if str(line or "").strip()]
+    if not lines:
+        fallback = str(item.get("release_summary") or "").strip()
+        if fallback:
+            lines = [fallback]
+
+    build_version = str(item.get("release_version") or "").strip()
+    build_url = str(item.get("release_dist_url") or "").strip()
+    build_line = ""
+    if build_version:
+        build_label = html.escape(build_version)
+        if build_url:
+            build_line = (
+                '<div class="release-name-line">'
+                f'сборка: <a href="{html.escape(build_url, quote=True)}">{build_label}</a>'
+                '</div>'
+            )
+        else:
+            build_line = f'<div class="release-name-line">сборка: {build_label}</div>'
+
+    if not lines and not build_line:
+        return html.escape("—")
+
+    rendered_lines = "".join(f"<div>{html.escape(line)}</div>" for line in lines)
+    return rendered_lines + build_line
+
+
+def _render_confluence_release_assignment_cell(item):
+    responsibles = [
+        str(value or "").strip()
+        for value in (item.get("psi_responsibles") or [])
+        if str(value or "").strip()
+    ]
+    checker = str(item.get("psi_checker") or "").strip()
+
+    cell_lines = []
+    if responsibles:
+        cell_lines.append(" / ".join(html.escape(name) for name in responsibles))
+    else:
+        cell_lines.append(html.escape("Отсутствует"))
+
+    if checker:
+        cell_lines.append(f"Проверяет:<br/>{html.escape(checker)}")
+    else:
+        cell_lines.append("Проверяет:<br/>Отсутствует")
+
+    return "<br/>".join(cell_lines)
+
+
+def _parse_release_monitor_date_value(value):
+    raw_value = str(value or "").strip()
+    if not raw_value:
+        return None
+
+    for fmt in ("%d.%m.%Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(raw_value, fmt)
+        except ValueError:
+            continue
+
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return datetime.strptime(raw_value[:19], fmt)
+        except ValueError:
+            continue
+
+    return None
+
+
+def _is_release_far_future(item):
+    deployment_date = (
+        _parse_release_monitor_date_value(item.get("source_deployment_start"))
+        or _parse_release_monitor_date_value(item.get("source_deployment_start_iso"))
+        or _parse_release_monitor_date_value(item.get("deployment_start"))
+        or _parse_release_monitor_date_value(item.get("deployment_start_iso"))
+    )
+    if not deployment_date:
+        return False
+
+    today = datetime.now().date()
+    threshold = today + timedelta(days=14)
+    return deployment_date.date() > threshold
+
+
+def _render_confluence_release_row(item):
+    row_state = str(item.get("row_state") or "planned").strip().lower()
+    row_bg = {
+        "final": "#eaf7ef",
+        "cancelled": "#fdebec",
+        "overdue": "#fff0f0",
+        "today": "",
+        "planned": "",
+    }.get(row_state, "")
+    row_style = f' style="background-color: {row_bg};"' if row_bg else ""
+
+    row_number = str(item.get("release_number") or "").strip() or "—"
+    zni_key = str(item.get("zni_key") or "").strip()
+    ke_value = str(item.get("ke") or "").strip() or "—"
+    release_key = str(item.get("release_key") or "").strip()
+    rov_key = str(item.get("rov_key") or "").strip()
+    start_date = str(item.get("deployment_start") or "").strip() or "—"
+    end_date = str(item.get("deployment_end") or "").strip() or "—"
+
+    cells = [
+        f"<td>{html.escape(row_number)}</td>",
+        f"<td>{_render_confluence_release_name_cell(item)}</td>",
+        f"<td>{_render_confluence_release_link(item.get('zni_url'), zni_key) if zni_key else html.escape('—')}</td>",
+        f"<td>{html.escape(ke_value)}</td>",
+        f"<td>{_render_confluence_release_link(item.get('release_url'), release_key)}</td>",
+        f"<td>{_render_confluence_release_link(item.get('rov_url'), rov_key) if rov_key else html.escape('—')}</td>",
+        f"<td>{html.escape(start_date)}</td>",
+        f"<td>{html.escape(end_date)}</td>",
+        f"<td>{_render_confluence_release_assignment_cell(item)}</td>",
+    ]
+    return f"<tr{row_style}>{''.join(cells)}</tr>"
+
+
+def _build_confluence_release_table(items, year):
+    rows = []
+    for item in items or []:
+        if int(item.get("year", 0) or 0) != int(year or 0):
+            continue
+        if item.get("is_unnumbered"):
+            continue
+        if _is_release_far_future(item):
+            continue
+        rows.append(_render_confluence_release_row(item))
+
+    table_rows = "".join(rows)
+    return f"""
+<table data-layout="wide" style="width: 100%; border-collapse: collapse; table-layout: fixed;">
+    <colgroup>
+        <col style="width: 5%;" />
+        <col style="width: 28%;" />
+        <col style="width: 9%;" />
+        <col style="width: 10%;" />
+        <col style="width: 12%;" />
+        <col style="width: 12%;" />
+        <col style="width: 8%;" />
+        <col style="width: 8%;" />
+        <col style="width: 18%;" />
+    </colgroup>
+    <thead>
+        <tr>
+            <th style="border: 1px solid #d9e2f2; background: #f6f8fc; padding: 8px 6px; text-align: left;">№ релиза</th>
+            <th style="border: 1px solid #d9e2f2; background: #f6f8fc; padding: 8px 6px; text-align: left;">Название релиза</th>
+            <th style="border: 1px solid #d9e2f2; background: #f6f8fc; padding: 8px 6px; text-align: left;">№ ЗНИ</th>
+            <th style="border: 1px solid #d9e2f2; background: #f6f8fc; padding: 8px 6px; text-align: left;">КЭ</th>
+            <th style="border: 1px solid #d9e2f2; background: #f6f8fc; padding: 8px 6px; text-align: left;">ID релиза</th>
+            <th style="border: 1px solid #d9e2f2; background: #f6f8fc; padding: 8px 6px; text-align: left;">ID распоряжения</th>
+            <th style="border: 1px solid #d9e2f2; background: #f6f8fc; padding: 8px 6px; text-align: left;">Дата начала внедрения</th>
+            <th style="border: 1px solid #d9e2f2; background: #f6f8fc; padding: 8px 6px; text-align: left;">Дата окончания внедрения</th>
+            <th style="border: 1px solid #d9e2f2; background: #f6f8fc; padding: 8px 6px; text-align: left;">Ответственный за ПСИ/Проверки</th>
+        </tr>
+    </thead>
+    <tbody>
+        {table_rows}
+    </tbody>
+</table>
+""".strip()
+
+
+def _replace_release_monitor_table_in_storage(storage_html, replacement_table_html):
+    if not storage_html:
+        return replacement_table_html, False
+
+    table_pattern = re.compile(r"<table\b[^>]*>.*?</table>", re.IGNORECASE | re.DOTALL)
+    for match in table_pattern.finditer(storage_html):
+        if _find_release_assignment_table(match.group(0)):
+            updated_html = storage_html[:match.start()] + replacement_table_html + storage_html[match.end():]
+            return updated_html, True
+    return storage_html, False
+
+
 def _load_confluence_release_assignments(year):
-    page_id = str(TOKENS.get(f"confluence_release_page_id_{year}", "") or "").strip()
+    page_id = "18369778404"
     token = str(TOKENS.get("confluence_delta_token", "") or "").strip()
     if not page_id:
         raise ValueError(f"РќРµ РЅР°СЃС‚СЂРѕРµРЅ pageId Confluence РґР»СЏ {year} РіРѕРґР°")
@@ -3033,7 +3285,83 @@ def sync_release_monitor_assignments_from_confluence(year):
     global _cached_data, _last_cache_update
 
     year = int(year or datetime.now().year)
-    confluence_assignments = _load_confluence_release_assignments(year)
+    with _cache_lock:
+        _ensure_scheduler_started()
+        if _cached_data is None:
+            disk_payload = _load_snapshot_from_disk()
+            if disk_payload is not None:
+                _cached_data = disk_payload
+                _last_cache_update = time.time()
+
+        if _cached_data is None:
+            raise ValueError("Таблица релизов еще не загружена. Сначала выполните обновление релизов.")
+
+        payload = _normalize_release_payload(_get_cached_payload_copy() or _build_empty_release_monitor_payload())
+        items = [item for item in payload.get("items", []) if int(item.get("year", 0) or 0) == year]
+        if not items:
+            raise ValueError(f"Для {year} года нет строк для выгрузки в Confluence")
+
+        page_data = _fetch_confluence_release_page(year)
+        replacement_table = _build_confluence_release_table(items, year)
+        updated_storage, replaced = _replace_release_monitor_table_in_storage(page_data["storage_html"], replacement_table)
+        if not replaced:
+            updated_storage = replacement_table
+
+        token = str(TOKENS.get("confluence_delta_token", "") or "").strip()
+        url = f"{CONFLUENCE_DELTA_BASE}/rest/api/content/{page_data['page_id']}"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        next_version = max(int(page_data.get("version") or 0), 1) + 1
+        page_title = page_data["title"] or f"Блок релизов {year}"
+        payload_body = {
+            "id": page_data["page_id"],
+            "type": "page",
+            "title": page_title,
+            "version": {
+                "number": next_version,
+                "minorEdit": True,
+                "message": f"Автообновление таблицы релизов за {year} год",
+            },
+            "body": {
+                "storage": {
+                    "value": updated_storage,
+                    "representation": "storage",
+                }
+            },
+        }
+
+        response = requests.put(url, headers=headers, json=payload_body, verify=False, timeout=60)
+        if not response.ok:
+            detail = _extract_confluence_error_detail(response)
+            logging.error(
+                "Confluence release push failed: page_id=%s year=%s status=%s detail=%s payload_keys=%s",
+                page_data["page_id"],
+                year,
+                response.status_code,
+                detail,
+                list(payload_body.keys()),
+            )
+            raise ValueError(f"Confluence PUT failed ({response.status_code}): {detail}")
+        result_data = response.json()
+        published_version = int(((result_data.get("version") or {}).get("number")) or next_version)
+        page_url = f"{CONFLUENCE_DELTA_BASE}/pages/viewpage.action?pageId={page_data['page_id']}"
+
+        _cached_data.setdefault("meta", {})["last_confluence_sync"] = _format_timestamp()
+        _save_snapshot_to_disk(_cached_data)
+
+        return {
+            "year": year,
+            "page_id": page_data["page_id"],
+            "page_url": page_url,
+            "page_title": page_title,
+            "page_version": published_version,
+            "rows_pushed": len(items),
+            "replaced": replaced,
+            "data": _normalize_release_payload(_get_cached_payload_copy() or _build_empty_release_monitor_payload()),
+        }
 
     with _cache_lock:
         _ensure_scheduler_started()

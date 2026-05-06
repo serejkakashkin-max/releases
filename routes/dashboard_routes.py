@@ -396,7 +396,7 @@ def save_release_monitor_order():
 
 @dashboard_bp.route('/dashboard/release-monitor/confluence-sync', methods=['POST'])
 def sync_release_monitor_confluence():
-    """Синхронизирует ответственных и проверяющих из эталонной страницы Confluence."""
+    """Выгружает текущую таблицу релизов на страницу Confluence."""
     try:
         ensure_release_monitor_not_refreshing()
         data = request.get_json(silent=True) or {}
@@ -405,16 +405,19 @@ def sync_release_monitor_confluence():
         payload = sync_result.get("data", {})
         return jsonify({
             "success": True,
-            "message": f"Синхронизировано строк: {sync_result.get('matched_rows', 0)}",
-            "matched_rows": sync_result.get("matched_rows", 0),
-            "source_rows": sync_result.get("source_rows", 0),
+            "message": f"Таблица релизов за {sync_result.get('year', year)} год выгружена в Confluence",
+            "rows_pushed": sync_result.get("rows_pushed", 0),
+            "page_id": sync_result.get("page_id", ""),
+            "page_url": sync_result.get("page_url", ""),
+            "page_title": sync_result.get("page_title", ""),
+            "page_version": sync_result.get("page_version", 0),
             "year": sync_result.get("year"),
             "release_monitor": payload.get("items", []),
             "release_monitor_summary": payload.get("summary", {}),
             "release_monitor_meta": payload.get("meta", {}),
         })
     except Exception as e:
-        logging.error(f"Ошибка синхронизации релизов с Confluence: {e}")
+        logging.error(f"Ошибка выгрузки релизов в Confluence: {e}")
         return jsonify({"success": False, "error": str(e)}), 400
 
 
@@ -634,3 +637,4 @@ def restore_all_tasks_api():
     except Exception as e:
         logging.error(f"Ошибка восстановления всех задач: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
+

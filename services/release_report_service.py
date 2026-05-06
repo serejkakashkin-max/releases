@@ -918,8 +918,8 @@ class ReleaseReportService:
         .final-toggle input {{
             accent-color: #0d6efd;
         }}
-        tr.state-overdue {{ background: rgba(224, 49, 49, 0.07); }}
-        tr.state-today {{ background: rgba(245, 159, 0, 0.08); }}
+        tr.state-cancelled {{ background: rgba(224, 49, 49, 0.07); }}
+        tr.state-notes {{ background: rgba(255, 193, 7, 0.16); }}
         tr.state-final {{ background: rgba(25, 135, 84, 0.07); }}
         .footer {{
             color: #6b7785;
@@ -1204,7 +1204,14 @@ class ReleaseReportService:
         for index, item in enumerate(rows_source, start=1):
             row_kind = self._get_item_kind_label(item)
             is_effectively_installed = self._is_week_effectively_installed(item)
-            row_state = "final" if is_effectively_installed else "overdue" if item.get("is_overdue") else "today" if item.get("is_today") else "active"
+            if item.get("is_cancelled"):
+                row_state = "cancelled"
+            elif item.get("has_rollout_notes"):
+                row_state = "notes"
+            elif is_effectively_installed:
+                row_state = "final"
+            else:
+                row_state = "active"
             row_title = " / ".join(
                 [part for part in (item.get("release_name_lines") or [])[:2] if str(part or "").strip()]
             ) or str(item.get("release_summary") or "")

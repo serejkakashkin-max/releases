@@ -532,13 +532,13 @@
             color: var(--danger);
         }
 
-        .release-badge.state-today {
-            background: rgba(255, 193, 7, 0.24);
-            color: #b38600;
+        .release-badge.state-neutral {
+            background: rgba(25, 135, 84, 0.15);
+            color: #198754;
         }
 
-        [data-theme="dark"] .release-badge.state-today {
-            color: #ffc107;
+        [data-theme="dark"] .release-badge.state-neutral {
+            color: #7ee2a8;
         }
 
         .release-badge.state-planned {
@@ -1399,7 +1399,7 @@
                         <div class="release-action-stack">
                             <button id="releaseMonitorConfluenceSyncBtn" class="release-monitor-btn confluence" onclick="syncReleaseMonitorFromConfluence()">
                                 <i class="bi bi-cloud-arrow-down"></i>
-                                Синхронизировать Confluence
+                                Выгрузить в Confluence
                             </button>
                             <div class="release-action-meta">
                                 Confluence: <strong id="releaseMonitorLastConfluenceSync">{{ release_monitor_meta.last_confluence_sync or 'еще не выполнялось' }}</strong>
@@ -1693,7 +1693,7 @@
                     : `<div class="release-name-line">сборка: ${escapeHtml(item.release_version)}</div>`
                 : '';
             const statusBadge = item.release_status
-                ? `<div class="release-micro-meta"><span class="release-badge ${item.is_final ? 'state-planned' : item.is_cancelled ? 'state-overdue' : item.is_overdue ? 'state-overdue' : item.is_today ? 'state-today' : 'state-planned'}">${escapeHtml(item.release_status)}</span>${item.is_pre_final ? '<span class="release-badge pre-final">\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0430 \u043d\u0430 \u041f\u0420\u041e\u041c</span>' : ''}</div>`
+                ? `<div class="release-micro-meta"><span class="release-badge ${item.is_final ? 'state-planned' : item.is_cancelled ? 'state-overdue' : item.is_overdue ? 'state-overdue' : 'state-planned'}">${escapeHtml(item.release_status)}</span>${item.is_pre_final ? '<span class="release-badge pre-final">\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0430 \u043d\u0430 \u041f\u0420\u041e\u041c</span>' : ''}</div>`
                 : '';
 
             if (!lines.length) {
@@ -3363,14 +3363,15 @@ function buildReviewerCell(item) {
                 });
                 const data = await response.json();
                 if (!response.ok || !data.success) {
-                    throw new Error(data.error || 'Не удалось выполнить синхронизацию с Confluence');
+                    throw new Error(data.error || 'Не удалось выгрузить таблицу в Confluence');
                 }
 
                 renderReleaseMonitor(data.release_monitor || [], data.release_monitor_meta || {});
-                alert(`Синхронизация завершена. Обновлено строк: ${data.matched_rows || 0}`);
+                const pushInfo = data.page_url ? `\n${data.page_url}` : '';
+                alert(`Таблица релизов выгружена в Confluence. Строк: ${data.rows_pushed || 0}.${pushInfo}`);
             } catch (error) {
                 console.error('Release monitor Confluence sync error:', error);
-                alert('Ошибка синхронизации с Confluence: ' + error.message);
+                alert('Ошибка выгрузки в Confluence: ' + error.message);
             } finally {
                 setReleaseRefreshButtonsLoading(false);
             }
@@ -3647,3 +3648,4 @@ function buildReviewerCell(item) {
     <script src="/static/js/chatbot.js"></script>
 </body>
 </html>
+
