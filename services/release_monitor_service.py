@@ -45,7 +45,8 @@ DATE_OVERRIDES_FILE = SNAPSHOT_DIR / "release_monitor_date_overrides.json"
 ZNI_FILE = SNAPSHOT_DIR / "release_monitor_zni.json"
 REVISION_FILE = SNAPSHOT_DIR / "release_monitor_revision.txt"
 CONFLUENCE_DELTA_BASE = "https://confluence.delta.sbrf.ru"
-RELEASE_VERSION_PATTERN = re.compile(r"[DP]-\d+(?:\.\d+){2}(?:-[A-Za-z0-9_]+)+")
+RELEASE_VERSION_PATTERN = re.compile(r"[DP]-\d+(?:\.\d+){2}(?:[.-][A-Za-z0-9_]+)+")
+ARTIFACT_URL_PATTERN = re.compile(r"(?:https?://)?[A-Za-z0-9.-]+\.[A-Za-z]{2,}/[^\s\"'<>)]+")
 
 MONTH_NAME_MAP = {
     "\u044f\u043d\u0432\u0430\u0440": 1,
@@ -1754,13 +1755,22 @@ def _extract_dist_url(dist_item):
         candidate_values.append(str(dist_item))
 
     for value in candidate_values:
-        match = re.search(r"https?://\S+", value)
+        match = ARTIFACT_URL_PATTERN.search(value)
         if match:
-            return match.group(0).rstrip('",)')
+            return _normalize_artifact_url(match.group(0).rstrip('",)'))
         if value.startswith("http://") or value.startswith("https://"):
             return value
 
     return ""
+
+
+def _normalize_artifact_url(url_value):
+    url_value = str(url_value or "").strip()
+    if not url_value:
+        return ""
+    if url_value.startswith(("http://", "https://")):
+        return url_value
+    return f"https://{url_value}"
 
 
 def _extract_nested_dist_url(dist_item):
@@ -1770,15 +1780,15 @@ def _extract_nested_dist_url(dist_item):
                 raw_value = value.get(key)
                 if not raw_value:
                     continue
-                match = re.search(r"https?://\S+", str(raw_value))
+                match = ARTIFACT_URL_PATTERN.search(str(raw_value))
                 if match:
-                    return match.group(0).rstrip('",)')
+                    return _normalize_artifact_url(match.group(0).rstrip('",)'))
                 if str(raw_value).startswith(("http://", "https://")):
                     return str(raw_value)
         else:
-            match = re.search(r"https?://\S+", str(value))
+            match = ARTIFACT_URL_PATTERN.search(str(value))
             if match:
-                return match.group(0).rstrip('",)')
+                return _normalize_artifact_url(match.group(0).rstrip('",)'))
     return _extract_dist_url(dist_item)
 
 
