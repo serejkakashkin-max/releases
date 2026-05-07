@@ -725,6 +725,14 @@
             animation: spin 1s linear infinite;
         }
 
+        .release-monitor-btn.loading {
+            opacity: 0.9;
+        }
+
+        .release-monitor-btn.loading .btn-label {
+            opacity: 0.82;
+        }
+
         .release-monitor-meta {
             color: var(--text-secondary);
             font-size: 0.81rem;
@@ -1467,18 +1475,18 @@
                         <div class="release-action-stack">
                             <button id="releaseMonitorQuickRefreshBtn" class="release-monitor-btn quick" onclick="refreshReleaseMonitor('quick')">
                                 <i class="bi bi-lightning-charge"></i>
-                                Быстрое обновление
+                                <span class="btn-label">Быстрое обновление</span>
                             </button>
                             <div class="release-action-meta">
                                 Быстрое: <strong id="releaseMonitorLastQuickSync">{{ release_monitor_meta.last_quick_sync or 'еще не выполнялось' }}</strong>
                             </div>
                         </div>
                         <div class="release-action-stack">
-                            <button id="releaseMonitorRefreshBtn" class="release-monitor-btn full" onclick="refreshReleaseMonitor('full')">
+                            <button id="releaseMonitorRefreshBtn" class="release-monitor-btn full" style="display: none;" onclick="refreshReleaseMonitor('full')">
                                 <i class="bi bi-arrow-repeat"></i>
-                                Полное обновление
+                                <span class="btn-label">Полное обновление</span>
                             </button>
-                            <div class="release-action-meta">
+                            <div id="releaseMonitorFullRefreshMeta" class="release-action-meta" style="display: none;">
                                 Полное: <strong id="releaseMonitorLastFullSync">{{ release_monitor_meta.last_full_sync or 'еще не выполнялось' }}</strong><br>
                                 Автопересборка: <strong>{{ '%02d:00'|format(release_monitor_meta.auto_full_refresh_hour or 6) }}</strong>
                             </div>
@@ -3200,6 +3208,8 @@ function buildReviewerCell(item) {
             const orderBtn = document.getElementById('releaseMonitorOrderBtn');
             const saveBtn = document.getElementById('releaseMonitorOrderSaveBtn');
             const cancelBtn = document.getElementById('releaseMonitorOrderCancelBtn');
+            const fullRefreshBtn = document.getElementById('releaseMonitorRefreshBtn');
+            const fullRefreshMeta = document.getElementById('releaseMonitorFullRefreshMeta');
             const hint = document.getElementById('releaseOrderModeHint');
 
             if (orderBtn) {
@@ -3214,6 +3224,12 @@ function buildReviewerCell(item) {
             }
             if (cancelBtn) {
                 cancelBtn.style.display = isReleaseOrderMode ? '' : 'none';
+            }
+            if (fullRefreshBtn) {
+                fullRefreshBtn.style.display = isReleaseOrderMode ? '' : 'none';
+            }
+            if (fullRefreshMeta) {
+                fullRefreshMeta.style.display = isReleaseOrderMode ? '' : 'none';
             }
             if (hint) {
                 hint.style.display = isReleaseOrderMode ? '' : 'none';
@@ -3696,7 +3712,9 @@ function buildReviewerCell(item) {
                 const isActiveQuick = releaseMonitorActiveRefreshMode === 'quick' && id === 'releaseMonitorQuickRefreshBtn';
                 const isActiveFull = releaseMonitorActiveRefreshMode === 'full' && id === 'releaseMonitorRefreshBtn';
                 const isGlobalRefresh = !releaseMonitorActiveRefreshMode && releaseMonitorGlobalRefreshing && id === 'releaseMonitorRefreshBtn';
-                btn.classList.toggle('spinning', effectiveLoading && (isActiveQuick || isActiveFull || isGlobalRefresh));
+                const isLoadingButton = effectiveLoading && (isActiveQuick || isActiveFull || isGlobalRefresh);
+                btn.classList.toggle('spinning', isLoadingButton);
+                btn.classList.toggle('loading', isLoadingButton);
             });
         }
 
