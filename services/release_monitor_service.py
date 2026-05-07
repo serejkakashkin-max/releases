@@ -38,6 +38,7 @@ AUTO_FULL_REFRESH_HOUR = 6
 AUTO_REFRESH_CHECK_INTERVAL = 300
 SNAPSHOT_DIR = Path(__file__).resolve().parent.parent / "cache"
 SNAPSHOT_FILE = SNAPSHOT_DIR / "release_monitor_snapshot.json"
+MANUAL_OVERRIDES_FILE = SNAPSHOT_DIR / "release_monitor_manual_overrides.json"
 REVIEWERS_FILE = SNAPSHOT_DIR / "release_monitor_reviewers.json"
 ORDER_FILE = SNAPSHOT_DIR / "release_monitor_order.json"
 DUTY_SCHEDULE_FILE = SNAPSHOT_DIR / "release_monitor_duty_schedule.json"
@@ -238,6 +239,48 @@ def ensure_release_monitor_not_refreshing():
         raise RuntimeError("Идет обновление релизов. Дождитесь завершения и обновите страницу.")
 
 
+def _strip_manual_release_overrides_for_snapshot(payload):
+    payload_to_save = dict(payload or {})
+    payload_to_save.pop("manual_overrides", None)
+
+    items_to_save = []
+    for item in payload_to_save.get("items") or []:
+        if not isinstance(item, dict):
+            continue
+        clean_item = dict(item)
+
+        for target_field, base_field in (
+            ("release_summary", "base_release_summary"),
+            ("release_version", "base_release_version"),
+            ("release_dist_url", "base_release_dist_url"),
+            ("ke", "base_ke"),
+            ("zni_key", "base_zni_key"),
+            ("zni_url", "base_zni_url"),
+        ):
+            if base_field in clean_item:
+                clean_item[target_field] = clean_item.get(base_field) or ""
+
+        if isinstance(clean_item.get("base_release_name_lines"), list):
+            clean_item["release_name_lines"] = list(clean_item.get("base_release_name_lines") or [])
+
+        for manual_field in (
+            "has_manual_release_override",
+            "manual_release_summary",
+            "manual_release_version",
+            "manual_release_dist_url",
+            "manual_ke",
+            "manual_zni_key",
+            "manual_zni_url",
+            "manual_clear_zni",
+        ):
+            clean_item.pop(manual_field, None)
+
+        items_to_save.append(clean_item)
+
+    payload_to_save["items"] = items_to_save
+    return payload_to_save
+
+
 def _save_snapshot_to_disk(payload, bump_revision=True):
     try:
         _ensure_snapshot_dir()
@@ -259,8 +302,10 @@ def _save_snapshot_to_disk(payload, bump_revision=True):
             else:
                 payload["meta"] = _append_revision_meta(payload.get("meta", {}))
 
+        payload_to_save = _strip_manual_release_overrides_for_snapshot(payload)
+
         SNAPSHOT_FILE.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2),
+            json.dumps(payload_to_save, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
     except Exception as exc:
@@ -302,7 +347,7 @@ def _reload_snapshot_from_disk_if_newer():
 
     disk_payload = _load_snapshot_from_disk()
     if disk_payload is not None:
-        _cached_data = disk_payload
+        _cached_data = _hydrate_release_monitor_payload(disk_payload)
         _last_cache_update = disk_mtime
 
 
@@ -443,6 +488,33 @@ def _save_zni_payload(payload):
         logging.warning("Release monitor: failed to save ZNI payload: %s", exc)
 
 
+def _load_manual_overrides_payload():
+    if MANUAL_OVERRIDES_FILE.exists():
+        try:
+            payload = json.loads(MANUAL_OVERRIDES_FILE.read_text(encoding="utf-8"))
+            if isinstance(payload, dict):
+                return _normalize_manual_release_overrides(payload)
+        except Exception as exc:
+            logging.warning("Release monitor: failed to load manual overrides payload: %s", exc)
+
+    legacy_payload = _load_snapshot_from_disk() or {}
+    legacy_overrides = _normalize_manual_release_overrides(legacy_payload.get("manual_overrides") or {})
+    if legacy_overrides:
+        _save_manual_overrides_payload(legacy_overrides)
+    return legacy_overrides
+
+
+def _save_manual_overrides_payload(overrides):
+    try:
+        _ensure_snapshot_dir()
+        MANUAL_OVERRIDES_FILE.write_text(
+            json.dumps(_normalize_manual_release_overrides(overrides), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        logging.warning("Release monitor: failed to save manual overrides payload: %s", exc)
+
+
 def _load_zni_assignments():
     return _load_zni_payload().get("issues", {})
 
@@ -515,28 +587,12 @@ def _normalize_manual_release_overrides(payload):
 
 
 def _load_manual_release_overrides():
-    payload = _get_cached_payload_copy() or _load_snapshot_from_disk() or {}
-    return _normalize_manual_release_overrides(payload.get("manual_overrides") or {})
+    return _load_manual_overrides_payload()
 
 
 def _save_manual_release_overrides(overrides):
-    global _cached_data, _last_cache_update
-
     normalized_overrides = _normalize_manual_release_overrides(overrides)
-
-    with _cache_lock:
-        if _cached_data is None:
-            disk_payload = _load_snapshot_from_disk()
-            if disk_payload is not None:
-                _cached_data = disk_payload
-                _last_cache_update = _get_snapshot_mtime() or time.time()
-            else:
-                _cached_data = _build_empty_release_monitor_payload()
-
-        if _cached_data is not None:
-            _cached_data["manual_overrides"] = normalized_overrides
-            _save_snapshot_to_disk(_cached_data)
-
+    _save_manual_overrides_payload(normalized_overrides)
     return normalized_overrides
 
 
@@ -2602,7 +2658,7 @@ def save_release_monitor_manual_order(year, waiting_row_keys=None, numbered_row_
         if _cached_data is None:
             disk_payload = _load_snapshot_from_disk()
             if disk_payload:
-                _cached_data = disk_payload
+                _cached_data = _hydrate_release_monitor_payload(disk_payload)
                 _last_cache_update = _get_snapshot_mtime() or time.time()
 
         if _cached_data is not None:
@@ -2615,14 +2671,14 @@ def save_release_monitor_manual_order(year, waiting_row_keys=None, numbered_row_
             _save_snapshot_to_disk(_cached_data)
             disk_payload = _load_snapshot_from_disk()
             if disk_payload is not None:
-                _cached_data = disk_payload
+                _cached_data = _hydrate_release_monitor_payload(disk_payload)
                 _last_cache_update = _get_snapshot_mtime() or time.time()
 
         payload = _get_cached_payload_copy() or _build_empty_release_monitor_payload()
         if not payload.get("items"):
             disk_payload = _load_snapshot_from_disk()
             if disk_payload and disk_payload.get("items"):
-                _cached_data = disk_payload
+                _cached_data = _hydrate_release_monitor_payload(disk_payload)
                 _last_cache_update = _get_snapshot_mtime() or time.time()
                 payload = _get_cached_payload_copy() or disk_payload
         return {
@@ -2961,9 +3017,8 @@ def get_release_monitor_data(force_refresh=False):
         ):
             return _cached_data
 
-        manual_overrides = dict((_cached_data or _load_snapshot_from_disk() or {}).get("manual_overrides", {}))
-        _cached_data = _fetch_release_monitor_data()
-        _cached_data["manual_overrides"] = manual_overrides
+        manual_overrides = _load_manual_release_overrides()
+        _cached_data = _finalize_release_monitor_payload(_fetch_release_monitor_data(), manual_overrides)
         _last_cache_update = now
         _save_snapshot_to_disk(_cached_data)
         return _cached_data
@@ -2974,11 +3029,10 @@ def _run_release_monitor_refresh():
 
     try:
         logging.info("Release monitor: background refresh started")
-        manual_overrides = dict((_cached_data or _load_snapshot_from_disk() or {}).get("manual_overrides", {}))
+        manual_overrides = _load_manual_release_overrides()
         data = _fetch_release_monitor_data()
-        data["manual_overrides"] = manual_overrides
         with _cache_lock:
-            _cached_data = data
+            _cached_data = _finalize_release_monitor_payload(data, manual_overrides)
             _last_cache_update = time.time()
             _save_snapshot_to_disk(_cached_data)
             _refresh_status.update(
@@ -3073,9 +3127,10 @@ def clear_release_monitor_cache():
 def _get_cached_payload_copy():
     if _cached_data is None:
         return None
+    manual_overrides = _load_manual_release_overrides()
     return {
         "items": list(_cached_data.get("items", [])),
-        "manual_overrides": dict(_cached_data.get("manual_overrides", {})),
+        "manual_overrides": dict(manual_overrides),
         "summary": dict(_cached_data.get("summary", {})),
         "meta": dict(_cached_data.get("meta", {})),
     }
@@ -3129,7 +3184,7 @@ def get_release_monitor_data(force_refresh=False):
         if _cached_data is None:
             disk_payload = _load_snapshot_from_disk()
             if disk_payload:
-                _cached_data = disk_payload
+                _cached_data = _hydrate_release_monitor_payload(disk_payload)
                 _last_cache_update = time.time()
 
         now = time.time()
@@ -3141,7 +3196,7 @@ def get_release_monitor_data(force_refresh=False):
         ):
             return _cached_data
 
-    manual_overrides = dict((_cached_data or _load_snapshot_from_disk() or {}).get("manual_overrides", {}))
+    manual_overrides = _load_manual_release_overrides()
     data = _fetch_release_monitor_data()
     data["meta"]["last_full_sync"] = data["meta"].get("last_updated")
     data["meta"]["last_quick_sync"] = (_cached_data or {}).get("meta", {}).get("last_quick_sync")
@@ -3159,7 +3214,7 @@ def _run_release_monitor_refresh(mode="full", trigger="manual"):
 
     try:
         logging.info("Release monitor: background %s refresh started", mode)
-        manual_overrides = dict((_cached_data or _load_snapshot_from_disk() or {}).get("manual_overrides", {}))
+        manual_overrides = _load_manual_release_overrides()
         with _cache_lock:
             base_items = list((_cached_data or {}).get("items", []))
             current_meta = dict((_cached_data or {}).get("meta", {}))
@@ -3287,6 +3342,12 @@ def _finalize_release_monitor_payload(payload, manual_overrides=None):
     return finalized_payload
 
 
+def _hydrate_release_monitor_payload(payload):
+    if payload is None:
+        return None
+    return _finalize_release_monitor_payload(payload, _load_manual_release_overrides())
+
+
 def get_release_monitor_refresh_status():
     global _cached_data
 
@@ -3294,7 +3355,7 @@ def get_release_monitor_refresh_status():
         _ensure_scheduler_started()
         disk_payload = _load_snapshot_from_disk()
         if disk_payload is not None:
-            _cached_data = disk_payload
+            _cached_data = _hydrate_release_monitor_payload(disk_payload)
             _last_cache_update = _get_snapshot_mtime() or time.time()
 
         payload = {
@@ -3311,7 +3372,7 @@ def get_release_monitor_snapshot():
         _ensure_scheduler_started()
         disk_payload = _load_snapshot_from_disk()
         if disk_payload is not None:
-            _cached_data = disk_payload
+            _cached_data = _hydrate_release_monitor_payload(disk_payload)
             _last_cache_update = _get_snapshot_mtime() or time.time()
         if _cached_data is None:
             return _build_empty_release_monitor_payload()
@@ -3368,7 +3429,7 @@ def upload_release_monitor_duty_schedules(uploaded_files):
         if _cached_data is None:
             disk_payload = _load_snapshot_from_disk()
             if disk_payload is not None:
-                _cached_data = disk_payload
+                _cached_data = _hydrate_release_monitor_payload(disk_payload)
                 _last_cache_update = _get_snapshot_mtime() or time.time()
 
         applied_count = 0
@@ -3410,7 +3471,7 @@ def create_release_monitor_zni(release_key, reporter=""):
         if _cached_data is None:
             disk_payload = _load_snapshot_from_disk()
             if disk_payload is not None:
-                _cached_data = disk_payload
+                _cached_data = _hydrate_release_monitor_payload(disk_payload)
                 _last_cache_update = _get_snapshot_mtime() or time.time()
 
         if _cached_data is None:
@@ -3493,7 +3554,7 @@ def set_release_monitor_rollout_notes(release_key, enabled=False):
         if _cached_data is None:
             disk_payload = _load_snapshot_from_disk()
             if disk_payload is not None:
-                _cached_data = disk_payload
+                _cached_data = _hydrate_release_monitor_payload(disk_payload)
 
         if _cached_data is not None:
             for item in _cached_data.get("items") or []:
@@ -3542,7 +3603,7 @@ def set_release_monitor_date_override(release_key, start_value="", end_value="",
         if _cached_data is None:
             disk_payload = _load_snapshot_from_disk()
             if disk_payload:
-                _cached_data = disk_payload
+                _cached_data = _hydrate_release_monitor_payload(disk_payload)
                 _last_cache_update = _get_snapshot_mtime() or time.time()
 
         if _cached_data is not None:
@@ -3579,7 +3640,7 @@ def set_release_monitor_manual_override(
         if _cached_data is None:
             disk_payload = _load_snapshot_from_disk()
             if disk_payload is not None:
-                _cached_data = disk_payload
+                _cached_data = _hydrate_release_monitor_payload(disk_payload)
                 _last_cache_update = _get_snapshot_mtime() or time.time()
 
         if _cached_data is None:
@@ -3611,33 +3672,33 @@ def set_release_monitor_manual_override(
                 _cached_data["manual_overrides"] = dict(overrides)
                 items = _cached_data.get("items") or []
                 reset_base_summary = str(
-                    removed_override.get("base_release_summary")
-                    or target_item.get("base_release_summary")
+                    target_item.get("base_release_summary")
+                    or removed_override.get("base_release_summary")
                     or ""
                 ).strip()
                 reset_base_version = str(
-                    removed_override.get("base_release_version")
-                    or target_item.get("base_release_version")
+                    target_item.get("base_release_version")
+                    or removed_override.get("base_release_version")
                     or ""
                 ).strip()
                 reset_base_url = str(
-                    removed_override.get("base_release_dist_url")
-                    or target_item.get("base_release_dist_url")
+                    target_item.get("base_release_dist_url")
+                    or removed_override.get("base_release_dist_url")
                     or ""
                 ).strip()
                 reset_base_ke = str(
-                    removed_override.get("base_ke")
-                    or target_item.get("base_ke")
+                    target_item.get("base_ke")
+                    or removed_override.get("base_ke")
                     or ""
                 ).strip()
                 reset_base_zni_key = str(
-                    removed_override.get("base_zni_key")
-                    or target_item.get("base_zni_key")
+                    target_item.get("base_zni_key")
+                    or removed_override.get("base_zni_key")
                     or ""
                 ).strip()
                 reset_base_zni_url = str(
-                    removed_override.get("base_zni_url")
-                    or target_item.get("base_zni_url")
+                    target_item.get("base_zni_url")
+                    or removed_override.get("base_zni_url")
                     or ""
                 ).strip()
                 _apply_reviewer_assignments(items)
@@ -3745,7 +3806,7 @@ def set_release_monitor_manual_override(
         if _cached_data is None:
             disk_payload = _load_snapshot_from_disk()
             if disk_payload is not None:
-                _cached_data = disk_payload
+                _cached_data = _hydrate_release_monitor_payload(disk_payload)
 
         if _cached_data is not None:
             _cached_data["manual_overrides"] = dict(overrides)
@@ -3771,7 +3832,7 @@ def sync_release_monitor_assignments_from_confluence(year):
         if _cached_data is None:
             disk_payload = _load_snapshot_from_disk()
             if disk_payload is not None:
-                _cached_data = disk_payload
+                _cached_data = _hydrate_release_monitor_payload(disk_payload)
                 _last_cache_update = time.time()
 
         if _cached_data is None:
@@ -3849,7 +3910,7 @@ def sync_release_monitor_assignments_from_confluence(year):
         if _cached_data is None:
             disk_payload = _load_snapshot_from_disk()
             if disk_payload:
-                _cached_data = disk_payload
+                _cached_data = _hydrate_release_monitor_payload(disk_payload)
                 _last_cache_update = time.time()
 
         if _cached_data is None:
@@ -3950,7 +4011,7 @@ def set_release_monitor_reviewer(release_key, reviewer):
         if _cached_data is None:
             disk_payload = _load_snapshot_from_disk()
             if disk_payload is not None:
-                _cached_data = disk_payload
+                _cached_data = _hydrate_release_monitor_payload(disk_payload)
         if _cached_data is not None:
             for item in _cached_data.get("items", []):
                 item_key = _get_assignment_key_for_item(item)
@@ -4019,7 +4080,7 @@ def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=
         if _cached_data is None:
             disk_payload = _load_snapshot_from_disk()
             if disk_payload is not None:
-                _cached_data = disk_payload
+                _cached_data = _hydrate_release_monitor_payload(disk_payload)
         if _cached_data is not None:
             for item in _cached_data.get("items", []):
                 item_key = _get_assignment_key_for_item(item)
