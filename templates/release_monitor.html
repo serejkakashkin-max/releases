@@ -218,6 +218,68 @@
             flex-wrap: wrap;
         }
 
+        .release-resource-links {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.75rem;
+            margin: 0 0 0.95rem;
+        }
+
+        .release-resource-link {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.8rem;
+            padding: 0.55rem 0.85rem;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            background: linear-gradient(180deg, rgba(13, 110, 253, 0.06), rgba(13, 110, 253, 0.03));
+            color: var(--text-primary);
+            text-decoration: none;
+            min-height: 44px;
+            transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, color 0.18s ease;
+        }
+
+        .release-resource-link:hover {
+            transform: translateY(-1px);
+            border-color: rgba(13, 110, 253, 0.34);
+            box-shadow: 0 10px 24px rgba(13, 110, 253, 0.10);
+            color: var(--primary);
+        }
+
+        .release-resource-link-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 8px;
+            background: rgba(13, 110, 253, 0.12);
+            color: var(--primary);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 auto;
+            font-size: 1rem;
+        }
+
+        .release-resource-link-text {
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
+            min-width: 0;
+            flex: 1 1 auto;
+        }
+
+        .release-resource-link-title {
+            font-size: 0.84rem;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+
+        .release-resource-link-external {
+            color: var(--text-muted);
+            font-size: 0.92rem;
+            flex: 0 0 auto;
+        }
+
         .release-toggle-stack {
             display: flex;
             flex-direction: column;
@@ -1188,6 +1250,10 @@
                 grid-template-columns: 1fr 1fr;
             }
 
+            .release-resource-links {
+                grid-template-columns: 1fr 1fr;
+            }
+
             .release-monitor-actions {
                 min-width: 0;
                 width: 100%;
@@ -1205,7 +1271,8 @@
             }
 
             .release-monitor-summary,
-            .release-monitor-controls {
+            .release-monitor-controls,
+            .release-resource-links {
                 grid-template-columns: 1fr;
             }
 
@@ -1322,27 +1389,28 @@
                     </div>
                 </div>
 
-                <div class="release-monitor-controls">
-                    <div class="release-search-box">
-                        <i class="bi bi-search"></i>
-                        <input type="text" id="releaseSearchInput" placeholder="Поиск по релизам: ключ, КЭ, РОВ, название..." onkeyup="handleReleaseSearch()">
-                    </div>
-                    <select id="releaseYearFilter" class="release-filter-select" onchange="handleReleaseYearFilter()">
-                        {% for year in (release_monitor_meta.years or [release_monitor_meta.current_year or 0]) %}
-                        <option value="{{ year }}" {% if year == (release_monitor_meta.current_year or 0) %}selected{% endif %}>{{ year }}</option>
-                        {% endfor %}
-                    </select>
-                    <select id="releaseViewFilter" class="release-filter-select" onchange="handleReleaseViewFilter()">
-                        <option value="all">Все релизы года</option>
-                        <option value="non_final">Только не в финальном статусе</option>
-                        <option value="overdue">Просроченные по РОВ</option>
-                        <option value="today">На сегодня</option>
-                        <option value="final">Установлен на ПРОМ</option>
-                        <option value="cancelled">Отменено</option>
-                    </select>
-                    <select id="releaseStatusFilter" class="release-filter-select" onchange="applyReleaseFilters()">
-                        <option value="all">Все статусы</option>
-                    </select>
+                <div class="release-resource-links" aria-label="Полезные ссылки">
+                    <a class="release-resource-link" href="https://aspas.sberbank.ru/release?page=1" target="_blank" rel="noopener noreferrer">
+                        <span class="release-resource-link-icon"><i class="bi bi-file-earmark-text"></i></span>
+                        <span class="release-resource-link-text">
+                            <span class="release-resource-link-title">Ссылка на отчет АПТБ</span>
+                        </span>
+                        <i class="bi bi-box-arrow-up-right release-resource-link-external"></i>
+                    </a>
+                    <a class="release-resource-link" href="https://confluence.delta.sbrf.ru/pages/viewpage.action?pageId=17299800209" target="_blank" rel="noopener noreferrer">
+                        <span class="release-resource-link-icon"><i class="bi bi-journal-text"></i></span>
+                        <span class="release-resource-link-text">
+                            <span class="release-resource-link-title">Ссылки на ПСИ Jenkins</span>
+                        </span>
+                        <i class="bi bi-box-arrow-up-right release-resource-link-external"></i>
+                    </a>
+                    <a class="release-resource-link" href="https://voip-applications.sigma.sbrf.ru/sms/" target="_blank" rel="noopener noreferrer">
+                        <span class="release-resource-link-icon"><i class="bi bi-chat-dots"></i></span>
+                        <span class="release-resource-link-text">
+                            <span class="release-resource-link-title">Отправка SMS по результатам внедрения</span>
+                        </span>
+                        <i class="bi bi-box-arrow-up-right release-resource-link-external"></i>
+                    </a>
                 </div>
 
                 <div class="release-extra-controls">
@@ -1425,6 +1493,29 @@
                             <input type="file" id="releaseMonitorDutyUploadInput" multiple accept=".xlsx,.xlsm" style="display: none;" onchange="handleReleaseDutyScheduleUpload(event)">
                         </div>
                     </div>
+                </div>
+
+                <div class="release-monitor-controls">
+                    <div class="release-search-box">
+                        <i class="bi bi-search"></i>
+                        <input type="text" id="releaseSearchInput" placeholder="Поиск по релизам: ключ, КЭ, РОВ, название..." onkeyup="handleReleaseSearch()">
+                    </div>
+                    <select id="releaseYearFilter" class="release-filter-select" onchange="handleReleaseYearFilter()">
+                        {% for year in (release_monitor_meta.years or [release_monitor_meta.current_year or 0]) %}
+                        <option value="{{ year }}" {% if year == (release_monitor_meta.current_year or 0) %}selected{% endif %}>{{ year }}</option>
+                        {% endfor %}
+                    </select>
+                    <select id="releaseViewFilter" class="release-filter-select" onchange="handleReleaseViewFilter()">
+                        <option value="all">Все релизы года</option>
+                        <option value="non_final">Только не в финальном статусе</option>
+                        <option value="overdue">Просроченные по РОВ</option>
+                        <option value="today">На сегодня</option>
+                        <option value="final">Установлен на ПРОМ</option>
+                        <option value="cancelled">Отменено</option>
+                    </select>
+                    <select id="releaseStatusFilter" class="release-filter-select" onchange="applyReleaseFilters()">
+                        <option value="all">Все статусы</option>
+                    </select>
                 </div>
 
                 <div id="releaseUpdateBanner" class="release-update-banner" role="status" aria-live="polite">
