@@ -532,17 +532,29 @@ def _remove_row_from_manual_order(row_key):
     for year_payload in manual_order.values():
         if not isinstance(year_payload, dict):
             continue
-        for group_name in ("waiting", "numbered"):
+        for group_name in ("waiting", "numbered", "force_unnumbered"):
             values = year_payload.get(group_name)
             if not isinstance(values, list):
                 continue
-            filtered_values = [value for value in values if str(value or "").strip() != row_key]
+            filtered_values = [
+                value
+                for value in values
+                if not _manual_order_row_matches_release(str(value or "").strip(), row_key)
+            ]
             if len(filtered_values) != len(values):
                 year_payload[group_name] = filtered_values
                 changed = True
 
     if changed:
         _save_manual_order(manual_order)
+
+
+def _manual_order_row_matches_release(stored_row_key, release_key):
+    stored_row_key = str(stored_row_key or "").strip()
+    release_key = str(release_key or "").strip()
+    if not stored_row_key or not release_key:
+        return False
+    return stored_row_key == release_key or stored_row_key.startswith(f"{release_key}::")
 
 
 def _build_empty_duty_schedule_payload():
@@ -672,6 +684,12 @@ def _release_dates_match(left_dt, right_dt):
     if not left_dt or not right_dt:
         return False
     return _format_release_monitor_date(left_dt) == _format_release_monitor_date(right_dt)
+
+
+def _release_base_covers_manual_date(base_dt, manual_dt):
+    if not base_dt or not manual_dt:
+        return False
+    return base_dt.date() >= manual_dt.date()
 
 
 def _extract_schedule_month_year(sheet_title):
@@ -840,7 +858,7 @@ def _is_explicit_manual_reviewer_assignment(assignment):
     if not isinstance(assignment, dict):
         return False
     return (
-        str(assignment.get("reviewer_source") or "").strip() == "manual"
+        str(assignment.get("reviewer_source") or "").strip() in {"manual", "manual_text"}
         and str(assignment.get("reviewer_date") or "").strip() == "manual"
     )
 
@@ -993,13 +1011,20 @@ def _apply_date_overrides(items):
             source_end_dt = _parse_release_monitor_date(
                 item.get("source_deployment_end_iso") or item.get("source_deployment_end")
             )
+            source_sort_dt = source_start_dt or source_end_dt
             if source_start_dt:
                 item["deployment_start"] = _format_release_monitor_date(source_start_dt)
                 item["deployment_start_iso"] = source_start_dt.isoformat()
-                item["sort_date"] = source_start_dt.isoformat()
+            else:
+                item["deployment_start"] = ""
+                item["deployment_start_iso"] = ""
             if source_end_dt:
                 item["deployment_end"] = _format_release_monitor_date(source_end_dt)
                 item["deployment_end_iso"] = source_end_dt.isoformat()
+            else:
+                item["deployment_end"] = ""
+                item["deployment_end_iso"] = ""
+            item["sort_date"] = source_sort_dt.isoformat() if source_sort_dt else ""
             if item.get("is_non_final"):
                 today = datetime.now().date()
                 source_start_date = source_start_dt.date() if source_start_dt else None
@@ -1026,18 +1051,14 @@ def _apply_date_overrides(items):
         base_start_dt = _parse_release_monitor_date(
             item.get("source_deployment_start_iso")
             or item.get("source_deployment_start")
-            or item.get("deployment_start_iso")
-            or item.get("deployment_start")
         )
         base_end_dt = _parse_release_monitor_date(
             item.get("source_deployment_end_iso")
             or item.get("source_deployment_end")
-            or item.get("deployment_end_iso")
-            or item.get("deployment_end")
         )
 
-        manual_start_matches_base = _release_dates_match(base_start_dt, manual_start_dt)
-        manual_end_matches_base = _release_dates_match(base_end_dt, manual_end_dt)
+        manual_start_matches_base = _release_base_covers_manual_date(base_start_dt, manual_start_dt)
+        manual_end_matches_base = _release_base_covers_manual_date(base_end_dt, manual_end_dt)
         active_manual_start = manual_start_dt if not manual_start_matches_base else None
         active_manual_end = manual_end_dt if not manual_end_matches_base else None
 
@@ -1493,12 +1514,15 @@ def _is_release_far_future(item):
 def _render_confluence_release_row(item):
     row_state = str(item.get("row_state") or "planned").strip().lower()
     row_bg = {
+        "notes": "#fff7db",
         "final": "#eaf7ef",
         "cancelled": "#fdebec",
         "overdue": "#fff0f0",
         "today": "",
         "planned": "",
     }.get(row_state, "")
+    if item.get("has_rollout_notes"):
+        row_bg = "#fff7db"
     row_style = f' style="background-color: {row_bg};"' if row_bg else ""
 
     row_number = str(item.get("release_number") or "").strip() or "—"
@@ -2243,6 +2267,14 @@ def _derive_natural_unnumbered(item):
     has_rov = bool(item.get("has_rov") or str(item.get("rov_key") or "").strip())
     is_cancelled = bool(item.get("is_cancelled"))
     has_ke = bool(str(item.get("ke") or "").strip())
+    has_manual_start = bool(str(item.get("manual_deployment_start") or "").strip())
+    can_number_without_rov = bool(
+        (not has_rov)
+        and item.get("is_non_final")
+        and has_manual_start
+    )
+    if can_number_without_rov:
+        return bool(is_cancelled and not has_ke)
     return (not has_rov) or (is_cancelled and not has_ke)
 
 
@@ -2257,11 +2289,18 @@ def _apply_force_unnumbered_flags(year, items):
 
     for item in items:
         row_key = str(item.get("row_key") or item.get("release_key") or "").strip()
+        has_manual_start = bool(str(item.get("manual_deployment_start") or "").strip())
+        manual_numbering_override = bool(
+            has_manual_start
+            and item.get("is_non_final")
+            and not item.get("has_rov")
+        )
         is_natural_unnumbered = _derive_natural_unnumbered(item)
         is_forced = row_key in forced_keys
         item["is_natural_unnumbered"] = is_natural_unnumbered
         item["is_force_unnumbered"] = is_forced
-        item["is_unnumbered"] = bool(is_natural_unnumbered or is_forced)
+        item["is_manual_numbering_override"] = manual_numbering_override
+        item["is_unnumbered"] = bool((is_natural_unnumbered or is_forced) and not manual_numbering_override)
 
 
 def _sort_and_number_records(records):
@@ -3494,7 +3533,7 @@ def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=
     if not release_key:
         raise ValueError("РќРµ СѓРєР°Р·Р°РЅ РєР»СЋС‡ СЂРµР»РёР·Р°")
 
-    if reviewer and reviewer not in OPLOT_VALUES:
+    if reviewer and reviewer_source != "manual_text" and reviewer not in OPLOT_VALUES:
         raise ValueError("Р’С‹Р±СЂР°РЅРЅС‹Р№ РґРµР¶СѓСЂРЅС‹Р№ РѕС‚СЃСѓС‚СЃС‚РІСѓРµС‚ РІ СЃРїРёСЃРєРµ РћРџР›РћРў")
 
     normalized_responsibles = []
@@ -3512,7 +3551,10 @@ def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=
     if reviewer_source is None:
         reviewer_source = current_assignment.get("reviewer_source")
     reviewer_source = str(reviewer_source or "").strip()
-    if reviewer_source == "duty_schedule" and reviewer:
+    if reviewer_source == "manual_text" and reviewer:
+        resolved_reviewer_source = "manual_text"
+        reviewer_date = "manual"
+    elif reviewer_source == "duty_schedule" and reviewer:
         resolved_reviewer_source = "duty_schedule"
         reviewer_date = str(current_assignment.get("reviewer_date") or "").strip()
     else:

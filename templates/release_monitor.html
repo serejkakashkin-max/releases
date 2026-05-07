@@ -795,6 +795,15 @@
             gap: 0.38rem;
         }
 
+        .reviewer-duty-wrap {
+            display: flex;
+            align-items: center;
+        }
+
+        .reviewer-duty-control {
+            width: 100%;
+        }
+
         .release-number-cell {
             display: flex;
             align-items: center;
@@ -1551,6 +1560,7 @@
         let releaseDocumentWizardState = null;
         let releaseDateOverrideModalInstance = null;
         let releaseDateOverrideState = null;
+        let pendingManualDutyFocusReleaseKey = '';
 
         function escapeHtml(value) {
             return String(value || '')
@@ -1563,6 +1573,19 @@
 
         function getReleaseMonitorRevision(meta = releaseMonitorMeta) {
             return String(meta?.data_revision || meta?.last_updated || '').trim();
+        }
+
+        function isCustomDutyText(value) {
+            const text = String(value || '').trim();
+            return Boolean(text) && !RELEASE_REVIEWER_OPTIONS.includes(text);
+        }
+
+        function isManualNumberingOverride(item) {
+            return Boolean(
+                item?.has_manual_date_override &&
+                item?.is_non_final &&
+                !item?.has_rov
+            );
         }
 
         function parseReleaseMonitorRevisionDate(meta = releaseMonitorMeta) {
@@ -1732,31 +1755,56 @@
         }
 
 function buildReviewerCell(item) {
+            const rowKey = item.row_key || item.release_key;
             const currentReviewer = item.psi_owner || '';
+            const currentReviewerSource = item.psi_owner_source || '';
+            const isManualTextReviewer = currentReviewerSource === 'manual_text' || (currentReviewer && isCustomDutyText(currentReviewer));
             const currentChecker = item.psi_checker || '';
             const responsibles = (Array.isArray(item.psi_responsibles) && item.psi_responsibles.length)
                 ? item.psi_responsibles
                 : [''];
+            const reviewerLabel = isManualTextReviewer ? 'УСТАНАВЛИВАЕТ:' : 'ДЕЖУРНЫЙ';
+            const reviewerControl = isManualTextReviewer
+                ? `
+                    <div class="reviewer-duty-control">
+                        <input
+                            type="text"
+                            class="reviewer-select duty-manual-input"
+                            data-release-key="${escapeHtml(rowKey)}"
+                            value="${escapeHtml(currentReviewer)}"
+                            placeholder="Введите ФИО"
+                            onchange="updateReleaseAssignment('${escapeHtml(rowKey)}', this)"
+                        >
+                    </div>
+                `
+                : `
+                    <select class="reviewer-select duty-select" onchange="updateReleaseAssignment('${escapeHtml(rowKey)}', this)">
+                        <option value="">Не назначен</option>
+                        ${RELEASE_REVIEWER_OPTIONS.map(option => `
+                            <option value="${escapeHtml(option)}" ${option === currentReviewer ? 'selected' : ''}>${escapeHtml(option)}</option>
+                        `).join('')}
+                    </select>
+                `;
             return `
                 <div class="reviewer-cell">
                     <div>
                         <div class="responsible-header">
                             <div class="reviewer-block-label">Ответственный</div>
-                            <button type="button" class="responsible-icon-btn" onclick="addResponsibleAssignment('${escapeHtml(item.row_key || item.release_key)}')" title="Добавить ответственного">
+                            <button type="button" class="responsible-icon-btn" onclick="addResponsibleAssignment('${escapeHtml(rowKey)}')" title="Добавить ответственного">
                                 <i class="bi bi-plus-lg"></i>
                             </button>
                         </div>
                         <div class="responsibles-stack">
                             ${responsibles.map((responsible, index) => `
                                 <div class="responsible-row ${responsibles.length === 1 ? 'single' : ''}">
-                                    <select class="reviewer-select responsible-select" onchange="updateResponsibleAssignment('${escapeHtml(item.row_key || item.release_key)}', ${index}, this.value)">
+                                    <select class="reviewer-select responsible-select" onchange="updateResponsibleAssignment('${escapeHtml(rowKey)}', ${index}, this.value)">
                                         <option value="">Не назначен</option>
                                         ${RELEASE_REVIEWER_OPTIONS.map(option => `
                                             <option value="${escapeHtml(option)}" ${option === responsible ? 'selected' : ''}>${escapeHtml(option)}</option>
                                         `).join('')}
                                     </select>
                                     ${responsibles.length > 1 ? `
-                                        <button type="button" class="responsible-icon-btn remove" onclick="removeResponsibleAssignment('${escapeHtml(item.row_key || item.release_key)}', ${index})" title="Убрать ответственного">
+                                        <button type="button" class="responsible-icon-btn remove" onclick="removeResponsibleAssignment('${escapeHtml(rowKey)}', ${index})" title="Убрать ответственного">
                                             <i class="bi bi-dash"></i>
                                         </button>
                                     ` : ''}
@@ -1765,13 +1813,10 @@ function buildReviewerCell(item) {
                         </div>
                     </div>
                     <div>
-                        <div class="reviewer-block-label">Дежурный</div>
-                        <select class="reviewer-select duty-select" onchange="updateReleaseAssignment('${escapeHtml(item.row_key || item.release_key)}', this)">
-                            <option value="">Не назначен</option>
-                            ${RELEASE_REVIEWER_OPTIONS.map(option => `
-                                <option value="${escapeHtml(option)}" ${option === currentReviewer ? 'selected' : ''}>${escapeHtml(option)}</option>
-                            `).join('')}
-                        </select>
+                        <div class="reviewer-block-label" ondblclick="toggleReleaseDutyMode('${escapeHtml(rowKey)}')" title="Дважды щелкните, чтобы переключить режим">${reviewerLabel}</div>
+                        <div class="reviewer-duty-wrap">
+                            ${reviewerControl}
+                        </div>
                     </div>
                     <div>
                         <div class="reviewer-block-label">Проверяет</div>
@@ -1780,7 +1825,7 @@ function buildReviewerCell(item) {
                             class="checker-input"
                             value="${escapeHtml(currentChecker)}"
                             placeholder="Введите ФИО проверяющего"
-                            onchange="updateReleaseAssignment('${escapeHtml(item.row_key || item.release_key)}', this)"
+                            onchange="updateReleaseAssignment('${escapeHtml(rowKey)}', this)"
                         >
                     </div>
                 </div>
@@ -1836,6 +1881,28 @@ function buildReviewerCell(item) {
             }
 
             return `${mainValue}<div class="release-date-badge">ручная дата</div>`;
+        }
+
+        async function toggleReleaseDutyMode(releaseKey) {
+            if (!releaseKey) {
+                return;
+            }
+
+            const item = getReleaseMonitorItem(releaseKey);
+            if (!item) {
+                return;
+            }
+
+            const currentReviewer = item.psi_owner || '';
+            const currentChecker = item.psi_checker || '';
+            const currentSource = item.psi_owner_source || '';
+            const nextSource = currentSource === 'manual_text' ? 'manual' : 'manual_text';
+            const reviewer = nextSource === 'manual'
+                ? (RELEASE_REVIEWER_OPTIONS.includes(currentReviewer) ? currentReviewer : '')
+                : currentReviewer;
+
+            pendingManualDutyFocusReleaseKey = nextSource === 'manual_text' ? releaseKey : '';
+            await saveReleaseAssignment(releaseKey, reviewer, currentChecker, null, nextSource);
         }
 
         function buildReleaseOrderControls(item) {
@@ -1960,8 +2027,8 @@ function buildReviewerCell(item) {
 
             releaseDateOverrideState = { item };
             document.getElementById('releaseDateOverrideSubtitle').textContent = item.release_key || '';
-            document.getElementById('releaseDateOverrideBaseStart').textContent = item.source_deployment_start || item.deployment_start || '-';
-            document.getElementById('releaseDateOverrideBaseEnd').textContent = item.source_deployment_end || item.deployment_end || '-';
+            document.getElementById('releaseDateOverrideBaseStart').textContent = item.source_deployment_start || '-';
+            document.getElementById('releaseDateOverrideBaseEnd').textContent = item.source_deployment_end || '-';
             document.getElementById('releaseDateOverrideStartInput').value = item.manual_deployment_start ? dateToInputValue(item.manual_deployment_start) : '';
             document.getElementById('releaseDateOverrideEndInput').value = item.manual_deployment_end ? dateToInputValue(item.manual_deployment_end) : '';
             ensureReleaseDateOverrideModal().show();
@@ -2780,10 +2847,12 @@ function buildReviewerCell(item) {
                 const rowKey = item.row_key || item.release_key;
                 const isForced = forcedKeys.has(rowKey);
                 const isNaturalUnnumbered = Boolean(item.is_natural_unnumbered);
+                const isManualOverride = isManualNumberingOverride(item);
                 return {
                     ...item,
                     is_force_unnumbered: isForced,
-                    is_unnumbered: isNaturalUnnumbered || isForced,
+                    is_manual_numbering_override: isManualOverride,
+                    is_unnumbered: (isNaturalUnnumbered || isForced) && !isManualOverride,
                 };
             });
 
@@ -3243,16 +3312,20 @@ function buildReviewerCell(item) {
             }
 
             const cell = changedElement.closest('.reviewer-cell');
-            const reviewerSelect = cell?.querySelector('.duty-select');
+            const reviewerField = cell?.querySelector('.duty-select, .duty-manual-input');
             const checkerInput = cell?.querySelector('.checker-input');
-            const reviewer = reviewerSelect?.value || '';
+            const reviewer = changedElement.classList.contains('duty-manual-input')
+                ? changedElement.value || ''
+                : (reviewerField?.value || '');
             const checker = checkerInput?.value || '';
             const currentItem = getReleaseMonitorItem(releaseKey);
-            const reviewerSource = changedElement.classList.contains('duty-select')
-                ? 'manual'
-                : (currentItem?.psi_owner_source || '');
+            const reviewerSource = changedElement.classList.contains('duty-manual-input')
+                ? 'manual_text'
+                : (changedElement.classList.contains('duty-select')
+                    ? 'manual'
+                    : (currentItem?.psi_owner_source || ''));
 
-            [reviewerSelect, checkerInput].forEach(element => {
+            [reviewerField, checkerInput].forEach(element => {
                 if (!element) {
                     return;
                 }
@@ -3266,7 +3339,7 @@ function buildReviewerCell(item) {
                 console.error('Release assignment update error:', error);
                 alert('Ошибка сохранения назначения: ' + error.message);
             } finally {
-                [reviewerSelect, checkerInput].forEach(element => {
+                [reviewerField, checkerInput].forEach(element => {
                     if (!element) {
                         return;
                     }
@@ -3595,6 +3668,18 @@ function buildReviewerCell(item) {
 
             if (body) {
                 body.innerHTML = filteredItems.map(buildReleaseRow).join('');
+            }
+            if (pendingManualDutyFocusReleaseKey) {
+                const manualInput = Array.from(document.querySelectorAll('.duty-manual-input')).find(
+                    element => element.dataset.releaseKey === pendingManualDutyFocusReleaseKey
+                );
+                if (manualInput) {
+                    manualInput.focus();
+                    if (typeof manualInput.select === 'function') {
+                        manualInput.select();
+                    }
+                    pendingManualDutyFocusReleaseKey = '';
+                }
             }
 
             const yearSummary = buildReleaseYearSummary(yearItems);
