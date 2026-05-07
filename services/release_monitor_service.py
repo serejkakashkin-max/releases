@@ -106,7 +106,7 @@ FIELD_ALIASES = {
     ),
 }
 
-_cache_lock = threading.Lock()
+_cache_lock = threading.RLock()
 _cached_data = None
 _last_cache_update = None
 _manual_order_cache = None
@@ -130,6 +130,7 @@ def _build_empty_release_monitor_payload():
     previous_year = current_year - 1
     return {
         "items": [],
+        "manual_overrides": {},
         "summary": {
             "total": 0,
             "non_final": 0,
@@ -462,6 +463,83 @@ def _save_rollout_note_flags(flags):
     _save_zni_payload(payload)
 
 
+def _normalize_manual_release_override(value):
+    if not isinstance(value, dict):
+        return {}
+
+    normalized = {}
+    for key in (
+        "release_summary",
+        "release_version",
+        "release_dist_url",
+        "ke",
+        "base_release_summary",
+        "base_release_version",
+        "base_release_dist_url",
+        "base_ke",
+        "base_zni_key",
+        "base_zni_url",
+    ):
+        raw_value = str(value.get(key) or "").strip()
+        if raw_value:
+            normalized[key] = raw_value
+
+    zni_key = str(value.get("zni_key") or "").strip()
+    zni_url = str(value.get("zni_url") or "").strip()
+    clear_zni = bool(value.get("clear_zni"))
+    if zni_key:
+        normalized["zni_key"] = zni_key
+    if zni_url:
+        normalized["zni_url"] = zni_url
+    if clear_zni:
+        normalized["clear_zni"] = True
+
+    updated_at = str(value.get("updated_at") or "").strip()
+    if updated_at:
+        normalized["updated_at"] = updated_at
+
+    return normalized
+
+
+def _normalize_manual_release_overrides(payload):
+    normalized = {}
+    if not isinstance(payload, dict):
+        return normalized
+
+    for key, value in payload.items():
+        row_key = str(key or "").strip()
+        normalized_value = _normalize_manual_release_override(value)
+        if row_key and normalized_value:
+            normalized[row_key] = normalized_value
+    return normalized
+
+
+def _load_manual_release_overrides():
+    payload = _get_cached_payload_copy() or _load_snapshot_from_disk() or {}
+    return _normalize_manual_release_overrides(payload.get("manual_overrides") or {})
+
+
+def _save_manual_release_overrides(overrides):
+    global _cached_data, _last_cache_update
+
+    normalized_overrides = _normalize_manual_release_overrides(overrides)
+
+    with _cache_lock:
+        if _cached_data is None:
+            disk_payload = _load_snapshot_from_disk()
+            if disk_payload is not None:
+                _cached_data = disk_payload
+                _last_cache_update = _get_snapshot_mtime() or time.time()
+            else:
+                _cached_data = _build_empty_release_monitor_payload()
+
+        if _cached_data is not None:
+            _cached_data["manual_overrides"] = normalized_overrides
+            _save_snapshot_to_disk(_cached_data)
+
+    return normalized_overrides
+
+
 def _load_manual_order():
     global _manual_order_cache
 
@@ -676,8 +754,6 @@ def _format_release_monitor_date(dt_value):
 
 
 def _resolve_effective_release_date(base_dt, manual_dt):
-    if base_dt and manual_dt:
-        return manual_dt if manual_dt > base_dt else base_dt
     return manual_dt or base_dt
 
 
@@ -688,9 +764,7 @@ def _release_dates_match(left_dt, right_dt):
 
 
 def _release_base_covers_manual_date(base_dt, manual_dt):
-    if not base_dt or not manual_dt:
-        return False
-    return base_dt.date() >= manual_dt.date()
+    return _release_dates_match(base_dt, manual_dt)
 
 
 def _extract_schedule_month_year(sheet_title):
@@ -1140,9 +1214,132 @@ def _apply_zni_assignments(items):
         zni_url = str(zni_assignment.get("url") or "").strip() if isinstance(zni_assignment, dict) else ""
         item["zni_key"] = zni_key
         item["zni_url"] = zni_url
+        if not str(item.get("base_zni_key") or "").strip():
+            item["base_zni_key"] = zni_key
+        if not str(item.get("base_zni_url") or "").strip():
+            item["base_zni_url"] = zni_url
         rollout_note = flags.get(assignment_key) or flags.get(item.get("release_key"), {})
         item["has_rollout_notes"] = bool(
             isinstance(rollout_note, dict) and rollout_note.get("has_rollout_notes")
+        )
+    return items
+
+
+def _get_release_name_ke_line(item):
+    lines = item.get("base_release_name_lines") or item.get("release_name_lines") or []
+    if isinstance(lines, list) and len(lines) > 1:
+        line_value = str(lines[1] or "").strip()
+        if line_value:
+            return line_value
+
+    ke_name = str(item.get("ke_name") or "").strip()
+    ke_id = str(item.get("ke_id") or "").strip()
+    if ke_name and ke_id:
+        return f"{ke_name}({ke_id})"
+    return ke_name or ""
+
+
+def _get_release_domain_from_url(url_value):
+    url_value = str(url_value or "").strip()
+    if not url_value:
+        return ""
+    if "/browse/" in url_value:
+        return url_value.split("/browse/", 1)[0].rstrip("/")
+    return url_value.rsplit("/", 1)[0].rstrip("/")
+
+
+def _apply_manual_release_overrides(items, overrides=None):
+    overrides = _normalize_manual_release_overrides(overrides) if overrides is not None else _load_manual_release_overrides()
+    for item in items:
+        assignment_key = _get_assignment_key_for_item(item)
+        override = overrides.get(assignment_key) or overrides.get(item.get("release_key"), {})
+        override_base_summary = str(override.get("base_release_summary") or "").strip() if isinstance(override, dict) else ""
+        override_base_version = str(override.get("base_release_version") or "").strip() if isinstance(override, dict) else ""
+        override_base_url = str(override.get("base_release_dist_url") or "").strip() if isinstance(override, dict) else ""
+        override_base_ke = str(override.get("base_ke") or "").strip() if isinstance(override, dict) else ""
+        override_base_zni_key = str(override.get("base_zni_key") or "").strip() if isinstance(override, dict) else ""
+        override_base_zni_url = str(override.get("base_zni_url") or "").strip() if isinstance(override, dict) else ""
+        if not str(item.get("base_release_summary") or "").strip():
+            item["base_release_summary"] = override_base_summary or str(item.get("release_summary") or "").strip()
+        if not str(item.get("base_release_version") or "").strip():
+            item["base_release_version"] = override_base_version or str(item.get("release_version") or "").strip()
+        if not str(item.get("base_release_dist_url") or "").strip():
+            item["base_release_dist_url"] = override_base_url or str(item.get("release_dist_url") or "").strip()
+        if not str(item.get("base_ke") or "").strip():
+            item["base_ke"] = override_base_ke or str(item.get("ke") or "").strip()
+        if not str(item.get("base_zni_key") or "").strip():
+            item["base_zni_key"] = override_base_zni_key or str(item.get("zni_key") or "").strip()
+        if not str(item.get("base_zni_url") or "").strip():
+            item["base_zni_url"] = override_base_zni_url or str(item.get("zni_url") or "").strip()
+        if not isinstance(item.get("base_release_name_lines"), list) or not item.get("base_release_name_lines"):
+            item["base_release_name_lines"] = list(item.get("release_name_lines") or [])
+
+        base_summary = str(item.get("base_release_summary") or item.get("release_summary") or "").strip()
+        base_version = str(item.get("base_release_version") or item.get("release_version") or "").strip()
+        base_url = str(item.get("base_release_dist_url") or item.get("release_dist_url") or "").strip()
+        base_ke = str(item.get("base_ke") or item.get("ke") or "").strip()
+        base_zni_key = str(item.get("base_zni_key") or item.get("zni_key") or "").strip()
+        base_zni_url = str(item.get("base_zni_url") or item.get("zni_url") or "").strip()
+        base_name_lines = item.get("base_release_name_lines")
+
+        item["release_summary"] = base_summary
+        item["release_version"] = base_version
+        item["release_dist_url"] = base_url
+        item["ke"] = base_ke
+        item["zni_key"] = base_zni_key
+        item["zni_url"] = base_zni_url
+        if isinstance(base_name_lines, list) and base_name_lines:
+            item["release_name_lines"] = list(base_name_lines)
+
+        if not isinstance(override, dict) or not override:
+            item["has_manual_release_override"] = False
+            item["manual_release_summary"] = ""
+            item["manual_release_version"] = ""
+            item["manual_release_dist_url"] = ""
+            item["manual_ke"] = ""
+            item["manual_zni_key"] = ""
+            item["manual_zni_url"] = ""
+            item["manual_clear_zni"] = False
+            continue
+
+        manual_summary = str(override.get("release_summary") or "").strip()
+        manual_version = str(override.get("release_version") or "").strip()
+        manual_url = _normalize_artifact_url(str(override.get("release_dist_url") or "").strip())
+        manual_ke = str(override.get("ke") or "").strip()
+        manual_zni_key = str(override.get("zni_key") or "").strip()
+        manual_zni_url = str(override.get("zni_url") or "").strip()
+        clear_zni = bool(override.get("clear_zni"))
+
+        if manual_summary:
+            item["release_summary"] = manual_summary
+            item["release_name_lines"] = _build_release_name_lines(
+                manual_summary,
+                _get_release_name_ke_line(item),
+                row_label=str(item.get("row_label") or "(Релиз)"),
+            )
+        if manual_version:
+            item["release_version"] = manual_version
+        if manual_url:
+            item["release_dist_url"] = manual_url
+        if manual_ke:
+            item["ke"] = _format_ke_id(manual_ke) if re.fullmatch(r"\d+", manual_ke) else manual_ke
+        if clear_zni:
+            item["zni_key"] = ""
+            item["zni_url"] = ""
+        elif manual_zni_key:
+            item["zni_key"] = manual_zni_key
+            base_release_url = _get_release_domain_from_url(item.get("release_url"))
+            item["zni_url"] = manual_zni_url or (f"{base_release_url}/browse/{manual_zni_key}" if base_release_url else "")
+
+        item["manual_release_summary"] = manual_summary
+        item["manual_release_version"] = manual_version
+        item["manual_release_dist_url"] = manual_url
+        item["manual_ke"] = manual_ke
+        item["manual_zni_key"] = manual_zni_key
+        item["manual_zni_url"] = manual_zni_url
+        item["manual_clear_zni"] = clear_zni
+        item["has_manual_release_override"] = bool(
+            manual_summary or manual_version or manual_url or manual_ke or manual_zni_key or manual_zni_url or clear_zni
         )
     return items
 
@@ -2176,16 +2373,23 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
             "release_status_normalized": normalized_status,
             "release_summary": summary,
             "release_name_lines": _build_release_name_lines(summary, release_ke_line, row_label=row_label),
+            "base_release_summary": summary,
+            "base_release_name_lines": _build_release_name_lines(summary, release_ke_line, row_label=row_label),
             "is_reroll": is_reroll,
             "row_label": row_label,
             "zni_key": "",
             "zni_url": "",
+            "base_zni_key": "",
+            "base_zni_url": "",
             "has_rollout_notes": False,
             "ke": ke_distributive,
+            "base_ke": ke_distributive,
             "ke_name": ke_name,
             "ke_id": ke_id,
             "release_version": release_version,
             "release_dist_url": release_dist_url,
+            "base_release_version": release_version,
+            "base_release_dist_url": release_dist_url,
             "rov_key": rov_key,
             "rov_url": rov_data.get("url", ""),
             "rov_status": rov_data.get("status", ""),
@@ -2757,8 +2961,11 @@ def get_release_monitor_data(force_refresh=False):
         ):
             return _cached_data
 
+        manual_overrides = dict((_cached_data or _load_snapshot_from_disk() or {}).get("manual_overrides", {}))
         _cached_data = _fetch_release_monitor_data()
+        _cached_data["manual_overrides"] = manual_overrides
         _last_cache_update = now
+        _save_snapshot_to_disk(_cached_data)
         return _cached_data
 
 
@@ -2767,10 +2974,13 @@ def _run_release_monitor_refresh():
 
     try:
         logging.info("Release monitor: background refresh started")
+        manual_overrides = dict((_cached_data or _load_snapshot_from_disk() or {}).get("manual_overrides", {}))
         data = _fetch_release_monitor_data()
+        data["manual_overrides"] = manual_overrides
         with _cache_lock:
             _cached_data = data
             _last_cache_update = time.time()
+            _save_snapshot_to_disk(_cached_data)
             _refresh_status.update(
                 {
                     "state": "completed",
@@ -2865,6 +3075,7 @@ def _get_cached_payload_copy():
         return None
     return {
         "items": list(_cached_data.get("items", [])),
+        "manual_overrides": dict(_cached_data.get("manual_overrides", {})),
         "summary": dict(_cached_data.get("summary", {})),
         "meta": dict(_cached_data.get("meta", {})),
     }
@@ -2930,13 +3141,14 @@ def get_release_monitor_data(force_refresh=False):
         ):
             return _cached_data
 
+    manual_overrides = dict((_cached_data or _load_snapshot_from_disk() or {}).get("manual_overrides", {}))
     data = _fetch_release_monitor_data()
     data["meta"]["last_full_sync"] = data["meta"].get("last_updated")
     data["meta"]["last_quick_sync"] = (_cached_data or {}).get("meta", {}).get("last_quick_sync")
     data["meta"]["last_confluence_sync"] = (_cached_data or {}).get("meta", {}).get("last_confluence_sync")
 
     with _cache_lock:
-        _cached_data = data
+        _cached_data = _finalize_release_monitor_payload(data, manual_overrides)
         _last_cache_update = time.time()
         _save_snapshot_to_disk(_cached_data)
         return _cached_data
@@ -2947,6 +3159,7 @@ def _run_release_monitor_refresh(mode="full", trigger="manual"):
 
     try:
         logging.info("Release monitor: background %s refresh started", mode)
+        manual_overrides = dict((_cached_data or _load_snapshot_from_disk() or {}).get("manual_overrides", {}))
         with _cache_lock:
             base_items = list((_cached_data or {}).get("items", []))
             current_meta = dict((_cached_data or {}).get("meta", {}))
@@ -2973,6 +3186,7 @@ def _run_release_monitor_refresh(mode="full", trigger="manual"):
         meta["last_quick_sync"] = now_str if mode == "quick" else current_meta.get("last_quick_sync")
         meta["last_confluence_sync"] = current_meta.get("last_confluence_sync")
         data["meta"] = meta
+        data = _finalize_release_monitor_payload(data, manual_overrides)
 
         with _cache_lock:
             _cached_data = data
@@ -3049,15 +3263,28 @@ def _normalize_release_payload(payload):
     _apply_date_overrides(normalized_items)
     _apply_duty_schedule_assignments(normalized_items, persist=True)
     _apply_zni_assignments(normalized_items)
+    _apply_manual_release_overrides(normalized_items, payload.get("manual_overrides") or {})
     _sort_and_number_records(normalized_items)
     current_year = datetime.now().year
     previous_year = current_year - 1
 
     return {
         "items": normalized_items,
+        "manual_overrides": _normalize_manual_release_overrides(payload.get("manual_overrides") or {}),
         "summary": _build_summary(normalized_items, current_year, previous_year),
         "meta": _append_revision_meta(_append_duty_schedule_meta(dict(payload.get("meta", {})))),
     }
+
+
+def _finalize_release_monitor_payload(payload, manual_overrides=None):
+    payload = dict(payload or {})
+    normalized_manual_overrides = _normalize_manual_release_overrides(
+        manual_overrides if manual_overrides is not None else payload.get("manual_overrides") or {}
+    )
+    payload["manual_overrides"] = dict(normalized_manual_overrides)
+    finalized_payload = _normalize_release_payload(payload)
+    finalized_payload["manual_overrides"] = dict(normalized_manual_overrides)
+    return finalized_payload
 
 
 def get_release_monitor_refresh_status():
@@ -3323,6 +3550,211 @@ def set_release_monitor_date_override(release_key, start_value="", end_value="",
             _apply_reviewer_assignments(items)
             _apply_date_overrides(items)
             _apply_duty_schedule_assignments(items, persist=True)
+            _sort_and_number_records(items)
+            _save_snapshot_to_disk(_cached_data)
+
+        payload = _normalize_release_payload(_get_cached_payload_copy() or _build_empty_release_monitor_payload())
+        return payload
+
+
+def set_release_monitor_manual_override(
+    release_key,
+    *,
+    release_summary="",
+    release_version="",
+    release_dist_url="",
+    ke="",
+    zni_key="",
+    zni_url="",
+    clear_zni=False,
+    reset=False,
+):
+    global _cached_data, _last_cache_update
+
+    release_key = str(release_key or "").strip()
+    if not release_key:
+        raise ValueError("Не указан ключ строки релиза")
+
+    with _cache_lock:
+        if _cached_data is None:
+            disk_payload = _load_snapshot_from_disk()
+            if disk_payload is not None:
+                _cached_data = disk_payload
+                _last_cache_update = _get_snapshot_mtime() or time.time()
+
+        if _cached_data is None:
+            raise ValueError("Таблица релизов еще не загружена")
+
+        current_payload = _get_cached_payload_copy() or _build_empty_release_monitor_payload()
+        current_items = current_payload.get("items") or []
+        target_item = next(
+            (item for item in current_items if _get_assignment_key_for_item(item) == release_key),
+            None,
+        )
+        if not target_item:
+            raise ValueError("Не удалось найти строку релиза")
+
+        base_summary = str(target_item.get("base_release_summary") or target_item.get("release_summary") or "").strip()
+        base_version = str(target_item.get("base_release_version") or target_item.get("release_version") or "").strip()
+        base_url = str(target_item.get("base_release_dist_url") or target_item.get("release_dist_url") or "").strip()
+        base_ke = str(target_item.get("base_ke") or target_item.get("ke") or "").strip()
+        base_zni_key = str(target_item.get("base_zni_key") or target_item.get("zni_key") or "").strip()
+        base_zni_url = str(target_item.get("base_zni_url") or target_item.get("zni_url") or "").strip()
+
+        if reset:
+            overrides = _load_manual_release_overrides()
+            removed_override = dict(overrides.get(release_key) or {})
+            overrides.pop(release_key, None)
+            _save_manual_release_overrides(overrides)
+
+            if _cached_data is not None:
+                _cached_data["manual_overrides"] = dict(overrides)
+                items = _cached_data.get("items") or []
+                reset_base_summary = str(
+                    removed_override.get("base_release_summary")
+                    or target_item.get("base_release_summary")
+                    or ""
+                ).strip()
+                reset_base_version = str(
+                    removed_override.get("base_release_version")
+                    or target_item.get("base_release_version")
+                    or ""
+                ).strip()
+                reset_base_url = str(
+                    removed_override.get("base_release_dist_url")
+                    or target_item.get("base_release_dist_url")
+                    or ""
+                ).strip()
+                reset_base_ke = str(
+                    removed_override.get("base_ke")
+                    or target_item.get("base_ke")
+                    or ""
+                ).strip()
+                reset_base_zni_key = str(
+                    removed_override.get("base_zni_key")
+                    or target_item.get("base_zni_key")
+                    or ""
+                ).strip()
+                reset_base_zni_url = str(
+                    removed_override.get("base_zni_url")
+                    or target_item.get("base_zni_url")
+                    or ""
+                ).strip()
+                _apply_reviewer_assignments(items)
+                _apply_date_overrides(items)
+                _apply_duty_schedule_assignments(items, persist=True)
+                _apply_zni_assignments(items)
+                for item in items:
+                    if _get_assignment_key_for_item(item) != release_key:
+                        continue
+                    item["base_release_summary"] = reset_base_summary
+                    item["base_release_version"] = reset_base_version
+                    item["base_release_dist_url"] = reset_base_url
+                    item["base_ke"] = reset_base_ke
+                    item["base_zni_key"] = reset_base_zni_key
+                    item["base_zni_url"] = reset_base_zni_url
+                    item["release_summary"] = reset_base_summary
+                    item["release_version"] = reset_base_version
+                    item["release_dist_url"] = reset_base_url
+                    item["ke"] = reset_base_ke
+                    item["zni_key"] = reset_base_zni_key
+                    item["zni_url"] = reset_base_zni_url
+                    if isinstance(item.get("base_release_name_lines"), list):
+                        item["release_name_lines"] = list(item.get("base_release_name_lines") or [])
+                    break
+                _apply_manual_release_overrides(items)
+                _sort_and_number_records(items)
+                _save_snapshot_to_disk(_cached_data)
+
+            payload = _normalize_release_payload(_get_cached_payload_copy() or _build_empty_release_monitor_payload())
+            return payload
+
+        normalized_summary = str(release_summary or "").strip()
+        normalized_version = str(release_version or "").strip()
+        normalized_url = _normalize_artifact_url(str(release_dist_url or "").strip())
+        normalized_ke = str(ke or "").strip()
+        normalized_zni_key = str(zni_key or "").strip()
+        normalized_zni_url = str(zni_url or "").strip()
+        normalized_clear_zni = bool(clear_zni)
+
+        overrides = _load_manual_release_overrides()
+        current_override = dict(overrides.get(release_key) or {})
+        if base_summary and not str(current_override.get("base_release_summary") or "").strip():
+            current_override["base_release_summary"] = base_summary
+        if base_version and not str(current_override.get("base_release_version") or "").strip():
+            current_override["base_release_version"] = base_version
+        if base_url and not str(current_override.get("base_release_dist_url") or "").strip():
+            current_override["base_release_dist_url"] = base_url
+        if base_ke and not str(current_override.get("base_ke") or "").strip():
+            current_override["base_ke"] = base_ke
+        if base_zni_key and not str(current_override.get("base_zni_key") or "").strip():
+            current_override["base_zni_key"] = base_zni_key
+        if base_zni_url and not str(current_override.get("base_zni_url") or "").strip():
+            current_override["base_zni_url"] = base_zni_url
+
+        if normalized_summary and normalized_summary != base_summary:
+            current_override["release_summary"] = normalized_summary
+        else:
+            current_override.pop("release_summary", None)
+
+        if normalized_version and normalized_version != base_version:
+            current_override["release_version"] = normalized_version
+        else:
+            current_override.pop("release_version", None)
+
+        if normalized_url and normalized_url != base_url:
+            current_override["release_dist_url"] = normalized_url
+        else:
+            current_override.pop("release_dist_url", None)
+
+        if normalized_ke and normalized_ke != base_ke:
+            current_override["ke"] = _format_ke_id(normalized_ke) if re.fullmatch(r"\d+", normalized_ke) else normalized_ke
+        else:
+            current_override.pop("ke", None)
+
+        if normalized_clear_zni and base_zni_key:
+            current_override["clear_zni"] = True
+            current_override.pop("zni_key", None)
+            current_override.pop("zni_url", None)
+        else:
+            current_override.pop("clear_zni", None)
+            if normalized_zni_key and normalized_zni_key != base_zni_key:
+                current_override["zni_key"] = normalized_zni_key
+                derived_url = normalized_zni_url
+                if not derived_url:
+                    base_release_url = _get_release_domain_from_url(str(target_item.get("release_url") or ""))
+                    if base_release_url:
+                        derived_url = f"{base_release_url}/browse/{normalized_zni_key}"
+                if derived_url and derived_url != base_zni_url:
+                    current_override["zni_url"] = derived_url
+                else:
+                    current_override.pop("zni_url", None)
+            else:
+                current_override.pop("zni_key", None)
+                current_override.pop("zni_url", None)
+
+        current_override = _normalize_manual_release_override(current_override)
+        if current_override:
+            current_override["updated_at"] = _format_timestamp()
+            overrides[release_key] = current_override
+        else:
+            overrides.pop(release_key, None)
+
+        _save_manual_release_overrides(overrides)
+
+        if _cached_data is None:
+            disk_payload = _load_snapshot_from_disk()
+            if disk_payload is not None:
+                _cached_data = disk_payload
+
+        if _cached_data is not None:
+            _cached_data["manual_overrides"] = dict(overrides)
+            items = _cached_data.get("items") or []
+            _apply_reviewer_assignments(items)
+            _apply_date_overrides(items)
+            _apply_duty_schedule_assignments(items, persist=True)
+            _apply_zni_assignments(items)
+            _apply_manual_release_overrides(items)
             _sort_and_number_records(items)
             _save_snapshot_to_disk(_cached_data)
 

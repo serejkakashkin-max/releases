@@ -358,6 +358,7 @@ def release_monitor_init():
 
     release_full = detection.get("release_full", "")
     playbooks_required = release_uses_playbooks(release_full) if detection.get("found") else None
+    jira_version = get_release_version(release_id)
     jira_ke = get_ke_from_release(release_id)
     incoming_ke = (data.get("ke") or "").strip()
 
@@ -365,6 +366,7 @@ def release_monitor_init():
         "success": True,
         "release_id": release_id,
         "detection": detection,
+        "release_version": jira_version,
         "ke": (jira_ke or incoming_ke).strip(),
         "playbooks_required": playbooks_required,
         "playbooks": DEFAULT_BH_PLAYBOOKS,
@@ -400,6 +402,11 @@ def release_monitor_generate():
         return jsonify({"success": False, "error": "Не указан проверяющий"}), 400
     if not date_str:
         return jsonify({"success": False, "error": "Не указана дата релиза"}), 400
+
+    if not release_version:
+        release_version = get_release_version(release_id)
+    if not ke:
+        ke = get_ke_from_release(release_id)
 
     if not category or not release_full:
         detection = detect_release_template(release_id)

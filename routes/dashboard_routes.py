@@ -20,6 +20,7 @@ from services.release_monitor_service import (
     save_release_monitor_manual_order,
     set_release_monitor_assignment,
     set_release_monitor_date_override,
+    set_release_monitor_manual_override,
     set_release_monitor_reviewer,
     create_release_monitor_zni,
     set_release_monitor_rollout_notes,
@@ -340,6 +341,36 @@ def update_release_monitor_date_override():
         })
     except Exception as e:
         logging.error(f"Ошибка сохранения корректировки даты релиза: {e}")
+        return jsonify({"success": False, "error": str(e)}), 400
+
+
+@dashboard_bp.route('/dashboard/release-monitor/manual-override', methods=['POST'])
+def update_release_monitor_manual_override():
+    """Сохраняет ручные правки названия, сборки, КЭ и ЗНИ по строке релиза."""
+    try:
+        ensure_release_monitor_not_refreshing()
+        data = request.get_json(silent=True) or {}
+        release_key = data.get("release_key", "")
+        payload = set_release_monitor_manual_override(
+            release_key,
+            release_summary=data.get("release_summary", ""),
+            release_version=data.get("release_version", ""),
+            release_dist_url=data.get("release_dist_url", ""),
+            ke=data.get("ke", ""),
+            zni_key=data.get("zni_key", ""),
+            zni_url=data.get("zni_url", ""),
+            clear_zni=bool(data.get("clear_zni")),
+            reset=bool(data.get("reset")),
+        )
+        return jsonify({
+            "success": True,
+            "release_monitor": payload.get("items", []),
+            "release_monitor_summary": payload.get("summary", {}),
+            "release_monitor_meta": payload.get("meta", {}),
+            "manual_overrides": payload.get("manual_overrides", {}),
+        })
+    except Exception as e:
+        logging.error(f"РћС€РёР±РєР° СЃРѕС…СЂР°РЅРµРЅРёСЏ СЂСѓС‡РЅС‹С… РїСЂР°РІРѕРє СЂРµР»РёР·Р°: {e}")
         return jsonify({"success": False, "error": str(e)}), 400
 
 

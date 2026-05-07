@@ -1048,6 +1048,16 @@
             color: var(--text-secondary);
         }
 
+        .release-row-manual-btn {
+            border-color: rgba(255, 193, 7, 0.28);
+        }
+
+        .release-row-manual-btn.active-warning {
+            border-color: rgba(255, 193, 7, 0.45);
+            background: rgba(255, 193, 7, 0.16);
+            color: #8a5a00;
+        }
+
         .release-date-cell {
             min-width: 0;
             font-size: 0.82rem;
@@ -1438,12 +1448,12 @@
                         <div class="release-action-stack compact">
                             <button id="releaseMonitorOrderBtn" class="release-monitor-btn" onclick="toggleReleaseOrderMode()">
                                 <i class="bi bi-list-ol"></i>
-                                Изменить порядок
+                                Настройки
                             </button>
                             <div class="release-order-actions">
                                 <button id="releaseMonitorOrderSaveBtn" class="release-monitor-btn full" style="display: none;" onclick="saveReleaseOrder()">
                                     <i class="bi bi-check2-circle"></i>
-                                    Сохранить порядок
+                                    Сохранить
                                 </button>
                                 <button id="releaseMonitorOrderCancelBtn" class="release-monitor-btn" style="display: none;" onclick="cancelReleaseOrderMode()">
                                     <i class="bi bi-x-circle"></i>
@@ -1530,7 +1540,7 @@
                     Видимых релизов: <strong id="releaseVisibleCount">{{ release_monitor|length }}</strong>
                 </div>
                 <div id="releaseOrderModeHint" class="release-visible-counter" style="display: none; margin-top: -0.35rem;">
-                    Используйте кнопки вверх и вниз в строке. Изменения сохраняются только после нажатия «Сохранить порядок».
+                    Используйте кнопки вверх и вниз, ручные правки и ненумерованный отсек. Изменения сохраняются только после нажатия «Сохранить».
                 </div>
 
                 <div id="releaseMonitorEmptyState" class="empty-state-small" {% if release_monitor %}style="display: none;"{% endif %}>
@@ -1625,6 +1635,50 @@
         </div>
     </div>
 
+    <div class="modal fade release-doc-modal" id="releaseManualOverrideModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title">Ручная правка релиза</h5>
+                        <div class="release-doc-subtitle" id="releaseManualOverrideSubtitle"></div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="release-doc-field-help mb-3">
+                        Ручные значения имеют приоритет над данными из Jira.
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Название релиза</label>
+                        <input type="text" class="form-control" id="releaseManualSummaryInput" placeholder="Текст названия">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Сборка</label>
+                        <input type="text" class="form-control" id="releaseManualVersionInput" placeholder="Версия сборки">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Ссылка на дистрибутив</label>
+                        <input type="text" class="form-control" id="releaseManualUrlInput" placeholder="https://...">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">КЭ дистрибутива</label>
+                        <input type="text" class="form-control" id="releaseManualKeInput" placeholder="CI12345678">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">ЗНИ</label>
+                        <input type="text" class="form-control" id="releaseManualZniInput" placeholder="SMECLM-12345">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" onclick="resetReleaseManualOverride()">Сбросить правки</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-primary" id="releaseManualOverrideSaveBtn" onclick="saveReleaseManualOverride()">Сохранить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         let currentReleaseYearFilter = String(new Date().getFullYear());
         let currentReleaseViewFilter = 'all';
@@ -1635,6 +1689,7 @@
         let isReleaseOrderMode = false;
         let releaseOrderDraft = null;
         let releaseOrderDirty = false;
+        let releaseManualOverrideDraft = {};
         let releaseMonitorItems = [];
         let releaseMonitorMeta = {};
         let releaseMonitorRefreshPoll = null;
@@ -1651,6 +1706,8 @@
         let releaseDocumentWizardState = null;
         let releaseDateOverrideModalInstance = null;
         let releaseDateOverrideState = null;
+        let releaseManualOverrideModalInstance = null;
+        let releaseManualOverrideState = null;
         let pendingManualDutyFocusReleaseKey = '';
 
         function escapeHtml(value) {
@@ -1791,7 +1848,7 @@
         function setReleaseMonitorGlobalRefreshing(isRefreshing) {
             releaseMonitorGlobalRefreshing = Boolean(isRefreshing);
             setReleaseRefreshButtonsLoading(releaseMonitorGlobalRefreshing);
-            document.querySelectorAll('.reviewer-select, .responsible-icon-btn, .release-doc-btn, .release-row-edit-btn, .release-order-step-btn').forEach(element => {
+            document.querySelectorAll('.reviewer-select, .responsible-icon-btn, .release-doc-btn, .release-row-edit-btn, .release-row-manual-btn, .release-order-step-btn').forEach(element => {
                 element.disabled = releaseMonitorGlobalRefreshing;
             });
             if (!releaseMonitorGlobalRefreshing && typeof refreshReleaseOrderModeUi === 'function') {
@@ -1940,6 +1997,14 @@ function buildReviewerCell(item) {
                     </button>
                 `
                 : '';
+            const manualButton = isReleaseOrderMode
+                ? `
+                    <button class="release-row-edit-btn release-row-manual-btn ${item.has_manual_release_override ? 'active-warning' : ''}" onclick="openReleaseManualOverrideModal('${escapeHtml(item.row_key || item.release_key)}')" title="Ручная правка названия, сборки, КЭ и ЗНИ">
+                        <i class="bi bi-pencil-square"></i>
+                        Ручная правка
+                    </button>
+                `
+                : '';
             return `
                 <div>
                     <button class="release-doc-btn" onclick="openReleaseDocumentWizard('${escapeHtml(item.row_key || item.release_key)}')">
@@ -1950,6 +2015,7 @@ function buildReviewerCell(item) {
                         <i class="bi bi-calendar2-range"></i>
                         Скорректировать дату
                     </button>
+                    ${manualButton}
                     <button class="release-row-edit-btn ${item.has_rollout_notes ? 'active-warning' : ''}" onclick="toggleReleaseRolloutNotes('${escapeHtml(item.row_key || item.release_key)}')" title="${escapeHtml(rolloutNotesTitle)}">
                         <i class="bi bi-exclamation-triangle"></i>
                         ${escapeHtml(rolloutNotesText)}
@@ -2173,6 +2239,157 @@ function buildReviewerCell(item) {
             saveReleaseDateOverride(true);
         }
 
+        function ensureReleaseManualOverrideModal() {
+            if (!releaseManualOverrideModalInstance) {
+                releaseManualOverrideModalInstance = new bootstrap.Modal(document.getElementById('releaseManualOverrideModal'));
+            }
+            return releaseManualOverrideModalInstance;
+        }
+
+        function openReleaseManualOverrideModal(releaseKey) {
+            if (!isReleaseOrderMode) {
+                return;
+            }
+
+            const item = getReleaseMonitorItem(releaseKey);
+            if (!item) {
+                alert('Не удалось найти релиз в текущей таблице.');
+                return;
+            }
+
+            releaseManualOverrideState = {
+                item,
+                initialZniKey: item.zni_key || '',
+                initialClearZni: Boolean(item.manual_clear_zni),
+            };
+
+            document.getElementById('releaseManualOverrideSubtitle').textContent = item.release_key || '';
+            document.getElementById('releaseManualSummaryInput').value = item.release_summary || '';
+            document.getElementById('releaseManualVersionInput').value = item.release_version || '';
+            document.getElementById('releaseManualUrlInput').value = item.release_dist_url || '';
+            document.getElementById('releaseManualKeInput').value = item.ke || '';
+            document.getElementById('releaseManualZniInput').value = item.zni_key || '';
+            ensureReleaseManualOverrideModal().show();
+        }
+
+        function buildReleaseManualOverridePayload(reset = false) {
+            if (!releaseManualOverrideState?.item) {
+                return null;
+            }
+
+            const summaryInput = document.getElementById('releaseManualSummaryInput');
+            const versionInput = document.getElementById('releaseManualVersionInput');
+            const urlInput = document.getElementById('releaseManualUrlInput');
+            const keInput = document.getElementById('releaseManualKeInput');
+            const zniInput = document.getElementById('releaseManualZniInput');
+            const nextZniKey = zniInput?.value || '';
+            const clearZni = reset
+                ? false
+                : !nextZniKey && (Boolean(releaseManualOverrideState.initialZniKey) || Boolean(releaseManualOverrideState.initialClearZni));
+
+            return {
+                release_key: releaseManualOverrideState.item.row_key || releaseManualOverrideState.item.release_key,
+                release_summary: reset ? '' : (summaryInput?.value || ''),
+                release_version: reset ? '' : (versionInput?.value || ''),
+                release_dist_url: reset ? '' : (urlInput?.value || ''),
+                ke: reset ? '' : (keInput?.value || ''),
+                zni_key: reset ? '' : nextZniKey,
+                zni_url: '',
+                clear_zni: clearZni,
+                reset,
+            };
+        }
+
+        function applyReleaseManualOverrideDraft(payload) {
+            if (!payload?.release_key) {
+                return;
+            }
+
+            const item = getReleaseMonitorItem(payload.release_key);
+            if (!item) {
+                return;
+            }
+
+            if (payload.reset) {
+                item.release_summary = item.base_release_summary || '';
+                item.release_version = item.base_release_version || '';
+                item.release_dist_url = item.base_release_dist_url || '';
+                item.ke = item.base_ke || '';
+                item.zni_key = item.base_zni_key || '';
+                item.zni_url = item.base_zni_url || '';
+                item.release_name_lines = Array.isArray(item.base_release_name_lines)
+                    ? [...item.base_release_name_lines]
+                    : [];
+                item.manual_release_summary = '';
+                item.manual_release_version = '';
+                item.manual_release_dist_url = '';
+                item.manual_ke = '';
+                item.manual_zni_key = '';
+                item.manual_zni_url = '';
+                item.has_manual_release_override = false;
+                item.manual_clear_zni = false;
+                return;
+            }
+
+            item.release_summary = payload.release_summary || item.release_summary || '';
+            item.release_version = payload.release_version || '';
+            item.release_dist_url = payload.release_dist_url || '';
+            item.ke = payload.ke || '';
+            if (payload.clear_zni) {
+                item.zni_key = '';
+                item.zni_url = '';
+                item.manual_clear_zni = true;
+            } else {
+                item.zni_key = payload.zni_key || '';
+                item.manual_clear_zni = false;
+            }
+            item.has_manual_release_override = true;
+        }
+
+        async function saveReleaseManualOverride(reset = false) {
+            if (!releaseManualOverrideState?.item) {
+                return;
+            }
+
+            const saveBtn = document.getElementById('releaseManualOverrideSaveBtn');
+
+            if (saveBtn) {
+                saveBtn.disabled = true;
+            }
+
+            try {
+                const payload = buildReleaseManualOverridePayload(reset);
+                if (!payload?.release_key) {
+                    return;
+                }
+                releaseManualOverrideDraft[payload.release_key] = payload;
+                applyReleaseManualOverrideDraft(payload);
+                releaseOrderDirty = true;
+                refreshReleaseOrderModeUi();
+                applyReleaseFilters();
+                ensureReleaseManualOverrideModal().hide();
+            } catch (error) {
+                console.error('Release manual override error:', error);
+                alert('Ошибка подготовки ручных правок: ' + error.message);
+            } finally {
+                if (saveBtn) {
+                    saveBtn.disabled = false;
+                }
+            }
+        }
+
+        function resetReleaseManualOverride() {
+            if (!releaseManualOverrideState?.item) {
+                return;
+            }
+            document.getElementById('releaseManualSummaryInput').value = '';
+            document.getElementById('releaseManualVersionInput').value = '';
+            document.getElementById('releaseManualUrlInput').value = '';
+            document.getElementById('releaseManualKeInput').value = '';
+            document.getElementById('releaseManualZniInput').value = '';
+            saveReleaseManualOverride(true);
+        }
+
         function getReleaseDocumentSummaryCards(state) {
             const item = state.item;
             const templateTitle = state.templateChoice
@@ -2287,19 +2504,20 @@ function buildReviewerCell(item) {
                 return;
             }
 
-            releaseDocumentWizardState = {
-                item,
-                initData: null,
-                templateChoice: null,
-                steps: [],
-                stepIndex: 0,
-                form: {
-                    release_id: item.release_key || '',
-                    prev_version: '',
-                    oplot: item.psi_owner || '',
-                    checker: item.psi_checker || '',
-                    instruction_link: '',
-                    date: dateToInputValue(item.deployment_start || ''),
+                releaseDocumentWizardState = {
+                    item,
+                    initData: null,
+                    templateChoice: null,
+                    steps: [],
+                    stepIndex: 0,
+                    form: {
+                        release_id: item.release_key || '',
+                        release_version: item.release_version || '',
+                        prev_version: '',
+                        oplot: item.psi_owner || '',
+                        checker: item.psi_checker || '',
+                        instruction_link: '',
+                        date: dateToInputValue(item.deployment_start || ''),
                     ke: item.ke || '',
                     playbooks: [],
                     create_zni: false,
@@ -2331,6 +2549,7 @@ function buildReviewerCell(item) {
                 }
 
                 releaseDocumentWizardState.initData = data;
+                releaseDocumentWizardState.form.release_version = data.release_version || releaseDocumentWizardState.form.release_version;
                 releaseDocumentWizardState.form.ke = data.ke || releaseDocumentWizardState.form.ke;
                 releaseDocumentWizardState.form.prev_version = data.prev_version || releaseDocumentWizardState.form.prev_version;
                 if (!data.detection?.found && !(Array.isArray(data.detection?.candidates) && data.detection.candidates.length)) {
@@ -2633,7 +2852,7 @@ function buildReviewerCell(item) {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         release_id: state.form.release_id,
-                        release_version: state.item?.release_version || '',
+                        release_version: state.form.release_version || state.item?.release_version || '',
                         prev_version: state.form.prev_version,
                         oplot: state.form.oplot,
                         checker: state.form.checker,
@@ -2986,8 +3205,8 @@ function buildReviewerCell(item) {
             if (orderBtn) {
                 orderBtn.classList.toggle('active-order', isReleaseOrderMode);
                 orderBtn.innerHTML = isReleaseOrderMode
-                    ? '<i class="bi bi-list-check"></i> Режим порядка'
-                    : '<i class="bi bi-list-ol"></i> Изменить порядок';
+                    ? '<i class="bi bi-sliders"></i> Режим настроек'
+                    : '<i class="bi bi-sliders"></i> Настройки';
             }
             if (saveBtn) {
                 saveBtn.style.display = isReleaseOrderMode ? '' : 'none';
@@ -3008,11 +3227,12 @@ function buildReviewerCell(item) {
 
             if (!isReleaseOrderMode) {
                 if (searchValue || statusValue !== 'all' || viewValue !== 'all') {
-                    alert('Режим порядка доступен только без поиска и дополнительных фильтров.');
+                    alert('Режим настроек доступен только без поиска и дополнительных фильтров.');
                     return;
                 }
                 releaseOrderDraft = buildReleaseOrderDraft(getYearFilteredReleaseItems(releaseMonitorItems));
                 releaseOrderDirty = false;
+                releaseManualOverrideDraft = {};
                 isReleaseOrderMode = true;
             } else {
                 cancelReleaseOrderMode();
@@ -3023,11 +3243,22 @@ function buildReviewerCell(item) {
             applyReleaseFilters();
         }
 
-        function cancelReleaseOrderMode() {
+        async function cancelReleaseOrderMode() {
             isReleaseOrderMode = false;
             releaseOrderDraft = null;
             releaseOrderDirty = false;
+            releaseManualOverrideDraft = {};
             refreshReleaseOrderModeUi();
+            try {
+                const response = await fetch(BASE_PATH + '/dashboard/release-monitor/status');
+                const data = await response.json();
+                if (response.ok && data.success) {
+                    renderReleaseMonitor(data.release_monitor || [], data.release_monitor_meta || {});
+                    return;
+                }
+            } catch (error) {
+                console.error('Release settings cancel refresh error:', error);
+            }
             applyReleaseFilters();
         }
 
@@ -3073,6 +3304,19 @@ function buildReviewerCell(item) {
             });
 
             try {
+                const manualPayloads = Object.values(releaseManualOverrideDraft || {});
+                for (const manualPayload of manualPayloads) {
+                    const manualResponse = await fetch(BASE_PATH + '/dashboard/release-monitor/manual-override', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(manualPayload),
+                    });
+                    const manualData = await manualResponse.json();
+                    if (!manualResponse.ok || !manualData.success) {
+                        throw new Error(manualData.error || 'Не удалось сохранить ручные правки');
+                    }
+                }
+
                 const response = await fetch(BASE_PATH + '/dashboard/release-monitor/order', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -3097,12 +3341,13 @@ function buildReviewerCell(item) {
                 isReleaseOrderMode = false;
                 releaseOrderDraft = null;
                 releaseOrderDirty = false;
+                releaseManualOverrideDraft = {};
                 renderReleaseMonitor(statusData.release_monitor || [], statusData.release_monitor_meta || {});
                 refreshReleaseOrderModeUi();
-                alert('Порядок релизов сохранен');
+                alert('Настройки сохранены');
             } catch (error) {
-                console.error('Release order save error:', error);
-                alert('Ошибка сохранения порядка: ' + error.message);
+                console.error('Release settings save error:', error);
+                alert('Ошибка сохранения настроек: ' + error.message);
             } finally {
                 [saveBtn, cancelBtn, orderBtn].forEach(btn => {
                     if (btn) {
