@@ -46,6 +46,7 @@ DATE_OVERRIDES_FILE = SNAPSHOT_DIR / "release_monitor_date_overrides.json"
 ZNI_FILE = SNAPSHOT_DIR / "release_monitor_zni.json"
 REVISION_FILE = SNAPSHOT_DIR / "release_monitor_revision.txt"
 CONFLUENCE_DELTA_BASE = "https://confluence.delta.sbrf.ru"
+JIRA_DELTA_BASE = "https://jira.delta.sbrf.ru"
 RELEASE_VERSION_PATTERN = re.compile(r"[DP]-\d+(?:\.\d+){2}(?:[.-][A-Za-z0-9_]+)+")
 ARTIFACT_URL_PATTERN = re.compile(r"(?:https?://)?[A-Za-z0-9.-]+\.[A-Za-z]{2,}/[^\s\"'<>)]+")
 
@@ -1304,6 +1305,18 @@ def _get_release_domain_from_url(url_value):
     return url_value.rsplit("/", 1)[0].rstrip("/")
 
 
+def _build_delta_issue_url(issue_key):
+    issue_key = str(issue_key or "").strip()
+    return f"{JIRA_DELTA_BASE}/browse/{issue_key}" if issue_key else ""
+
+
+def _resolve_manual_zni_url(issue_key, url_value=""):
+    url_value = str(url_value or "").strip()
+    if not url_value or "/browse/" in url_value:
+        return _build_delta_issue_url(issue_key)
+    return url_value
+
+
 def _apply_manual_release_overrides(items, overrides=None):
     overrides = _normalize_manual_release_overrides(overrides) if overrides is not None else _load_manual_release_overrides()
     for item in items:
@@ -1384,8 +1397,7 @@ def _apply_manual_release_overrides(items, overrides=None):
             item["zni_url"] = ""
         elif manual_zni_key:
             item["zni_key"] = manual_zni_key
-            base_release_url = _get_release_domain_from_url(item.get("release_url"))
-            item["zni_url"] = manual_zni_url or (f"{base_release_url}/browse/{manual_zni_key}" if base_release_url else "")
+            item["zni_url"] = _resolve_manual_zni_url(manual_zni_key, manual_zni_url)
 
         item["manual_release_summary"] = manual_summary
         item["manual_release_version"] = manual_version
@@ -3781,11 +3793,7 @@ def set_release_monitor_manual_override(
             current_override.pop("clear_zni", None)
             if normalized_zni_key and normalized_zni_key != base_zni_key:
                 current_override["zni_key"] = normalized_zni_key
-                derived_url = normalized_zni_url
-                if not derived_url:
-                    base_release_url = _get_release_domain_from_url(str(target_item.get("release_url") or ""))
-                    if base_release_url:
-                        derived_url = f"{base_release_url}/browse/{normalized_zni_key}"
+                derived_url = _resolve_manual_zni_url(normalized_zni_key, normalized_zni_url)
                 if derived_url and derived_url != base_zni_url:
                     current_override["zni_url"] = derived_url
                 else:
