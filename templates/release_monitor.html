@@ -1442,7 +1442,7 @@
                             <span class="release-switch-track"></span>
                         </label>
                     </div>
-                    <div class="release-toggle-card" title="Показывает релизы, внедрение которых по РОВ запланировано позже чем через 14 дней от сегодняшней даты. Нумерация строк сохраняется.">
+                    <div class="release-toggle-card" title="Показывает релизы, внедрение которых по РОВ запланировано позже чем через 10 дней от сегодняшней даты. Нумерация строк сохраняется.">
                         <div class="release-toggle-copy">
                             <div class="release-toggle-title">Дальние релизы</div>
                         </div>
@@ -3964,21 +3964,36 @@ function buildReviewerCell(item) {
             return null;
         }
 
-        function isReleaseFarFuture(item) {
-            const deploymentDate = parseReleaseDateValue(
-                item?.source_deployment_start_iso ||
-                item?.source_deployment_start ||
+        function getReleaseEffectiveStartDate(item) {
+            return parseReleaseDateValue(
                 item?.deployment_start_iso ||
-                item?.deployment_start
+                item?.deployment_start ||
+                item?.manual_deployment_start ||
+                item?.source_deployment_start_iso ||
+                item?.source_deployment_start
             );
+        }
+
+        function isReleaseFarFuture(item) {
+            const deploymentDate = getReleaseEffectiveStartDate(item);
             if (!deploymentDate) {
                 return false;
             }
             const today = new Date();
             today.setHours(0, 0, 0, 0);
             const threshold = new Date(today);
-            threshold.setDate(threshold.getDate() + 14);
+            threshold.setDate(threshold.getDate() + 10);
             return deploymentDate > threshold;
+        }
+
+        function isReleaseStartingToday(item) {
+            const deploymentDate = getReleaseEffectiveStartDate(item);
+            if (!deploymentDate) {
+                return false;
+            }
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            return deploymentDate.getTime() === today.getTime();
         }
 
         function applyReleaseFilters() {
@@ -4003,7 +4018,7 @@ function buildReviewerCell(item) {
                     currentReleaseViewFilter === 'all' ||
                     (currentReleaseViewFilter === 'non_final' && item.is_non_final) ||
                     (currentReleaseViewFilter === 'overdue' && item.is_overdue) ||
-                    (currentReleaseViewFilter === 'today' && (item.is_pre_final || item.is_today)) ||
+                    (currentReleaseViewFilter === 'today' && isReleaseStartingToday(item)) ||
                     (currentReleaseViewFilter === 'final' && item.is_final) ||
                     (currentReleaseViewFilter === 'cancelled' && item.is_cancelled)
                 );
