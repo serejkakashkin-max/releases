@@ -444,11 +444,14 @@ def _normalize_rollout_note_flags(payload):
         row_key = str(key or "").strip()
         if not row_key or not isinstance(value, dict):
             continue
-        enabled = bool(value.get("has_rollout_notes"))
-        if not enabled:
+        raw_level = str(value.get("rollout_notes_level") or value.get("level") or "").strip().lower()
+        if not raw_level and bool(value.get("has_rollout_notes")):
+            raw_level = "warning"
+        if raw_level not in {"warning", "danger"}:
             continue
         normalized[row_key] = {
             "has_rollout_notes": True,
+            "rollout_notes_level": raw_level,
             "updated_at": str(value.get("updated_at") or "").strip(),
         }
     return normalized
@@ -1276,9 +1279,13 @@ def _apply_zni_assignments(items):
         if not str(item.get("base_zni_url") or "").strip():
             item["base_zni_url"] = zni_url
         rollout_note = flags.get(assignment_key) or flags.get(item.get("release_key"), {})
-        item["has_rollout_notes"] = bool(
-            isinstance(rollout_note, dict) and rollout_note.get("has_rollout_notes")
-        )
+        rollout_level = ""
+        if isinstance(rollout_note, dict) and rollout_note.get("has_rollout_notes"):
+            rollout_level = str(rollout_note.get("rollout_notes_level") or "warning").strip().lower()
+            if rollout_level not in {"warning", "danger"}:
+                rollout_level = "warning"
+        item["rollout_notes_level"] = rollout_level
+        item["has_rollout_notes"] = bool(rollout_level)
     return items
 
 
@@ -1787,7 +1794,10 @@ def _render_confluence_release_row(item):
         "today": "",
         "planned": "",
     }.get(row_state, "")
-    if item.get("has_rollout_notes"):
+    rollout_level = str(item.get("rollout_notes_level") or ("warning" if item.get("has_rollout_notes") else "")).strip().lower()
+    if rollout_level == "danger":
+        row_bg = "#fdebec"
+    elif rollout_level == "warning":
         row_bg = "#fff7db"
     row_style = f' style="background-color: {row_bg};"' if row_bg else ""
 
@@ -2450,6 +2460,7 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
             "base_zni_key": "",
             "base_zni_url": "",
             "has_rollout_notes": False,
+            "rollout_notes_level": "",
             "ke": ke_distributive,
             "base_ke": ke_distributive,
             "ke_name": ke_name,
@@ -3543,7 +3554,7 @@ def create_release_monitor_zni(release_key, reporter=""):
     }
 
 
-def set_release_monitor_rollout_notes(release_key, enabled=False):
+def set_release_monitor_rollout_notes(release_key, enabled=False, level=""):
     global _cached_data
 
     release_key = str(release_key or "").strip()
@@ -3551,12 +3562,18 @@ def set_release_monitor_rollout_notes(release_key, enabled=False):
         raise ValueError("Не указан ключ строки релиза")
 
     enabled = bool(enabled)
+    level = str(level or "").strip().lower()
+    if enabled and level not in {"warning", "danger"}:
+        level = "warning"
+    if not enabled:
+        level = ""
 
     with _cache_lock:
         flags = _load_rollout_note_flags()
         if enabled:
             flags[release_key] = {
                 "has_rollout_notes": True,
+                "rollout_notes_level": level,
                 "updated_at": _format_timestamp(),
             }
         else:
@@ -3572,6 +3589,7 @@ def set_release_monitor_rollout_notes(release_key, enabled=False):
             for item in _cached_data.get("items") or []:
                 if _get_assignment_key_for_item(item) == release_key:
                     item["has_rollout_notes"] = enabled
+                    item["rollout_notes_level"] = level
                     break
             _save_snapshot_to_disk(_cached_data)
         else:
@@ -3582,6 +3600,7 @@ def set_release_monitor_rollout_notes(release_key, enabled=False):
     return {
         "release_key": release_key,
         "has_rollout_notes": enabled,
+        "rollout_notes_level": level,
         "data": payload,
     }
 

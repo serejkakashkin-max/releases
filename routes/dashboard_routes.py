@@ -381,12 +381,14 @@ def update_release_monitor_rollout_notes():
         data = request.get_json(silent=True) or {}
         release_key = data.get("release_key", "")
         enabled = bool(data.get("enabled"))
-        result = set_release_monitor_rollout_notes(release_key, enabled=enabled)
+        level = data.get("level", "")
+        result = set_release_monitor_rollout_notes(release_key, enabled=enabled, level=level)
         payload = result.get("data", {})
         return jsonify({
             "success": True,
             "release_key": result.get("release_key"),
             "has_rollout_notes": result.get("has_rollout_notes"),
+            "rollout_notes_level": result.get("rollout_notes_level"),
             "release_monitor": payload.get("items", []),
             "release_monitor_summary": payload.get("summary", {}),
             "release_monitor_meta": payload.get("meta", {}),

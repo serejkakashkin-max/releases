@@ -543,9 +543,14 @@
             background: rgba(248, 81, 73, 0.12);
         }
 
-        .release-row.has-rollout-notes,
-        .release-row.has-rollout-notes td {
+        .release-row.rollout-notes-warning,
+        .release-row.rollout-notes-warning td {
             background: rgba(255, 193, 7, 0.16);
+        }
+
+        .release-row.rollout-notes-danger,
+        .release-row.rollout-notes-danger td {
+            background: rgba(248, 81, 73, 0.12);
         }
 
         .release-key-link {
@@ -1048,6 +1053,12 @@
             border-color: rgba(255, 193, 7, 0.75);
             background: rgba(255, 193, 7, 0.18);
             color: #8a5a00;
+        }
+
+        .release-row-edit-btn.active-danger {
+            border-color: rgba(248, 81, 73, 0.72);
+            background: rgba(248, 81, 73, 0.14);
+            color: #9f1f1f;
         }
 
         .release-row-edit-btn.active-muted {
@@ -1989,10 +2000,22 @@ function buildReviewerCell(item) {
         }
 
         function buildGeneratorActionCell(item) {
-            const rolloutNotesTitle = item.has_rollout_notes
-                ? 'Снять желтую подсветку замечаний'
-                : 'Пометить замечания по раскатке';
-            const rolloutNotesText = item.has_rollout_notes ? 'Снять замечания' : 'Есть замечания';
+            const rolloutLevel = item.rollout_notes_level || (item.has_rollout_notes ? 'warning' : '');
+            const rolloutNotesTitle = rolloutLevel === 'danger'
+                ? 'Сбросить ручную подсветку замечаний'
+                : rolloutLevel === 'warning'
+                    ? 'Переключить желтую подсветку в красную'
+                    : 'Пометить замечания по раскатке';
+            const rolloutNotesText = rolloutLevel === 'danger'
+                ? 'Сбросить замечания'
+                : rolloutLevel === 'warning'
+                    ? 'Замечания: красный'
+                    : 'Есть замечания';
+            const rolloutButtonClass = rolloutLevel === 'danger'
+                ? 'active-danger'
+                : rolloutLevel === 'warning'
+                    ? 'active-warning'
+                    : '';
             const forceUnnumberedTitle = item.is_force_unnumbered
                 ? 'Вернуть релиз в нумерацию'
                 : 'Отправить релиз в ненумерной отсек';
@@ -2024,7 +2047,7 @@ function buildReviewerCell(item) {
                         Скорректировать дату
                     </button>
                     ${manualButton}
-                    <button class="release-row-edit-btn ${item.has_rollout_notes ? 'active-warning' : ''}" onclick="toggleReleaseRolloutNotes('${escapeHtml(item.row_key || item.release_key)}')" title="${escapeHtml(rolloutNotesTitle)}">
+                    <button class="release-row-edit-btn ${rolloutButtonClass}" onclick="toggleReleaseRolloutNotes('${escapeHtml(item.row_key || item.release_key)}')" title="${escapeHtml(rolloutNotesTitle)}">
                         <i class="bi bi-exclamation-triangle"></i>
                         ${escapeHtml(rolloutNotesText)}
                     </button>
@@ -2111,9 +2134,15 @@ function buildReviewerCell(item) {
         }
 
         function buildReleaseRow(item) {
+            const rolloutLevel = item.rollout_notes_level || (item.has_rollout_notes ? 'warning' : '');
+            const rolloutClass = rolloutLevel === 'danger'
+                ? 'rollout-notes-danger'
+                : rolloutLevel === 'warning'
+                    ? 'rollout-notes-warning'
+                    : '';
             return `
                 <tr
-                    class="release-row state-${escapeHtml(item.row_state || 'planned')} ${item.has_rollout_notes ? 'has-rollout-notes' : ''}"
+                    class="release-row state-${escapeHtml(item.row_state || 'planned')} ${rolloutClass}"
                     data-year="${escapeHtml(item.year)}"
                     data-status="${escapeHtml(item.release_status || '')}"
                     data-final-installed="${item.is_final && !item.is_cancelled ? 'true' : 'false'}"
@@ -3545,14 +3574,17 @@ function buildReviewerCell(item) {
                 return;
             }
 
-            const enabled = !item.has_rollout_notes;
+            const currentLevel = item.rollout_notes_level || (item.has_rollout_notes ? 'warning' : '');
+            const nextLevel = currentLevel === 'warning' ? 'danger' : currentLevel === 'danger' ? '' : 'warning';
+            const enabled = Boolean(nextLevel);
             try {
                 const response = await fetch(BASE_PATH + '/dashboard/release-monitor/rollout-notes', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         release_key: releaseKey,
-                        enabled
+                        enabled,
+                        level: nextLevel
                     })
                 });
                 const data = await response.json();
