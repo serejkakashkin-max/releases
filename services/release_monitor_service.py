@@ -33,7 +33,7 @@ PRE_FINAL_RELEASE_STATUSES = (
 RELEASE_PREFIXES = ("EMRM", "SMECLM", "SMECSC", "HELPERAI", "AIGAS")
 RELEASE_ISSUE_TYPE = "Release 2.0"
 ROV_ISSUE_TYPE = "Introduction Order"
-QUICK_REFRESH_DAYS = 14
+QUICK_REFRESH_DAYS = 9
 AUTO_FULL_REFRESH_HOUR = 6
 AUTO_REFRESH_CHECK_INTERVAL = 300
 SNAPSHOT_DIR = Path(__file__).resolve().parent.parent / "cache"
@@ -813,6 +813,22 @@ def _format_release_monitor_date(dt_value):
     return dt_value.strftime("%d.%m.%Y") if dt_value else ""
 
 
+def _is_release_window_expired(end_dt, now_dt=None):
+    if not end_dt:
+        return False
+    now_dt = now_dt or datetime.now()
+    if end_dt.time() == datetime.min.time():
+        return end_dt.date() < now_dt.date()
+    return end_dt < now_dt
+
+
+def _release_days_overdue(end_dt, now_dt=None):
+    if not end_dt or not _is_release_window_expired(end_dt, now_dt):
+        return 0
+    now_dt = now_dt or datetime.now()
+    return max((now_dt.date() - end_dt.date()).days, 0)
+
+
 def _resolve_effective_release_date(base_dt, manual_dt):
     return manual_dt or base_dt
 
@@ -1161,15 +1177,16 @@ def _apply_date_overrides(items):
                 item["deployment_end_iso"] = ""
             item["sort_date"] = source_sort_dt.isoformat() if source_sort_dt else ""
             if item.get("is_non_final"):
-                today = datetime.now().date()
+                now_dt = datetime.now()
+                today = now_dt.date()
                 source_start_date = source_start_dt.date() if source_start_dt else None
                 source_end_date = source_end_dt.date() if source_end_dt else None
-                item["is_overdue"] = bool(source_end_date and source_end_date < today)
+                item["is_overdue"] = _is_release_window_expired(source_end_dt, now_dt)
                 item["is_today"] = bool(
                     (source_start_date and source_start_date == today)
                     or (source_end_date and source_end_date == today)
                 )
-                item["days_overdue"] = (today - source_end_date).days if item["is_overdue"] else 0
+                item["days_overdue"] = _release_days_overdue(source_end_dt, now_dt)
                 if item.get("is_overdue"):
                     item["row_state"] = "overdue"
                 elif item.get("is_today"):
@@ -1225,15 +1242,16 @@ def _apply_date_overrides(items):
 
         row_is_non_final = bool(item.get("is_non_final"))
         if row_is_non_final:
-            today = datetime.now().date()
+            now_dt = datetime.now()
+            today = now_dt.date()
             effective_start_date = effective_start_dt.date() if effective_start_dt else None
             effective_end_date = effective_end_dt.date() if effective_end_dt else None
-            item["is_overdue"] = bool(effective_end_date and effective_end_date < today)
+            item["is_overdue"] = _is_release_window_expired(effective_end_dt, now_dt)
             item["is_today"] = bool(
                 (effective_start_date and effective_start_date == today)
                 or (effective_end_date and effective_end_date == today)
             )
-            item["days_overdue"] = (today - effective_end_date).days if item["is_overdue"] else 0
+            item["days_overdue"] = _release_days_overdue(effective_end_dt, now_dt)
 
             if item.get("is_overdue"):
                 item["row_state"] = "overdue"
@@ -1771,16 +1789,16 @@ def _parse_release_monitor_date_value(value):
 
 def _is_release_far_future(item):
     deployment_date = (
-        _parse_release_monitor_date_value(item.get("source_deployment_start"))
-        or _parse_release_monitor_date_value(item.get("source_deployment_start_iso"))
-        or _parse_release_monitor_date_value(item.get("deployment_start"))
+        _parse_release_monitor_date_value(item.get("deployment_start"))
         or _parse_release_monitor_date_value(item.get("deployment_start_iso"))
+        or _parse_release_monitor_date_value(item.get("source_deployment_start"))
+        or _parse_release_monitor_date_value(item.get("source_deployment_start_iso"))
     )
     if not deployment_date:
         return False
 
     today = datetime.now().date()
-    threshold = today + timedelta(days=14)
+    threshold = today + timedelta(days=10)
     return deployment_date.date() > threshold
 
 
@@ -2385,7 +2403,8 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
     )
     row_variants = linked_rov_records or [{}]
     records = []
-    today = datetime.now().date()
+    now_dt = datetime.now()
+    today = now_dt.date()
     latest_rov_index = len(linked_rov_records) - 1 if linked_rov_records else -1
 
     for index, rov_data in enumerate(row_variants):
@@ -2399,7 +2418,7 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
 
         rov_start_date = rov_start.date() if rov_start else None
         rov_end_date = rov_end.date() if rov_end else None
-        is_reroll = bool(rov_key and len(linked_rov_records) > 1 and index > 0)
+        is_reroll = bool(is_final and rov_key and len(linked_rov_records) > 1 and index > 0)
         is_latest_rov = bool(rov_key and index == latest_rov_index)
         row_is_cancelled = is_cancelled
         if is_reroll and is_final:
@@ -2409,7 +2428,7 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
         row_is_non_final = not row_is_final and not row_is_cancelled
         row_is_pre_final = is_pre_final and not row_is_final
 
-        is_overdue = bool(rov_end_date and rov_end_date < today and row_is_non_final)
+        is_overdue = bool(row_is_non_final and _is_release_window_expired(rov_end, now_dt))
         is_today = bool(
             row_is_non_final
             and (
@@ -2429,7 +2448,7 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
         else:
             row_state = "planned"
 
-        days_overdue = (today - rov_end_date).days if is_overdue else 0
+        days_overdue = _release_days_overdue(rov_end, now_dt)
         is_hotfix = str(release_version or "").upper().startswith("P-")
         if is_reroll:
             row_label = "(\u041f\u0435\u0440\u0435\u0440\u0430\u0441\u043a\u0430\u0442\u043a\u0430)"

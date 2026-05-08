@@ -46,7 +46,8 @@ class ReleaseReportService:
         )
 
         final_items = [item for item in filtered_items if self._is_week_effectively_installed(item)]
-        upcoming_items = [item for item in filtered_items if not self._is_week_effectively_installed(item)]
+        hidden_by_default_items = [item for item in filtered_items if self._is_week_hidden_by_default(item)]
+        upcoming_items = [item for item in filtered_items if not self._is_week_hidden_by_default(item)]
         reroll_items = [item for item in filtered_items if bool(item.get("is_reroll"))]
         hotfix_items = [item for item in filtered_items if self._is_hotfix(item)]
         system_counter = Counter()
@@ -74,6 +75,7 @@ class ReleaseReportService:
                 "total": len(filtered_items),
                 "upcoming": len(upcoming_items),
                 "installed": len(final_items),
+                "hidden_by_default": len(hidden_by_default_items),
                 "rerolls": len(reroll_items),
                 "hotfixes": len(hotfix_items),
                 "systems": dict(system_counter.most_common()),
@@ -919,6 +921,7 @@ class ReleaseReportService:
             accent-color: #0d6efd;
         }}
         tr.state-cancelled {{ background: rgba(224, 49, 49, 0.07); }}
+        tr.state-overdue {{ background: rgba(248, 81, 73, 0.12); }}
         tr.state-notes {{ background: rgba(255, 193, 7, 0.16); }}
         tr.state-final {{ background: rgba(25, 135, 84, 0.07); }}
         .footer {{
@@ -958,7 +961,7 @@ class ReleaseReportService:
                 <div class="report-filter-state">Фильтр: <strong id="activeFilterLabel">не выбран</strong></div>
                 <label class="final-toggle">
                     <input type="checkbox" id="showFinalRows">
-                    Показать установленные на ПРОМ ({stats['installed']})
+                    Показать установленные на ПРОМ ({stats.get('hidden_by_default', stats['installed'])})
                 </label>
                 <button type="button" class="refresh-page-btn" onclick="window.location.reload()">Обновить</button>
                 <button type="button" class="clear-filter-btn" id="clearReportFilter" hidden>Сбросить фильтр</button>
@@ -1027,7 +1030,7 @@ class ReleaseReportService:
                         }} else if (currentValue === 'all_with_final') {{
                             matched = true;
                         }} else if (currentValue === 'installed') {{
-                            matched = row.dataset.final === '1';
+                            matched = row.dataset.installed === '1';
                         }} else if (currentValue === 'reroll') {{
                             matched = isReroll;
                         }} else if (currentValue === 'hotfix') {{
@@ -1204,8 +1207,11 @@ class ReleaseReportService:
         for index, item in enumerate(rows_source, start=1):
             row_kind = self._get_item_kind_label(item)
             is_effectively_installed = self._is_week_effectively_installed(item)
+            is_hidden_by_default = self._is_week_hidden_by_default(item)
             if item.get("is_cancelled"):
                 row_state = "cancelled"
+            elif item.get("is_overdue") and not is_effectively_installed:
+                row_state = "overdue"
             elif item.get("has_rollout_notes"):
                 row_state = "notes"
             elif is_effectively_installed:
@@ -1225,7 +1231,8 @@ class ReleaseReportService:
                 <tr class="state-{row_state}"
                     data-system="{html.escape(system_name.lower())}"
                     data-status="{html.escape(status_name.lower())}"
-                    data-final="{'1' if is_effectively_installed else '0'}"
+                    data-final="{'1' if is_hidden_by_default else '0'}"
+                    data-installed="{'1' if is_effectively_installed else '0'}"
                     data-reroll="{'1' if bool(item.get('is_reroll')) else '0'}"
                     data-hotfix="{'1' if self._is_hotfix(item) else '0'}">
                     <td class="week-row-number">{index}</td>
@@ -1273,6 +1280,11 @@ class ReleaseReportService:
                 continue
 
         return bool(event_date and event_date < datetime.now())
+
+    def _is_week_hidden_by_default(self, item: Dict[str, Any]) -> bool:
+        if self._is_week_effectively_installed(item):
+            return True
+        return bool(item.get("is_overdue")) and not bool(item.get("is_cancelled"))
 
     def _resolve_period(
         self,
