@@ -44,6 +44,7 @@ ORDER_FILE = SNAPSHOT_DIR / "release_monitor_order.json"
 DUTY_SCHEDULE_FILE = SNAPSHOT_DIR / "release_monitor_duty_schedule.json"
 DATE_OVERRIDES_FILE = SNAPSHOT_DIR / "release_monitor_date_overrides.json"
 ZNI_FILE = SNAPSHOT_DIR / "release_monitor_zni.json"
+ATTEMPTS_FILE = SNAPSHOT_DIR / "release_monitor_attempts.json"
 REVISION_FILE = SNAPSHOT_DIR / "release_monitor_revision.txt"
 CONFLUENCE_DELTA_BASE = "https://confluence.delta.sbrf.ru"
 JIRA_DELTA_BASE = "https://jira.delta.sbrf.ru"
@@ -447,7 +448,7 @@ def _normalize_rollout_note_flags(payload):
         raw_level = str(value.get("rollout_notes_level") or value.get("level") or "").strip().lower()
         if not raw_level and bool(value.get("has_rollout_notes")):
             raw_level = "warning"
-        if raw_level not in {"warning", "danger"}:
+        if raw_level not in {"success", "warning", "danger"}:
             continue
         normalized[row_key] = {
             "has_rollout_notes": True,
@@ -537,6 +538,15 @@ def _save_rollout_note_flags(flags):
     payload = _load_zni_payload()
     payload["flags"] = _normalize_rollout_note_flags(flags)
     _save_zni_payload(payload)
+
+
+def _get_release_auto_color_level(item):
+    row_state = str(item.get("row_state") or "").strip().lower()
+    if row_state == "final":
+        return "success"
+    if row_state in {"overdue", "cancelled"}:
+        return "danger"
+    return ""
 
 
 def _normalize_manual_release_override(value):
@@ -791,6 +801,51 @@ def _save_date_overrides(payload):
         )
     except Exception as exc:
         logging.warning("Release monitor: failed to save date overrides: %s", exc)
+
+
+def _normalize_release_attempt_outcomes(payload):
+    normalized = {}
+    if not isinstance(payload, dict):
+        return normalized
+
+    for row_key, value in payload.items():
+        key = str(row_key or "").strip()
+        if not key or not isinstance(value, dict):
+            continue
+        state = str(value.get("state") or "").strip().lower()
+        if state != "deferred":
+            continue
+        normalized[key] = {
+            "state": "deferred",
+            "release_key": str(value.get("release_key") or "").strip(),
+            "rov_key": str(value.get("rov_key") or "").strip(),
+            "detected_at": str(value.get("detected_at") or "").strip(),
+            "updated_at": str(value.get("updated_at") or "").strip(),
+        }
+    return normalized
+
+
+def _load_release_attempt_outcomes():
+    if not ATTEMPTS_FILE.exists():
+        return {}
+
+    try:
+        payload = json.loads(ATTEMPTS_FILE.read_text(encoding="utf-8"))
+        return _normalize_release_attempt_outcomes(payload)
+    except Exception as exc:
+        logging.warning("Release monitor: failed to load release attempt outcomes: %s", exc)
+        return {}
+
+
+def _save_release_attempt_outcomes(payload):
+    try:
+        _ensure_snapshot_dir()
+        ATTEMPTS_FILE.write_text(
+            json.dumps(_normalize_release_attempt_outcomes(payload), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        logging.warning("Release monitor: failed to save release attempt outcomes: %s", exc)
 
 
 def _parse_release_monitor_date(value):
@@ -1282,9 +1337,103 @@ def _apply_reviewer_assignments(items):
     return items
 
 
+def _apply_release_status_consistency(items):
+    final_status = _normalize_text(FINAL_RELEASE_STATUS)
+    cancelled_status = _normalize_text(CANCELLED_RELEASE_STATUS)
+    pre_final_statuses = {_normalize_text(status) for status in PRE_FINAL_RELEASE_STATUSES}
+
+    for item in items:
+        normalized_status = _normalize_text(item.get("release_status"))
+        is_final_status = normalized_status == final_status
+        is_cancelled_status = normalized_status == cancelled_status
+
+        if is_final_status:
+            item["is_final"] = True
+            item["is_cancelled"] = False
+            item["is_non_final"] = False
+            item["is_pre_final"] = False
+            item["is_ready_for_prom"] = False
+            item["is_overdue"] = False
+            item["is_today"] = False
+            item["days_overdue"] = 0
+            item["row_state"] = "final"
+            continue
+
+        if is_cancelled_status:
+            item["is_final"] = False
+            item["is_cancelled"] = True
+            item["is_non_final"] = False
+            item["is_pre_final"] = False
+            item["is_ready_for_prom"] = False
+            item["is_overdue"] = False
+            item["is_today"] = False
+            item["days_overdue"] = 0
+            item["row_state"] = "cancelled"
+            continue
+
+        item["is_final"] = False
+        item["is_cancelled"] = False
+        item["is_non_final"] = True
+        item["is_pre_final"] = normalized_status in pre_final_statuses
+
+    return items
+
+
+def _apply_release_attempt_outcomes(items):
+    outcomes = _load_release_attempt_outcomes()
+    changed = False
+    now_text = _format_timestamp()
+
+    for item in items:
+        row_key = _get_assignment_key_for_item(item)
+        if not row_key:
+            continue
+
+        if (
+            item.get("has_rov")
+            and not item.get("is_final")
+            and not item.get("is_cancelled")
+            and item.get("is_overdue")
+        ):
+            current = dict(outcomes.get(row_key) or {})
+            outcomes[row_key] = {
+                "state": "deferred",
+                "release_key": str(item.get("release_key") or "").strip(),
+                "rov_key": str(item.get("rov_key") or "").strip(),
+                "detected_at": current.get("detected_at") or now_text,
+                "updated_at": now_text,
+            }
+            changed = True
+
+    if changed:
+        _save_release_attempt_outcomes(outcomes)
+
+    deferred_keys = set(outcomes)
+    for item in items:
+        row_key = _get_assignment_key_for_item(item)
+        if row_key not in deferred_keys:
+            item["is_deferred_attempt"] = False
+            continue
+
+        item["is_deferred_attempt"] = True
+        item["is_final"] = False
+        item["is_non_final"] = True
+        item["is_pre_final"] = False
+        item["is_ready_for_prom"] = False
+        item["is_overdue"] = True
+        item["is_today"] = False
+        item["days_overdue"] = _release_days_overdue(
+            _parse_release_monitor_date(item.get("deployment_end_iso") or item.get("deployment_end"))
+        )
+        item["row_state"] = "overdue"
+
+    return items
+
+
 def _apply_zni_assignments(items):
     assignments = _load_zni_assignments()
     flags = _load_rollout_note_flags()
+    flags_changed = False
     for item in items:
         assignment_key = _get_assignment_key_for_item(item)
         zni_assignment = assignments.get(assignment_key) or assignments.get(item.get("release_key"), {})
@@ -1296,14 +1445,22 @@ def _apply_zni_assignments(items):
             item["base_zni_key"] = zni_key
         if not str(item.get("base_zni_url") or "").strip():
             item["base_zni_url"] = zni_url
-        rollout_note = flags.get(assignment_key) or flags.get(item.get("release_key"), {})
+        rollout_flag_key = assignment_key if assignment_key in flags else item.get("release_key")
+        rollout_note = flags.get(rollout_flag_key) or {}
         rollout_level = ""
         if isinstance(rollout_note, dict) and rollout_note.get("has_rollout_notes"):
             rollout_level = str(rollout_note.get("rollout_notes_level") or "warning").strip().lower()
-            if rollout_level not in {"warning", "danger"}:
+            if rollout_level not in {"success", "warning", "danger"}:
                 rollout_level = "warning"
+            if rollout_level == _get_release_auto_color_level(item):
+                if rollout_flag_key in flags:
+                    flags.pop(rollout_flag_key, None)
+                    flags_changed = True
+                rollout_level = ""
         item["rollout_notes_level"] = rollout_level
         item["has_rollout_notes"] = bool(rollout_level)
+    if flags_changed:
+        _save_rollout_note_flags(flags)
     return items
 
 
@@ -1813,7 +1970,9 @@ def _render_confluence_release_row(item):
         "planned": "",
     }.get(row_state, "")
     rollout_level = str(item.get("rollout_notes_level") or ("warning" if item.get("has_rollout_notes") else "")).strip().lower()
-    if rollout_level == "danger":
+    if rollout_level == "success":
+        row_bg = "#eaf7ef"
+    elif rollout_level == "danger":
         row_bg = "#fdebec"
     elif rollout_level == "warning":
         row_bg = "#fff7db"
@@ -2405,7 +2564,8 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
     records = []
     now_dt = datetime.now()
     today = now_dt.date()
-    latest_rov_index = len(linked_rov_records) - 1 if linked_rov_records else -1
+    attempt_outcomes = _load_release_attempt_outcomes()
+    has_successful_final_attempt_before = False
 
     for index, rov_data in enumerate(row_variants):
         rov_key = rov_data.get("key", "")
@@ -2418,13 +2578,18 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
 
         rov_start_date = rov_start.date() if rov_start else None
         rov_end_date = rov_end.date() if rov_end else None
-        is_reroll = bool(is_final and rov_key and len(linked_rov_records) > 1 and index > 0)
-        is_latest_rov = bool(rov_key and index == latest_rov_index)
+        row_key = f"{issue.get('key')}::{rov_key or 'no-rov'}"
+        is_deferred_attempt = row_key in attempt_outcomes
+        is_reroll = bool(
+            is_final
+            and rov_key
+            and len(linked_rov_records) > 1
+            and index > 0
+            and has_successful_final_attempt_before
+            and not is_deferred_attempt
+        )
         row_is_cancelled = is_cancelled
-        if is_reroll and is_final:
-            row_is_final = not is_latest_rov or bool(rov_end_date and rov_end_date < today)
-        else:
-            row_is_final = is_final
+        row_is_final = is_final
         row_is_non_final = not row_is_final and not row_is_cancelled
         row_is_pre_final = is_pre_final and not row_is_final
 
@@ -2456,7 +2621,6 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
             row_label = "(\u0425\u043e\u0442\u0444\u0438\u043a\u0441)"
         else:
             row_label = "(\u0420\u0435\u043b\u0438\u0437)"
-        row_key = f"{issue.get('key')}::{rov_key or 'no-rov'}"
 
         is_unnumbered = (not rov_key) or (row_is_cancelled and not ke_distributive)
 
@@ -2473,6 +2637,7 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
             "base_release_summary": summary,
             "base_release_name_lines": _build_release_name_lines(summary, release_ke_line, row_label=row_label),
             "is_reroll": is_reroll,
+            "is_deferred_attempt": is_deferred_attempt,
             "row_label": row_label,
             "zni_key": "",
             "zni_url": "",
@@ -2522,6 +2687,9 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
             "created_sort_date": created_dt.isoformat() if created_dt else "",
             "created": fields.get("created", ""),
         })
+
+        if is_final and rov_key and not is_deferred_attempt:
+            has_successful_final_attempt_before = True
 
     return records
 
@@ -3357,7 +3525,9 @@ def _normalize_release_payload(payload):
 
     normalized_items = [dict(item) for item in (payload.get("items") or []) if isinstance(item, dict)]
     _apply_reviewer_assignments(normalized_items)
+    _apply_release_status_consistency(normalized_items)
     _apply_date_overrides(normalized_items)
+    _apply_release_attempt_outcomes(normalized_items)
     _apply_duty_schedule_assignments(normalized_items, persist=True)
     _apply_zni_assignments(normalized_items)
     _apply_manual_release_overrides(normalized_items, payload.get("manual_overrides") or {})
@@ -3582,7 +3752,7 @@ def set_release_monitor_rollout_notes(release_key, enabled=False, level=""):
 
     enabled = bool(enabled)
     level = str(level or "").strip().lower()
-    if enabled and level not in {"warning", "danger"}:
+    if enabled and level not in {"success", "warning", "danger"}:
         level = "warning"
     if not enabled:
         level = ""
@@ -3607,6 +3777,11 @@ def set_release_monitor_rollout_notes(release_key, enabled=False, level=""):
         if _cached_data is not None:
             for item in _cached_data.get("items") or []:
                 if _get_assignment_key_for_item(item) == release_key:
+                    if enabled and level == _get_release_auto_color_level(item):
+                        enabled = False
+                        level = ""
+                        flags.pop(release_key, None)
+                        _save_rollout_note_flags(flags)
                     item["has_rollout_notes"] = enabled
                     item["rollout_notes_level"] = level
                     break

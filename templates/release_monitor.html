@@ -543,6 +543,11 @@
             background: rgba(248, 81, 73, 0.12);
         }
 
+        .release-row.rollout-notes-success,
+        .release-row.rollout-notes-success td {
+            background: rgba(63, 185, 80, 0.10);
+        }
+
         .release-row.rollout-notes-warning,
         .release-row.rollout-notes-warning td {
             background: rgba(255, 193, 7, 0.16);
@@ -1075,6 +1080,47 @@
             border-color: rgba(255, 193, 7, 0.45);
             background: rgba(255, 193, 7, 0.16);
             color: #8a5a00;
+        }
+
+        .release-color-palette {
+            margin-top: 0.45rem;
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.35rem;
+        }
+
+        .release-color-swatch {
+            height: 30px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            background: transparent;
+            cursor: pointer;
+            position: relative;
+            transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+        }
+
+        .release-color-swatch:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
+        }
+
+        .release-color-swatch.success {
+            background: rgba(63, 185, 80, 0.22);
+            border-color: rgba(63, 185, 80, 0.55);
+        }
+
+        .release-color-swatch.warning {
+            background: rgba(255, 193, 7, 0.28);
+            border-color: rgba(255, 193, 7, 0.65);
+        }
+
+        .release-color-swatch.danger {
+            background: rgba(248, 81, 73, 0.20);
+            border-color: rgba(248, 81, 73, 0.60);
+        }
+
+        .release-color-swatch.active {
+            box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.22), inset 0 0 0 2px rgba(255, 255, 255, 0.72);
         }
 
         .release-date-cell {
@@ -2001,21 +2047,15 @@ function buildReviewerCell(item) {
 
         function buildGeneratorActionCell(item) {
             const rolloutLevel = item.rollout_notes_level || (item.has_rollout_notes ? 'warning' : '');
-            const rolloutNotesTitle = rolloutLevel === 'danger'
-                ? 'Сбросить ручную подсветку замечаний'
-                : rolloutLevel === 'warning'
-                    ? 'Переключить желтую подсветку в красную'
-                    : 'Пометить замечания по раскатке';
-            const rolloutNotesText = rolloutLevel === 'danger'
-                ? 'Сбросить замечания'
-                : rolloutLevel === 'warning'
-                    ? 'Замечания: красный'
-                    : 'Есть замечания';
-            const rolloutButtonClass = rolloutLevel === 'danger'
-                ? 'active-danger'
-                : rolloutLevel === 'warning'
-                    ? 'active-warning'
-                    : '';
+            const buildColorSwatch = (level, title) => `
+                <button
+                    type="button"
+                    class="release-color-swatch ${level} ${rolloutLevel === level ? 'active' : ''}"
+                    onclick="setReleaseManualColor('${escapeHtml(item.row_key || item.release_key)}', '${level}')"
+                    title="${escapeHtml(title)}"
+                    aria-label="${escapeHtml(title)}"
+                ></button>
+            `;
             const forceUnnumberedTitle = item.is_force_unnumbered
                 ? 'Вернуть релиз в нумерацию'
                 : 'Отправить релиз в ненумерной отсек';
@@ -2047,10 +2087,11 @@ function buildReviewerCell(item) {
                         Скорректировать дату
                     </button>
                     ${manualButton}
-                    <button class="release-row-edit-btn ${rolloutButtonClass}" onclick="toggleReleaseRolloutNotes('${escapeHtml(item.row_key || item.release_key)}')" title="${escapeHtml(rolloutNotesTitle)}">
-                        <i class="bi bi-exclamation-triangle"></i>
-                        ${escapeHtml(rolloutNotesText)}
-                    </button>
+                    <div class="release-color-palette" title="Ручная подсветка строки">
+                        ${buildColorSwatch('success', 'Ручная зеленая подсветка')}
+                        ${buildColorSwatch('warning', 'Ручная желтая подсветка')}
+                        ${buildColorSwatch('danger', 'Ручная красная подсветка')}
+                    </div>
                     ${forceUnnumberedButton}
                 </div>
             `;
@@ -2135,7 +2176,9 @@ function buildReviewerCell(item) {
 
         function buildReleaseRow(item) {
             const rolloutLevel = item.rollout_notes_level || (item.has_rollout_notes ? 'warning' : '');
-            const rolloutClass = rolloutLevel === 'danger'
+            const rolloutClass = rolloutLevel === 'success'
+                ? 'rollout-notes-success'
+                : rolloutLevel === 'danger'
                 ? 'rollout-notes-danger'
                 : rolloutLevel === 'warning'
                     ? 'rollout-notes-warning'
@@ -3567,15 +3610,28 @@ function buildReviewerCell(item) {
             }
         }
 
-        async function toggleReleaseRolloutNotes(releaseKey) {
+        function getReleaseAutoColorLevel(item) {
+            const rowState = String(item?.row_state || '').trim().toLowerCase();
+            if (rowState === 'final') {
+                return 'success';
+            }
+            if (rowState === 'overdue' || rowState === 'cancelled') {
+                return 'danger';
+            }
+            return '';
+        }
+
+        async function setReleaseManualColor(releaseKey, level) {
             const item = getReleaseMonitorItem(releaseKey);
             if (!item) {
                 alert('Не удалось найти строку релиза.');
                 return;
             }
 
+            const normalizedLevel = ['success', 'warning', 'danger'].includes(level) ? level : '';
             const currentLevel = item.rollout_notes_level || (item.has_rollout_notes ? 'warning' : '');
-            const nextLevel = currentLevel === 'warning' ? 'danger' : currentLevel === 'danger' ? '' : 'warning';
+            const autoLevel = getReleaseAutoColorLevel(item);
+            const nextLevel = currentLevel === normalizedLevel || normalizedLevel === autoLevel ? '' : normalizedLevel;
             const enabled = Boolean(nextLevel);
             try {
                 const response = await fetch(BASE_PATH + '/dashboard/release-monitor/rollout-notes', {
