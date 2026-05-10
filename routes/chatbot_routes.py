@@ -133,6 +133,13 @@ def get_suggestions():
             {"text": "Что ты умеешь", "action": "capabilities"},
         ]
 
+        default_suggestions = [
+            {"text": "Показать релизы недели по ответственному", "action": "release_week_query"},
+            {"text": "Сформировать документы по релизу", "action": "release_documents"},
+            {"text": "Выгрузить таблицу релизов в Confluence", "action": "release_confluence_export"},
+            {"text": "Что ты умеешь", "action": "capabilities"},
+        ]
+
         contextual_suggestions = {
             IntentType.SEARCH_TASKS.value: [
                 {"text": "Что я умею", "action": "capabilities"},

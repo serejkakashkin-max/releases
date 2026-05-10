@@ -306,9 +306,12 @@ class DashboardChatBot:
 
         text = "Не до конца понял рабочий запрос.\n\n"
         text += "Возможно, вы имели в виду:\n"
+        release_suggestions = []
         for index, suggestion in enumerate(deduped_suggestions[:3], 1):
             text += f"{index}. {suggestion}\n"
         text += "\nОтветьте `да`, номером варианта, или напишите уточнение."
+
+        suggestions = release_suggestions + ["Выгрузить таблицу релизов в Confluence", "Что ты умеешь?"]
 
         return {
             'text': text,
@@ -601,6 +604,12 @@ class DashboardChatBot:
 
         if not surname_query:
             return {
+                "text": "По кому показать релизы текущей недели? Напиши фамилию в запросе, например: `Какие релизы текущей недели закреплены за Ивановым?`",
+                "intent": "release_week_query",
+                "suggestions": ["Сформировать документы по релизу", "Что ты умеешь?"],
+                "metadata": {"type": "release_week_query", "reason": "missing_surname"},
+            }
+            return {
                 "text": "Понял запрос по релизам недели, но не смог уверенно определить фамилию. Напиши, например: `Какие релизы текущей недели закреплены за Кашкиным?`",
                 "intent": "release_week_query",
                 "suggestions": ["Какие релизы текущей недели закреплены за Кашкиным?", "Что ты умеешь?"],
@@ -616,6 +625,15 @@ class DashboardChatBot:
 
         display_surname = surname_query[:1].upper() + surname_query[1:]
         if not matched_items:
+            return {
+                "text": (
+                    f"На текущей неделе ({week_start.strftime('%d.%m.%Y')} - {week_end.strftime('%d.%m.%Y')}) "
+                    f"я не нашел релизов, закрепленных за {display_surname}."
+                ),
+                "intent": "release_week_query",
+                "suggestions": ["Показать релизы недели по ответственному", "Сформировать документы по релизу"],
+                "metadata": {"type": "release_week_query", "count": 0},
+            }
             return {
                 "text": (
                     f"На текущей неделе ({week_start.strftime('%d.%m.%Y')} - {week_end.strftime('%d.%m.%Y')}) "
@@ -645,7 +663,18 @@ class DashboardChatBot:
             lines.append(f"{index}. {release_link} / {rov_link} - {start} - {status}{summary_text}")
 
         first_key = str(matched_items[0].get("release_key") or "").strip()
+        release_suggestions = []
+        seen_release_keys = set()
+        for suggestion_item in matched_items:
+            suggestion_key = str(suggestion_item.get("release_key") or "").strip()
+            if suggestion_key and suggestion_key not in seen_release_keys:
+                seen_release_keys.add(suggestion_key)
+                release_suggestions.append(f"Сформировать документы по {suggestion_key}")
+            if len(release_suggestions) >= 6:
+                break
         suggestions = ["Выгрузить таблицу релизов в Confluence", "Что ты умеешь?"]
+        suggestions = release_suggestions + ["Выгрузить таблицу релизов в Confluence", "Что ты умеешь?"]
+        first_key = ""
         if first_key:
             suggestions.insert(0, f"Сформировать документы по {first_key}")
 

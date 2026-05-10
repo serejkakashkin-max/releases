@@ -100,6 +100,11 @@ class DashboardChatBot {
             this.suggestionsContainer = this.chatWidget.querySelector('#chat-suggestions');
             this.inputField = this.chatWidget.querySelector('#chat-input');
             this.sendButton = this.chatWidget.querySelector('#chat-send');
+            const embeddedTitle = this.chatWidget.querySelector('.chat-title-label');
+            if (embeddedTitle) {
+                embeddedTitle.textContent = 'AI-бот Oplot';
+            }
+            this.inputField.placeholder = 'Например: какие релизы текущей недели закреплены за Ивановым?';
             this.isOpen = true;
             return;
         }
@@ -508,6 +513,10 @@ class DashboardChatBot {
 
     getWelcomeMessage() {
         if (this.isEmbedded) {
+            return (
+                '*Привет! Я Oplot.*\n\n' +
+                'Я AI-бот команды OPLOT и готов помочь с твоими рабочими задачами: найти релизы, сформировать документы, обновить Confluence или собрать сводку. Напиши запрос обычными словами, а я подхвачу.'
+            );
             return (
                 '*AI-агент OPLOT*\n\n' +
                 'Помогаю с релизами, документами, Confluence и сменными сводками.\n\n' +

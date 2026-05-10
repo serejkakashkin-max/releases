@@ -65,17 +65,32 @@
             font-size: 18px;
         }
 
+        .home-workspace {
+            width: min(92vw, 1120px);
+            margin: 0 auto;
+        }
+
         .agent-shell {
-            width: min(88vw, 1780px);
-            margin: 2.2rem auto 0;
+            position: relative;
+            left: 50%;
+            width: min(88vw, 1500px);
+            margin-top: 1.8rem;
+            transform: translateX(-50%);
         }
 
         .agent-title {
             text-align: center;
-            font-size: 1.35rem;
+            font-size: 1.42rem;
             font-weight: 800;
             color: var(--text-primary);
+            margin-bottom: 0.35rem;
+        }
+
+        .agent-subtitle {
+            text-align: center;
+            color: var(--text-secondary);
             margin-bottom: 1rem;
+            font-size: 0.95rem;
         }
 
         .agent-chat-wrap {
@@ -86,6 +101,93 @@
             max-width: 680px;
             margin-left: auto;
             margin-right: auto;
+        }
+
+        .usage-chip {
+            position: fixed;
+            right: 1.25rem;
+            bottom: 1.25rem;
+            z-index: 980;
+            border: 1px solid var(--border-color);
+            background: var(--bg-card);
+            color: var(--text-secondary);
+            border-radius: 999px;
+            padding: 0.65rem 0.95rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-weight: 700;
+            box-shadow: 0 14px 36px rgba(15, 23, 42, 0.16);
+            transition: transform 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+        }
+
+        .usage-chip:hover {
+            transform: translateY(-1px);
+            color: var(--primary);
+            border-color: rgba(13, 110, 253, 0.45);
+        }
+
+        .usage-panel {
+            position: fixed;
+            right: 1.25rem;
+            bottom: 5rem;
+            width: min(360px, calc(100vw - 2rem));
+            z-index: 981;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 18px;
+            box-shadow: 0 22px 60px rgba(15, 23, 42, 0.22);
+            padding: 1rem;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(10px);
+            transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease;
+        }
+
+        .usage-panel.open {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        .usage-panel-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 0.85rem;
+        }
+
+        .usage-panel-title {
+            font-weight: 800;
+            color: var(--text-primary);
+        }
+
+        .usage-close {
+            border: 0;
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+        }
+
+        .stats-section.compact {
+            margin-top: 0;
+            padding-top: 0;
+        }
+
+        .stats-section.compact .stat-row {
+            margin-bottom: 0.85rem;
+        }
+
+        @media (max-width: 768px) {
+            .agent-shell {
+                width: calc(100vw - 1.5rem);
+            }
+
+            .usage-chip {
+                right: 0.75rem;
+                bottom: 0.75rem;
+            }
         }
         
         @keyframes spin {
@@ -129,6 +231,13 @@
             document.getElementById('link-release-monitor').href = BASE_PATH + '/release-monitor';
             // Дашборд теперь через onclick
         };
+
+        function toggleUsagePanel(forceOpen) {
+            const panel = document.getElementById('usagePanel');
+            if (!panel) return;
+            const nextState = typeof forceOpen === 'boolean' ? forceOpen : !panel.classList.contains('open');
+            panel.classList.toggle('open', nextState);
+        }
     </script>
 </head>
 <body>
@@ -153,6 +262,7 @@
         </div>
     </nav>
     <div class="container mt-5">
+        <div class="home-workspace">
         <div class="card p-4">
             <!-- Badge версии в отдельном wrapper -->
             <div class="version-wrapper">
@@ -185,50 +295,55 @@
                     <i class="bi bi-envelope me-2"></i> SMS-оповещения
                 </a>
             </div>
-            
-            <!-- Секция статистики -->
-            <div class="stats-section">
-                <h6 class="stats-title">
-                    <i class="bi bi-bar-chart-line me-2"></i>Статистика использования
-                </h6>
-                
-                <div class="stat-row">
-                    <div class="d-flex justify-content-between align-items-center mb-1">
-                        <span class="stat-label">Релиз генератор</span>
-                        <span class="stat-values">{{ stats.release.total }} (30д: {{ stats.release.last_30_days }})</span>
-                    </div>
-                    <div class="progress" style="height: 6px;">
-                        <div class="progress-bar bg-primary" role="progressbar" 
-                             style="width: {{ stats.release.percentage }}%"></div>
-                    </div>
-                </div>
-                
-                <div class="stat-row">
-                    <div class="d-flex justify-content-between align-items-center mb-1">
-                        <span class="stat-label">SMS генератор</span>
-                        <span class="stat-values">{{ stats.sms.total }} (30д: {{ stats.sms.last_30_days }})</span>
-                    </div>
-                    <div class="progress" style="height: 6px;">
-                        <div class="progress-bar bg-success" role="progressbar" 
-                             style="width: {{ stats.sms.percentage }}%"></div>
-                    </div>
-                </div>
-                
-                <div class="d-flex justify-content-between align-items-center pt-3 mt-2 border-top">
-                    <span class="stat-label fw-bold">Всего запусков</span>
-                    <span class="badge bg-secondary total-badge">{{ stats.total_combined }}</span>
-                </div>
-            </div>
-            
         </div>
 
         <div class="agent-shell">
-            <div class="agent-title">AI-агент OPLOT</div>
+            <div class="agent-title">AI-бот Oplot</div>
+            <div class="agent-subtitle">Живой рабочий помощник по релизам, документам и сменным задачам.</div>
             <div class="agent-chat-wrap">
                 <div id="embeddedChatBot"></div>
             </div>
         </div>
+        </div>
     </div>
+
+    <button class="usage-chip" type="button" onclick="toggleUsagePanel()" title="Показать статистику использования">
+        <i class="bi bi-bar-chart-line"></i>
+        <span>Статистика</span>
+        <span class="badge bg-secondary">{{ stats.total_combined }}</span>
+    </button>
+
+    <aside class="usage-panel" id="usagePanel" aria-label="Статистика использования">
+        <div class="usage-panel-head">
+            <div>
+                <div class="usage-panel-title">Статистика использования</div>
+                <small class="text-muted">Короткая служебная сводка</small>
+            </div>
+            <button class="usage-close" type="button" onclick="toggleUsagePanel(false)" aria-label="Закрыть">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+        <div class="stats-section compact">
+            <div class="stat-row">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="stat-label">Релиз генератор</span>
+                    <span class="stat-values">{{ stats.release.total }} (30д: {{ stats.release.last_30_days }})</span>
+                </div>
+                <div class="progress" style="height: 6px;">
+                    <div class="progress-bar bg-primary" role="progressbar" style="width: {{ stats.release.percentage }}%"></div>
+                </div>
+            </div>
+            <div class="stat-row">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="stat-label">SMS генератор</span>
+                    <span class="stat-values">{{ stats.sms.total }} (30д: {{ stats.sms.last_30_days }})</span>
+                </div>
+                <div class="progress" style="height: 6px;">
+                    <div class="progress-bar bg-success" role="progressbar" style="width: {{ stats.sms.percentage }}%"></div>
+                </div>
+            </div>
+        </div>
+    </aside>
     
     <!-- Модальное окно истории версий -->
     <div class="modal fade" id="versionHistoryModal" tabindex="-1" aria-hidden="true">
