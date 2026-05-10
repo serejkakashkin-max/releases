@@ -158,6 +158,27 @@
             color: #d97706;
         }
 
+        .hero-week-report-btn.docs {
+            border-color: rgba(34, 197, 94, 0.28);
+            background: linear-gradient(135deg, rgba(34, 197, 94, 0.12), rgba(37, 99, 235, 0.10));
+        }
+
+        .hero-week-report-btn.docs i {
+            color: #16a34a;
+        }
+
+        #releaseMonitorDocsBtn {
+            order: 1;
+        }
+
+        #releaseMonitorWeekControlBtn {
+            order: 2;
+        }
+
+        #releaseMonitorCurrentWeekReportBtn {
+            order: 3;
+        }
+
         .release-monitor-section {
             background: var(--bg-card);
             border: 1px solid var(--border-color);
@@ -1621,6 +1642,10 @@
                         Открыто: <strong>{{ last_update }}</strong>
                     </div>
                     <div class="hero-action-stack">
+                    <button id="releaseMonitorDocsBtn" class="hero-week-report-btn docs" onclick="openReleaseDocumentsPage()">
+                        <i class="bi bi-file-earmark-text"></i>
+                        Сформировать документы
+                    </button>
                     <button id="releaseMonitorCurrentWeekReportBtn" class="hero-week-report-btn" onclick="generateCurrentWeekReleaseReport()">
                         <i class="bi bi-calendar-week"></i>
                         Релизы текущей недели
@@ -4108,7 +4133,7 @@ function buildReviewerCell(item) {
 
         function setReleaseRefreshButtonsLoading(isLoading) {
             const effectiveLoading = Boolean(isLoading || releaseMonitorGlobalRefreshing || releaseMonitorLocalRefreshing);
-            ['releaseMonitorQuickRefreshBtn', 'releaseMonitorRefreshBtn', 'releaseMonitorConfluenceSyncBtn', 'releaseMonitorDutyUploadBtn', 'releaseMonitorCurrentWeekReportBtn', 'releaseMonitorWeekControlBtn'].forEach(id => {
+            ['releaseMonitorQuickRefreshBtn', 'releaseMonitorRefreshBtn', 'releaseMonitorConfluenceSyncBtn', 'releaseMonitorDutyUploadBtn', 'releaseMonitorCurrentWeekReportBtn', 'releaseMonitorWeekControlBtn', 'releaseMonitorDocsBtn'].forEach(id => {
                 const btn = document.getElementById(id);
                 if (!btn) {
                     return;
@@ -4211,6 +4236,10 @@ function buildReviewerCell(item) {
 
         async function generateCurrentWeekReleaseReport() {
             window.open(BASE_PATH + '/dashboard/release-monitor/current-week', '_blank', 'noopener');
+        }
+
+        function openReleaseDocumentsPage() {
+            window.location.href = BASE_PATH + '/release';
         }
 
         function ensureReleaseWeekControlModal() {

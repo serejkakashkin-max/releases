@@ -4,10 +4,11 @@
     <title>Генератор</title>
     <link href="/static/css/bootstrap.min.css" rel="stylesheet">
     <link href="/static/css/bootstrap-icons.css" rel="stylesheet">
+    <link href="/static/css/chatbot.css" rel="stylesheet">
     {% include 'base_styles.html' %}
     <style>
         .container {
-            max-width: 800px;
+            max-width: 100%;
         }
         /* Стили для новой кнопки дашборда */
         .btn-beta {
@@ -63,6 +64,29 @@
             color: var(--text-primary);
             font-size: 18px;
         }
+
+        .agent-shell {
+            width: min(88vw, 1780px);
+            margin: 2.2rem auto 0;
+        }
+
+        .agent-title {
+            text-align: center;
+            font-size: 1.35rem;
+            font-weight: 800;
+            color: var(--text-primary);
+            margin-bottom: 1rem;
+        }
+
+        .agent-chat-wrap {
+            background: transparent;
+        }
+
+        .card {
+            max-width: 680px;
+            margin-left: auto;
+            margin-right: auto;
+        }
         
         @keyframes spin {
             0% { transform: rotate(0deg); }
@@ -101,7 +125,6 @@
         
         window.onload = function() {
             // Устанавливаем правильные ссылки
-            document.getElementById('link-release').href = BASE_PATH + '/release';
             document.getElementById('link-sms').href = BASE_PATH + '/sms';
             document.getElementById('link-release-monitor').href = BASE_PATH + '/release-monitor';
             // Дашборд теперь через onclick
@@ -150,20 +173,16 @@
                 </div>
             </div>
             
-            <h1 class="card-title text-center mb-4">AI-ассистент команды OPLOT</h1>
+            <h1 class="card-title text-center mb-4">AI-агент команды OPLOT</h1>
             <div class="d-grid gap-3">
-                <a id="link-release" href="/release" class="btn btn-primary btn-lg d-flex align-items-center justify-content-center">
-                    <i class="bi bi-gear me-2"></i> Формирование релизной документации
+                <a id="link-release-monitor" href="/release-monitor" class="btn btn-primary btn-lg btn-beta d-flex align-items-center justify-content-center">
+                    <i class="bi bi-rocket-takeoff me-2"></i> Блок релизов
                 </a>
-                <a id="link-sms" href="/sms" class="btn btn-primary btn-lg d-flex align-items-center justify-content-center">
-                    <i class="bi bi-envelope me-2"></i> SMS-оповещения
-                </a>
-                <!-- НОВАЯ КНОПКА ДАШБОРДА -->
                 <button onclick="goToDashboard()" class="btn btn-primary btn-lg btn-beta d-flex align-items-center justify-content-center">
                     <i class="bi bi-speedometer2 me-2"></i> Рабочий стол дежурного
                 </button>
-                <a id="link-release-monitor" href="/release-monitor" class="btn btn-primary btn-lg btn-beta d-flex align-items-center justify-content-center">
-                    <i class="bi bi-rocket-takeoff me-2"></i> Блок релизов
+                <a id="link-sms" href="/sms" class="btn btn-primary btn-lg d-flex align-items-center justify-content-center">
+                    <i class="bi bi-envelope me-2"></i> SMS-оповещения
                 </a>
             </div>
             
@@ -202,6 +221,13 @@
             </div>
             
         </div>
+
+        <div class="agent-shell">
+            <div class="agent-title">AI-агент OPLOT</div>
+            <div class="agent-chat-wrap">
+                <div id="embeddedChatBot"></div>
+            </div>
+        </div>
     </div>
     
     <!-- Модальное окно истории версий -->
@@ -238,6 +264,11 @@
     
     <!-- Скрипты для tooltip -->
     <script>
+        window.CHATBOT_BASE_PATH = BASE_PATH;
+        window.dashboardData = {
+            page_context: 'home'
+        };
+
         const badge = document.getElementById('versionBadge');
         const tooltip = document.getElementById('versionTooltip');
         
@@ -297,5 +328,6 @@
             }
         });
     </script>
+    <script src="/static/js/chatbot.js"></script>
 </body>
 </html>

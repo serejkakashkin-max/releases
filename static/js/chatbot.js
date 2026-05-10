@@ -6,6 +6,7 @@
 class DashboardChatBot {
     constructor() {
         this.isOpen = false;
+        this.isEmbedded = Boolean(document.getElementById('embeddedChatBot'));
         this.messages = [];
         this.sessionId = null;
         this.isLoading = false;
@@ -57,6 +58,51 @@ class DashboardChatBot {
     }
     
     createDOM() {
+        const embeddedHost = document.getElementById('embeddedChatBot');
+        if (embeddedHost) {
+            this.chatWidget = document.createElement('div');
+            this.chatWidget.className = 'chat-widget embedded open';
+            this.chatWidget.innerHTML = `
+            <div class="chat-header">
+                <div class="chat-title">
+                    <i class="bi bi-robot"></i>
+                    <div class="chat-title-block">
+                        <span class="chat-title-label">AI-агент OPLOT</span>
+                        <span class="chat-title-subtitle">Релизы, документы, Confluence, смена</span>
+                    </div>
+                </div>
+                <div class="chat-actions">
+                    <button class="chat-action-btn" id="chat-clear" title="Очистить историю">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="chat-messages" id="chat-messages"></div>
+            <div class="chat-suggestions" id="chat-suggestions"></div>
+            <div class="chat-input-container">
+                <button class="chat-reset-btn" id="chat-clear-inline" title="Сбросить диалог">
+                    <i class="bi bi-arrow-counterclockwise"></i>
+                    <span>Сброс</span>
+                </button>
+                <textarea 
+                    class="chat-input" 
+                    id="chat-input" 
+                    rows="1"
+                    placeholder="Например: какие релизы текущей недели закреплены за Кашкиным?"
+                ></textarea>
+                <button class="chat-send-btn" id="chat-send">
+                    <i class="bi bi-send-fill"></i>
+                </button>
+            </div>
+            `;
+            embeddedHost.appendChild(this.chatWidget);
+            this.messagesContainer = this.chatWidget.querySelector('#chat-messages');
+            this.suggestionsContainer = this.chatWidget.querySelector('#chat-suggestions');
+            this.inputField = this.chatWidget.querySelector('#chat-input');
+            this.sendButton = this.chatWidget.querySelector('#chat-send');
+            this.isOpen = true;
+            return;
+        }
         // Создаём кнопку открытия чата
         this.chatToggle = document.createElement('div');
         this.chatToggle.className = 'chat-toggle';
@@ -113,6 +159,28 @@ class DashboardChatBot {
     }
     
     bindEvents() {
+        if (this.isEmbedded) {
+            this.sendButton.addEventListener('click', () => this.sendMessage());
+
+            this.inputField.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    this.sendMessage();
+                }
+            });
+
+            this.inputField.addEventListener('input', () => {
+                this.inputField.style.height = 'auto';
+                this.inputField.style.height = Math.min(this.inputField.scrollHeight, 120) + 'px';
+            });
+
+            this.chatWidget.querySelector('#chat-clear').addEventListener('click', () => this.clearHistory());
+            const inlineClearBtn = this.chatWidget.querySelector('#chat-clear-inline');
+            if (inlineClearBtn) {
+                inlineClearBtn.addEventListener('click', () => this.clearHistory());
+            }
+            return;
+        }
         // Открытие/закрытие чата
         this.chatToggle.addEventListener('click', () => this.toggle());
         
@@ -439,6 +507,17 @@ class DashboardChatBot {
     }
 
     getWelcomeMessage() {
+        if (this.isEmbedded) {
+            return (
+                '*AI-агент OPLOT*\n\n' +
+                'Помогаю с релизами, документами, Confluence и сменными сводками.\n\n' +
+                'Могу:\n' +
+                '• показать релизы текущей недели по ответственному\n' +
+                '• запустить сценарий формирования релизных документов\n' +
+                '• выгрузить таблицу релизов в Confluence\n' +
+                '• найти задачи и подготовить сводку смены'
+            );
+        }
         return (
             '*AI-помощник дежурного*\n\n' +
             'Помогаю быстро находить задачи, собирать статистику и готовить сводки для передачи смены.\n\n' +

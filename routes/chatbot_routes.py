@@ -6,9 +6,9 @@ import logging
 import os
 import uuid
 from datetime import datetime
-from flask import Blueprint, request, jsonify, session
+from flask import Blueprint, request, jsonify, session, send_file
 
-from services.chatbot_service import get_chatbot, ChatMessage
+from services.chatbot_service import get_chatbot, ChatMessage, get_release_document_path
 from services.dashboard_service import get_dashboard_data
 
 chatbot_bp = Blueprint('chatbot', __name__)
@@ -126,6 +126,13 @@ def get_suggestions():
         ]
         
         # Контекстные подсказки по типу намерения
+        default_suggestions = [
+            {"text": "Какие релизы текущей недели закреплены за Кашкиным?", "action": "release_week_query"},
+            {"text": "Сформировать документы по релизу", "action": "release_documents"},
+            {"text": "Выгрузить таблицу релизов в Confluence", "action": "release_confluence_export"},
+            {"text": "Что ты умеешь", "action": "capabilities"},
+        ]
+
         contextual_suggestions = {
             IntentType.SEARCH_TASKS.value: [
                 {"text": "Что я умею", "action": "capabilities"},
@@ -229,6 +236,8 @@ def clear_history():
         chatbot = get_chatbot()
         if session_id in chatbot.sessions:
             chatbot.sessions[session_id].messages = []
+            chatbot.sessions[session_id].pending_clarification = None
+            chatbot.sessions[session_id].active_release_flow = None
         
         return jsonify({
             "success": True,
@@ -406,6 +415,31 @@ def download_report(report_id):
         
     except Exception as e:
         logging.error(f"Ошибка скачивания отчёта: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@chatbot_bp.route('/dashboard/api/chat/release-docs/download/<document_id>', methods=['GET'])
+def download_release_documents(document_id):
+    """Скачивает ZIP-документы релиза, сформированные через чат."""
+    try:
+        path = get_release_document_path(document_id)
+        if not path or not os.path.exists(path):
+            return jsonify({
+                "success": False,
+                "error": "Файл документов не найден или уже удален"
+            }), 404
+
+        return send_file(
+            path,
+            mimetype="application/zip",
+            as_attachment=True,
+            download_name=f"release_documents_{document_id}.zip",
+        )
+    except Exception as e:
+        logging.error(f"Ошибка скачивания релизных документов из чата: {e}")
         return jsonify({
             "success": False,
             "error": str(e)

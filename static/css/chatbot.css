@@ -75,6 +75,112 @@
     transform: translateY(0) scale(1);
 }
 
+.chat-widget.embedded {
+    position: static;
+    width: 100%;
+    height: auto;
+    max-height: none;
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+    z-index: auto;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+.chat-widget.embedded .chat-header {
+    display: none;
+}
+
+.chat-widget.embedded .chat-messages {
+    min-height: 72px;
+    max-height: 360px;
+    overflow-y: auto;
+    border: 2px solid #0ea5e9;
+    border-radius: 0;
+    padding: 14px 16px;
+    background: rgba(15, 23, 42, 0.18);
+    box-shadow: 0 0 0 1px rgba(14, 165, 233, 0.08), 0 16px 40px rgba(14, 165, 233, 0.10);
+}
+
+.chat-widget.embedded .chat-message {
+    max-width: 100%;
+}
+
+.chat-widget.embedded .chat-message.assistant .chat-message-content {
+    background: transparent;
+    border: 0;
+    padding: 2px 0;
+    border-radius: 0;
+    font-size: 15px;
+    font-weight: 650;
+}
+
+.chat-widget.embedded .chat-message.user .chat-message-content {
+    border-radius: 12px;
+    padding: 9px 12px;
+}
+
+.chat-widget.embedded .chat-suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 12px 0 0;
+    border-top: 0;
+    background: transparent;
+    max-height: none;
+}
+
+.chat-widget.embedded .chat-suggestion-btn {
+    min-height: 34px;
+    border-radius: 999px;
+    padding: 8px 12px;
+}
+
+.chat-widget.embedded .chat-input-container {
+    margin-top: 12px;
+    padding: 0;
+    border-top: 0;
+    background: transparent;
+    border-radius: 0;
+}
+
+.chat-widget.embedded .chat-input {
+    min-height: 44px;
+    border-radius: 10px;
+    background: var(--bg-card);
+}
+
+.chat-widget.embedded .chat-send-btn {
+    border-radius: 10px;
+}
+
+.chat-reset-btn {
+    min-height: 44px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 0 13px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.chat-reset-btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: rgba(13, 110, 253, 0.08);
+}
+
 /* Расширенное окно чата */
 .chat-widget.expanded {
     width: 700px;
