@@ -107,15 +107,25 @@
             white-space: nowrap;
         }
 
+        .hero-action-stack {
+            display: flex;
+            flex-direction: row;
+            align-items: flex-end;
+            justify-content: flex-end;
+            gap: 0.55rem;
+            flex-wrap: nowrap;
+        }
+
         .hero-week-report-btn {
             display: inline-flex;
             align-items: center;
             gap: 0.55rem;
-            padding: 0.82rem 1.15rem;
+            padding: 0.72rem 0.95rem;
             border-radius: 16px;
             border: 1px solid rgba(59, 130, 246, 0.22);
             background: linear-gradient(135deg, rgba(37, 99, 235, 0.1), rgba(59, 130, 246, 0.18));
             color: var(--text-primary);
+            white-space: nowrap;
             font-weight: 700;
             box-shadow: 0 12px 24px rgba(37, 99, 235, 0.12);
             transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
@@ -137,6 +147,15 @@
         .hero-week-report-btn i {
             font-size: 1rem;
             color: #2563eb;
+        }
+
+        .hero-week-report-btn.control {
+            border-color: rgba(245, 158, 11, 0.28);
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(37, 99, 235, 0.12));
+        }
+
+        .hero-week-report-btn.control i {
+            color: #d97706;
         }
 
         .release-monitor-section {
@@ -220,8 +239,8 @@
 
         .release-resource-links {
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 0.75rem;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.55rem;
             margin: 0 0 0.95rem;
         }
 
@@ -229,14 +248,14 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 0.8rem;
-            padding: 0.55rem 0.85rem;
-            border-radius: 12px;
+            gap: 0.5rem;
+            padding: 0.48rem 0.6rem;
+            border-radius: 10px;
             border: 1px solid var(--border-color);
             background: linear-gradient(180deg, rgba(13, 110, 253, 0.06), rgba(13, 110, 253, 0.03));
             color: var(--text-primary);
             text-decoration: none;
-            min-height: 44px;
+            min-height: 40px;
             transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, color 0.18s ease;
         }
 
@@ -248,16 +267,16 @@
         }
 
         .release-resource-link-icon {
-            width: 28px;
-            height: 28px;
-            border-radius: 8px;
+            width: 24px;
+            height: 24px;
+            border-radius: 7px;
             background: rgba(13, 110, 253, 0.12);
             color: var(--primary);
             display: inline-flex;
             align-items: center;
             justify-content: center;
             flex: 0 0 auto;
-            font-size: 1rem;
+            font-size: 0.9rem;
         }
 
         .release-resource-link-text {
@@ -269,14 +288,14 @@
         }
 
         .release-resource-link-title {
-            font-size: 0.84rem;
+            font-size: 0.78rem;
             font-weight: 700;
             line-height: 1.2;
         }
 
         .release-resource-link-external {
             color: var(--text-muted);
-            font-size: 0.92rem;
+            font-size: 0.82rem;
             flex: 0 0 auto;
         }
 
@@ -875,6 +894,25 @@
             gap: 0.38rem;
         }
 
+        .reviewer-cell.missing-week-responsible {
+            padding: 0.48rem;
+            margin: -0.48rem;
+            border-radius: 12px;
+            border: 1px solid rgba(245, 158, 11, 0.34);
+            background: rgba(245, 158, 11, 0.10);
+            box-shadow: inset 3px 0 0 rgba(245, 158, 11, 0.72);
+        }
+
+        .responsible-missing-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.28rem;
+            margin-top: 0.35rem;
+            color: #b45309;
+            font-size: 0.72rem;
+            font-weight: 700;
+        }
+
         .reviewer-duty-wrap {
             display: flex;
             align-items: center;
@@ -922,6 +960,148 @@
         .release-order-step-btn:disabled {
             opacity: 0.35;
             cursor: not-allowed;
+        }
+
+        .week-control-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.65rem;
+            margin-bottom: 1rem;
+        }
+
+        .week-control-card {
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 0.75rem;
+            background: var(--bg-secondary);
+        }
+
+        .week-control-card span {
+            display: block;
+            color: var(--text-secondary);
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .week-control-card strong {
+            display: block;
+            margin-top: 0.18rem;
+            color: var(--text-primary);
+            font-size: 1.25rem;
+        }
+
+        .week-control-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.55rem;
+            max-height: 360px;
+            overflow: auto;
+            padding-right: 0.25rem;
+        }
+
+        .week-control-release {
+            border: 1px solid rgba(245, 158, 11, 0.24);
+            border-radius: 12px;
+            padding: 0.72rem 0.82rem;
+            background: rgba(245, 158, 11, 0.08);
+        }
+
+        .week-control-release-title {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-weight: 800;
+        }
+
+        .week-control-release-meta {
+            margin-top: 0.25rem;
+            color: var(--text-secondary);
+            font-size: 0.78rem;
+        }
+
+        .week-control-candidates {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+            margin-top: 1rem;
+        }
+
+        .week-control-chip-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+            margin-top: 0.45rem;
+        }
+
+        .week-control-chip {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            padding: 0.22rem 0.52rem;
+            background: rgba(37, 99, 235, 0.10);
+            color: var(--text-primary);
+            font-size: 0.72rem;
+            font-weight: 700;
+        }
+
+        .week-control-chip.reserve {
+            background: rgba(245, 158, 11, 0.14);
+            color: #b45309;
+        }
+
+        .week-control-chip.excluded {
+            background: rgba(239, 68, 68, 0.12);
+            color: #dc2626;
+        }
+
+        .week-control-ai-actions {
+            display: flex;
+            justify-content: flex-end;
+            margin: 0.75rem 0 0;
+        }
+
+        .week-control-recommendations {
+            display: flex;
+            flex-direction: column;
+            gap: 0.55rem;
+            margin-top: 1rem;
+        }
+
+        .week-control-recommendation {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 0.8rem;
+            align-items: center;
+            border: 1px solid rgba(37, 99, 235, 0.20);
+            border-radius: 12px;
+            padding: 0.72rem 0.82rem;
+            background: rgba(37, 99, 235, 0.07);
+        }
+
+        .week-control-recommendation strong {
+            color: var(--text-primary);
+        }
+
+        .week-control-recommendation small {
+            display: block;
+            margin-top: 0.2rem;
+            color: var(--text-secondary);
+        }
+
+        .week-control-apply-btn {
+            border: 1px solid rgba(37, 99, 235, 0.24);
+            border-radius: 10px;
+            padding: 0.42rem 0.7rem;
+            background: rgba(37, 99, 235, 0.12);
+            color: var(--text-primary);
+            font-size: 0.78rem;
+            font-weight: 800;
+        }
+
+        .week-control-apply-btn:hover {
+            border-color: rgba(37, 99, 235, 0.42);
+            color: var(--primary);
         }
 
         .reviewer-block-label {
@@ -1329,6 +1509,11 @@
                 grid-template-columns: 1fr 1fr;
             }
 
+            .week-control-grid,
+            .week-control-candidates {
+                grid-template-columns: 1fr 1fr;
+            }
+
             .release-monitor-actions {
                 min-width: 0;
                 width: 100%;
@@ -1351,6 +1536,11 @@
                 grid-template-columns: 1fr;
             }
 
+            .week-control-grid,
+            .week-control-candidates {
+                grid-template-columns: 1fr;
+            }
+
             .page-hero-top {
                 flex-direction: column;
             }
@@ -1358,6 +1548,11 @@
             .page-hero-side {
                 width: 100%;
                 align-items: flex-start;
+            }
+
+            .hero-action-stack {
+                flex-wrap: wrap;
+                justify-content: flex-start;
             }
 
             .release-monitor-button-row {
@@ -1425,10 +1620,16 @@
                     <div class="page-meta">
                         Открыто: <strong>{{ last_update }}</strong>
                     </div>
+                    <div class="hero-action-stack">
                     <button id="releaseMonitorCurrentWeekReportBtn" class="hero-week-report-btn" onclick="generateCurrentWeekReleaseReport()">
                         <i class="bi bi-calendar-week"></i>
                         Релизы текущей недели
                     </button>
+                    <button id="releaseMonitorWeekControlBtn" class="hero-week-report-btn control" onclick="openReleaseWeekControl()">
+                        <i class="bi bi-shield-check"></i>
+                        Контроль недели
+                    </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1476,6 +1677,13 @@
                         <span class="release-resource-link-icon"><i class="bi bi-journal-text"></i></span>
                         <span class="release-resource-link-text">
                             <span class="release-resource-link-title">Ссылки на ПСИ Jenkins</span>
+                        </span>
+                        <i class="bi bi-box-arrow-up-right release-resource-link-external"></i>
+                    </a>
+                    <a class="release-resource-link" href="https://confluence.delta.sbrf.ru/pages/viewpage.action?pageId=18369778404" target="_blank" rel="noopener noreferrer">
+                        <span class="release-resource-link-icon"><i class="bi bi-table"></i></span>
+                        <span class="release-resource-link-text">
+                            <span class="release-resource-link-title">Таблица в Confluence(экспорт)</span>
                         </span>
                         <i class="bi bi-box-arrow-up-right release-resource-link-external"></i>
                     </a>
@@ -1658,6 +1866,26 @@
         </div>
     </div>
 
+    <div class="modal fade release-doc-modal" id="releaseWeekControlModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title">Контроль недели</h5>
+                        <div class="small text-secondary" id="releaseWeekControlSubtitle">Проверка назначений ответственных</div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="releaseWeekControlBody"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Закрыть</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="modal fade release-doc-modal" id="releaseDateOverrideModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
@@ -1773,6 +2001,7 @@
         let releaseDateOverrideState = null;
         let releaseManualOverrideModalInstance = null;
         let releaseManualOverrideState = null;
+        let releaseWeekControlModalInstance = null;
         let pendingManualDutyFocusReleaseKey = '';
 
         function escapeHtml(value) {
@@ -1973,6 +2202,7 @@ function buildReviewerCell(item) {
             const currentReviewerSource = item.psi_owner_source || '';
             const isManualTextReviewer = currentReviewerSource === 'manual_text' || (currentReviewer && isCustomDutyText(currentReviewer));
             const currentChecker = item.psi_checker || '';
+            const missingWeekResponsible = Boolean(item.is_missing_week_responsible);
             const responsibles = (Array.isArray(item.psi_responsibles) && item.psi_responsibles.length)
                 ? item.psi_responsibles
                 : [''];
@@ -1999,7 +2229,7 @@ function buildReviewerCell(item) {
                     </select>
                 `;
             return `
-                <div class="reviewer-cell">
+                <div class="reviewer-cell ${missingWeekResponsible ? 'missing-week-responsible' : ''}">
                     <div>
                         <div class="responsible-header">
                             <div class="reviewer-block-label">Ответственный</div>
@@ -2024,6 +2254,7 @@ function buildReviewerCell(item) {
                                 </div>
                             `).join('')}
                         </div>
+                        ${missingWeekResponsible ? '<div class="responsible-missing-badge"><i class="bi bi-exclamation-triangle"></i>Не назначен на текущую неделю</div>' : ''}
                     </div>
                     <div>
                         <div class="reviewer-block-label" ondblclick="toggleReleaseDutyMode('${escapeHtml(rowKey)}')" title="Дважды щелкните, чтобы переключить режим">${reviewerLabel}</div>
@@ -2144,18 +2375,20 @@ function buildReviewerCell(item) {
             const draft = releaseOrderDraft && String(releaseOrderDraft.year) === String(getSelectedReleaseYear())
                 ? releaseOrderDraft
                 : null;
-            const groupItems = Array.isArray(draft?.[groupName]) ? draft[groupName] : [];
+            const bucket = getReleaseOrderBucket(item);
+            const groupItems = Array.isArray(draft?.[groupName]?.[bucket]) ? draft[groupName][bucket] : [];
             const rowIndex = groupItems.indexOf(rowKey);
             if (rowIndex === -1) {
                 return '';
             }
+            const boundaryTitle = 'Порядок меняется только внутри одной даты';
 
             return `
                 <div class="release-order-controls">
                     <button
                         type="button"
                         class="release-order-step-btn"
-                        title="Поднять выше"
+                        title="${rowIndex === 0 ? boundaryTitle : 'Поднять выше внутри даты'}"
                         onclick="moveReleaseRow('${escapeHtml(rowKey)}', 'up')"
                         ${rowIndex === 0 ? 'disabled' : ''}
                     >
@@ -2164,7 +2397,7 @@ function buildReviewerCell(item) {
                     <button
                         type="button"
                         class="release-order-step-btn"
-                        title="Опустить ниже"
+                        title="${rowIndex === groupItems.length - 1 ? boundaryTitle : 'Опустить ниже внутри даты'}"
                         onclick="moveReleaseRow('${escapeHtml(rowKey)}', 'down')"
                         ${rowIndex === groupItems.length - 1 ? 'disabled' : ''}
                     >
@@ -3160,12 +3393,73 @@ function buildReviewerCell(item) {
         }
 
         function buildReleaseOrderDraft(yearItems) {
+            const splitItems = {
+                waiting: yearItems.filter(item => item.is_unnumbered),
+                numbered: yearItems.filter(item => !item.is_unnumbered),
+            };
+            const buildBuckets = (items) => items.reduce((acc, item) => {
+                const bucket = getReleaseOrderBucket(item);
+                if (!acc[bucket]) {
+                    acc[bucket] = [];
+                }
+                acc[bucket].push(item.row_key || item.release_key);
+                return acc;
+            }, {});
+
             return {
                 year: getSelectedReleaseYear(),
-                waiting: yearItems.filter(item => item.is_unnumbered).map(item => item.row_key || item.release_key),
-                numbered: yearItems.filter(item => !item.is_unnumbered).map(item => item.row_key || item.release_key),
+                waiting: buildBuckets(splitItems.waiting),
+                numbered: buildBuckets(splitItems.numbered),
                 force_unnumbered: yearItems.filter(item => item.is_force_unnumbered).map(item => item.row_key || item.release_key),
             };
+        }
+
+        function getReleaseOrderBucket(item) {
+            const rawValue = String(
+                item?.deployment_start_iso ||
+                item?.deployment_start ||
+                item?.sort_date ||
+                'no-date'
+            ).trim();
+            const parsedDate = parseReleaseDateValue(rawValue);
+            if (parsedDate) {
+                const year = parsedDate.getFullYear();
+                const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
+                const day = String(parsedDate.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            }
+            return rawValue ? rawValue.slice(0, 10) : 'no-date';
+        }
+
+        function normalizeReleaseOrderBuckets(value) {
+            return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+        }
+
+        function removeReleaseRowFromOrderBuckets(buckets, rowKey) {
+            Object.keys(buckets || {}).forEach(bucket => {
+                const values = Array.isArray(buckets[bucket]) ? buckets[bucket] : [];
+                const filteredValues = values.filter(value => value !== rowKey);
+                if (filteredValues.length) {
+                    buckets[bucket] = filteredValues;
+                } else {
+                    delete buckets[bucket];
+                }
+            });
+        }
+
+        function addReleaseRowToOrderBucket(buckets, item, rowKey, placement = 'end') {
+            const bucket = getReleaseOrderBucket(item);
+            if (!buckets[bucket]) {
+                buckets[bucket] = [];
+            }
+            if (buckets[bucket].includes(rowKey)) {
+                return;
+            }
+            if (placement === 'start') {
+                buckets[bucket].unshift(rowKey);
+            } else {
+                buckets[bucket].push(rowKey);
+            }
         }
 
         function ensureResponsibleHeaderFilter() {
@@ -3253,26 +3547,41 @@ function buildReviewerCell(item) {
 
             return ['waiting', 'numbered'].flatMap(groupName => {
                 const groupItems = splitItems[groupName];
-                const itemByKey = new Map(groupItems.map(item => [item.row_key || item.release_key, item]));
-                const orderedItems = [];
-                const usedKeys = new Set();
-
-                (releaseOrderDraft[groupName] || []).forEach(rowKey => {
-                    const item = itemByKey.get(rowKey);
-                    if (item) {
-                        orderedItems.push(item);
-                        usedKeys.add(rowKey);
+                const groupedItems = groupItems.reduce((acc, item) => {
+                    const bucket = getReleaseOrderBucket(item);
+                    if (!acc[bucket]) {
+                        acc[bucket] = [];
                     }
-                });
+                    acc[bucket].push(item);
+                    return acc;
+                }, {});
+                const orderedByBucket = releaseOrderDraft[groupName] || {};
 
-                groupItems.forEach(item => {
-                    const rowKey = item.row_key || item.release_key;
-                    if (!usedKeys.has(rowKey)) {
-                        orderedItems.push(item);
+                return groupItems.flatMap(item => {
+                    const bucket = getReleaseOrderBucket(item);
+                    const bucketItems = groupedItems[bucket] || [];
+                    if (!bucketItems.length || bucketItems[0] !== item) {
+                        return [];
                     }
-                });
 
-                return orderedItems;
+                    const bucketByKey = new Map(bucketItems.map(bucketItem => [bucketItem.row_key || bucketItem.release_key, bucketItem]));
+                    const orderedItems = [];
+                    const usedKeys = new Set();
+                    (orderedByBucket[bucket] || []).forEach(rowKey => {
+                        const orderedItem = bucketByKey.get(rowKey);
+                        if (orderedItem) {
+                            orderedItems.push(orderedItem);
+                            usedKeys.add(rowKey);
+                        }
+                    });
+                    bucketItems.forEach(bucketItem => {
+                        const rowKey = bucketItem.row_key || bucketItem.release_key;
+                        if (!usedKeys.has(rowKey)) {
+                            orderedItems.push(bucketItem);
+                        }
+                    });
+                    return orderedItems;
+                });
             });
         }
 
@@ -3356,7 +3665,15 @@ function buildReviewerCell(item) {
             }
 
             ['waiting', 'numbered'].some(groupName => {
-                const groupItems = releaseOrderDraft[groupName];
+                const item = getReleaseMonitorItem(rowKey);
+                if (!item) {
+                    return false;
+                }
+                const bucket = getReleaseOrderBucket(item);
+                const groupItems = releaseOrderDraft[groupName]?.[bucket];
+                if (!Array.isArray(groupItems)) {
+                    return false;
+                }
                 const currentIndex = groupItems.indexOf(rowKey);
                 if (currentIndex === -1) {
                     return false;
@@ -3671,16 +3988,16 @@ function buildReviewerCell(item) {
 
             const forceIndex = releaseOrderDraft.force_unnumbered.indexOf(releaseKey);
             const enabled = forceIndex === -1;
+            releaseOrderDraft.waiting = normalizeReleaseOrderBuckets(releaseOrderDraft.waiting);
+            releaseOrderDraft.numbered = normalizeReleaseOrderBuckets(releaseOrderDraft.numbered);
+            removeReleaseRowFromOrderBuckets(releaseOrderDraft.waiting, releaseKey);
+            removeReleaseRowFromOrderBuckets(releaseOrderDraft.numbered, releaseKey);
+
             if (enabled) {
                 releaseOrderDraft.force_unnumbered.push(releaseKey);
-                releaseOrderDraft.numbered = (releaseOrderDraft.numbered || []).filter(rowKey => rowKey !== releaseKey);
-                if (!(releaseOrderDraft.waiting || []).includes(releaseKey)) {
-                    releaseOrderDraft.waiting = [releaseKey, ...(releaseOrderDraft.waiting || [])];
-                }
+                addReleaseRowToOrderBucket(releaseOrderDraft.waiting, item, releaseKey, 'start');
             } else {
                 releaseOrderDraft.force_unnumbered.splice(forceIndex, 1);
-                releaseOrderDraft.waiting = (releaseOrderDraft.waiting || []).filter(rowKey => rowKey !== releaseKey);
-                releaseOrderDraft.numbered = (releaseOrderDraft.numbered || []).filter(rowKey => rowKey !== releaseKey);
             }
 
             releaseOrderDirty = true;
@@ -3791,7 +4108,7 @@ function buildReviewerCell(item) {
 
         function setReleaseRefreshButtonsLoading(isLoading) {
             const effectiveLoading = Boolean(isLoading || releaseMonitorGlobalRefreshing || releaseMonitorLocalRefreshing);
-            ['releaseMonitorQuickRefreshBtn', 'releaseMonitorRefreshBtn', 'releaseMonitorConfluenceSyncBtn', 'releaseMonitorDutyUploadBtn', 'releaseMonitorCurrentWeekReportBtn'].forEach(id => {
+            ['releaseMonitorQuickRefreshBtn', 'releaseMonitorRefreshBtn', 'releaseMonitorConfluenceSyncBtn', 'releaseMonitorDutyUploadBtn', 'releaseMonitorCurrentWeekReportBtn', 'releaseMonitorWeekControlBtn'].forEach(id => {
                 const btn = document.getElementById(id);
                 if (!btn) {
                     return;
@@ -3894,6 +4211,222 @@ function buildReviewerCell(item) {
 
         async function generateCurrentWeekReleaseReport() {
             window.open(BASE_PATH + '/dashboard/release-monitor/current-week', '_blank', 'noopener');
+        }
+
+        function ensureReleaseWeekControlModal() {
+            if (!releaseWeekControlModalInstance) {
+                releaseWeekControlModalInstance = new bootstrap.Modal(document.getElementById('releaseWeekControlModal'));
+            }
+            return releaseWeekControlModalInstance;
+        }
+
+        function renderWeekControlChipList(items, className = '') {
+            const values = Array.isArray(items) ? items : [];
+            if (!values.length) {
+                return '<span style="color: var(--text-muted); font-size: 0.82rem;">Нет</span>';
+            }
+            return `
+                <div class="week-control-chip-list">
+                    ${values.map(item => {
+                        const reasons = Array.isArray(item.reasons) && item.reasons.length ? ` · ${item.reasons.join(', ')}` : '';
+                        return `<span class="week-control-chip ${className}" title="${escapeHtml(reasons)}">${escapeHtml(item.name)}${escapeHtml(reasons)}</span>`;
+                    }).join('')}
+                </div>
+            `;
+        }
+
+        function renderReleaseWeekControl(control) {
+            const body = document.getElementById('releaseWeekControlBody');
+            const subtitle = document.getElementById('releaseWeekControlSubtitle');
+            if (!body) {
+                return;
+            }
+
+            const stats = control?.statistics || {};
+            const candidates = control?.candidates || {};
+            const missing = Array.isArray(control?.missing_responsible) ? control.missing_responsible : [];
+            if (subtitle) {
+                subtitle.textContent = `Период: ${control?.period?.label || '-'}`;
+            }
+
+            const missingHtml = missing.length
+                ? `<div class="week-control-list">
+                    ${missing.map(item => `
+                        <div class="week-control-release">
+                            <div class="week-control-release-title">
+                                ${item.release_url ? `<a href="${escapeHtml(item.release_url)}" target="_blank" class="release-key-link">${escapeHtml(item.release_key)}</a>` : escapeHtml(item.release_key || '-')}
+                                ${item.rov_key ? `<span style="color: var(--text-muted); font-weight: 700;">/ ${escapeHtml(item.rov_key)}</span>` : ''}
+                            </div>
+                            <div class="week-control-release-meta">
+                                ${escapeHtml(item.deployment_start || '-')} · ${escapeHtml(item.system_name || 'система не определена')} · ${escapeHtml(item.release_status || '')}
+                            </div>
+                            <div class="week-control-release-meta">${escapeHtml(item.release_summary || '')}</div>
+                        </div>
+                    `).join('')}
+                </div>`
+                : '<div class="empty-state-small"><i class="bi bi-check2-circle"></i><div>По релизам текущей недели все ответственные назначены.</div></div>';
+
+            body.innerHTML = `
+                <div class="week-control-grid">
+                    <div class="week-control-card"><span>Релизы недели</span><strong>${stats.week_releases || 0}</strong></div>
+                    <div class="week-control-card"><span>Без ответственного</span><strong>${stats.missing_responsible || 0}</strong></div>
+                    <div class="week-control-card"><span>Доступны</span><strong>${stats.available_candidates || 0}</strong></div>
+                    <div class="week-control-card"><span>Исключены</span><strong>${stats.excluded_candidates || 0}</strong></div>
+                </div>
+                <h6 class="mb-2">Релизы без ответственного</h6>
+                ${missingHtml}
+                <div class="week-control-ai-actions">
+                    <button type="button" class="release-monitor-btn" id="releaseWeekControlRecommendBtn" onclick="suggestReleaseWeekResponsibles()" ${(stats.week_releases || 0) ? '' : 'disabled'}>
+                        <i class="bi bi-stars"></i>
+                        AI-сводка и предложения
+                    </button>
+                </div>
+                <div id="releaseWeekControlRecommendations"></div>
+                <div class="week-control-candidates">
+                    <div>
+                        <h6 class="mb-1">Доступные кандидаты</h6>
+                        ${renderWeekControlChipList(candidates.available || [])}
+                    </div>
+                    <div>
+                        <h6 class="mb-1">Резерв и исключения</h6>
+                        ${renderWeekControlChipList(candidates.reserve || [], 'reserve')}
+                        <div style="margin-top: 0.5rem;">${renderWeekControlChipList(candidates.excluded || [], 'excluded')}</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function openReleaseWeekControl() {
+            const modal = ensureReleaseWeekControlModal();
+            const body = document.getElementById('releaseWeekControlBody');
+            if (body) {
+                body.innerHTML = '<div class="empty-state-small"><i class="bi bi-hourglass-split"></i><div>Собираем контроль недели...</div></div>';
+            }
+            modal.show();
+
+            try {
+                const response = await fetch(BASE_PATH + '/dashboard/release-monitor/week-control');
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Не удалось сформировать контроль недели');
+                }
+                renderReleaseWeekControl(data.control || {});
+            } catch (error) {
+                console.error('Release week control error:', error);
+                if (body) {
+                    body.innerHTML = `<div class="alert alert-danger mb-0">Ошибка формирования контроля недели: ${escapeHtml(error.message)}</div>`;
+                }
+            }
+        }
+
+        function renderWeekResponsibleRecommendations(payload) {
+            const container = document.getElementById('releaseWeekControlRecommendations');
+            if (!container) {
+                return;
+            }
+            const recommendations = Array.isArray(payload?.recommendations) ? payload.recommendations : [];
+            const message = payload?.message || '';
+            const summary = payload?.summary || '';
+            if (!recommendations.length) {
+                container.innerHTML = summary
+                    ? `<div class="alert alert-info mt-3 mb-0">${escapeHtml(summary)}</div>`
+                    : `<div class="alert alert-warning mt-3 mb-0">${escapeHtml(message || 'GigaChat не вернул рекомендаций для применения.')}</div>`;
+                return;
+            }
+
+            container.innerHTML = `
+                <div class="week-control-recommendations">
+                    ${summary ? `<div class="release-doc-field-help">${escapeHtml(summary)}</div>` : ''}
+                    ${recommendations.map(item => `
+                        <div class="week-control-recommendation" data-row-key="${escapeHtml(item.row_key)}" data-responsible="${escapeHtml(item.recommended)}">
+                            <div>
+                                <strong>${escapeHtml(item.release_key || item.row_key)} → ${escapeHtml(item.recommended)}</strong>
+                                ${item.backup ? `<small>Запасной вариант: ${escapeHtml(item.backup)}</small>` : ''}
+                                <small>${escapeHtml(item.reason || 'Причина не указана')} · уверенность: ${escapeHtml(item.confidence || 'medium')}</small>
+                            </div>
+                            <button type="button" class="week-control-apply-btn" onclick="applyWeekResponsibleRecommendation('${escapeHtml(item.row_key)}', '${escapeHtml(item.recommended)}', this)">
+                                Применить
+                            </button>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        async function suggestReleaseWeekResponsibles() {
+            const button = document.getElementById('releaseWeekControlRecommendBtn');
+            const container = document.getElementById('releaseWeekControlRecommendations');
+            if (button) {
+                button.disabled = true;
+                button.classList.add('loading');
+            }
+            if (container) {
+                container.innerHTML = '<div class="empty-state-small"><i class="bi bi-stars"></i><div>GigaChat анализирует неделю, историю, нагрузку и график...</div></div>';
+            }
+
+            try {
+                const response = await fetch(BASE_PATH + '/dashboard/release-monitor/week-control/recommend', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Не удалось получить рекомендации GigaChat');
+                }
+                renderWeekResponsibleRecommendations(data.recommendation || {});
+            } catch (error) {
+                console.error('Release week recommendations error:', error);
+                if (container) {
+                    container.innerHTML = `<div class="alert alert-danger mt-3 mb-0">Ошибка рекомендаций GigaChat: ${escapeHtml(error.message)}</div>`;
+                }
+            } finally {
+                if (button) {
+                    button.disabled = false;
+                    button.classList.remove('loading');
+                }
+            }
+        }
+
+        async function applyWeekResponsibleRecommendation(rowKey, responsible, button) {
+            if (!rowKey || !responsible) {
+                return;
+            }
+            const item = getReleaseMonitorItem(rowKey);
+            if (!item) {
+                alert('Не удалось найти строку релиза для применения рекомендации.');
+                return;
+            }
+            if (button) {
+                button.disabled = true;
+                button.textContent = 'Сохраняем...';
+            }
+            try {
+                const currentResponsibles = Array.isArray(item.psi_responsibles)
+                    ? item.psi_responsibles.filter(value => String(value || '').trim())
+                    : [];
+                const nextResponsibles = currentResponsibles.includes(responsible)
+                    ? currentResponsibles
+                    : [responsible, ...currentResponsibles];
+                await saveReleaseAssignment(
+                    rowKey,
+                    item.psi_owner || '',
+                    item.psi_checker || '',
+                    nextResponsibles,
+                    item.psi_owner_source || ''
+                );
+                if (button) {
+                    button.textContent = 'Применено';
+                }
+                await openReleaseWeekControl();
+            } catch (error) {
+                console.error('Apply week responsible recommendation error:', error);
+                alert('Ошибка применения рекомендации: ' + error.message);
+                if (button) {
+                    button.disabled = false;
+                    button.textContent = 'Применить';
+                }
+            }
         }
 
         async function refreshReleaseMonitor(mode = 'full') {

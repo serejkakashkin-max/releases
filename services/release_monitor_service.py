@@ -50,6 +50,9 @@ CONFLUENCE_DELTA_BASE = "https://confluence.delta.sbrf.ru"
 JIRA_DELTA_BASE = "https://jira.delta.sbrf.ru"
 RELEASE_VERSION_PATTERN = re.compile(r"[DP]-\d+(?:\.\d+){2}(?:[.-][A-Za-z0-9_]+)+")
 ARTIFACT_URL_PATTERN = re.compile(r"(?:https?://)?[A-Za-z0-9.-]+\.[A-Za-z]{2,}/[^\s\"'<>)]+")
+DUTY_HARD_EXCLUDED_STATUSES = {"ДД", "ВД", "ВР", "ХД", "ХР"}
+DUTY_RESERVE_STATUSES = {"ДР"}
+DUTY_ABSENCE_KEYWORDS = ("отпуск", "отгул", "больн")
 
 MONTH_NAME_MAP = {
     "\u044f\u043d\u0432\u0430\u0440": 1,
@@ -613,6 +616,28 @@ def _save_manual_release_overrides(overrides):
 def _load_manual_order():
     global _manual_order_cache
 
+    def _normalize_group_order(value):
+        if isinstance(value, dict):
+            normalized_buckets = {}
+            for bucket, row_keys in value.items():
+                bucket_key = str(bucket or "").strip()
+                if not bucket_key or not isinstance(row_keys, list):
+                    continue
+                normalized_keys = []
+                for row_key in row_keys:
+                    row_key = str(row_key or "").strip()
+                    if row_key and row_key not in normalized_keys:
+                        normalized_keys.append(row_key)
+                if normalized_keys:
+                    normalized_buckets[bucket_key] = normalized_keys
+            return normalized_buckets
+
+        return [
+            str(item or "").strip()
+            for item in (value or [])
+            if str(item or "").strip()
+        ]
+
     if isinstance(_manual_order_cache, dict):
         return _manual_order_cache
 
@@ -633,16 +658,8 @@ def _load_manual_order():
                 continue
 
             normalized[year_key] = {
-                "waiting": [
-                    str(item or "").strip()
-                    for item in (value.get("waiting") or [])
-                    if str(item or "").strip()
-                ],
-                "numbered": [
-                    str(item or "").strip()
-                    for item in (value.get("numbered") or [])
-                    if str(item or "").strip()
-                ],
+                "waiting": _normalize_group_order(value.get("waiting")),
+                "numbered": _normalize_group_order(value.get("numbered")),
                 "force_unnumbered": [
                     str(item or "").strip()
                     for item in (value.get("force_unnumbered") or [])
@@ -683,16 +700,33 @@ def _remove_row_from_manual_order(row_key):
             continue
         for group_name in ("waiting", "numbered", "force_unnumbered"):
             values = year_payload.get(group_name)
-            if not isinstance(values, list):
+            if isinstance(values, dict):
+                next_values = {}
+                for bucket, bucket_values in values.items():
+                    if not isinstance(bucket_values, list):
+                        continue
+                    filtered_values = [
+                        value
+                        for value in bucket_values
+                        if not _manual_order_row_matches_release(str(value or "").strip(), row_key)
+                    ]
+                    if len(filtered_values) != len(bucket_values):
+                        changed = True
+                    if filtered_values:
+                        next_values[bucket] = filtered_values
+                if next_values != values:
+                    year_payload[group_name] = next_values
                 continue
-            filtered_values = [
-                value
-                for value in values
-                if not _manual_order_row_matches_release(str(value or "").strip(), row_key)
-            ]
-            if len(filtered_values) != len(values):
-                year_payload[group_name] = filtered_values
-                changed = True
+
+            if isinstance(values, list):
+                filtered_values = [
+                    value
+                    for value in values
+                    if not _manual_order_row_matches_release(str(value or "").strip(), row_key)
+                ]
+                if len(filtered_values) != len(values):
+                    year_payload[group_name] = filtered_values
+                    changed = True
 
     if changed:
         _save_manual_order(manual_order)
@@ -706,13 +740,67 @@ def _manual_order_row_matches_release(stored_row_key, release_key):
     return stored_row_key == release_key or stored_row_key.startswith(f"{release_key}::")
 
 
+def _get_release_order_bucket(item):
+    raw_value = str(
+        item.get("deployment_start_iso")
+        or item.get("deployment_start")
+        or item.get("sort_date")
+        or "no-date"
+    ).strip()
+    parsed = _parse_release_monitor_date(raw_value)
+    if parsed:
+        return parsed.strftime("%Y-%m-%d")
+    return raw_value[:10] if raw_value else "no-date"
+
+
 def _build_empty_duty_schedule_payload():
     return {
         "dates": {},
+        "availability": {},
         "months": [],
         "files": [],
         "last_upload": None,
     }
+
+
+def _normalize_duty_availability_payload(value):
+    normalized = {}
+    if not isinstance(value, dict):
+        return normalized
+
+    for date_key, people in value.items():
+        normalized_date = str(date_key or "").strip()
+        if not normalized_date or not isinstance(people, dict):
+            continue
+
+        normalized_people = {}
+        for person, info in people.items():
+            person_name = str(person or "").strip()
+            if not person_name:
+                continue
+
+            if isinstance(info, dict):
+                status = str(info.get("status") or "").strip()
+                availability = str(info.get("availability") or "").strip()
+                reason = str(info.get("reason") or "").strip()
+            else:
+                status = str(info or "").strip()
+                availability, reason = _classify_duty_status(status)
+
+            if not status:
+                continue
+            if not availability:
+                availability, reason = _classify_duty_status(status)
+            normalized_people[person_name] = {
+                "status": status,
+                "availability": availability,
+                "reason": reason,
+            }
+
+        if normalized_people:
+            normalized[normalized_date] = normalized_people
+
+    return normalized
 
 
 def _load_duty_schedule_payload():
@@ -729,6 +817,7 @@ def _load_duty_schedule_payload():
             for date_key, reviewer in (payload.get("dates") or {}).items()
             if str(date_key).strip() and str(reviewer).strip()
         }
+        availability = _normalize_duty_availability_payload(payload.get("availability") or {})
         months = [
             str(month_label).strip()
             for month_label in (payload.get("months") or [])
@@ -741,6 +830,7 @@ def _load_duty_schedule_payload():
         ]
         return {
             "dates": dates,
+            "availability": availability,
             "months": list(dict.fromkeys(months)),
             "files": files,
             "last_upload": str(payload.get("last_upload") or "").strip() or None,
@@ -947,6 +1037,30 @@ def _detect_schedule_day_columns(worksheet):
     return None, []
 
 
+def _classify_duty_status(status):
+    raw_status = str(status or "").strip()
+    if not raw_status:
+        return "", ""
+
+    normalized_status = _normalize_text(raw_status)
+    upper_status = raw_status.upper()
+    if upper_status in DUTY_HARD_EXCLUDED_STATUSES:
+        return "excluded", {
+            "ДД": "Дневной дежурный",
+            "ВД": "Вечерний дежурный",
+            "ВР": "Вечерний резервный дежурный",
+            "ХД": "Хабаровская смена",
+            "ХР": "Хабаровский резерв",
+        }.get(upper_status, "Дежурство")
+    if upper_status in DUTY_RESERVE_STATUSES:
+        return "reserve", "Дневной резервный ответственный"
+    if any(keyword in normalized_status for keyword in DUTY_ABSENCE_KEYWORDS):
+        return "excluded", raw_status
+    if "празд" in normalized_status:
+        return "excluded", raw_status
+    return "available", ""
+
+
 def _parse_duty_schedule_sheet(worksheet, filename):
     month, year = _extract_schedule_month_year(worksheet.title)
     if not month or not year:
@@ -957,6 +1071,7 @@ def _parse_duty_schedule_sheet(worksheet, filename):
         return {"dates": {}, "months": [], "warnings": []}
 
     daily_candidates = defaultdict(list)
+    availability_dates = defaultdict(dict)
     max_scan_row = min(worksheet.max_row, day_row_index + 40)
 
     for row_index in range(day_row_index + 1, max_scan_row + 1):
@@ -966,14 +1081,37 @@ def _parse_duty_schedule_sheet(worksheet, filename):
 
         matched_name = _match_oplot_name(raw_name)
         for col_index, day_number in day_columns:
-            marker = _normalize_text(worksheet.cell(row_index, col_index).value)
+            raw_marker = str(worksheet.cell(row_index, col_index).value or "").strip()
+            marker = _normalize_text(raw_marker)
             if marker != "\u0432\u0434":
+                if matched_name and raw_marker:
+                    try:
+                        day_date = datetime(year, month, day_number).date()
+                    except ValueError:
+                        continue
+                    availability, reason = _classify_duty_status(raw_marker)
+                    if availability in {"excluded", "reserve"}:
+                        availability_dates[day_date.isoformat()][matched_name] = {
+                            "status": raw_marker,
+                            "availability": availability,
+                            "reason": reason,
+                        }
                 continue
 
             if not matched_name:
                 daily_candidates[day_number].append({"name": raw_name, "matched": ""})
             else:
                 daily_candidates[day_number].append({"name": raw_name, "matched": matched_name})
+                try:
+                    day_date = datetime(year, month, day_number).date()
+                except ValueError:
+                    continue
+                availability, reason = _classify_duty_status(raw_marker)
+                availability_dates[day_date.isoformat()][matched_name] = {
+                    "status": raw_marker,
+                    "availability": availability,
+                    "reason": reason,
+                }
 
     parsed_dates = {}
     warnings = []
@@ -1005,11 +1143,12 @@ def _parse_duty_schedule_sheet(worksheet, filename):
                 f"{worksheet.title}: найдено несколько ВД за {day_date.strftime('%d.%m.%Y')} ({', '.join(unique_names)})"
             )
 
-    if not parsed_dates:
-        return {"dates": {}, "months": [], "warnings": warnings}
+    if not parsed_dates and not availability_dates:
+        return {"dates": {}, "availability": {}, "months": [], "warnings": warnings}
 
     return {
         "dates": parsed_dates,
+        "availability": dict(availability_dates),
         "months": [month_label],
         "warnings": warnings,
     }
@@ -1018,20 +1157,24 @@ def _parse_duty_schedule_sheet(worksheet, filename):
 def _parse_duty_schedule_workbook(file_bytes, filename):
     workbook = load_workbook(BytesIO(file_bytes), data_only=True)
     merged_dates = {}
+    merged_availability = {}
     parsed_months = []
     warnings = []
 
     for worksheet in workbook.worksheets:
         parsed_sheet = _parse_duty_schedule_sheet(worksheet, filename)
         merged_dates.update(parsed_sheet.get("dates", {}))
+        for date_key, people in (parsed_sheet.get("availability") or {}).items():
+            merged_availability.setdefault(date_key, {}).update(people or {})
         parsed_months.extend(parsed_sheet.get("months", []))
         warnings.extend(parsed_sheet.get("warnings", []))
 
-    if not merged_dates:
+    if not merged_dates and not merged_availability:
         raise ValueError(f"\u0412 \u0444\u0430\u0439\u043b\u0435 {filename} \u043d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u043d\u0430\u0439\u0442\u0438 \u043b\u0438\u0441\u0442\u044b \u0441 \u0433\u0440\u0430\u0444\u0438\u043a\u043e\u043c \u0434\u0435\u0436\u0443\u0440\u0441\u0442\u0432")
 
     return {
         "dates": merged_dates,
+        "availability": merged_availability,
         "months": list(dict.fromkeys(parsed_months)),
         "warnings": warnings,
         "files": [{
@@ -1046,6 +1189,9 @@ def _merge_duty_schedule_payload(base_payload, incoming_payload):
     merged = _build_empty_duty_schedule_payload()
     merged["dates"] = dict((base_payload or {}).get("dates") or {})
     merged["dates"].update((incoming_payload or {}).get("dates") or {})
+    merged["availability"] = _normalize_duty_availability_payload((base_payload or {}).get("availability") or {})
+    for date_key, people in _normalize_duty_availability_payload((incoming_payload or {}).get("availability") or {}).items():
+        merged["availability"].setdefault(date_key, {}).update(people)
     merged["months"] = list(
         dict.fromkeys(
             list((base_payload or {}).get("months") or [])
@@ -1335,6 +1481,101 @@ def _apply_reviewer_assignments(items):
         item["psi_checker"] = release_assignment.get("checker", "")
         item["psi_responsibles"] = list(release_assignment.get("responsibles", []))
     return items
+
+
+def _get_current_week_bounds(reference_dt=None):
+    reference_dt = reference_dt or datetime.now()
+    week_start = reference_dt.date() - timedelta(days=reference_dt.weekday())
+    week_end = week_start + timedelta(days=6)
+    return week_start, week_end
+
+
+def _get_release_start_date(item):
+    deployment_dt = _parse_release_monitor_date(
+        item.get("deployment_start_iso")
+        or item.get("deployment_start")
+        or item.get("sort_date")
+    )
+    return deployment_dt.date() if deployment_dt else None
+
+
+def _has_release_responsible(item):
+    responsibles = item.get("psi_responsibles") or []
+    if not isinstance(responsibles, list):
+        responsibles = [responsibles] if responsibles else []
+    return any(str(value or "").strip() for value in responsibles)
+
+
+def _is_release_assignment_relevant_for_week(item, week_start=None, week_end=None):
+    week_start, week_end = (week_start, week_end) if week_start and week_end else _get_current_week_bounds()
+    start_date = _get_release_start_date(item)
+    if not start_date or start_date < week_start or start_date > week_end:
+        return False
+    if item.get("is_cancelled") or item.get("is_final"):
+        return False
+    return True
+
+
+def _apply_week_control_flags(items):
+    week_start, week_end = _get_current_week_bounds()
+    for item in items:
+        is_week_release = _is_release_assignment_relevant_for_week(item, week_start, week_end)
+        missing_responsible = bool(is_week_release and not _has_release_responsible(item))
+        item["is_current_week_assignment_scope"] = is_week_release
+        item["is_missing_week_responsible"] = missing_responsible
+    return items
+
+
+def _collect_week_candidate_availability(week_start=None, week_end=None):
+    week_start, week_end = (week_start, week_end) if week_start and week_end else _get_current_week_bounds()
+    duty_payload = _load_duty_schedule_payload()
+    availability_by_date = duty_payload.get("availability") or {}
+
+    candidates = {
+        name: {
+            "name": name,
+            "availability": "available",
+            "reasons": [],
+            "statuses": [],
+        }
+        for name in OPLOT_VALUES
+    }
+
+    current_date = week_start
+    while current_date <= week_end:
+        day_people = availability_by_date.get(current_date.isoformat()) or {}
+        for name, info in day_people.items():
+            matched_name = name if name in candidates else _match_oplot_name(name)
+            if not matched_name or matched_name not in candidates:
+                continue
+            status = str((info or {}).get("status") or "").strip()
+            availability = str((info or {}).get("availability") or "").strip()
+            reason = str((info or {}).get("reason") or "").strip() or status
+            if not availability:
+                availability, reason = _classify_duty_status(status)
+            entry = candidates[matched_name]
+            if status:
+                entry["statuses"].append({
+                    "date": current_date.isoformat(),
+                    "status": status,
+                    "reason": reason,
+                })
+            if availability == "excluded":
+                entry["availability"] = "excluded"
+                if reason and reason not in entry["reasons"]:
+                    entry["reasons"].append(reason)
+            elif availability == "reserve" and entry["availability"] != "excluded":
+                entry["availability"] = "reserve"
+                if reason and reason not in entry["reasons"]:
+                    entry["reasons"].append(reason)
+        current_date += timedelta(days=1)
+
+    grouped = {"available": [], "reserve": [], "excluded": []}
+    for entry in candidates.values():
+        grouped[entry["availability"]].append(entry)
+    for values in grouped.values():
+        values.sort(key=lambda item: item["name"])
+    return grouped
 
 
 def _apply_release_status_consistency(items):
@@ -2711,33 +2952,56 @@ def _apply_group_manual_order(year, group_name, items):
 
     manual_order = _load_manual_order()
     year_payload = manual_order.get(str(year), {}) if isinstance(manual_order, dict) else {}
-    ordered_row_keys = year_payload.get(group_name, []) if isinstance(year_payload, dict) else []
-    ordered_row_keys = [str(value or "").strip() for value in ordered_row_keys if str(value or "").strip()]
-    if not ordered_row_keys:
-        return items
+    group_payload = year_payload.get(group_name, []) if isinstance(year_payload, dict) else []
 
     item_by_key = {
         str(item.get("row_key") or "").strip(): item
         for item in items
         if str(item.get("row_key") or "").strip()
     }
-    present_manual_keys = [row_key for row_key in ordered_row_keys if row_key in item_by_key]
-    if not present_manual_keys:
-        return items
 
-    manual_key_set = set(present_manual_keys)
-    manual_slot_indexes = [
-        index
-        for index, item in enumerate(items)
-        if str(item.get("row_key") or "").strip() in manual_key_set
-    ]
-    if not manual_slot_indexes:
-        return items
-
-    ordered_manual_items = [item_by_key[row_key] for row_key in present_manual_keys]
     merged_items = list(items)
-    for slot_index, manual_item in zip(manual_slot_indexes, ordered_manual_items):
-        merged_items[slot_index] = manual_item
+
+    if isinstance(group_payload, dict):
+        bucket_orders = {
+            str(bucket or "").strip(): [
+                str(row_key or "").strip()
+                for row_key in (row_keys or [])
+                if str(row_key or "").strip()
+            ]
+            for bucket, row_keys in group_payload.items()
+            if str(bucket or "").strip() and isinstance(row_keys, list)
+        }
+    else:
+        legacy_order = [
+            str(value or "").strip()
+            for value in (group_payload or [])
+            if str(value or "").strip()
+        ]
+        bucket_orders = defaultdict(list)
+        for row_key in legacy_order:
+            item = item_by_key.get(row_key)
+            if item:
+                bucket_orders[_get_release_order_bucket(item)].append(row_key)
+
+    for bucket, ordered_row_keys in bucket_orders.items():
+        present_manual_keys = [row_key for row_key in ordered_row_keys if row_key in item_by_key]
+        if not present_manual_keys:
+            continue
+
+        manual_key_set = set(present_manual_keys)
+        manual_slot_indexes = [
+            index
+            for index, item in enumerate(merged_items)
+            if _get_release_order_bucket(item) == bucket
+            and str(item.get("row_key") or "").strip() in manual_key_set
+        ]
+        if not manual_slot_indexes:
+            continue
+
+        ordered_manual_items = [item_by_key[row_key] for row_key in present_manual_keys]
+        for slot_index, manual_item in zip(manual_slot_indexes, ordered_manual_items):
+            merged_items[slot_index] = manual_item
     return merged_items
 
 
@@ -2837,19 +3101,33 @@ def save_release_monitor_manual_order(year, waiting_row_keys=None, numbered_row_
     global _cached_data, _last_cache_update
 
     year = int(year or datetime.now().year)
-    normalized_waiting = []
-    normalized_numbered = []
+
+    def _normalize_order_payload(value):
+        if isinstance(value, dict):
+            normalized = {}
+            for bucket, row_keys in value.items():
+                bucket_key = str(bucket or "").strip()
+                if not bucket_key:
+                    continue
+                normalized_keys = []
+                for row_key in (row_keys or []):
+                    row_key = str(row_key or "").strip()
+                    if row_key and row_key not in normalized_keys:
+                        normalized_keys.append(row_key)
+                if normalized_keys:
+                    normalized[bucket_key] = normalized_keys
+            return normalized
+
+        normalized_keys = []
+        for row_key in (value or []):
+            row_key = str(row_key or "").strip()
+            if row_key and row_key not in normalized_keys:
+                normalized_keys.append(row_key)
+        return normalized_keys
+
+    normalized_waiting = _normalize_order_payload(waiting_row_keys)
+    normalized_numbered = _normalize_order_payload(numbered_row_keys)
     normalized_force_unnumbered = []
-
-    for row_key in (waiting_row_keys or []):
-        row_key = str(row_key or "").strip()
-        if row_key and row_key not in normalized_waiting:
-            normalized_waiting.append(row_key)
-
-    for row_key in (numbered_row_keys or []):
-        row_key = str(row_key or "").strip()
-        if row_key and row_key not in normalized_numbered:
-            normalized_numbered.append(row_key)
 
     for row_key in (force_unnumbered_row_keys or []):
         row_key = str(row_key or "").strip()
@@ -3531,6 +3809,7 @@ def _normalize_release_payload(payload):
     _apply_duty_schedule_assignments(normalized_items, persist=True)
     _apply_zni_assignments(normalized_items)
     _apply_manual_release_overrides(normalized_items, payload.get("manual_overrides") or {})
+    _apply_week_control_flags(normalized_items)
     _sort_and_number_records(normalized_items)
     current_year = datetime.now().year
     previous_year = current_year - 1
@@ -3599,6 +3878,293 @@ def get_release_monitor_snapshot():
 
 def get_release_monitor_reviewer_options():
     return list(OPLOT_VALUES)
+
+
+def get_release_monitor_week_control():
+    snapshot = get_release_monitor_snapshot() or {}
+    items = snapshot.get("items", []) if isinstance(snapshot, dict) else []
+    week_start, week_end = _get_current_week_bounds()
+    candidate_groups = _collect_week_candidate_availability(week_start, week_end)
+
+    week_items = [
+        item for item in items
+        if _is_release_assignment_relevant_for_week(item, week_start, week_end)
+    ]
+    missing_responsible = [
+        {
+            "row_key": _get_assignment_key_for_item(item),
+            "release_key": item.get("release_key", ""),
+            "rov_key": item.get("rov_key", ""),
+            "release_summary": item.get("release_summary", ""),
+            "system_name": item.get("system_name", ""),
+            "release_status": item.get("release_status", ""),
+            "deployment_start": item.get("deployment_start", ""),
+            "deployment_end": item.get("deployment_end", ""),
+            "release_url": item.get("release_url", ""),
+            "rov_url": item.get("rov_url", ""),
+        }
+        for item in week_items
+        if not _has_release_responsible(item)
+    ]
+
+    assigned_load = defaultdict(int)
+    for item in week_items:
+        responsibles = item.get("psi_responsibles") or []
+        if not isinstance(responsibles, list):
+            responsibles = [responsibles] if responsibles else []
+        for responsible in responsibles:
+            responsible_name = str(responsible or "").strip()
+            if responsible_name:
+                assigned_load[responsible_name] += 1
+
+    available_count = max(1, len(candidate_groups.get("available") or []))
+    reserve_allowed = bool(missing_responsible and (len(missing_responsible) / available_count) > 5)
+
+    return {
+        "period": {
+            "start": week_start.isoformat(),
+            "end": week_end.isoformat(),
+            "label": f"{week_start.strftime('%d.%m.%Y')} - {week_end.strftime('%d.%m.%Y')}",
+        },
+        "statistics": {
+            "week_releases": len(week_items),
+            "missing_responsible": len(missing_responsible),
+            "available_candidates": len(candidate_groups.get("available") or []),
+            "reserve_candidates": len(candidate_groups.get("reserve") or []),
+            "excluded_candidates": len(candidate_groups.get("excluded") or []),
+            "reserve_allowed": reserve_allowed,
+        },
+        "missing_responsible": missing_responsible,
+        "candidates": candidate_groups,
+        "assigned_load": dict(sorted(assigned_load.items(), key=lambda pair: (-pair[1], pair[0]))),
+    }
+
+
+def _extract_json_object(text_value):
+    text_value = str(text_value or "").strip()
+    if not text_value:
+        return {}
+    try:
+        parsed = json.loads(text_value)
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        pass
+
+    match = re.search(r"\{.*\}", text_value, re.DOTALL)
+    if not match:
+        return {}
+    try:
+        parsed = json.loads(match.group(0))
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+
+def _build_responsible_history(items, candidate_names):
+    candidate_set = set(candidate_names)
+    history = {
+        candidate: {
+            "total": 0,
+            "by_system": defaultdict(int),
+            "by_prefix": defaultdict(int),
+        }
+        for candidate in candidate_names
+    }
+
+    for item in items:
+        responsibles = item.get("psi_responsibles") or []
+        if not isinstance(responsibles, list):
+            responsibles = [responsibles] if responsibles else []
+
+        prefix = str(item.get("release_key") or "").split("-", 1)[0]
+        system_name = str(item.get("system_name") or "").strip() or prefix or "unknown"
+        for responsible in responsibles:
+            responsible_name = str(responsible or "").strip()
+            if responsible_name not in candidate_set:
+                continue
+            history[responsible_name]["total"] += 1
+            history[responsible_name]["by_system"][system_name] += 1
+            history[responsible_name]["by_prefix"][prefix or "unknown"] += 1
+
+    return {
+        candidate: {
+            "total": values["total"],
+            "by_system": dict(sorted(values["by_system"].items(), key=lambda pair: (-pair[1], pair[0]))[:8]),
+            "by_prefix": dict(sorted(values["by_prefix"].items(), key=lambda pair: (-pair[1], pair[0]))[:8]),
+        }
+        for candidate, values in history.items()
+    }
+
+
+def _normalize_giga_recommendation_name(value, allowed_names):
+    value = str(value or "").strip()
+    if not value:
+        return ""
+    if value in allowed_names:
+        return value
+    matched = _match_oplot_name(value)
+    return matched if matched in allowed_names else ""
+
+
+def get_release_monitor_week_responsible_recommendations():
+    snapshot = get_release_monitor_snapshot() or {}
+    items = snapshot.get("items", []) if isinstance(snapshot, dict) else []
+    control = get_release_monitor_week_control()
+    missing = control.get("missing_responsible") or []
+    week_start, week_end = _get_current_week_bounds()
+    week_items = [
+        {
+            "row_key": _get_assignment_key_for_item(item),
+            "release_key": item.get("release_key", ""),
+            "rov_key": item.get("rov_key", ""),
+            "release_summary": item.get("release_summary", ""),
+            "system_name": item.get("system_name", ""),
+            "release_status": item.get("release_status", ""),
+            "deployment_start": item.get("deployment_start", ""),
+            "deployment_end": item.get("deployment_end", ""),
+            "responsibles": item.get("psi_responsibles", []),
+            "row_state": item.get("row_state", ""),
+            "is_overdue": bool(item.get("is_overdue")),
+        }
+        for item in items
+        if _is_release_assignment_relevant_for_week(item, week_start, week_end)
+    ]
+
+    available_candidates = [item.get("name") for item in control.get("candidates", {}).get("available", []) if item.get("name")]
+    reserve_candidates = [item.get("name") for item in control.get("candidates", {}).get("reserve", []) if item.get("name")]
+    allowed_candidates = list(available_candidates)
+    if control.get("statistics", {}).get("reserve_allowed"):
+        allowed_candidates.extend(name for name in reserve_candidates if name not in allowed_candidates)
+
+    if missing and not allowed_candidates:
+        return {
+            "control": control,
+            "recommendations": [],
+            "source": "rules",
+            "message": "Нет доступных кандидатов по графику дежурств.",
+        }
+
+    history = _build_responsible_history(items, allowed_candidates)
+    recommendation_context = {
+        "period": control.get("period", {}),
+        "rules": {
+            "allowed_candidates": allowed_candidates,
+            "reserve_candidates": reserve_candidates,
+            "reserve_allowed": bool(control.get("statistics", {}).get("reserve_allowed")),
+            "excluded_candidates": control.get("candidates", {}).get("excluded", []),
+            "do_not_assign_checkers": True,
+        },
+        "current_week_load": control.get("assigned_load", {}),
+        "history": history,
+        "current_week_releases": week_items,
+        "releases_without_responsible": missing,
+    }
+
+    try:
+        from services.gigachat_service import GIGA_HELPER
+    except Exception as exc:
+        logging.warning("Release week control: failed to import GigaChat helper: %s", exc)
+        return {
+            "control": control,
+            "recommendations": [],
+            "source": "unavailable",
+            "message": f"GigaChat недоступен: {exc}",
+        }
+
+    if not getattr(GIGA_HELPER, "client", None):
+        return {
+            "control": control,
+            "recommendations": [],
+            "source": "unavailable",
+            "message": "GigaChat недоступен или не инициализирован.",
+        }
+
+    prompt = f"""
+Ты помогаешь планировать ответственных за ПСИ по релизам.
+
+Сначала сформируй краткую операционную сводку по current_week_releases.
+Если releases_without_responsible пустой, recommendations верни пустым массивом и в summary напиши, что по ответственным критичных пробелов нет.
+Если releases_without_responsible не пустой, предложи ответственного только для релизов из этого списка.
+Используй только ФИО из rules.allowed_candidates. Нельзя предлагать ФИО из excluded_candidates.
+reserve_candidates можно использовать только если rules.reserve_allowed=true.
+Проверяющих не назначай и не анализируй.
+
+Учитывай:
+- историю назначений по похожим системам, prefix и category/system_name;
+- текущую недельную нагрузку current_week_load;
+- равномерность распределения;
+- причины исключения из графика.
+
+Верни строго JSON без markdown:
+{{
+  "recommendations": [
+    {{
+      "row_key": "...",
+      "release_key": "...",
+      "recommended": "ФИО из allowed_candidates",
+      "backup": "ФИО из allowed_candidates или пусто",
+      "confidence": "high|medium|low",
+      "reason": "коротко почему выбран кандидат"
+    }}
+  ],
+  "summary": "краткая сводка по неделе и назначениям"
+}}
+
+Данные:
+{json.dumps(recommendation_context, ensure_ascii=False, indent=2)}
+"""
+
+    try:
+        response = GIGA_HELPER.client.chat(prompt)
+        content = response.choices[0].message.content
+        parsed = _extract_json_object(content)
+    except Exception as exc:
+        logging.warning("Release week control: GigaChat recommendation failed: %s", exc)
+        return {
+            "control": control,
+            "recommendations": [],
+            "source": "error",
+            "message": f"Ошибка GigaChat: {exc}",
+        }
+
+    raw_recommendations = parsed.get("recommendations") if isinstance(parsed, dict) else []
+    if not isinstance(raw_recommendations, list):
+        raw_recommendations = []
+
+    allowed_set = set(allowed_candidates)
+    missing_by_row_key = {item.get("row_key"): item for item in missing if item.get("row_key")}
+    normalized_recommendations = []
+    for raw_item in raw_recommendations:
+        if not isinstance(raw_item, dict):
+            continue
+        row_key = str(raw_item.get("row_key") or "").strip()
+        if row_key not in missing_by_row_key:
+            continue
+        recommended = _normalize_giga_recommendation_name(raw_item.get("recommended"), allowed_set)
+        if not recommended:
+            continue
+        backup = _normalize_giga_recommendation_name(raw_item.get("backup"), allowed_set)
+        confidence = str(raw_item.get("confidence") or "medium").strip().lower()
+        if confidence not in {"high", "medium", "low"}:
+            confidence = "medium"
+        source_item = missing_by_row_key[row_key]
+        normalized_recommendations.append({
+            "row_key": row_key,
+            "release_key": source_item.get("release_key", ""),
+            "rov_key": source_item.get("rov_key", ""),
+            "recommended": recommended,
+            "backup": backup,
+            "confidence": confidence,
+            "reason": str(raw_item.get("reason") or "").strip(),
+        })
+
+    return {
+        "control": control,
+        "recommendations": normalized_recommendations,
+        "source": "gigachat",
+        "summary": str(parsed.get("summary") or "").strip() if isinstance(parsed, dict) else "",
+        "message": "" if normalized_recommendations else "GigaChat не вернул применимых рекомендаций.",
+    }
 
 
 def upload_release_monitor_duty_schedules(uploaded_files):
