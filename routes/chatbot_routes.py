@@ -69,13 +69,27 @@ def chat():
         # Получаем контекст дашборда (если передан)
         dashboard_context = data.get('context')
         
-        # Если контекст не передан, получаем свежие данные
-        if not dashboard_context:
+        needs_fresh_dashboard = not dashboard_context
+        if dashboard_context and dashboard_context.get("page_context") == "home":
+            task_lists = (
+                dashboard_context.get("sup_tasks"),
+                dashboard_context.get("logi_tasks"),
+                dashboard_context.get("vnedrenie_prom_tasks"),
+                dashboard_context.get("vnedrenie_psi_tasks"),
+            )
+            needs_fresh_dashboard = not any(task_lists)
+
+        # Если контекст не передан или главная страница не несет рабочие данные,
+        # подтягиваем их на backend, чтобы главный Oplot был независим от страницы.
+        if needs_fresh_dashboard:
             try:
-                dashboard_context = get_dashboard_data()
+                fresh_context = get_dashboard_data()
+                if dashboard_context:
+                    fresh_context.update({k: v for k, v in dashboard_context.items() if v not in (None, "", [])})
+                dashboard_context = fresh_context
             except Exception as e:
                 logging.warning(f"Не удалось получить данные дашборда: {e}")
-                dashboard_context = {}
+                dashboard_context = dashboard_context or {}
         
         # Обрабатываем сообщение
         chatbot = get_chatbot()
@@ -119,43 +133,31 @@ def get_suggestions():
         
         # Базовые подсказки
         default_suggestions = [
-            {"text": "Что я умею", "action": "capabilities"},
-            {"text": "Сгенерировать статистику", "action": "assignee_stats"},
-            {"text": "Сводка для передачи дневной смены", "action": "handover_day"},
-            {"text": "Сводка для передачи вечерней смены", "action": "handover_evening"},
-        ]
-        
-        # Контекстные подсказки по типу намерения
-        default_suggestions = [
-            {"text": "Какие релизы текущей недели закреплены за Кашкиным?", "action": "release_week_query"},
-            {"text": "Сформировать документы по релизу", "action": "release_documents"},
-            {"text": "Выгрузить таблицу релизов в Confluence", "action": "release_confluence_export"},
-            {"text": "Что ты умеешь", "action": "capabilities"},
-        ]
-
-        default_suggestions = [
             {"text": "Показать релизы недели по ответственному", "action": "release_week_query"},
             {"text": "Сформировать документы по релизу", "action": "release_documents"},
             {"text": "Выгрузить таблицу релизов в Confluence", "action": "release_confluence_export"},
-            {"text": "Что ты умеешь", "action": "capabilities"},
+            {"text": "Контроль недели", "action": "release_week_control"},
+            {"text": "Сводка дневной смены", "action": "handover_day"},
+            {"text": "Поиск задач", "action": "search_tasks"},
         ]
 
         contextual_suggestions = {
             IntentType.SEARCH_TASKS.value: [
-                {"text": "Что я умею", "action": "capabilities"},
-                {"text": "Сгенерировать статистику", "action": "assignee_stats"},
+                {"text": "Поиск задач", "action": "search_tasks"},
+                {"text": "Сводка дневной смены", "action": "handover_day"},
+                {"text": "Что ты умеешь", "action": "capabilities"},
             ],
             IntentType.GENERATE_REPORT.value: [
-                {"text": "Сгенерировать статистику", "action": "assignee_stats"},
-                {"text": "Сводка для передачи дневной смены", "action": "handover_day"},
-                {"text": "Сводка для передачи вечерней смены", "action": "handover_evening"},
-                {"text": "Что я умею", "action": "capabilities"},
+                {"text": "Сводка дневной смены", "action": "handover_day"},
+                {"text": "Сводка вечерней смены", "action": "handover_evening"},
+                {"text": "Контроль недели", "action": "release_week_control"},
+                {"text": "Что ты умеешь", "action": "capabilities"},
             ],
             IntentType.SHOW_CAPABILITIES.value: [
-                {"text": "Сгенерировать статистику", "action": "assignee_stats"},
-                {"text": "Сводка для передачи дневной смены", "action": "handover_day"},
-                {"text": "Сводка для передачи вечерней смены", "action": "handover_evening"},
-                {"text": "Что я умею", "action": "capabilities"},
+                {"text": "Показать релизы недели по ответственному", "action": "release_week_query"},
+                {"text": "Сформировать документы по релизу", "action": "release_documents"},
+                {"text": "Выгрузить таблицу релизов в Confluence", "action": "release_confluence_export"},
+                {"text": "Контроль недели", "action": "release_week_control"},
             ],
         }
         

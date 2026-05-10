@@ -88,7 +88,7 @@ class DashboardChatBot {
                     class="chat-input" 
                     id="chat-input" 
                     rows="1"
-                    placeholder="Например: какие релизы текущей недели закреплены за Кашкиным?"
+                    placeholder="Например: какие релизы текущей недели закреплены за Ивановым?"
                 ></textarea>
                 <button class="chat-send-btn" id="chat-send">
                     <i class="bi bi-send-fill"></i>
@@ -125,8 +125,8 @@ class DashboardChatBot {
                 <div class="chat-title">
                     <i class="bi bi-robot"></i>
                     <div class="chat-title-block">
-                        <span class="chat-title-label">AI-помощник дежурного</span>
-                        <span class="chat-title-subtitle">Задачи, поиск, статистика, смена</span>
+                        <span class="chat-title-label">AI-бот Oplot</span>
+                        <span class="chat-title-subtitle">Релизы, документы, Confluence, смена</span>
                     </div>
                 </div>
                 <div class="chat-actions">
@@ -528,14 +528,14 @@ class DashboardChatBot {
             );
         }
         return (
-            '*AI-помощник дежурного*\n\n' +
-            'Помогаю быстро находить задачи, собирать статистику и готовить сводки для передачи смены.\n\n' +
+            '*AI-бот Oplot*\n\n' +
+            'Помогаю с релизами, документами, Confluence и рабочим столом дежурного.\n\n' +
             'Могу:\n' +
-            '• найти задачи по ключевым словам, тегам, заголовку или описанию\n' +
-            '• собрать статистику по релизам и сформировать HTML-отчет\n' +
-            '• сформировать статистику по сотрудникам в HTML\n' +
-            '• подготовить сводку для передачи дневной или вечерней смены\n\n' +
-            'Если период не указан, по умолчанию использую текущий квартал.'
+            '• показать релизы недели по ответственному\n' +
+            '• сформировать документы по релизу\n' +
+            '• выгрузить таблицу релизов в Confluence\n' +
+            '• собрать контроль недели и предложить ответственных\n' +
+            '• найти задачи и подготовить сводку дневной или вечерней смены'
         );
     }
     

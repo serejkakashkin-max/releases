@@ -24,6 +24,8 @@ import requests
 from services.report_service import save_report_to_disk
 from services.release_monitor_service import (
     get_release_monitor_snapshot,
+    get_release_monitor_week_control,
+    get_release_monitor_week_responsible_recommendations,
     sync_release_monitor_assignments_from_confluence,
 )
 from services.release_report_service import get_release_report_service
@@ -95,6 +97,25 @@ class DashboardChatBot:
         if session_id not in self.sessions:
             self.sessions[session_id] = ChatContext(session_id=session_id)
         return self.sessions[session_id]
+
+    def get_default_suggestions(self) -> List[str]:
+        return [
+            "Релизы недели по ответственному",
+            "Сформировать документы по релизу",
+            "Выгрузить таблицу релизов в Confluence",
+            "Контроль недели",
+            "Сводка дневной смены",
+            "Поиск задач",
+        ]
+
+    def _release_work_suggestions(self) -> List[str]:
+        return [
+            "Релизы недели по ответственному",
+            "Сформировать документы по релизу",
+            "Выгрузить таблицу релизов в Confluence",
+            "Контроль недели",
+            "Что ты умеешь",
+        ]
     
     def process_message(self, message: str, session_id: str, dashboard_context: Dict = None) -> Dict:
         """
@@ -259,6 +280,51 @@ class DashboardChatBot:
         if not self.giga_helper.client:
             return None
 
+        dashboard_summary = self._get_dashboard_summary(dashboard_context)
+        prompt = f"""Ты маршрутизатор запросов для единого AI-бота Oplot.
+
+Oplot умеет работать с рабочим столом дежурного, Блоком релизов, документами и Confluence.
+Не придумывай данные и новые действия. Если параметров мало, выбирай ближайшее действие с confidence=medium или low, чтобы локальная логика задала уточнение.
+
+Текущий локальный intent: {local_intent.value}
+
+Поддерживаемые действия:
+- search_tasks: поиск или показ задач Jira/OPLOT
+- generate_report: статистика, отчеты, сводка смены, релизная аналитика
+- specific_task: запрос по конкретному ключу Jira
+- show_capabilities: показать возможности бота
+- greeting: приветствие
+- free_chat: свободный разговор вне рабочих сценариев
+- unknown: запрос неясен
+
+Контекст:
+{dashboard_summary}
+
+Запрос пользователя:
+{message}
+
+Верни только JSON:
+{{
+  "action": "one_of_supported_actions",
+  "normalized_message": "короткая нормализованная формулировка на русском или пустая строка",
+  "confidence": "high|medium|low"
+}}"""
+        try:
+            response = self.giga_helper.client.chat(prompt)
+            content = response.choices[0].message.content
+            match = re.search(r'\{.*\}', content, re.DOTALL)
+            if not match:
+                return None
+            data = json.loads(match.group())
+            return {
+                'action': data.get('action'),
+                'normalized_message': str(data.get('normalized_message') or '').strip(),
+                'confidence': data.get('confidence', 'low')
+            }
+        except Exception as e:
+            logging.warning(f"Не удалось получить AI-план запроса: {e}")
+            return None
+
     def _build_clarification_prompt(
         self,
         session: ChatContext,
@@ -391,7 +457,7 @@ class DashboardChatBot:
         return {
             'text': response['text'],
             'intent': resolved_intent.value if resolved_intent else 'unknown',
-            'suggestions': self.intent_classifier.get_suggestions(resolved_intent),
+            'suggestions': response.get('suggestions', self.intent_classifier.get_suggestions(resolved_intent)),
             'metadata': response.get('metadata', {})
         }
 
@@ -401,7 +467,8 @@ class DashboardChatBot:
         work_markers = [
             'задач', 'jira', 'сотрудник', 'статист', 'сататист', 'сводк', 'смен',
             'отчет', 'отчёт', 'суп', 'логи', 'бд', 'инфра', 'роль', 'пси', 'внедрение',
-            'покажи', 'найди', 'сгенер', 'сформир', 'передач'
+            'релиз', 'ров', 'confluence', 'документ', 'ответствен', 'контрол', 'оплот',
+            'покажи', 'найди', 'сгенер', 'сформир', 'передач', 'выгруз', 'предлож'
         ]
         return any(marker in message_lower for marker in work_markers)
 
@@ -472,6 +539,26 @@ class DashboardChatBot:
         if self._is_release_confluence_export_query(normalized):
             return self._handle_release_confluence_export_query()
 
+        if self._is_release_week_recommendation_query(normalized):
+            return self._handle_release_week_recommendations()
+
+        if self._is_release_week_control_query(normalized):
+            return self._handle_release_week_control()
+
+        if self._is_current_week_release_report_query(normalized):
+            return self._handle_current_week_release_report()
+
+        if self._is_release_statistics_query(normalized):
+            return self._handle_release_statistics({}, dashboard_context, message)
+
+        if self._is_generic_task_search_prompt(normalized):
+            return {
+                "text": "Что ищем по задачам? Напиши ключ Jira или пару слов для поиска, например: `Найди задачу OPLOT-12345` или `Найди задачи по логам`.",
+                "intent": "search_tasks",
+                "suggestions": ["Найди задачу OPLOT-12345", "Найди задачи по логам", "Сводка дневной смены"],
+                "metadata": {"type": "search_tasks", "reason": "missing_query"},
+            }
+
         return None
 
     def _normalize_command_text(self, value: str) -> str:
@@ -495,6 +582,40 @@ class DashboardChatBot:
             "confluence" in normalized
             and "релиз" in normalized
             and any(marker in normalized for marker in ("выгруз", "обнов", "экспорт", "синхрон"))
+        )
+
+    def _is_release_week_control_query(self, normalized: str) -> bool:
+        return (
+            ("контрол" in normalized and "недел" in normalized)
+            or ("релиз" in normalized and "недел" in normalized and "без ответствен" in normalized)
+            or ("неназнач" in normalized and "релиз" in normalized)
+        )
+
+    def _is_release_week_recommendation_query(self, normalized: str) -> bool:
+        return (
+            any(marker in normalized for marker in ("предлож", "порекоменду", "рекоменд"))
+            and any(marker in normalized for marker in ("ответствен", "исполнител"))
+        )
+
+    def _is_current_week_release_report_query(self, normalized: str) -> bool:
+        return (
+            "релиз" in normalized
+            and "недел" in normalized
+            and any(marker in normalized for marker in ("отчет", "отчёт", "сводк", "план", "html"))
+        )
+
+    def _is_release_statistics_query(self, normalized: str) -> bool:
+        return (
+            "релиз" in normalized
+            and any(marker in normalized for marker in ("статист", "отчет", "отчёт", "аналитик", "сводк"))
+        )
+
+    def _is_generic_task_search_prompt(self, normalized: str) -> bool:
+        return normalized in {"поиск задач", "найти задачи", "показать задачи", "задачи"} or (
+            "задач" in normalized
+            and any(marker in normalized for marker in ("поиск", "найди", "найти", "показать"))
+            and not re.search(r"\b[A-ZА-Я]+-\d+\b", normalized, re.IGNORECASE)
+            and len(normalized.split()) <= 3
         )
 
     def _extract_release_key(self, value: str) -> str:
@@ -596,6 +717,154 @@ class DashboardChatBot:
                 return True
         return False
 
+    def _format_release_link(self, release_key: str, release_url: str = "") -> str:
+        release_key = str(release_key or "").strip() or "-"
+        release_url = str(release_url or "").strip()
+        return f"[{release_key}]({release_url})" if release_url else release_key
+
+    def _handle_release_week_control(self) -> Dict:
+        try:
+            control = get_release_monitor_week_control() or {}
+            stats = control.get("statistics", {}) if isinstance(control, dict) else {}
+            period = control.get("period", {}) if isinstance(control, dict) else {}
+            missing = control.get("missing_responsible") or []
+            candidates = control.get("candidates", {}) or {}
+            assigned_load = control.get("assigned_load", {}) or {}
+
+            lines = [
+                "*Контроль недели по релизам*",
+                f"Период: {period.get('label', '-')}",
+                "",
+                f"Релизы недели: {stats.get('week_releases', 0)}",
+                f"Без ответственного: {stats.get('missing_responsible', 0)}",
+                f"Доступных кандидатов: {stats.get('available_candidates', 0)}",
+                f"Исключено по графику: {stats.get('excluded_candidates', 0)}",
+            ]
+
+            if assigned_load:
+                load_preview = ", ".join(f"{name}: {count}" for name, count in list(assigned_load.items())[:6])
+                lines.extend(["", f"Текущая нагрузка: {load_preview}"])
+
+            if missing:
+                lines.extend(["", "*Релизы без ответственного:*"])
+                for item in missing[:8]:
+                    release_link = self._format_release_link(item.get("release_key"), item.get("release_url"))
+                    rov_key = str(item.get("rov_key") or "без РОВ").strip()
+                    start = str(item.get("deployment_start") or "-").strip()
+                    summary = str(item.get("release_summary") or item.get("system_name") or "").strip()
+                    summary_text = f" - {summary[:90]}" if summary else ""
+                    lines.append(f"• {release_link} / {rov_key} - {start}{summary_text}")
+                if len(missing) > 8:
+                    lines.append(f"• ... и еще {len(missing) - 8}")
+            else:
+                lines.extend(["", "По релизам текущей недели все ответственные назначены."])
+
+            available_names = [item.get("name") for item in candidates.get("available", []) if item.get("name")]
+            if available_names:
+                lines.extend(["", f"Доступны для назначения: {', '.join(available_names[:10])}"])
+
+            return {
+                "text": "\n".join(lines),
+                "intent": "release_week_control",
+                "suggestions": ["Предложи ответственных по релизам недели", "Релизы недели по ответственному", "Выгрузить таблицу релизов в Confluence"],
+                "metadata": {"type": "release_week_control", "control": control},
+            }
+        except Exception as exc:
+            logging.error("Release week control from chat failed: %s", exc)
+            return {
+                "text": f"Не удалось собрать контроль недели: {exc}",
+                "intent": "release_week_control",
+                "suggestions": self._release_work_suggestions(),
+                "metadata": {"type": "release_week_control", "error": str(exc)},
+            }
+
+    def _handle_release_week_recommendations(self) -> Dict:
+        try:
+            result = get_release_monitor_week_responsible_recommendations() or {}
+            control = result.get("control", {}) or {}
+            recommendations = result.get("recommendations") or []
+            message = str(result.get("message") or "").strip()
+            summary = str(result.get("summary") or "").strip()
+            period = (control.get("period") or {}).get("label", "-")
+
+            lines = ["*Рекомендации по ответственным на неделю*", f"Период: {period}", ""]
+            if summary:
+                lines.append(summary)
+                lines.append("")
+            if message and not recommendations:
+                lines.append(message)
+
+            if recommendations:
+                for index, item in enumerate(recommendations[:10], 1):
+                    release_key = str(item.get("release_key") or "-").strip()
+                    rov_key = str(item.get("rov_key") or "без РОВ").strip()
+                    responsible = str(item.get("recommended") or item.get("responsible") or "-").strip()
+                    reason = str(item.get("reason") or "").strip()
+                    reason_text = f" - {reason}" if reason else ""
+                    lines.append(f"{index}. {release_key} / {rov_key}: {responsible}{reason_text}")
+                if len(recommendations) > 10:
+                    lines.append(f"... и еще {len(recommendations) - 10}")
+            elif not message:
+                lines.append("GigaChat не вернул кандидатов. Проверь, есть ли релизы без ответственного и доступные сотрудники по графику.")
+
+            return {
+                "text": "\n".join(lines),
+                "intent": "release_week_recommendations",
+                "suggestions": ["Контроль недели", "Релизы недели по ответственному", "Сформировать документы по релизу"],
+                "metadata": {"type": "release_week_recommendations", "recommendation": result},
+            }
+        except Exception as exc:
+            logging.error("Release week recommendations from chat failed: %s", exc)
+            return {
+                "text": f"Не удалось получить рекомендации по ответственным: {exc}",
+                "intent": "release_week_recommendations",
+                "suggestions": self._release_work_suggestions(),
+                "metadata": {"type": "release_week_recommendations", "error": str(exc)},
+            }
+
+    def _handle_current_week_release_report(self) -> Dict:
+        try:
+            snapshot = get_release_monitor_snapshot() or {}
+            items = snapshot.get("items", []) if isinstance(snapshot, dict) else []
+            if not items:
+                return {
+                    "text": "В таблице релизов пока нет данных для отчета текущей недели.",
+                    "intent": "release_current_week_report",
+                    "suggestions": self._release_work_suggestions(),
+                    "metadata": {"type": "release_current_week_report", "count": 0},
+                }
+            report_service = get_release_report_service()
+            report_data = report_service.generate_current_week_plan_report(items)
+            html_content = report_service.generate_current_week_plan_html(report_data)
+            report_id = save_report_to_disk(html_content)
+            download_url = f"/dashboard/api/chat/report/download/{report_id}"
+            stats = report_data.get("statistics", {})
+            period = report_data.get("period", {})
+            try:
+                control_missing = (get_release_monitor_week_control() or {}).get("statistics", {}).get("missing_responsible", 0)
+            except Exception:
+                control_missing = 0
+            return {
+                "text": (
+                    "*План релизов текущей недели готов*\n"
+                    f"Период: {period.get('label', '-')}\n\n"
+                    f"Строк в отчете: {stats.get('total', 0)}\n"
+                    f"Без ответственного: {control_missing}\n\n"
+                    f"[Скачать HTML-отчет]({download_url})"
+                ),
+                "intent": "release_current_week_report",
+                "suggestions": ["Контроль недели", "Предложи ответственных по релизам недели", "Выгрузить таблицу релизов в Confluence"],
+                "metadata": {"type": "release_current_week_report", "download_url": download_url, "report_id": report_id},
+            }
+        except Exception as exc:
+            logging.error("Current week release report from chat failed: %s", exc)
+            return {
+                "text": f"Не удалось сформировать отчет текущей недели: {exc}",
+                "intent": "release_current_week_report",
+                "suggestions": self._release_work_suggestions(),
+                "metadata": {"type": "release_current_week_report", "error": str(exc)},
+            }
+
     def _handle_release_week_assignee_query(self, message: str) -> Dict:
         snapshot = get_release_monitor_snapshot() or {}
         items = snapshot.get("items", []) if isinstance(snapshot, dict) else []
@@ -606,13 +875,13 @@ class DashboardChatBot:
             return {
                 "text": "По кому показать релизы текущей недели? Напиши фамилию в запросе, например: `Какие релизы текущей недели закреплены за Ивановым?`",
                 "intent": "release_week_query",
-                "suggestions": ["Сформировать документы по релизу", "Что ты умеешь?"],
+                "suggestions": ["Сформировать документы по релизу", "Контроль недели", "Что ты умеешь"],
                 "metadata": {"type": "release_week_query", "reason": "missing_surname"},
             }
             return {
-                "text": "Понял запрос по релизам недели, но не смог уверенно определить фамилию. Напиши, например: `Какие релизы текущей недели закреплены за Кашкиным?`",
+                "text": "Понял запрос по релизам недели, но не смог уверенно определить фамилию. Напиши, например: `Какие релизы текущей недели закреплены за Ивановым?`",
                 "intent": "release_week_query",
-                "suggestions": ["Какие релизы текущей недели закреплены за Кашкиным?", "Что ты умеешь?"],
+                "suggestions": ["Показать релизы недели по ответственному", "Что ты умеешь"],
                 "metadata": {"type": "release_week_query", "reason": "missing_surname"},
             }
 
@@ -672,11 +941,7 @@ class DashboardChatBot:
                 release_suggestions.append(f"Сформировать документы по {suggestion_key}")
             if len(release_suggestions) >= 6:
                 break
-        suggestions = ["Выгрузить таблицу релизов в Confluence", "Что ты умеешь?"]
-        suggestions = release_suggestions + ["Выгрузить таблицу релизов в Confluence", "Что ты умеешь?"]
-        first_key = ""
-        if first_key:
-            suggestions.insert(0, f"Сформировать документы по {first_key}")
+        suggestions = release_suggestions + ["Выгрузить таблицу релизов в Confluence", "Контроль недели", "Что ты умеешь"]
 
         return {
             "text": "\n".join(lines),
@@ -719,7 +984,7 @@ class DashboardChatBot:
             return {
                 "text": "Да, могу запустить сценарий документов через чат. Напиши номер релиза, например: `Сформируй документы по EMRM-12345`.",
                 "intent": "release_document_flow",
-                "suggestions": ["Какие релизы текущей недели закреплены за Кашкиным?", "Сформировать документы по релизу"],
+                "suggestions": ["Показать релизы недели по ответственному", "Сформировать документы по релизу"],
                 "metadata": {"type": "release_document_flow", "state": "need_release_key"},
             }
 
@@ -798,14 +1063,13 @@ class DashboardChatBot:
             return {
                 "text": (
                     f"Принял {instruction_text} для *{release_key} / {rov_key}*.\n\n"
-                    "На этом этапе я уже держу контекст релиза, но полный мастер документов через чат еще подключается к действующему генератору. "
-                    "Следующим шагом добавим вопросы про плейбуки, версию отката и ЗНИ, а затем генерацию тем же механизмом, что кнопка в строке релиза."
+                    "Продолжаем сценарий документов в чате. Если понадобится версия отката, плейбуки или ЗНИ, я задам следующий точный вопрос."
                 ),
                 "intent": "release_document_flow",
                 "suggestions": [
                     f"Открыть ручной генератор для {release_key}",
                     "Выгрузить таблицу релизов в Confluence",
-                    "Какие релизы текущей недели закреплены за Кашкиным?",
+                    "Показать релизы недели по ответственному",
                 ],
                 "metadata": {
                     "type": "release_document_flow",
@@ -821,7 +1085,7 @@ class DashboardChatBot:
             return {
                 "text": "Ок, сбросил сценарий формирования документов.",
                 "intent": "release_document_flow",
-                "suggestions": ["Сформировать документы по релизу", "Какие релизы текущей недели закреплены за Кашкиным?"],
+                "suggestions": ["Сформировать документы по релизу", "Показать релизы недели по ответственному"],
                 "metadata": {"type": "release_document_flow", "state": "cancelled"},
             }
 
@@ -838,7 +1102,7 @@ class DashboardChatBot:
             return {
                 "text": "Напиши номер релиза, по которому нужно сформировать документы. Например: `Сформировать документы по EMRM-12345`.",
                 "intent": "release_document_flow",
-                "suggestions": ["Какие релизы текущей недели закреплены за Кашкиным?", "Сформировать документы по EMRM-12345"],
+                "suggestions": ["Показать релизы недели по ответственному", "Сформировать документы по EMRM-12345"],
                 "metadata": {"type": "release_document_flow", "state": "need_release_key"},
             }
 
@@ -861,7 +1125,7 @@ class DashboardChatBot:
             return {
                 "text": f"По *{release_key} / {rov_key}* не назначен дежурный OPLOT. Сначала назначь ответственного в блоке релизов.",
                 "intent": "release_document_flow",
-                "suggestions": ["Открыть блок релизов", "Какие релизы текущей недели закреплены за Кашкиным?"],
+                "suggestions": ["Открыть блок релизов", "Показать релизы недели по ответственному"],
                 "metadata": {"type": "release_document_flow", "state": "missing_oplot", "release_key": release_key},
             }
         if not checker:
@@ -941,7 +1205,7 @@ class DashboardChatBot:
             return {
                 "text": "Ок, сбросил сценарий формирования документов.",
                 "intent": "release_document_flow",
-                "suggestions": ["Сформировать документы по релизу", "Какие релизы текущей недели закреплены за Кашкиным?"],
+                "suggestions": ["Сформировать документы по релизу", "Показать релизы недели по ответственному"],
                 "metadata": {"type": "release_document_flow", "state": "cancelled"},
             }
 
@@ -1087,7 +1351,7 @@ class DashboardChatBot:
             return {
                 "text": f"Документы по *{release_key}* готовы.{zni_text}\n[Скачать ZIP]({download_url})",
                 "intent": "release_document_flow",
-                "suggestions": ["Какие релизы текущей недели закреплены за Кашкиным?", "Выгрузить таблицу релизов в Confluence"],
+                "suggestions": ["Показать релизы недели по ответственному", "Выгрузить таблицу релизов в Confluence"],
                 "metadata": {"type": "release_document_flow", "state": "generated", "download_url": download_url},
             }
         except Exception as exc:
@@ -1108,7 +1372,7 @@ class DashboardChatBot:
             return {
                 "text": f"Готово, выгрузил таблицу релизов в Confluence за {year} год. Обновлено строк: {updated}. Страница: [Таблица в Confluence]({page_url}).",
                 "intent": "release_confluence_export",
-                "suggestions": ["Какие релизы текущей недели закреплены за Кашкиным?", "Сформировать документы по релизу"],
+                "suggestions": ["Показать релизы недели по ответственному", "Сформировать документы по релизу"],
                 "metadata": {"type": "release_confluence_export", "result": result},
             }
         except Exception as exc:
@@ -1124,14 +1388,16 @@ class DashboardChatBot:
         """Ответ для неподдерживаемых запросов."""
         return {
             'text': (
-                "Я это еще не умею, функция в стадии разработки.\n\n"
-                "Сейчас доступны:\n"
-                "• показать задачи за период;\n"
-                "• найти задачи по ключевым словам, тегам, заголовку или тексту;\n"
-                "• сгенерировать статистику за период;\n"
-                "• сделать сводку для дневной или вечерней передачи смены.\n\n"
-                "Если период не указан, использую текущий квартал."
+                "Я не до конца понял запрос. Напиши чуть конкретнее: нужен релиз, документ, Confluence, контроль недели, задача Jira или сводка смены?\n\n"
+                "Примеры:\n"
+                "• `Какие релизы текущей недели закреплены за Ивановым?`\n"
+                "• `Сформировать документы по EMRM-12345`\n"
+                "• `Выгрузи таблицу релизов в Confluence`\n"
+                "• `Покажи контроль недели`\n"
+                "• `Сводка дневной смены`\n"
+                "• `Найди задачу OPLOT-12345`"
             ),
+            'suggestions': self.get_default_suggestions(),
             'metadata': {'type': 'unsupported'}
         }
     
@@ -1161,17 +1427,18 @@ class DashboardChatBot:
         """Показывает все возможности бота"""
         return {
             'text': (
-                "*Что умеет AI-помощник*\n\n"
-                "1. Найти задачи по тексту запроса.\n"
-                "Примеры: `найди задачи по логам`, `найди задачи в описании focus.bh.new_clm_list.users`, `найди задачи в заголовке oracle`.\n\n"
-                "2. Найти нужные задачи.\n"
-                "Примеры: `найди задачи с тегом логи`, `найди задачу с текстом \"oracle\"`, `найди задачи со словом \"БД\" в заголовке`.\n\n"
-                "3. Сформировать статистику по сотрудникам в HTML.\n"
-                "Примеры: `сгенерируй статистику`, `статистика за 2 недели`, `статистика за 1 квартал 2026`.\n\n"
-                "4. Подготовить сводку для передачи смены.\n"
-                "Примеры: `сводка для передачи дневной смены`, `сводка для передачи вечерней смены`.\n\n"
-                "Если период не указан, используется текущий квартал."
+                "*Что умеет AI-бот Oplot*\n\n"
+                "1. Работать с релизами: показать релизы недели по ответственному, собрать контроль недели, подготовить релизную статистику и предложить ответственных.\n"
+                "Примеры: `Какие релизы текущей недели закреплены за Ивановым?`, `Покажи контроль недели`, `Предложи ответственных по релизам недели`.\n\n"
+                "2. Формировать релизные документы тем же механизмом, что кнопка в строке релиза.\n"
+                "Пример: `Сформировать документы по EMRM-12345`.\n\n"
+                "3. Выгружать релизную таблицу в Confluence.\n"
+                "Пример: `Выгрузи таблицу релизов в Confluence`.\n\n"
+                "4. Помогать по рабочему столу дежурного: искать задачи, готовить сводку дневной/вечерней смены и статистику по сотрудникам.\n"
+                "Примеры: `Найди задачу OPLOT-12345`, `Сводка дневной смены`, `Статистика за неделю`.\n\n"
+                "Если запрос неоднозначный, я уточню недостающую деталь."
             ),
+            'suggestions': self.get_default_suggestions(),
             'metadata': {'type': 'capabilities'}
         }
     
@@ -1363,6 +1630,9 @@ class DashboardChatBot:
         """Определяет, относится ли запрос к аналитике по релизной таблице."""
         release_items = (dashboard_context or {}).get('release_monitor') or []
         if not release_items:
+            snapshot = get_release_monitor_snapshot() or {}
+            release_items = snapshot.get('items') or []
+        if not release_items:
             return False
 
         release_markers = [
@@ -1461,6 +1731,7 @@ class DashboardChatBot:
 
             return {
                 'text': text,
+                'suggestions': ["Контроль недели", "Отчет релизов текущей недели", "Выгрузить таблицу релизов в Confluence"],
                 'metadata': {
                     'total_tasks': stats['total'],
                     'period': period,
@@ -1699,13 +1970,14 @@ class DashboardChatBot:
 
     def _get_welcome_text(self) -> str:
         return (
-            "*AI-помощник дежурного*\n\n"
-            "Помогаю быстро находить задачи, собирать статистику и готовить сводки для передачи смены.\n\n"
+            "*AI-бот Oplot*\n\n"
+            "Помогаю с релизами, документами, Confluence и рабочим столом дежурного.\n\n"
             "Могу:\n"
-            "• найти задачи по ключевым словам, тегам, заголовку или описанию;\n"
-            "• сформировать статистику по сотрудникам в HTML;\n"
-            "• подготовить сводку для передачи дневной или вечерней смены.\n\n"
-            "Если не указать период, по умолчанию беру текущий квартал."
+            "• показать релизы недели по ответственному;\n"
+            "• сформировать документы по релизу;\n"
+            "• выгрузить таблицу релизов в Confluence;\n"
+            "• собрать контроль недели и предложить ответственных;\n"
+            "• найти задачи и подготовить сводку дневной или вечерней смены."
         )
 
     def _format_day_shift_handover(self, dashboard_context: Dict) -> str:
@@ -1810,12 +2082,22 @@ class DashboardChatBot:
 
         try:
             dashboard_summary = self._get_dashboard_summary(dashboard_context)
-            prompt = f"""Ты дружелюбный и краткий AI-помощник дежурного инженера.
+            prompt = f"""Ты дружелюбный и краткий AI-бот Oplot для команды OPLOT.
 
-Если вопрос относится к рабочим задачам, статистике, поиску задач, передаче смены или Jira,
-в ответе мягко направь пользователя к поддерживаемым сценариям бота.
+Ты помогаешь с рабочим столом дежурного, Блоком релизов, релизными документами и выгрузкой в Confluence.
+Не выдумывай факты, номера задач, релизы, ответственных и ссылки. Если для действия не хватает параметра, задай один конкретный уточняющий вопрос.
+Если вопрос относится к поддерживаемому действию, подскажи точную формулировку команды.
 
-Если вопрос сторонний и разговорный, можешь ответить по существу как обычный собеседник.
+Поддерживаемые примеры:
+- `Какие релизы текущей недели закреплены за Ивановым?`
+- `Сформировать документы по EMRM-12345`
+- `Выгрузи таблицу релизов в Confluence`
+- `Покажи контроль недели`
+- `Предложи ответственных по релизам недели`
+- `Сводка дневной смены`
+- `Найди задачу OPLOT-12345`
+
+Если вопрос сторонний и разговорный, можешь ответить по существу коротко.
 
 Контекст дашборда:
 {dashboard_summary}
