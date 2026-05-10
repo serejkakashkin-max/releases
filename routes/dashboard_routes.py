@@ -15,6 +15,8 @@ from services.release_monitor_service import (
     get_release_monitor_refresh_status,
     ensure_release_monitor_not_refreshing,
     get_release_monitor_reviewer_options,
+    get_release_monitor_week_control,
+    get_release_monitor_week_responsible_recommendations,
     upload_release_monitor_duty_schedules,
     sync_release_monitor_assignments_from_confluence,
     save_release_monitor_manual_order,
@@ -201,6 +203,33 @@ def current_week_release_monitor_page():
     except Exception as e:
         logging.exception("Ошибка открытия мониторинга релизов текущей недели")
         return f"Ошибка открытия мониторинга релизов текущей недели: {str(e)}", 500
+
+
+@dashboard_bp.route('/dashboard/release-monitor/week-control', methods=['GET'])
+def release_monitor_week_control():
+    """Возвращает контрольную сводку по релизам текущей недели."""
+    try:
+        return jsonify({
+            "success": True,
+            "control": get_release_monitor_week_control(),
+        })
+    except Exception as e:
+        logging.exception("Ошибка формирования контроля недели по релизам")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@dashboard_bp.route('/dashboard/release-monitor/week-control/recommend', methods=['POST'])
+def release_monitor_week_control_recommend():
+    """Формирует AI-рекомендации по ответственным на текущую неделю."""
+    try:
+        return jsonify({
+            "success": True,
+            "recommendation": get_release_monitor_week_responsible_recommendations(),
+        })
+    except Exception as e:
+        logging.exception("Ошибка формирования AI-рекомендаций по ответственным")
+        return jsonify({"success": False, "error": str(e)}), 500
+
 
 @dashboard_bp.route('/dashboard/api/data', methods=['GET'])
 def api_dashboard_data():
