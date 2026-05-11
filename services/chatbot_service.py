@@ -26,9 +26,11 @@ from services.release_monitor_service import (
     get_release_monitor_snapshot,
     get_release_monitor_week_control,
     get_release_monitor_week_responsible_recommendations,
+    set_release_monitor_assignment,
     sync_release_monitor_assignments_from_confluence,
 )
 from services.release_report_service import get_release_report_service
+from config import OPLOT_VALUES
 
 
 BASE_PATH = os.getenv("BASE_PATH", "")
@@ -165,6 +167,26 @@ class DashboardChatBot:
             if self._is_release_report_request((normalized_message or message).lower(), dashboard_context):
                 resolved_intent = IntentType.GENERATE_REPORT
 
+            release_ai_response = self._execute_release_ai_action(
+                ai_plan,
+                message=message,
+                normalized_message=normalized_message,
+                session=session,
+                dashboard_context=dashboard_context,
+            )
+            if release_ai_response:
+                session.add_message('user', message, release_ai_response.get('intent', 'release_agent'))
+                session.add_message('assistant', release_ai_response['text'], metadata=release_ai_response.get('metadata', {}))
+                return {
+                    'text': release_ai_response['text'],
+                    'intent': release_ai_response.get('intent', 'release_agent'),
+                    'suggestions': release_ai_response.get('suggestions', []),
+                    'metadata': {
+                        **release_ai_response.get('metadata', {}),
+                        **({'normalized_message': normalized_message} if normalized_message != message else {})
+                    }
+                }
+
             params = self._extract_params(normalized_message, resolved_intent)
 
             if resolved_intent == IntentType.SEARCH_TASKS:
@@ -270,6 +292,53 @@ class DashboardChatBot:
         }
         return mapping.get(action)
 
+    def _execute_release_ai_action(
+        self,
+        ai_plan: Optional[Dict],
+        *,
+        message: str,
+        normalized_message: str,
+        session: ChatContext,
+        dashboard_context: Dict = None,
+    ) -> Optional[Dict]:
+        """Выполняет релизные действия, которые GigaChat распознал в свободной формулировке."""
+        if not ai_plan:
+            return None
+
+        action = str(ai_plan.get('action') or '').strip()
+        if not action:
+            return None
+
+        command_text = (ai_plan.get('normalized_message') or normalized_message or message or '').strip()
+        release_actions = {
+            'release_documents',
+            'release_confluence_export',
+            'release_week_query',
+            'release_week_control',
+            'release_week_recommendations',
+            'release_current_week_report',
+            'release_statistics',
+        }
+        if action not in release_actions:
+            return None
+
+        if action == 'release_documents':
+            return self._handle_release_document_query(command_text, session)
+        if action == 'release_confluence_export':
+            return self._handle_release_confluence_export_query()
+        if action == 'release_week_query':
+            return self._handle_release_week_assignee_query(command_text, session=session)
+        if action == 'release_week_control':
+            return self._handle_release_week_control()
+        if action == 'release_week_recommendations':
+            return self._handle_release_week_recommendations(session=session)
+        if action == 'release_current_week_report':
+            return self._handle_current_week_release_report()
+        if action == 'release_statistics':
+            return self._handle_release_statistics({}, dashboard_context, command_text)
+
+        return None
+
     def _plan_with_gigachat(
         self,
         message: str,
@@ -289,6 +358,13 @@ Oplot умеет работать с рабочим столом дежурно�
 Текущий локальный intent: {local_intent.value}
 
 Поддерживаемые действия:
+- release_documents: оформить или сформировать документы по релизу
+- release_confluence_export: выгрузить таблицу релизов в Confluence
+- release_week_query: показать релизы текущей недели по ответственному
+- release_week_control: контроль недели, релизы без ответственного, доступные/исключенные кандидаты
+- release_week_recommendations: предложить или порекомендовать ответственных по релизам недели
+- release_current_week_report: сформировать HTML-отчет или сводку по релизам текущей недели
+- release_statistics: релизная статистика, аналитика по релизам
 - search_tasks: поиск или показ задач Jira/OPLOT
 - generate_report: статистика, отчеты, сводка смены, релизная аналитика
 - specific_task: запрос по конкретному ключу Jira
@@ -296,6 +372,12 @@ Oplot умеет работать с рабочим столом дежурно�
 - greeting: приветствие
 - free_chat: свободный разговор вне рабочих сценариев
 - unknown: запрос неясен
+
+Правила:
+- Если пользователь просит "оформить", "собрать пакет", "подготовить документы" и указан ключ релиза, выбирай release_documents.
+- Если пользователь спрашивает "релизы за/у/для <фамилия>", выбирай release_week_query, даже если слово "ответственный" не написано.
+- Если пользователь просит "предложи ответственных" или "кого назначить", выбирай release_week_recommendations.
+- Если пользователь просто общается или задает сторонний вопрос без рабочих маркеров, выбирай free_chat.
 
 Контекст:
 {dashboard_summary}
@@ -437,6 +519,21 @@ Oplot умеет работать с рабочим столом дежурно�
             local_intent,
             dashboard_context
         )
+        release_ai_response = self._execute_release_ai_action(
+            ai_plan,
+            message=message,
+            normalized_message=normalized_message,
+            session=session,
+            dashboard_context=dashboard_context,
+        )
+        if release_ai_response:
+            return {
+                'text': release_ai_response['text'],
+                'intent': release_ai_response.get('intent', 'release_agent'),
+                'suggestions': release_ai_response.get('suggestions', []),
+                'metadata': release_ai_response.get('metadata', {})
+            }
+
         params = self._extract_params(normalized_message, resolved_intent)
         if resolved_intent == IntentType.SEARCH_TASKS:
             params['_original_message'] = normalized_message
@@ -489,6 +586,10 @@ Oplot умеет работать с рабочим столом дежурно�
         pending = session.active_release_flow or {}
         if pending.get("type") == "release_document_flow":
             return self._handle_release_document_flow_reply(message, session)
+        if pending.get("type") == "week_responsible_recommendations":
+            return self._handle_week_recommendation_reply(message, session)
+        if pending.get("type") == "release_week_query_result" and self._is_batch_document_request(normalized):
+            return self._start_release_document_batch(session)
 
         if self._is_release_document_query(normalized):
             return self._handle_release_document_query(message, session)
@@ -497,10 +598,10 @@ Oplot умеет работать с рабочим столом дежурно�
             return self._handle_release_confluence_export_query()
 
         if self._is_release_week_recommendation_query(normalized):
-            return self._handle_release_week_recommendations()
+            return self._handle_release_week_recommendations(session=session)
 
         if self._is_release_week_assignee_query(normalized):
-            return self._handle_release_week_assignee_query(message)
+            return self._handle_release_week_assignee_query(message, session=session)
 
         if self._is_release_week_control_query(normalized):
             return self._handle_release_week_control()
@@ -527,6 +628,17 @@ Oplot умеет работать с рабочим столом дежурно�
     def _is_release_week_assignee_query(self, normalized: str) -> bool:
         if any(marker in normalized for marker in ("предлож", "порекоменду", "рекоменд")):
             return False
+        has_person_hint = bool(
+            re.search(r"\b(?:за|у|для)\s+[а-яёa-z-]{3,}", normalized, re.IGNORECASE)
+            or re.search(r"\b[а-яёa-z-]{4,}(?:а|у|ым|им|ой|ого|ему)?\s+релиз", normalized, re.IGNORECASE)
+        )
+        if (
+            "релиз" in normalized
+            and has_person_hint
+            and any(marker in normalized for marker in ("недел", "текущ", "закреп", "назнач", "ответствен"))
+            and not any(marker in normalized for marker in ("документ", "доки", "документац", "статист", "отчет", "отчёт", "контрол"))
+        ):
+            return True
         return (
             "релиз" in normalized
             and any(marker in normalized for marker in ("закреп", "ответствен", "назнач"))
@@ -538,9 +650,25 @@ Oplot умеет работать с рабочим столом дежурно�
         )
 
     def _is_release_document_query(self, normalized: str) -> bool:
+        has_release_key = bool(self._extract_release_key(normalized))
         return (
-            any(marker in normalized for marker in ("документ", "доки", "документац"))
-            and (bool(self._extract_release_key(normalized)) or "релиз" in normalized)
+            (
+                any(marker in normalized for marker in ("документ", "доки", "документац"))
+                and (has_release_key or "релиз" in normalized)
+            )
+            or (
+                has_release_key
+                and any(marker in normalized for marker in ("сформ", "созда", "оформ", "подготов", "собер", "пакет", "комплект"))
+            )
+        )
+
+    def _is_batch_document_request(self, normalized: str) -> bool:
+        return (
+            any(marker in normalized for marker in ("документ", "доки", "документац", "оформ", "подготов", "сформ", "собер"))
+            and any(marker in normalized for marker in (
+                "по всем", "все релиз", "все эти", "эти релиз", "всем релиз",
+                "данным релиз", "поочеред", "по очеред", "подряд", "кажд", "их все",
+            ))
         )
 
     def _is_release_confluence_export_query(self, normalized: str) -> bool:
@@ -704,6 +832,65 @@ Oplot умеет работать с рабочим столом дежурно�
                 return True
         return False
 
+    def _match_oplot_name(self, value: str) -> str:
+        normalized = self._normalize_command_text(value)
+        if not normalized:
+            return ""
+
+        by_normalized = {self._normalize_command_text(name): name for name in OPLOT_VALUES}
+        if normalized in by_normalized:
+            return by_normalized[normalized]
+
+        for name in OPLOT_VALUES:
+            name_normalized = self._normalize_command_text(name)
+            surname = self._normalize_command_text(name.split()[0] if name else "")
+            if not surname:
+                continue
+            if (
+                surname == normalized
+                or surname in normalized
+                or normalized in name_normalized
+                or self._surname_case_stem_matches(surname, normalized)
+            ):
+                return name
+        return ""
+
+    def _get_release_row_by_row_key(self, row_key: str) -> Optional[Dict]:
+        snapshot = get_release_monitor_snapshot() or {}
+        items = snapshot.get("items", []) if isinstance(snapshot, dict) else []
+        row_key = str(row_key or "").strip()
+        if not row_key:
+            return None
+        return next(
+            (item for item in items if str(item.get("row_key") or item.get("release_key") or "").strip() == row_key),
+            None,
+        )
+
+    def _save_release_assignment_from_item(
+        self,
+        item: Dict,
+        *,
+        checker: Optional[str] = None,
+        responsibles: Optional[List[str]] = None,
+    ) -> Dict:
+        row_key = str(item.get("row_key") or item.get("release_key") or "").strip()
+        if not row_key:
+            raise ValueError("Не найден ключ строки релиза")
+        reviewer = str(item.get("psi_owner") or "").strip()
+        reviewer_source = str(item.get("psi_owner_source") or "").strip() or None
+        current_checker = str(item.get("psi_checker") or "").strip()
+        current_responsibles = item.get("psi_responsibles") or []
+        if not isinstance(current_responsibles, list):
+            current_responsibles = [current_responsibles] if current_responsibles else []
+
+        return set_release_monitor_assignment(
+            row_key,
+            reviewer,
+            checker if checker is not None else current_checker,
+            responsibles if responsibles is not None else current_responsibles,
+            reviewer_source=reviewer_source,
+        )
+
     def _surname_case_stem_matches(self, surname: str, query: str) -> bool:
         surname = self._normalize_command_text(surname)
         query = self._normalize_command_text(query)
@@ -717,7 +904,34 @@ Oplot умеет работать с рабочим столом дежурно�
         for ending in endings:
             if query.endswith(ending) and len(query) > len(ending) + 2:
                 variants.add(query[:-len(ending)])
-        return any(len(variant) >= 4 and surname.startswith(variant) for variant in variants)
+        return any(
+            len(variant) >= 4
+            and (
+                surname.startswith(variant)
+                or self._surname_fuzzy_matches(surname, variant)
+            )
+            for variant in variants
+        )
+
+    def _surname_fuzzy_matches(self, surname: str, query: str) -> bool:
+        surname = self._normalize_command_text(surname)
+        query = self._normalize_command_text(query)
+        if len(surname) < 5 or len(query) < 5:
+            return False
+        if surname[:1] != query[:1] or abs(len(surname) - len(query)) > 2:
+            return False
+
+        previous = list(range(len(query) + 1))
+        for left_index, left_char in enumerate(surname, 1):
+            current = [left_index]
+            for right_index, right_char in enumerate(query, 1):
+                current.append(min(
+                    current[-1] + 1,
+                    previous[right_index] + 1,
+                    previous[right_index - 1] + (left_char != right_char),
+                ))
+            previous = current
+        return previous[-1] <= 2
 
     def _format_release_link(self, release_key: str, release_url: str = "") -> str:
         release_key = str(release_key or "").strip() or "-"
@@ -780,7 +994,7 @@ Oplot умеет работать с рабочим столом дежурно�
                 "metadata": {"type": "release_week_control", "error": str(exc)},
             }
 
-    def _handle_release_week_recommendations(self) -> Dict:
+    def _handle_release_week_recommendations(self, session: Optional[ChatContext] = None) -> Dict:
         try:
             result = get_release_monitor_week_responsible_recommendations() or {}
             control = result.get("control", {}) or {}
@@ -809,10 +1023,27 @@ Oplot умеет работать с рабочим столом дежурно�
             elif not message:
                 lines.append("GigaChat не вернул кандидатов. Проверь, есть ли релизы без ответственного и доступные сотрудники по графику.")
 
+            if recommendations and session is not None:
+                session.active_release_flow = {
+                    "type": "week_responsible_recommendations",
+                    "state": "confirm",
+                    "recommendations": recommendations,
+                    "created_at": datetime.now().isoformat(),
+                }
+                lines.extend([
+                    "",
+                    "Могу применить назначения в таблицу. Напиши `применить все`, или пришли правки в формате:",
+                    "`EMRM-12345 Кашкин С.Н.; SMECSC-12345 Гапоненко Д.А.; остальные ок`.",
+                ])
+
             return {
                 "text": "\n".join(lines),
                 "intent": "release_week_recommendations",
-                "suggestions": ["Контроль недели", "Релизы недели по ответственному", "Сформировать документы по релизу"],
+                "suggestions": (
+                    ["Применить все", "Внести правки", "Отмена"]
+                    if recommendations
+                    else ["Контроль недели", "Релизы недели по ответственному", "Сформировать документы по релизу"]
+                ),
                 "metadata": {"type": "release_week_recommendations", "recommendation": result},
             }
         except Exception as exc:
@@ -823,6 +1054,216 @@ Oplot умеет работать с рабочим столом дежурно�
                 "suggestions": self._release_work_suggestions(),
                 "metadata": {"type": "release_week_recommendations", "error": str(exc)},
             }
+
+    def _is_apply_week_recommendation_command(self, normalized: str) -> bool:
+        return (
+            normalized in {"да", "ок", "ага", "согласен", "согласна", "принять", "применить", "назначить"}
+            or any(marker in normalized for marker in ("применить все", "прими все", "назначь всех", "назначай", "все ок", "остальные ок", "остальное ок"))
+        )
+
+    def _format_week_recommendation_plan(self, recommendations: List[Dict]) -> str:
+        if not recommendations:
+            return "Активных рекомендаций не осталось."
+        lines = []
+        for index, item in enumerate(recommendations, 1):
+            release_key = str(item.get("release_key") or "-").strip()
+            rov_key = str(item.get("rov_key") or "без РОВ").strip()
+            responsible = str(item.get("recommended") or "-").strip()
+            reason = str(item.get("reason") or "").strip()
+            reason_text = f" - {reason}" if reason else ""
+            lines.append(f"{index}. {release_key} / {rov_key}: {responsible}{reason_text}")
+        return "\n".join(lines)
+
+    def _find_recommendation_for_text(self, recommendations: List[Dict], text: str) -> Optional[Dict]:
+        normalized = self._normalize_command_text(text)
+        release_key = self._extract_release_key(text)
+        if release_key:
+            matches = [
+                item for item in recommendations
+                if str(item.get("release_key") or "").strip().upper() == release_key
+                or str(item.get("row_key") or "").strip().upper() == release_key
+            ]
+            if matches:
+                return matches[0]
+
+        number_match = re.search(r"^\s*(\d{1,2})(?:[.)]|\s)", normalized)
+        if number_match:
+            index = int(number_match.group(1)) - 1
+            if 0 <= index < len(recommendations):
+                return recommendations[index]
+
+        if len(recommendations) == 1:
+            return recommendations[0]
+        return None
+
+    def _parse_week_recommendation_edits(self, message: str, recommendations: List[Dict]) -> Tuple[Dict[str, str], set, List[str]]:
+        edits: Dict[str, str] = {}
+        skipped = set()
+        unknown_parts: List[str] = []
+        parts = [
+            part.strip()
+            for part in re.split(r"[\n;]+", str(message or ""))
+            if part.strip()
+        ]
+
+        for part in parts:
+            normalized_part = self._normalize_command_text(part)
+            if any(marker in normalized_part for marker in ("остальные ок", "остальное ок", "все ок", "применить", "принять")):
+                continue
+
+            target = self._find_recommendation_for_text(recommendations, part)
+            if not target:
+                if self._match_oplot_name(part) and len(recommendations) == 1:
+                    target = recommendations[0]
+                else:
+                    unknown_parts.append(part)
+                    continue
+
+            row_key = str(target.get("row_key") or "").strip()
+            if any(marker in normalized_part for marker in ("пропусти", "не назнач", "убери", "исключи")):
+                if row_key:
+                    skipped.add(row_key)
+                continue
+
+            name = self._match_oplot_name(part)
+            if not name:
+                unknown_parts.append(part)
+                continue
+            if row_key:
+                edits[row_key] = name
+
+        return edits, skipped, unknown_parts
+
+    def _apply_week_recommendations(self, recommendations: List[Dict]) -> Tuple[List[str], List[str]]:
+        applied_lines: List[str] = []
+        errors: List[str] = []
+        for item in recommendations:
+            row_key = str(item.get("row_key") or "").strip()
+            responsible = str(item.get("recommended") or "").strip()
+            release_key = str(item.get("release_key") or row_key or "-").strip()
+            rov_key = str(item.get("rov_key") or "без РОВ").strip()
+            if not row_key or not responsible:
+                errors.append(f"{release_key}: нет строки или ответственного")
+                continue
+            row_item = self._get_release_row_by_row_key(row_key)
+            if not row_item:
+                errors.append(f"{release_key}: строка уже не найдена в кеше")
+                continue
+            current_responsibles = row_item.get("psi_responsibles") or []
+            if not isinstance(current_responsibles, list):
+                current_responsibles = [current_responsibles] if current_responsibles else []
+            current_responsibles = [str(value or "").strip() for value in current_responsibles if str(value or "").strip()]
+            next_responsibles = (
+                current_responsibles
+                if responsible in current_responsibles
+                else [responsible, *current_responsibles]
+            )
+            try:
+                self._save_release_assignment_from_item(row_item, responsibles=next_responsibles)
+                applied_lines.append(f"{release_key} / {rov_key}: {responsible}")
+            except Exception as exc:
+                errors.append(f"{release_key}: {exc}")
+        return applied_lines, errors
+
+    def _handle_week_recommendation_reply(self, message: str, session: ChatContext) -> Dict:
+        flow = session.active_release_flow or {}
+        recommendations = flow.get("recommendations") or []
+        normalized = self._normalize_command_text(message)
+
+        if "отмена" in normalized or "сброс" in normalized:
+            session.active_release_flow = None
+            return {
+                "text": "Ок, не применяю рекомендации по ответственным.",
+                "intent": "release_week_recommendations",
+                "suggestions": ["Контроль недели", "Предложи ответственных по релизам недели"],
+                "metadata": {"type": "release_week_recommendations", "state": "cancelled"},
+            }
+
+        if not recommendations:
+            session.active_release_flow = None
+            return {
+                "text": "Список рекомендаций пуст. Можно заново запросить `Предложи ответственных по релизам недели`.",
+                "intent": "release_week_recommendations",
+                "suggestions": ["Предложи ответственных по релизам недели", "Контроль недели"],
+                "metadata": {"type": "release_week_recommendations", "state": "empty"},
+            }
+
+        if normalized in {"внести правки", "правки", "изменить"}:
+            return {
+                "text": (
+                    "Напиши правки одной строкой или списком. Например:\n"
+                    "`EMRM-12345 Кашкин С.Н.; SMECSC-12345 Гапоненко Д.А.; остальные ок`.\n\n"
+                    "Если текущий вариант подходит, напиши `применить все`."
+                ),
+                "intent": "release_week_recommendations",
+                "suggestions": ["Применить все", "Отмена"],
+                "metadata": {"type": "release_week_recommendations", "state": "awaiting_edits"},
+            }
+
+        edits, skipped, unknown_parts = self._parse_week_recommendation_edits(message, recommendations)
+        if unknown_parts and not edits and not skipped and not self._is_apply_week_recommendation_command(normalized):
+            return {
+                "text": (
+                    "Не смог уверенно разобрать правки.\n\n"
+                    "Формат: `ключ релиза + ФИО`, например `EMRM-12345 Кашкин С.Н.`. "
+                    "Или напиши `применить все`."
+                ),
+                "intent": "release_week_recommendations",
+                "suggestions": ["Применить все", "Внести правки", "Отмена"],
+                "metadata": {"type": "release_week_recommendations", "state": "edit_parse_error", "unknown": unknown_parts},
+            }
+
+        if edits or skipped:
+            updated = []
+            for item in recommendations:
+                row_key = str(item.get("row_key") or "").strip()
+                if row_key in skipped:
+                    continue
+                next_item = dict(item)
+                if row_key in edits:
+                    next_item["recommended"] = edits[row_key]
+                    next_item["reason"] = "ручная правка через чат"
+                updated.append(next_item)
+            flow["recommendations"] = updated
+            recommendations = updated
+
+            if not self._is_apply_week_recommendation_command(normalized):
+                return {
+                    "text": (
+                        "Принял правки. Итоговый план сейчас такой:\n\n"
+                        f"{self._format_week_recommendation_plan(recommendations)}\n\n"
+                        "Применить эти назначения в таблицу?"
+                    ),
+                    "intent": "release_week_recommendations",
+                    "suggestions": ["Применить все", "Внести правки", "Отмена"],
+                    "metadata": {"type": "release_week_recommendations", "state": "confirm_after_edits", "recommendations": recommendations},
+                }
+
+        if self._is_apply_week_recommendation_command(normalized) or edits or skipped:
+            applied, errors = self._apply_week_recommendations(recommendations)
+            session.active_release_flow = None
+            lines = ["Готово, применил назначения в таблицу."]
+            if applied:
+                lines.extend(["", "*Назначено:*", *[f"• {line}" for line in applied]])
+            if errors:
+                lines.extend(["", "*Не удалось применить:*", *[f"• {line}" for line in errors]])
+            return {
+                "text": "\n".join(lines),
+                "intent": "release_week_recommendations",
+                "suggestions": ["Контроль недели", "Релизы недели по ответственному", "Сформировать документы по релизу"],
+                "metadata": {"type": "release_week_recommendations", "state": "applied", "applied": applied, "errors": errors},
+            }
+
+        return {
+            "text": (
+                "У меня есть неподтвержденный план назначений:\n\n"
+                f"{self._format_week_recommendation_plan(recommendations)}\n\n"
+                "Напиши `применить все`, `внести правки` или `отмена`."
+            ),
+            "intent": "release_week_recommendations",
+            "suggestions": ["Применить все", "Внести правки", "Отмена"],
+            "metadata": {"type": "release_week_recommendations", "state": "confirm", "recommendations": recommendations},
+        }
 
     def _handle_current_week_release_report(self) -> Dict:
         try:
@@ -867,7 +1308,7 @@ Oplot умеет работать с рабочим столом дежурно�
                 "metadata": {"type": "release_current_week_report", "error": str(exc)},
             }
 
-    def _handle_release_week_assignee_query(self, message: str) -> Dict:
+    def _handle_release_week_assignee_query(self, message: str, session: Optional[ChatContext] = None) -> Dict:
         snapshot = get_release_monitor_snapshot() or {}
         items = snapshot.get("items", []) if isinstance(snapshot, dict) else []
         week_start, week_end = self._current_week_bounds()
@@ -878,12 +1319,6 @@ Oplot умеет работать с рабочим столом дежурно�
                 "text": "По кому показать релизы текущей недели? Напиши фамилию в запросе, например: `Какие релизы текущей недели закреплены за Ивановым?`",
                 "intent": "release_week_query",
                 "suggestions": ["Сформировать документы по релизу", "Контроль недели", "Что ты умеешь"],
-                "metadata": {"type": "release_week_query", "reason": "missing_surname"},
-            }
-            return {
-                "text": "Понял запрос по релизам недели, но не смог уверенно определить фамилию. Напиши, например: `Какие релизы текущей недели закреплены за Ивановым?`",
-                "intent": "release_week_query",
-                "suggestions": ["Показать релизы недели по ответственному", "Что ты умеешь"],
                 "metadata": {"type": "release_week_query", "reason": "missing_surname"},
             }
 
@@ -903,15 +1338,6 @@ Oplot умеет работать с рабочим столом дежурно�
                 ),
                 "intent": "release_week_query",
                 "suggestions": ["Показать релизы недели по ответственному", "Сформировать документы по релизу"],
-                "metadata": {"type": "release_week_query", "count": 0},
-            }
-            return {
-                "text": (
-                    f"На текущей неделе ({week_start.strftime('%d.%m.%Y')} - {week_end.strftime('%d.%m.%Y')}) "
-                    f"я не нашел релизов, закрепленных за {display_surname}."
-                ),
-                "intent": "release_week_query",
-                "suggestions": ["Покажи релизы текущей недели", "Сформировать документы по релизу"],
                 "metadata": {"type": "release_week_query", "count": 0},
             }
 
@@ -943,7 +1369,22 @@ Oplot умеет работать с рабочим столом дежурно�
                 release_suggestions.append(f"Сформировать документы по {suggestion_key}")
             if len(release_suggestions) >= 6:
                 break
-        suggestions = release_suggestions + ["Выгрузить таблицу релизов в Confluence", "Контроль недели", "Что ты умеешь"]
+        suggestions = release_suggestions + ["Подготовить документы по всем этим релизам", "Выгрузить таблицу релизов в Confluence", "Контроль недели", "Что ты умеешь"]
+        if session is not None:
+            session.active_release_flow = {
+                "type": "release_week_query_result",
+                "state": "ready_for_batch_documents",
+                "items": [
+                    {
+                        "row_key": item.get("row_key") or item.get("release_key") or "",
+                        "release_key": item.get("release_key", ""),
+                        "rov_key": item.get("rov_key", ""),
+                        "deployment_start": item.get("deployment_start", ""),
+                    }
+                    for item in matched_items
+                ],
+                "created_at": datetime.now().isoformat(),
+            }
 
         return {
             "text": "\n".join(lines),
@@ -978,125 +1419,271 @@ Oplot умеет работать с рабочим столом дежурно�
         )
         return matched
 
-    def _handle_release_document_query(self, message: str, session: ChatContext) -> Dict:
-        return self._handle_release_document_query_v2(message, session)
+    def _format_template_candidate_label(self, candidate: Dict) -> str:
+        category = str(candidate.get("category") or "").strip()
+        release_clean = str(candidate.get("release_clean") or candidate.get("release_full") or "").strip()
+        if category and release_clean:
+            return f"{category} / {release_clean}"
+        return release_clean or category or "вариант шаблона"
 
-        release_key = self._extract_release_key(message)
-        if not release_key:
-            return {
-                "text": "Да, могу запустить сценарий документов через чат. Напиши номер релиза, например: `Сформируй документы по EMRM-12345`.",
-                "intent": "release_document_flow",
-                "suggestions": ["Показать релизы недели по ответственному", "Сформировать документы по релизу"],
-                "metadata": {"type": "release_document_flow", "state": "need_release_key"},
-            }
+    def _select_template_candidate(self, candidates: List[Dict], message: str) -> Optional[Dict]:
+        if not candidates:
+            return None
 
-        rows = self._find_release_rows_for_key(release_key)
-        if not rows:
-            return {
-                "text": f"Релиз {release_key} в текущем кеше блока релизов не найден. Если релиз свежий, сначала обнови блок релизов, а затем повтори запрос.",
-                "intent": "release_document_flow",
-                "suggestions": ["Открыть блок релизов", "Что ты умеешь?"],
-                "metadata": {"type": "release_document_flow", "state": "release_not_found", "release_key": release_key},
-            }
+        normalized = self._normalize_command_text(message)
+        number_match = re.search(r"\b(\d{1,2})\b", normalized)
+        if number_match:
+            index = int(number_match.group(1)) - 1
+            if 0 <= index < len(candidates):
+                return candidates[index]
 
-        selected = rows[0]
-        row_key = str(selected.get("row_key") or selected.get("release_key") or release_key).strip()
-        rov_key = str(selected.get("rov_key") or "").strip() or "без РОВ"
-        start = str(selected.get("deployment_start") or "").strip() or "-"
-        zni_key = str(selected.get("zni_key") or selected.get("base_zni_key") or "").strip()
-        release_page = f"{BASE_PATH}/release"
-        monitor_page = f"{BASE_PATH}/release-monitor"
-        zni_text = f"В таблице уже указана ЗНИ `{zni_key}` - по умолчанию предложу использовать ее." if zni_key else "ЗНИ в строке пока не вижу - перед созданием документов спрошу, создавать ли задачу в OPLOT."
-        session.active_release_flow = {
-            "type": "release_document_flow",
-            "state": "instruction_requested",
-            "release_key": release_key,
-            "row_key": row_key,
-            "rov_key": rov_key,
-            "zni_key": zni_key,
+        contour_aliases = {
+            "green": ("green", "грин", "зелен", "зелё"),
+            "blue": ("blue", "блю", "син"),
+            "bh": ("bh", "бх"),
+            "pl": ("pl", "пл"),
         }
+        requested_contours = [
+            contour
+            for contour, aliases in contour_aliases.items()
+            if any(alias in normalized for alias in aliases)
+        ]
+        if requested_contours:
+            matched = []
+            for candidate in candidates:
+                candidate_text = self._normalize_command_text(" ".join([
+                    str(candidate.get("category") or ""),
+                    str(candidate.get("release_clean") or ""),
+                    str(candidate.get("release_full") or ""),
+                ]))
+                for contour in requested_contours:
+                    if any(alias in candidate_text for alias in contour_aliases[contour]):
+                        matched.append(candidate)
+                        break
+            if len(matched) == 1:
+                return matched[0]
+
+        return None
+
+    def _build_template_choice_response(self, flow: Dict, candidates: List[Dict]) -> Dict:
+        release_key = flow.get("release_key", "")
+        rov_key = flow.get("rov_key", "без РОВ")
+        lines = [
+            f"По *{release_key} / {rov_key}* нашел несколько вариантов шаблона.",
+            "Выбери контур/шаблон:",
+            "",
+        ]
+        for index, candidate in enumerate(candidates, 1):
+            lines.append(f"{index}. `{self._format_template_candidate_label(candidate)}`")
+
+        suggestions = [
+            f"{index}. {self._format_template_candidate_label(candidate)}"
+            for index, candidate in enumerate(candidates[:5], 1)
+        ]
+        suggestions.append("Отмена")
 
         return {
+            "text": "\n".join(lines),
+            "intent": "release_document_flow",
+            "suggestions": suggestions,
+            "metadata": {
+                "type": "release_document_flow",
+                "state": "template_choice_requested",
+                "release_key": release_key,
+                "row_key": flow.get("row_key", ""),
+                "rov_key": rov_key,
+                "candidates": candidates,
+            },
+        }
+
+    def _apply_template_candidate_to_flow(self, flow: Dict, candidate: Dict, release_uses_playbooks_func) -> None:
+        release_full = str(candidate.get("release_full") or "").strip()
+        flow["category"] = str(candidate.get("category") or "").strip()
+        flow["release_full"] = release_full
+        flow["release_clean"] = str(candidate.get("release_clean") or "").strip()
+        flow["playbooks_required"] = release_uses_playbooks_func(release_full)
+        flow["state"] = "instruction_requested"
+
+    def _build_release_doc_instruction_response(self, flow: Dict) -> Dict:
+        release_key = flow.get("release_key", "")
+        rov_key = flow.get("rov_key", "без РОВ")
+        date_value = flow.get("date") or "-"
+        oplot = flow.get("oplot") or "-"
+        checker = flow.get("checker") or "-"
+        template_label = flow.get("release_full") or self._format_template_candidate_label(flow)
+        return {
             "text": (
-                f"Нашел строку для документов: *{release_key} / {rov_key}*, дата внедрения: {start}.\n\n"
-                f"{zni_text}\n\n"
-                "Следующий шаг в чат-сценарии: пришли ссылку на инструкцию Confluence или напиши `инструкции нет`. "
-                "Пока сам генератор документов остается тем же, что и кнопка в строке релиза, поэтому открыть ручной сценарий можно здесь: "
-                f"[Сформировать документы]({release_page}). Блок релизов: [открыть]({monitor_page})."
+                f"Нашел *{release_key} / {rov_key}* на {date_value}.\n"
+                f"Шаблон: `{template_label}`.\n"
+                f"OPLOT: `{oplot}`, проверяет: `{checker}`.\n\n"
+                "Пришли ссылку на инструкцию Confluence или напиши `инструкции нет`."
             ),
             "intent": "release_document_flow",
-            "suggestions": [
-                "Инструкции нет",
-                "Используем ЗНИ из таблицы" if zni_key else "Создать задачу в OPLOT",
-                "Выгрузить таблицу релизов в Confluence",
-            ],
+            "suggestions": ["Инструкции нет", "Отмена"],
             "metadata": {
+                "type": "release_document_flow",
+                "state": "instruction_requested",
+                "release_key": release_key,
+                "row_key": flow.get("row_key", ""),
+                "rov_key": rov_key,
+            },
+        }
+
+    def _prepare_release_document_flow_for_item(
+        self,
+        item: Dict,
+        session: ChatContext,
+        *,
+        original_message: str = "",
+        batch_context: Optional[Dict] = None,
+    ) -> Dict:
+        release_key = str(item.get("release_key") or "").strip()
+        row_key = str(item.get("row_key") or item.get("release_key") or release_key).strip()
+        rov_key = str(item.get("rov_key") or "").strip() or "без РОВ"
+        date_value = self._release_doc_date(item)
+        oplot = str(item.get("psi_owner") or "").strip()
+        checker = str(item.get("psi_checker") or "").strip()
+
+        if not oplot:
+            return {
+                "text": f"По *{release_key} / {rov_key}* не назначен дежурный OPLOT. Сначала назначь ответственного в блоке релизов.",
+                "intent": "release_document_flow",
+                "suggestions": ["Открыть блок релизов", "Показать релизы недели по ответственному"],
+                "metadata": {"type": "release_document_flow", "state": "missing_oplot", "release_key": release_key},
+            }
+        if not checker:
+            session.active_release_flow = {
+                "type": "release_document_flow",
+                "state": "checker_requested",
+                "release_key": release_key,
+                "row_key": row_key,
+                "rov_key": rov_key,
+                "date": date_value,
+                "batch_context": batch_context,
+            }
+            return {
+                "text": f"По *{release_key} / {rov_key}* не заполнен проверяющий. Напиши ФИО проверяющего следующим сообщением, я сохраню его в таблицу и продолжу оформление документов.",
+                "intent": "release_document_flow",
+                "suggestions": ["Отмена"],
+                "metadata": {"type": "release_document_flow", "state": "checker_requested", "release_key": release_key, "row_key": row_key, "rov_key": rov_key},
+            }
+
+        try:
+            from routes.release_routes import (
+                detect_release_template,
+                get_release_version,
+                get_ke_from_release,
+                release_uses_playbooks,
+                _get_previous_version_from_monitor_snapshot,
+            )
+            detection = detect_release_template(release_key)
+            if detection.get("error"):
+                raise ValueError(detection["error"])
+            candidates = detection.get("candidates") or []
+            flow = {
                 "type": "release_document_flow",
                 "state": "instruction_requested",
                 "release_key": release_key,
                 "row_key": row_key,
                 "rov_key": rov_key,
-            },
+                "release_version": str(item.get("release_version") or get_release_version(release_key) or "").strip(),
+                "prev_version": str(_get_previous_version_from_monitor_snapshot(row_key, release_key) or "").strip(),
+                "oplot": oplot,
+                "checker": checker,
+                "date": date_value,
+                "ke": str(item.get("ke") or get_ke_from_release(release_key) or "").strip(),
+                "playbooks": [],
+                "instruction_link": "",
+                "zni_key": str(item.get("zni_key") or item.get("base_zni_key") or "").strip(),
+                "batch_context": batch_context,
+            }
+
+            if detection.get("found"):
+                flow["category"] = detection.get("category", "")
+                flow["release_full"] = detection.get("release_full", "")
+                flow["release_clean"] = detection.get("release_clean", "")
+                flow["playbooks_required"] = release_uses_playbooks(flow["release_full"])
+            elif candidates:
+                selected_candidate = self._select_template_candidate(candidates, original_message)
+                if selected_candidate:
+                    self._apply_template_candidate_to_flow(flow, selected_candidate, release_uses_playbooks)
+                else:
+                    flow["state"] = "template_choice_requested"
+                    flow["template_candidates"] = candidates
+                    session.active_release_flow = flow
+                    return self._build_template_choice_response(flow, candidates)
+            else:
+                return {
+                    "text": f"Для *{release_key}* в текущем окружении не найден шаблон документов. Проверь, что на стенде есть нужные шаблоны, или запусти ручной генератор.",
+                    "intent": "release_document_flow",
+                    "suggestions": ["Открыть ручной генератор", "Сформировать документы по релизу"],
+                    "metadata": {"type": "release_document_flow", "state": "template_not_found", "release_key": release_key},
+                }
+
+            session.active_release_flow = flow
+        except Exception as exc:
+            logging.error("Release document flow init failed: %s", exc)
+            return {
+                "text": f"Не удалось подготовить документы по *{release_key}*: {exc}",
+                "intent": "release_document_flow",
+                "suggestions": ["Открыть ручной генератор", "Сформировать документы по релизу"],
+                "metadata": {"type": "release_document_flow", "state": "init_error", "release_key": release_key, "error": str(exc)},
+            }
+
+        return self._build_release_doc_instruction_response(session.active_release_flow)
+
+    def _start_release_document_batch(self, session: ChatContext) -> Dict:
+        flow = session.active_release_flow or {}
+        source_items = flow.get("items") or []
+        batch_items = []
+        seen = set()
+        for source in source_items:
+            row_key = str(source.get("row_key") or source.get("release_key") or "").strip()
+            if not row_key or row_key in seen:
+                continue
+            item = self._get_release_row_by_row_key(row_key) or source
+            if not item:
+                continue
+            seen.add(row_key)
+            batch_items.append(item)
+
+        if not batch_items:
+            session.active_release_flow = None
+            return {
+                "text": "Не нашел релизы из предыдущего списка. Сначала запроси релизы недели по ответственному, а затем напиши `подготовить документы по всем`.",
+                "intent": "release_document_batch",
+                "suggestions": ["Релизы недели по ответственному", "Сформировать документы по релизу"],
+                "metadata": {"type": "release_document_batch", "state": "empty"},
+            }
+
+        batch_context = {
+            "items": [
+                {
+                    "row_key": item.get("row_key") or item.get("release_key") or "",
+                    "release_key": item.get("release_key") or "",
+                    "rov_key": item.get("rov_key") or "",
+                }
+                for item in batch_items
+            ],
+            "index": 0,
+            "total": len(batch_items),
+            "completed": [],
         }
+        first_item = batch_items[0]
+        response = self._prepare_release_document_flow_for_item(first_item, session, batch_context=batch_context)
+        response["text"] = (
+            f"Запускаю поочередное оформление документов по {len(batch_items)} релизам из последнего списка.\n\n"
+            f"{response['text']}"
+        )
+        response["intent"] = "release_document_batch"
+        response.setdefault("metadata", {})["batch"] = {"index": 0, "total": len(batch_items)}
+        return response
+
+    def _handle_release_document_query(self, message: str, session: ChatContext) -> Dict:
+        return self._handle_release_document_query_v2(message, session)
 
     def _handle_release_document_flow_reply(self, message: str, session: ChatContext) -> Dict:
         return self._handle_release_document_flow_reply_v2(message, session)
-
-        pending = session.active_release_flow or {}
-        normalized = self._normalize_command_text(message)
-        release_key = str(pending.get("release_key") or "").strip()
-        rov_key = str(pending.get("rov_key") or "").strip()
-        row_key = str(pending.get("row_key") or "").strip()
-
-        instruction_link = ""
-        if "http://" in message or "https://" in message:
-            link_match = re.search(r"https?://\S+", message)
-            instruction_link = link_match.group(0).strip() if link_match else ""
-        instruction_absent = any(marker in normalized for marker in ("инструкции нет", "инструкция нет", "нет инструкции", "без инструкции"))
-
-        if pending.get("state") == "instruction_requested" and (instruction_link or instruction_absent):
-            session.active_release_flow = {
-                **pending,
-                "state": "generator_pending",
-                "instruction_link": instruction_link,
-                "instruction_absent": instruction_absent,
-            }
-            instruction_text = f"ссылку на инструкцию `{instruction_link}`" if instruction_link else "что инструкции нет"
-            return {
-                "text": (
-                    f"Принял {instruction_text} для *{release_key} / {rov_key}*.\n\n"
-                    "Продолжаем сценарий документов в чате. Если понадобится версия отката, плейбуки или ЗНИ, я задам следующий точный вопрос."
-                ),
-                "intent": "release_document_flow",
-                "suggestions": [
-                    f"Открыть ручной генератор для {release_key}",
-                    "Выгрузить таблицу релизов в Confluence",
-                    "Показать релизы недели по ответственному",
-                ],
-                "metadata": {
-                    "type": "release_document_flow",
-                    "state": "generator_pending",
-                    "release_key": release_key,
-                    "row_key": row_key,
-                    "rov_key": rov_key,
-                },
-            }
-
-        if "отмена" in normalized or "сброс" in normalized:
-            session.active_release_flow = None
-            return {
-                "text": "Ок, сбросил сценарий формирования документов.",
-                "intent": "release_document_flow",
-                "suggestions": ["Сформировать документы по релизу", "Показать релизы недели по ответственному"],
-                "metadata": {"type": "release_document_flow", "state": "cancelled"},
-            }
-
-        return {
-            "text": "Я сейчас жду ссылку на инструкцию Confluence или фразу `инструкции нет`. Можно также написать `отмена`, чтобы сбросить сценарий.",
-            "intent": "release_document_flow",
-            "suggestions": ["Инструкции нет", "Отмена"],
-            "metadata": {"type": "release_document_flow", "state": pending.get("state", "instruction_requested")},
-        }
 
     def _handle_release_document_query_v2(self, message: str, session: ChatContext) -> Dict:
         release_key = self._extract_release_key(message)
@@ -1117,87 +1704,7 @@ Oplot умеет работать с рабочим столом дежурно�
                 "metadata": {"type": "release_document_flow", "state": "release_not_found", "release_key": release_key},
             }
 
-        item = rows[0]
-        row_key = str(item.get("row_key") or item.get("release_key") or release_key).strip()
-        rov_key = str(item.get("rov_key") or "").strip() or "без РОВ"
-        date_value = self._release_doc_date(item)
-        oplot = str(item.get("psi_owner") or "").strip()
-        checker = str(item.get("psi_checker") or "").strip()
-        if not oplot:
-            return {
-                "text": f"По *{release_key} / {rov_key}* не назначен дежурный OPLOT. Сначала назначь ответственного в блоке релизов.",
-                "intent": "release_document_flow",
-                "suggestions": ["Открыть блок релизов", "Показать релизы недели по ответственному"],
-                "metadata": {"type": "release_document_flow", "state": "missing_oplot", "release_key": release_key},
-            }
-        if not checker:
-            return {
-                "text": f"По *{release_key} / {rov_key}* не заполнен проверяющий. Сначала заполни поле `Проверяет` в блоке релизов.",
-                "intent": "release_document_flow",
-                "suggestions": ["Открыть блок релизов", "Сформировать документы по релизу"],
-                "metadata": {"type": "release_document_flow", "state": "missing_checker", "release_key": release_key},
-            }
-
-        try:
-            from routes.release_routes import (
-                detect_release_template,
-                get_release_version,
-                get_ke_from_release,
-                release_uses_playbooks,
-                _get_previous_version_from_monitor_snapshot,
-            )
-            detection = detect_release_template(release_key)
-            if detection.get("error"):
-                raise ValueError(detection["error"])
-            if not detection.get("found"):
-                return {
-                    "text": f"Для *{release_key}* не найден однозначный шаблон документов. Используй ручной генератор или добавь шаблон.",
-                    "intent": "release_document_flow",
-                    "suggestions": ["Открыть ручной генератор", "Сформировать документы по релизу"],
-                    "metadata": {"type": "release_document_flow", "state": "template_not_found", "release_key": release_key},
-                }
-
-            release_full = detection.get("release_full", "")
-            flow = {
-                "type": "release_document_flow",
-                "state": "instruction_requested",
-                "release_key": release_key,
-                "row_key": row_key,
-                "rov_key": rov_key,
-                "category": detection.get("category", ""),
-                "release_full": release_full,
-                "release_version": str(item.get("release_version") or get_release_version(release_key) or "").strip(),
-                "prev_version": str(_get_previous_version_from_monitor_snapshot(row_key, release_key) or "").strip(),
-                "oplot": oplot,
-                "checker": checker,
-                "date": date_value,
-                "ke": str(item.get("ke") or get_ke_from_release(release_key) or "").strip(),
-                "playbooks_required": release_uses_playbooks(release_full),
-                "playbooks": [],
-                "instruction_link": "",
-                "zni_key": str(item.get("zni_key") or item.get("base_zni_key") or "").strip(),
-            }
-            session.active_release_flow = flow
-        except Exception as exc:
-            logging.error("Release document flow init failed: %s", exc)
-            return {
-                "text": f"Не удалось подготовить документы по *{release_key}*: {exc}",
-                "intent": "release_document_flow",
-                "suggestions": ["Открыть ручной генератор", "Сформировать документы по релизу"],
-                "metadata": {"type": "release_document_flow", "state": "init_error", "release_key": release_key, "error": str(exc)},
-            }
-
-        return {
-            "text": (
-                f"Нашел *{release_key} / {rov_key}* на {date_value or '-'}.\n"
-                f"Шаблон: `{session.active_release_flow['release_full']}`.\n"
-                f"OPLOT: `{oplot}`, проверяет: `{checker}`.\n\n"
-                "Пришли ссылку на инструкцию Confluence или напиши `инструкции нет`."
-            ),
-            "intent": "release_document_flow",
-            "suggestions": ["Инструкции нет", "Отмена"],
-            "metadata": {"type": "release_document_flow", "state": "instruction_requested", "release_key": release_key, "row_key": row_key, "rov_key": rov_key},
-        }
+        return self._prepare_release_document_flow_for_item(rows[0], session, original_message=message)
 
     def _handle_release_document_flow_reply_v2(self, message: str, session: ChatContext) -> Dict:
         flow = session.active_release_flow or {}
@@ -1212,6 +1719,73 @@ Oplot умеет работать с рабочим столом дежурно�
             }
 
         state = flow.get("state")
+        if state == "checker_requested":
+            checker_name = message.strip()
+            if not checker_name:
+                return {
+                    "text": "Напиши ФИО проверяющего одним сообщением. Например: `Иванов И.И.`",
+                    "intent": "release_document_flow",
+                    "suggestions": ["Отмена"],
+                    "metadata": {"type": "release_document_flow", "state": "checker_requested"},
+                }
+
+            release_key = str(flow.get("release_key") or "").strip()
+            row_key = str(flow.get("row_key") or "").strip()
+            item = self._get_release_row_by_row_key(row_key)
+            if not item:
+                rows = self._find_release_rows_for_key(release_key)
+                item = rows[0] if rows else None
+            if not item:
+                session.active_release_flow = None
+                return {
+                    "text": f"Не нашел строку релиза *{release_key}* в текущем кеше. Обнови блок релизов и повтори оформление документов.",
+                    "intent": "release_document_flow",
+                    "suggestions": ["Открыть блок релизов", "Сформировать документы по релизу"],
+                    "metadata": {"type": "release_document_flow", "state": "release_not_found", "release_key": release_key},
+                }
+
+            try:
+                self._save_release_assignment_from_item(item, checker=checker_name)
+                item = dict(item)
+                item["psi_checker"] = checker_name
+            except Exception as exc:
+                logging.error("Release checker save from chat failed: %s", exc)
+                return {
+                    "text": f"Не смог сохранить проверяющего `{checker_name}` по *{release_key}*: {exc}",
+                    "intent": "release_document_flow",
+                    "suggestions": ["Попробовать еще раз", "Отмена"],
+                    "metadata": {"type": "release_document_flow", "state": "checker_save_error", "error": str(exc)},
+                }
+
+            session.active_release_flow = None
+            next_response = self._prepare_release_document_flow_for_item(
+                item,
+                session,
+                batch_context=flow.get("batch_context"),
+            )
+            next_response["text"] = f"Сохранил проверяющего `{checker_name}` в таблицу.\n\n{next_response['text']}"
+            next_response.setdefault("metadata", {})["checker_saved"] = checker_name
+            return next_response
+
+        if state == "template_choice_requested":
+            candidates = flow.get("template_candidates") or []
+            selected_candidate = self._select_template_candidate(candidates, message)
+            if not selected_candidate:
+                return self._build_template_choice_response(flow, candidates)
+
+            try:
+                from routes.release_routes import release_uses_playbooks
+                self._apply_template_candidate_to_flow(flow, selected_candidate, release_uses_playbooks)
+            except Exception as exc:
+                logging.error("Release template candidate selection failed: %s", exc)
+                return {
+                    "text": f"Не удалось выбрать шаблон для *{flow.get('release_key', '')}*: {exc}",
+                    "intent": "release_document_flow",
+                    "suggestions": ["Отмена"],
+                    "metadata": {"type": "release_document_flow", "state": "template_choice_error", "error": str(exc)},
+                }
+            return self._build_release_doc_instruction_response(flow)
+
         if state == "instruction_requested":
             instruction_link = ""
             if "http://" in message or "https://" in message:
@@ -1349,6 +1923,59 @@ Oplot умеет работать с рабочим столом дежурно�
             )
             document_id = self._save_release_zip_for_chat(release_key, zip_buffer)
             download_url = f"/dashboard/api/chat/release-docs/download/{document_id}"
+            batch_context = flow.get("batch_context")
+            if batch_context:
+                completed = list(batch_context.get("completed") or [])
+                completed.append({
+                    "release_key": release_key,
+                    "download_url": download_url,
+                })
+                batch_context["completed"] = completed
+                next_index = int(batch_context.get("index") or 0) + 1
+                batch_context["index"] = next_index
+                batch_items = batch_context.get("items") or []
+
+                if next_index < len(batch_items):
+                    next_source = batch_items[next_index]
+                    next_item = self._get_release_row_by_row_key(next_source.get("row_key")) or next_source
+                    session.active_release_flow = None
+                    next_response = self._prepare_release_document_flow_for_item(
+                        next_item,
+                        session,
+                        batch_context=batch_context,
+                    )
+                    next_response["text"] = (
+                        f"Документы по *{release_key}* готовы.{zni_text}\n"
+                        f"[Скачать ZIP]({download_url})\n\n"
+                        f"Переходим к релизу {next_index + 1} из {len(batch_items)}.\n\n"
+                        f"{next_response['text']}"
+                    )
+                    next_response["intent"] = "release_document_batch"
+                    next_response.setdefault("metadata", {})["batch"] = {
+                        "index": next_index,
+                        "total": len(batch_items),
+                        "completed": completed,
+                    }
+                    return next_response
+
+                session.active_release_flow = None
+                lines = [
+                    f"Документы по *{release_key}* готовы.{zni_text}",
+                    f"[Скачать ZIP]({download_url})",
+                    "",
+                    f"Пакетное оформление завершено: {len(completed)} из {len(batch_items)}.",
+                    "",
+                    "*Готовые архивы:*",
+                ]
+                for item in completed:
+                    lines.append(f"• {item['release_key']}: [Скачать ZIP]({item['download_url']})")
+                return {
+                    "text": "\n".join(lines),
+                    "intent": "release_document_batch",
+                    "suggestions": ["Релизы недели по ответственному", "Выгрузить таблицу релизов в Confluence"],
+                    "metadata": {"type": "release_document_batch", "state": "completed", "completed": completed},
+                }
+
             session.active_release_flow = None
             return {
                 "text": f"Документы по *{release_key}* готовы.{zni_text}\n[Скачать ZIP]({download_url})",
@@ -1390,14 +2017,8 @@ Oplot умеет работать с рабочим столом дежурно�
         """Ответ для неподдерживаемых запросов."""
         return {
             'text': (
-                "Я не до конца понял запрос. Напиши чуть конкретнее: нужен релиз, документ, Confluence, контроль недели, задача Jira или сводка смены?\n\n"
-                "Примеры:\n"
-                "• `Какие релизы текущей недели закреплены за Ивановым?`\n"
-                "• `Сформировать документы по EMRM-12345`\n"
-                "• `Выгрузи таблицу релизов в Confluence`\n"
-                "• `Покажи контроль недели`\n"
-                "• `Сводка дневной смены`\n"
-                "• `Найди задачу OPLOT-12345`"
+                "Я не до конца понял, что нужно сделать. Уточни одним сообщением: это про релиз, документы, Confluence, задачу Jira или сводку смены?\n\n"
+                "Можно так: `релизы недели за Ивановым`, `оформи документы по EMRM-12345`, `контроль недели`, `найди задачу OPLOT-12345`."
             ),
             'suggestions': self.get_default_suggestions(),
             'metadata': {'type': 'unsupported'}
@@ -2099,9 +2720,12 @@ Oplot умеет работать с рабочим столом дежурно�
 Ты помогаешь с рабочим столом дежурного, Блоком релизов, релизными документами и выгрузкой в Confluence.
 Не выдумывай факты, номера задач, релизы, ответственных и ссылки. Если для действия не хватает параметра, задай один конкретный уточняющий вопрос.
 Если вопрос относится к поддерживаемому действию, подскажи точную формулировку команды.
+Если пользователь просто общается, отвечай как живой рабочий помощник: коротко, без канцелярита, и мягко предлагай вернуться к делу.
 
 Поддерживаемые примеры:
+- `Релизы недели за Ивановым`
 - `Какие релизы текущей недели закреплены за Ивановым?`
+- `Оформи документы по EMRM-12345`
 - `Сформировать документы по EMRM-12345`
 - `Выгрузи таблицу релизов в Confluence`
 - `Покажи контроль недели`

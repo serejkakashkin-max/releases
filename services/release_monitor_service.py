@@ -1526,10 +1526,15 @@ def _apply_week_control_flags(items):
     return items
 
 
-def _collect_week_candidate_availability(week_start=None, week_end=None):
+def _collect_week_candidate_availability(week_start=None, week_end=None, target_dates=None):
     week_start, week_end = (week_start, week_end) if week_start and week_end else _get_current_week_bounds()
     duty_payload = _load_duty_schedule_payload()
     availability_by_date = duty_payload.get("availability") or {}
+    if target_dates is not None:
+        target_dates = {
+            value for value in target_dates
+            if value and week_start <= value <= week_end
+        }
 
     candidates = {
         name: {
@@ -1541,8 +1546,14 @@ def _collect_week_candidate_availability(week_start=None, week_end=None):
         for name in OPLOT_VALUES
     }
 
-    current_date = week_start
-    while current_date <= week_end:
+    dates_to_check = sorted(target_dates) if target_dates else []
+    if not dates_to_check:
+        current_date = week_start
+        while current_date <= week_end:
+            dates_to_check.append(current_date)
+            current_date += timedelta(days=1)
+
+    for current_date in dates_to_check:
         day_people = availability_by_date.get(current_date.isoformat()) or {}
         for name, info in day_people.items():
             matched_name = name if name in candidates else _match_oplot_name(name)
@@ -1568,7 +1579,6 @@ def _collect_week_candidate_availability(week_start=None, week_end=None):
                 entry["availability"] = "reserve"
                 if reason and reason not in entry["reasons"]:
                     entry["reasons"].append(reason)
-        current_date += timedelta(days=1)
 
     grouped = {"available": [], "reserve": [], "excluded": []}
     for entry in candidates.values():
@@ -3884,12 +3894,17 @@ def get_release_monitor_week_control():
     snapshot = get_release_monitor_snapshot() or {}
     items = snapshot.get("items", []) if isinstance(snapshot, dict) else []
     week_start, week_end = _get_current_week_bounds()
-    candidate_groups = _collect_week_candidate_availability(week_start, week_end)
 
     week_items = [
         item for item in items
         if _is_release_assignment_relevant_for_week(item, week_start, week_end)
     ]
+    release_dates = {
+        _get_release_start_date(item)
+        for item in week_items
+        if _get_release_start_date(item)
+    }
+    candidate_groups = _collect_week_candidate_availability(week_start, week_end, target_dates=release_dates)
     missing_responsible = [
         {
             "row_key": _get_assignment_key_for_item(item),
