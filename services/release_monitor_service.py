@@ -1656,6 +1656,39 @@ def _apply_release_attempt_outcomes(items):
             }
             changed = True
 
+    stale_successful_attempt_keys = set()
+    final_items_by_release = {}
+    successful_final_release_keys = set()
+    for item in items:
+        if not item.get("has_rov") or not item.get("is_final"):
+            continue
+        release_key = str(item.get("release_key") or "").strip()
+        row_key = _get_assignment_key_for_item(item)
+        if not release_key or not row_key:
+            continue
+        final_items_by_release.setdefault(release_key, []).append(item)
+
+    for release_items in final_items_by_release.values():
+        latest_item = max(
+            release_items,
+            key=lambda item: (
+                _sort_datetime_value(item, "sort_date"),
+                _sort_datetime_value(item, "deployment_start_iso"),
+                str(item.get("rov_key") or ""),
+            ),
+        )
+        latest_key = _get_assignment_key_for_item(latest_item)
+        if latest_key in outcomes:
+            stale_successful_attempt_keys.add(latest_key)
+        if latest_key:
+            release_key = str(latest_item.get("release_key") or "").strip()
+            if release_key:
+                successful_final_release_keys.add(release_key)
+
+    for row_key in stale_successful_attempt_keys:
+        outcomes.pop(row_key, None)
+        changed = True
+
     if changed:
         _save_release_attempt_outcomes(outcomes)
 
@@ -1664,17 +1697,25 @@ def _apply_release_attempt_outcomes(items):
         row_key = _get_assignment_key_for_item(item)
         if row_key not in deferred_keys:
             item["is_deferred_attempt"] = False
+            item["is_deferred_resolved"] = False
             continue
 
+        release_key = str(item.get("release_key") or "").strip()
+        is_resolved_history = release_key in successful_final_release_keys
         item["is_deferred_attempt"] = True
+        item["is_deferred_resolved"] = is_resolved_history
         item["is_final"] = False
-        item["is_non_final"] = True
+        item["is_non_final"] = not is_resolved_history
         item["is_pre_final"] = False
         item["is_ready_for_prom"] = False
-        item["is_overdue"] = True
+        item["is_overdue"] = not is_resolved_history
         item["is_today"] = False
-        item["days_overdue"] = _release_days_overdue(
-            _parse_release_monitor_date(item.get("deployment_end_iso") or item.get("deployment_end"))
+        item["days_overdue"] = (
+            0
+            if is_resolved_history
+            else _release_days_overdue(
+                _parse_release_monitor_date(item.get("deployment_end_iso") or item.get("deployment_end"))
+            )
         )
         item["row_state"] = "overdue"
 
@@ -2817,6 +2858,14 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
     today = now_dt.date()
     attempt_outcomes = _load_release_attempt_outcomes()
     has_successful_final_attempt_before = False
+    stale_successful_attempt_key = ""
+    if is_final and linked_rov_records:
+        latest_rov = linked_rov_records[-1]
+        latest_rov_key = str(latest_rov.get("key") or "").strip()
+        if latest_rov_key:
+            latest_row_key = f"{issue.get('key')}::{latest_rov_key}"
+            if latest_row_key in attempt_outcomes:
+                stale_successful_attempt_key = latest_row_key
 
     for index, rov_data in enumerate(row_variants):
         rov_key = rov_data.get("key", "")
@@ -2830,7 +2879,7 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
         rov_start_date = rov_start.date() if rov_start else None
         rov_end_date = rov_end.date() if rov_end else None
         row_key = f"{issue.get('key')}::{rov_key or 'no-rov'}"
-        is_deferred_attempt = row_key in attempt_outcomes
+        is_deferred_attempt = row_key in attempt_outcomes and row_key != stale_successful_attempt_key
         is_reroll = bool(
             is_final
             and rov_key
