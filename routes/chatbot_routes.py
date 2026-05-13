@@ -298,6 +298,7 @@ def quick_action():
             'assignee_stats': 'Сгенерируй статистику',
             'handover_day': 'Сводка для передачи дневной смены',
             'handover_evening': 'Сводка для передачи вечерней смены',
+            'release_documents': 'Сформировать документы по релизу',
             'release_psi_instruction': 'Дай инструкцию ПСИ по релизу',
         }
 
