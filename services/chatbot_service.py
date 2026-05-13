@@ -28,6 +28,8 @@ from services.release_monitor_service import (
     get_release_monitor_week_responsible_recommendations,
     set_release_monitor_assignment,
     sync_release_monitor_assignments_from_confluence,
+    sync_release_monitor_jira_fields,
+    set_release_monitor_manual_distribution_override,
 )
 from services.release_report_service import get_release_report_service
 from services.psi_jenkins_service import find_psi_jenkins_instructions_by_ke
@@ -1783,18 +1785,35 @@ Oplot умеет работать с рабочим столом дежурно�
             if detection.get("error"):
                 raise ValueError(detection["error"])
             candidates = detection.get("candidates") or []
+            jira_version = str(get_release_version(release_key) or "").strip()
+            jira_ke = str(get_ke_from_release(release_key) or "").strip()
+            missing_distribution_fields = []
+            if not jira_version:
+                missing_distribution_fields.append("release_version")
+            if not jira_ke:
+                missing_distribution_fields.append("ke")
+            try:
+                sync_release_monitor_jira_fields(
+                    row_key=row_key,
+                    release_key=release_key,
+                    release_version=jira_version,
+                    ke=jira_ke,
+                )
+            except Exception as exc:
+                logging.warning("Release document flow Jira sync failed for %s: %s", release_key, exc)
             flow = {
                 "type": "release_document_flow",
                 "state": "instruction_requested",
                 "release_key": release_key,
                 "row_key": row_key,
                 "rov_key": rov_key,
-                "release_version": str(item.get("release_version") or get_release_version(release_key) or "").strip(),
+                "release_version": str(jira_version or item.get("release_version") or "").strip(),
                 "prev_version": str(_get_previous_version_from_monitor_snapshot(row_key, release_key) or "").strip(),
                 "oplot": oplot,
                 "checker": checker,
                 "date": date_value,
-                "ke": str(item.get("ke") or get_ke_from_release(release_key) or "").strip(),
+                "ke": str(jira_ke or item.get("ke") or "").strip(),
+                "missing_distribution_fields": missing_distribution_fields,
                 "playbooks": [],
                 "instruction_link": "",
                 "zni_key": str(item.get("zni_key") or item.get("base_zni_key") or "").strip(),
@@ -1817,10 +1836,38 @@ Oplot умеет работать с рабочим столом дежурно�
                     return self._build_template_choice_response(flow, candidates)
             else:
                 return {
-                    "text": f"Для *{release_key}* в текущем окружении не найден шаблон документов. Проверь, что на стенде есть нужные шаблоны, или запусти ручной генератор.",
+                    "text": (
+                        f"К сожалению, для *{release_key}* шаблоны документов сейчас не найдены. "
+                        "Через ручной формирователь документов можно попробовать выбрать шаблон другого подходящего типа "
+                        "и затем скорректировать сформированные файлы вручную."
+                    ),
                     "intent": "release_document_flow",
                     "suggestions": ["Открыть ручной генератор", "Сформировать документы по релизу"],
                     "metadata": {"type": "release_document_flow", "state": "template_not_found", "release_key": release_key},
+                }
+
+            if missing_distribution_fields:
+                flow["state"] = "distribution_requested"
+                session.active_release_flow = flow
+                missing_text = ", ".join(
+                    "версия сборки" if field == "release_version" else "КЭ дистрибутива"
+                    for field in missing_distribution_fields
+                )
+                return {
+                    "text": (
+                        f"В Jira по *{release_key}* не найден зарегистрированный дистрибутив: {missing_text}. "
+                        "Рекомендуем сначала зарегистрировать дистрибутив в релизе. "
+                        "Если документы нужно сформировать сейчас, пришли версию сборки и КЭ дистрибутива одним сообщением, "
+                        "например: `D-01.001.00-201 CI15184160`."
+                    ),
+                    "intent": "release_document_flow",
+                    "suggestions": ["Отмена"],
+                    "metadata": {
+                        "type": "release_document_flow",
+                        "state": "distribution_requested",
+                        "release_key": release_key,
+                        "missing_distribution_fields": missing_distribution_fields,
+                    },
                 }
 
             session.active_release_flow = flow
@@ -1888,6 +1935,17 @@ Oplot умеет работать с рабочим столом дежурно�
     def _handle_release_document_flow_reply(self, message: str, session: ChatContext) -> Dict:
         return self._handle_release_document_flow_reply_v2(message, session)
 
+    def _extract_release_document_distribution_values(self, message: str, flow: Dict) -> Tuple[str, str]:
+        text = str(message or "").strip()
+        version_match = re.search(r"[DP]-\d+(?:\.\d+){2}(?:[.-][A-Za-z0-9_]+)+", text, re.IGNORECASE)
+        ke_match = re.search(r"\bCI\s*0*\d{5,}\b", text, re.IGNORECASE)
+        if not ke_match:
+            ke_match = re.search(r"\b\d{5,}\b", text)
+
+        version = version_match.group(0).strip() if version_match else str(flow.get("release_version") or "").strip()
+        ke = ke_match.group(0).strip().replace(" ", "") if ke_match else str(flow.get("ke") or "").strip()
+        return version, ke
+
     def _handle_release_document_query_v2(self, message: str, session: ChatContext) -> Dict:
         release_key = self._extract_release_key(message)
         if not release_key:
@@ -1937,6 +1995,39 @@ Oplot умеет работать с рабочим столом дежурно�
                     "metadata": {"type": "release_document_flow", "state": "need_release_key"},
                 }
             return self._handle_release_document_query_v2(release_key, session)
+
+        if state == "distribution_requested":
+            release_key = str(flow.get("release_key") or "").strip()
+            row_key = str(flow.get("row_key") or release_key).strip()
+            version, ke = self._extract_release_document_distribution_values(message, flow)
+            if not version or not ke:
+                return {
+                    "text": (
+                        "Нужно заполнить версию сборки и КЭ дистрибутива. "
+                        "Пришли их одним сообщением, например: `D-01.001.00-201 CI15184160`."
+                    ),
+                    "intent": "release_document_flow",
+                    "suggestions": ["Отмена"],
+                    "metadata": {"type": "release_document_flow", "state": "distribution_requested"},
+                }
+
+            try:
+                set_release_monitor_manual_distribution_override(row_key, release_version=version, ke=ke)
+            except Exception as exc:
+                logging.error("Release document manual distribution save failed: %s", exc)
+                return {
+                    "text": f"Не удалось сохранить ручные данные дистрибутива: {exc}",
+                    "intent": "release_document_flow",
+                    "suggestions": ["Попробовать еще раз", "Отмена"],
+                    "metadata": {"type": "release_document_flow", "state": "distribution_save_error", "error": str(exc)},
+                }
+
+            flow["release_version"] = version
+            flow["ke"] = ke
+            flow["missing_distribution_fields"] = []
+            flow["state"] = "instruction_requested"
+            session.active_release_flow = flow
+            return self._build_release_doc_instruction_response(flow)
 
         if state == "checker_requested":
             checker_name = message.strip()

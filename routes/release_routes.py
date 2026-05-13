@@ -17,7 +17,7 @@ from services.jira_service import (
     get_release_version, get_issues_from_jira, get_ke_from_release, 
     get_pob_from_release, extract_sm_id_and_summary, get_distributives_info
 )
-from services.release_monitor_service import get_release_monitor_snapshot
+from services.release_monitor_service import get_release_monitor_snapshot, sync_release_monitor_jira_fields
 from services.docx_service import replace_keys_in_doc, check_document
 from services.gigachat_service import GIGA_HELPER
 from services.counter_service import increment_counter  # НОВОЕ: импорт счетчика
@@ -361,6 +361,21 @@ def release_monitor_init():
     jira_version = get_release_version(release_id)
     jira_ke = get_ke_from_release(release_id)
     incoming_ke = (data.get("ke") or "").strip()
+    missing_distribution_fields = []
+    if not jira_version:
+        missing_distribution_fields.append("release_version")
+    if not jira_ke:
+        missing_distribution_fields.append("ke")
+    sync_patch = {}
+    try:
+        sync_patch = sync_release_monitor_jira_fields(
+            row_key=row_key,
+            release_key=release_id,
+            release_version=jira_version,
+            ke=jira_ke,
+        )
+    except Exception as exc:
+        logging.warning("Не удалось точечно обновить строку релиза из Jira: %s", exc)
 
     return jsonify({
         "success": True,
@@ -368,12 +383,15 @@ def release_monitor_init():
         "detection": detection,
         "release_version": jira_version,
         "ke": (jira_ke or incoming_ke).strip(),
+        "distribution_missing": bool(missing_distribution_fields),
+        "missing_distribution_fields": missing_distribution_fields,
         "playbooks_required": playbooks_required,
         "playbooks": DEFAULT_BH_PLAYBOOKS,
         "oplot": (data.get("oplot") or "").strip(),
         "checker": (data.get("checker") or "").strip(),
         "date": (data.get("date") or "").strip(),
         "prev_version": _get_previous_version_from_monitor_snapshot(row_key, release_id),
+        "sync_patch": sync_patch,
     })
 
 

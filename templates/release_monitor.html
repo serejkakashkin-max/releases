@@ -1252,6 +1252,11 @@
             color: var(--text-secondary);
         }
 
+        .week-control-recommendation.applied {
+            border-color: rgba(34, 197, 94, 0.28);
+            background: rgba(34, 197, 94, 0.10);
+        }
+
         .week-control-apply-btn {
             border: 1px solid rgba(37, 99, 235, 0.24);
             border-radius: 10px;
@@ -1265,6 +1270,12 @@
         .week-control-apply-btn:hover {
             border-color: rgba(37, 99, 235, 0.42);
             color: var(--primary);
+        }
+
+        .week-control-apply-btn.applied {
+            border-color: rgba(34, 197, 94, 0.36);
+            background: rgba(34, 197, 94, 0.14);
+            color: #22c55e;
         }
 
         .reviewer-block-label {
@@ -2929,6 +2940,10 @@ function buildReviewerCell(item) {
                 steps.push({ type: 'template' });
             }
 
+            if (state.initData?.distribution_missing) {
+                steps.push({ type: 'distribution' });
+            }
+
             steps.push({ type: 'prev_version' });
             steps.push({ type: 'instruction_link' });
             steps.push({ type: 'date' });
@@ -2985,6 +3000,63 @@ function buildReviewerCell(item) {
         function closeReleaseDocumentWizard() {
             if (releaseDocumentModalInstance) {
                 releaseDocumentModalInstance.hide();
+            }
+        }
+
+        function applyReleaseMonitorJiraSyncPatch(syncPatch) {
+            if (!syncPatch || (!syncPatch.row_key && !syncPatch.release_key)) {
+                return;
+            }
+
+            const syncedItem = syncPatch.item || {};
+            const syncedFields = syncPatch.fields || {};
+            const rowKey = syncPatch.row_key || '';
+            const releaseKey = syncPatch.release_key || '';
+            const allowedFields = [
+                'release_version',
+                'base_release_version',
+                'ke',
+                'base_ke'
+            ];
+            const patch = {};
+            allowedFields.forEach(field => {
+                if (Object.prototype.hasOwnProperty.call(syncedItem, field)) {
+                    patch[field] = syncedItem[field] || '';
+                } else if (Object.prototype.hasOwnProperty.call(syncedFields, field)) {
+                    patch[field] = syncedFields[field] || '';
+                }
+            });
+
+            if (!Object.keys(patch).length) {
+                return;
+            }
+
+            let patched = false;
+            releaseMonitorItems = releaseMonitorItems.map(item => {
+                const itemKey = item.row_key || item.release_key || '';
+                const matches = (rowKey && itemKey === rowKey) || (!rowKey && releaseKey && item.release_key === releaseKey);
+                if (!matches) {
+                    return item;
+                }
+                patched = true;
+                return { ...item, ...patch };
+            });
+
+            if (patched && releaseDocumentWizardState?.item) {
+                const itemKey = releaseDocumentWizardState.item.row_key || releaseDocumentWizardState.item.release_key || '';
+                const matchesStateItem = (rowKey && itemKey === rowKey) || (!rowKey && releaseKey && releaseDocumentWizardState.item.release_key === releaseKey);
+                if (matchesStateItem) {
+                    releaseDocumentWizardState.item = { ...releaseDocumentWizardState.item, ...patch };
+                }
+            }
+
+            if (syncPatch.data_revision) {
+                releaseMonitorKnownRevision = String(syncPatch.data_revision);
+                releaseMonitorDismissedRevision = '';
+            }
+
+            if (patched) {
+                applyReleaseFilters();
             }
         }
 
@@ -3050,11 +3122,12 @@ function buildReviewerCell(item) {
                 }
 
                 releaseDocumentWizardState.initData = data;
+                applyReleaseMonitorJiraSyncPatch(data.sync_patch || {});
                 releaseDocumentWizardState.form.release_version = data.release_version || releaseDocumentWizardState.form.release_version;
                 releaseDocumentWizardState.form.ke = data.ke || releaseDocumentWizardState.form.ke;
                 releaseDocumentWizardState.form.prev_version = data.prev_version || releaseDocumentWizardState.form.prev_version;
                 if (!data.detection?.found && !(Array.isArray(data.detection?.candidates) && data.detection.candidates.length)) {
-                    throw new Error('Не удалось автоопределить шаблон релиза. Для этого релиза используйте основной генератор документов.');
+                    throw new Error('К сожалению, для данного типа релиза шаблоны документов сейчас не найдены. Через ручной формирователь документов можно попробовать выбрать шаблон другого подходящего типа и затем скорректировать сформированные файлы вручную.');
                 }
                 releaseDocumentWizardState.steps = buildReleaseDocumentSteps(releaseDocumentWizardState);
                 releaseDocumentWizardState.stepIndex = 0;
@@ -3095,7 +3168,34 @@ function buildReviewerCell(item) {
             return true;
         }
 
-        function validateReleaseDocumentCurrentStep() {
+        async function saveReleaseDocumentManualDistribution(state) {
+            if (!state?.item) {
+                return false;
+            }
+
+            const response = await fetch(BASE_PATH + '/dashboard/release-monitor/manual-distribution', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    release_key: state.item.row_key || state.item.release_key,
+                    release_version: state.form.release_version,
+                    ke: state.form.ke,
+                })
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(data.error || 'Не удалось сохранить ручные данные дистрибутива');
+            }
+
+            renderReleaseMonitor(data.release_monitor || [], data.release_monitor_meta || {});
+            const updatedItem = getReleaseMonitorItem(state.item.row_key || state.item.release_key);
+            if (updatedItem) {
+                state.item = updatedItem;
+            }
+            return true;
+        }
+
+        async function validateReleaseDocumentCurrentStep() {
             const state = releaseDocumentWizardState;
             if (!state) {
                 return false;
@@ -3119,6 +3219,31 @@ function buildReviewerCell(item) {
                 }
                 state.templateChoice = candidate;
                 state.steps = buildReleaseDocumentSteps(state);
+                return syncReleaseDocumentZniForm(state);
+            }
+
+            if (step.type === 'distribution') {
+                const versionInput = document.getElementById('releaseDocumentReleaseVersion');
+                const keInput = document.getElementById('releaseDocumentKe');
+                const version = (versionInput?.value || '').trim();
+                const ke = (keInput?.value || '').trim();
+                if (!version) {
+                    alert('Укажите версию сборки.');
+                    return false;
+                }
+                if (!ke) {
+                    alert('Укажите КЭ дистрибутива.');
+                    return false;
+                }
+                state.form.release_version = version;
+                state.form.ke = ke;
+                try {
+                    await saveReleaseDocumentManualDistribution(state);
+                } catch (error) {
+                    console.error('Release document manual distribution save error:', error);
+                    alert('Ошибка сохранения ручных данных дистрибутива: ' + error.message);
+                    return false;
+                }
                 return syncReleaseDocumentZniForm(state);
             }
 
@@ -3191,6 +3316,28 @@ function buildReviewerCell(item) {
                                 </label>
                             </div>
                         `).join('')}
+                    </div>
+                `;
+            } else if (step.type === 'distribution') {
+                const missingFields = Array.isArray(state.initData?.missing_distribution_fields)
+                    ? state.initData.missing_distribution_fields
+                    : [];
+                const missingText = missingFields.length
+                    ? missingFields.map(field => field === 'ke' ? 'КЭ дистрибутива' : 'версия сборки').join(', ')
+                    : 'данные дистрибутива';
+                content += `
+                    <div class="release-doc-step-title">Данные дистрибутива</div>
+                    <div class="alert alert-warning">
+                        В Jira по этому релизу не найден зарегистрированный дистрибутив: ${escapeHtml(missingText)}.
+                        Рекомендуем сначала зарегистрировать дистрибутив в релизе. Если документы нужно сформировать сейчас,
+                        заполните недостающие данные вручную - они будут сохранены как ручная корректировка этой строки.
+                    </div>
+                    <label class="release-doc-field-label" for="releaseDocumentReleaseVersion">Версия сборки</label>
+                    <input id="releaseDocumentReleaseVersion" type="text" class="form-control" value="${escapeHtml(state.form.release_version || '')}" placeholder="Например: D-01.001.00-201">
+                    <label class="release-doc-field-label mt-3" for="releaseDocumentKe">КЭ дистрибутива</label>
+                    <input id="releaseDocumentKe" type="text" class="form-control" value="${escapeHtml(state.form.ke || '')}" placeholder="Например: CI15184160">
+                    <div class="release-doc-field-help">
+                        КЭ в названии релиза не меняется. Здесь указывается только КЭ дистрибутива из отдельной колонки таблицы.
                     </div>
                 `;
             } else if (step.type === 'prev_version') {
@@ -3315,7 +3462,7 @@ function buildReviewerCell(item) {
                 return;
             }
 
-            if (!validateReleaseDocumentCurrentStep()) {
+            if (!(await validateReleaseDocumentCurrentStep())) {
                 return;
             }
 
@@ -4486,7 +4633,7 @@ function buildReviewerCell(item) {
             const missingHtml = missing.length
                 ? `<div class="week-control-list">
                     ${missing.map(item => `
-                        <div class="week-control-release">
+                        <div class="week-control-release" data-row-key="${escapeHtml(item.row_key || item.release_key || '')}">
                             <div class="week-control-release-title">
                                 ${item.release_url ? `<a href="${escapeHtml(item.release_url)}" target="_blank" class="release-key-link">${escapeHtml(item.release_key)}</a>` : escapeHtml(item.release_key || '-')}
                                 ${item.rov_key ? `<span style="color: var(--text-muted); font-weight: 700;">/ ${escapeHtml(item.rov_key)}</span>` : ''}
@@ -4651,14 +4798,33 @@ function buildReviewerCell(item) {
                 );
                 if (button) {
                     button.textContent = 'Применено';
+                    button.classList.add('applied');
                 }
-                await openReleaseWeekControl();
+                const recommendation = button?.closest('.week-control-recommendation');
+                if (recommendation) {
+                    recommendation.classList.add('applied');
+                }
+                const missingCard = Array.from(document.querySelectorAll('.week-control-release[data-row-key]'))
+                    .find(element => element.dataset.rowKey === rowKey);
+                if (missingCard) {
+                    missingCard.remove();
+                }
+                const missingCounter = document.querySelector('.week-control-grid .week-control-card:nth-child(2) strong');
+                if (missingCounter) {
+                    const currentValue = Number(missingCounter.textContent || '0');
+                    missingCounter.textContent = String(Math.max(0, currentValue - 1));
+                }
+                const missingList = document.querySelector('.week-control-list');
+                if (missingList && !missingList.querySelector('.week-control-release')) {
+                    missingList.outerHTML = '<div class="empty-state-small"><i class="bi bi-check2-circle"></i><div>По релизам текущей недели все ответственные назначены.</div></div>';
+                }
             } catch (error) {
                 console.error('Apply week responsible recommendation error:', error);
                 alert('Ошибка применения рекомендации: ' + error.message);
                 if (button) {
                     button.disabled = false;
                     button.textContent = 'Применить';
+                    button.classList.remove('applied');
                 }
             }
         }

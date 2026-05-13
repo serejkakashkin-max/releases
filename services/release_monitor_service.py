@@ -974,6 +974,20 @@ def _release_days_overdue(end_dt, now_dt=None):
     return max((now_dt.date() - end_dt.date()).days, 0)
 
 
+def _get_final_manual_date_row_state(start_dt, end_dt, now_dt=None):
+    now_dt = now_dt or datetime.now()
+    today = now_dt.date()
+    window_end_dt = end_dt or start_dt
+    if _is_release_window_expired(window_end_dt, now_dt):
+        return "final"
+
+    start_date = start_dt.date() if start_dt else None
+    end_date = end_dt.date() if end_dt else None
+    if (start_date and start_date == today) or (end_date and end_date == today):
+        return "today"
+    return "planned"
+
+
 def _resolve_effective_release_date(base_dt, manual_dt):
     return manual_dt or base_dt
 
@@ -1460,6 +1474,11 @@ def _apply_date_overrides(items):
                 item["row_state"] = "today"
             else:
                 item["row_state"] = "planned"
+        elif item.get("is_final") and (active_manual_start or active_manual_end):
+            item["row_state"] = _get_final_manual_date_row_state(
+                active_manual_start or effective_start_dt,
+                active_manual_end or active_manual_start or effective_end_dt,
+            )
 
         item["has_manual_date_override"] = bool(active_manual_start or active_manual_end)
         item["manual_deployment_start"] = override.get("start", "") if active_manual_start else ""
@@ -4669,6 +4688,181 @@ def set_release_monitor_manual_override(
             _apply_manual_release_overrides(items)
             _sort_and_number_records(items)
             _save_snapshot_to_disk(_cached_data)
+
+        payload = _normalize_release_payload(_get_cached_payload_copy() or _build_empty_release_monitor_payload())
+        return payload
+
+
+def sync_release_monitor_jira_fields(row_key="", release_key="", release_version="", ke=""):
+    """Update snapshot base fields with data just read from Jira for one release row."""
+    global _cached_data, _last_cache_update
+
+    normalized_row_key = str(row_key or "").strip()
+    normalized_release_key = str(release_key or "").strip()
+    normalized_version = str(release_version or "").strip()
+    normalized_ke = str(ke or "").strip()
+    if normalized_ke:
+        normalized_ke = _format_ke_id(normalized_ke) if re.fullmatch(r"(?:CI)?\d+", normalized_ke, re.IGNORECASE) else normalized_ke
+
+    if not normalized_row_key and not normalized_release_key:
+        return {"updated": False, "fields": {}}
+    if not normalized_version and not normalized_ke:
+        return {
+            "updated": False,
+            "row_key": normalized_row_key,
+            "release_key": normalized_release_key,
+            "fields": {},
+        }
+
+    with _cache_lock:
+        if _cached_data is None:
+            disk_payload = _load_snapshot_from_disk()
+            if disk_payload is not None:
+                _cached_data = _hydrate_release_monitor_payload(disk_payload)
+                _last_cache_update = _get_snapshot_mtime() or time.time()
+
+        if _cached_data is None:
+            return {
+                "updated": False,
+                "row_key": normalized_row_key,
+                "release_key": normalized_release_key,
+                "fields": {},
+            }
+
+        items = _cached_data.get("items") or []
+        target_item = next(
+            (
+                item for item in items
+                if normalized_row_key and _get_assignment_key_for_item(item) == normalized_row_key
+            ),
+            None,
+        )
+        if target_item is None and normalized_release_key:
+            target_item = next(
+                (
+                    item for item in items
+                    if str(item.get("release_key") or "").strip() == normalized_release_key
+                ),
+                None,
+            )
+
+        if target_item is None:
+            return {
+                "updated": False,
+                "row_key": normalized_row_key,
+                "release_key": normalized_release_key,
+                "fields": {},
+            }
+
+        changed_fields = {}
+
+        def update_base_field(field, base_field, manual_field, value):
+            if not value:
+                return
+            current_base = str(target_item.get(base_field) or target_item.get(field) or "").strip()
+            if current_base == value:
+                return
+            target_item[base_field] = value
+            if not str(target_item.get(manual_field) or "").strip():
+                target_item[field] = value
+            changed_fields[field] = value
+            changed_fields[base_field] = value
+
+        update_base_field("release_version", "base_release_version", "manual_release_version", normalized_version)
+        update_base_field("ke", "base_ke", "manual_ke", normalized_ke)
+
+        if changed_fields:
+            _save_snapshot_to_disk(_cached_data)
+            _last_cache_update = _get_snapshot_mtime() or time.time()
+
+        normalized_payload = _normalize_release_payload(_get_cached_payload_copy() or _build_empty_release_monitor_payload())
+        normalized_items = normalized_payload.get("items") or []
+        effective_row_key = normalized_row_key or _get_assignment_key_for_item(target_item)
+        normalized_item = next(
+            (
+                item for item in normalized_items
+                if _get_assignment_key_for_item(item) == effective_row_key
+            ),
+            None,
+        )
+
+        return {
+            "updated": bool(changed_fields),
+            "row_key": effective_row_key,
+            "release_key": normalized_release_key or str(target_item.get("release_key") or "").strip(),
+            "fields": changed_fields,
+            "item": normalized_item or {},
+            "data_revision": (normalized_payload.get("meta") or {}).get("data_revision", ""),
+        }
+
+
+def set_release_monitor_manual_distribution_override(release_key, release_version="", ke=""):
+    global _cached_data, _last_cache_update
+
+    release_key = str(release_key or "").strip()
+    normalized_version = str(release_version or "").strip()
+    normalized_ke = str(ke or "").strip()
+    if normalized_ke:
+        normalized_ke = _format_ke_id(normalized_ke) if re.fullmatch(r"(?:CI)?\d+", normalized_ke, re.IGNORECASE) else normalized_ke
+
+    if not release_key:
+        raise ValueError("Не указан ключ строки релиза")
+    if not normalized_version:
+        raise ValueError("Укажите версию сборки")
+    if not normalized_ke:
+        raise ValueError("Укажите КЭ дистрибутива")
+
+    with _cache_lock:
+        if _cached_data is None:
+            disk_payload = _load_snapshot_from_disk()
+            if disk_payload is not None:
+                _cached_data = _hydrate_release_monitor_payload(disk_payload)
+                _last_cache_update = _get_snapshot_mtime() or time.time()
+
+        if _cached_data is None:
+            raise ValueError("Таблица релизов еще не загружена")
+
+        current_payload = _get_cached_payload_copy() or _build_empty_release_monitor_payload()
+        current_items = current_payload.get("items") or []
+        target_item = next(
+            (item for item in current_items if _get_assignment_key_for_item(item) == release_key),
+            None,
+        )
+        if not target_item:
+            raise ValueError("Не удалось найти строку релиза")
+
+        base_version = str(target_item.get("base_release_version") or target_item.get("release_version") or "").strip()
+        base_ke = str(target_item.get("base_ke") or target_item.get("ke") or "").strip()
+
+        overrides = _load_manual_release_overrides()
+        current_override = dict(overrides.get(release_key) or {})
+        if base_version and not str(current_override.get("base_release_version") or "").strip():
+            current_override["base_release_version"] = base_version
+        if base_ke and not str(current_override.get("base_ke") or "").strip():
+            current_override["base_ke"] = base_ke
+
+        current_override["release_version"] = normalized_version
+        current_override["ke"] = normalized_ke
+
+        current_override = _normalize_manual_release_override(current_override)
+        if current_override:
+            current_override["updated_at"] = _format_timestamp()
+            overrides[release_key] = current_override
+        else:
+            overrides.pop(release_key, None)
+
+        _save_manual_release_overrides(overrides)
+
+        _cached_data["manual_overrides"] = dict(overrides)
+        items = _cached_data.get("items") or []
+        _apply_reviewer_assignments(items)
+        _apply_date_overrides(items)
+        _apply_duty_schedule_assignments(items, persist=True)
+        _apply_zni_assignments(items)
+        _apply_manual_release_overrides(items)
+        _sort_and_number_records(items)
+        _save_snapshot_to_disk(_cached_data)
+        _last_cache_update = _get_snapshot_mtime() or time.time()
 
         payload = _normalize_release_payload(_get_cached_payload_copy() or _build_empty_release_monitor_payload())
         return payload
