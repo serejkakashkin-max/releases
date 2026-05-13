@@ -135,6 +135,7 @@ def get_suggestions():
         default_suggestions = [
             {"text": "Показать релизы недели по ответственному", "action": "release_week_query"},
             {"text": "Сформировать документы по релизу", "action": "release_documents"},
+            {"text": "Инструкция ПСИ по релизу", "action": "release_psi_instruction"},
             {"text": "Выгрузить таблицу релизов в Confluence", "action": "release_confluence_export"},
             {"text": "Контроль недели", "action": "release_week_control"},
             {"text": "Сводка дневной смены", "action": "handover_day"},
@@ -156,6 +157,7 @@ def get_suggestions():
             IntentType.SHOW_CAPABILITIES.value: [
                 {"text": "Показать релизы недели по ответственному", "action": "release_week_query"},
                 {"text": "Сформировать документы по релизу", "action": "release_documents"},
+                {"text": "Инструкция ПСИ по релизу", "action": "release_psi_instruction"},
                 {"text": "Выгрузить таблицу релизов в Confluence", "action": "release_confluence_export"},
                 {"text": "Контроль недели", "action": "release_week_control"},
             ],
@@ -296,6 +298,7 @@ def quick_action():
             'assignee_stats': 'Сгенерируй статистику',
             'handover_day': 'Сводка для передачи дневной смены',
             'handover_evening': 'Сводка для передачи вечерней смены',
+            'release_psi_instruction': 'Дай инструкцию ПСИ по релизу',
         }
 
         message = action_messages.get(action, 'Показать что я умею?')
