@@ -509,6 +509,40 @@
             box-shadow: inset 0 0 0 1px var(--release-soft-border);
         }
 
+        .release-filter-select,
+        .release-th-filter select,
+        .reviewer-select,
+        .release-doc-modal .form-select,
+        .release-doc-modal select {
+            color-scheme: light;
+        }
+
+        .release-filter-select option,
+        .release-th-filter select option,
+        .reviewer-select option,
+        .release-doc-modal .form-select option,
+        .release-doc-modal select option {
+            background: var(--bg-card);
+            color: var(--text-primary);
+        }
+
+        [data-theme="dark"] .release-filter-select,
+        [data-theme="dark"] .release-th-filter select,
+        [data-theme="dark"] .reviewer-select,
+        [data-theme="dark"] .release-doc-modal .form-select,
+        [data-theme="dark"] .release-doc-modal select {
+            color-scheme: dark;
+        }
+
+        [data-theme="dark"] .release-filter-select option,
+        [data-theme="dark"] .release-th-filter select option,
+        [data-theme="dark"] .reviewer-select option,
+        [data-theme="dark"] .release-doc-modal .form-select option,
+        [data-theme="dark"] .release-doc-modal select option {
+            background: #1f2937;
+            color: #e5edf7;
+        }
+
         .release-search-box input:focus,
         .release-filter-select:focus {
             outline: none;
@@ -1944,7 +1978,7 @@
                     </select>
                     <select id="releaseViewFilter" class="release-filter-select" onchange="handleReleaseViewFilter()">
                         <option value="all">Все релизы года</option>
-                        <option value="non_final">Только не в финальном статусе</option>
+                        <option value="week">Релизы текущей недели</option>
                         <option value="overdue">Просроченные по РОВ</option>
                         <option value="today">На сегодня</option>
                         <option value="final">Установлен на ПРОМ</option>
@@ -3413,6 +3447,48 @@ function buildReviewerCell(item) {
             return summary;
         }
 
+        function getCurrentWeekDateBounds() {
+            const start = new Date();
+            start.setHours(0, 0, 0, 0);
+            const mondayOffset = (start.getDay() + 6) % 7;
+            start.setDate(start.getDate() - mondayOffset);
+            const end = new Date(start);
+            end.setDate(start.getDate() + 6);
+            end.setHours(23, 59, 59, 999);
+            return { start, end };
+        }
+
+        function isReleaseInCurrentWeek(item) {
+            const deploymentDate = getReleaseEffectiveStartDate(item);
+            if (!deploymentDate) {
+                return false;
+            }
+            deploymentDate.setHours(0, 0, 0, 0);
+            const { start, end } = getCurrentWeekDateBounds();
+            return deploymentDate >= start && deploymentDate <= end;
+        }
+
+        function isReleaseAssignmentScopeForCurrentWeek(item) {
+            return Boolean(
+                isReleaseInCurrentWeek(item) &&
+                !item?.is_cancelled &&
+                !item?.is_final
+            );
+        }
+
+        function hasReleaseResponsibles(item) {
+            return Array.isArray(item?.psi_responsibles) && item.psi_responsibles.some(value => String(value || '').trim());
+        }
+
+        function withUpdatedWeekAssignmentFlags(item) {
+            const isWeekScope = isReleaseAssignmentScopeForCurrentWeek(item);
+            return {
+                ...item,
+                is_current_week_assignment_scope: isWeekScope,
+                is_missing_week_responsible: Boolean(isWeekScope && !hasReleaseResponsibles(item))
+            };
+        }
+
         function updateReleaseStatusFilterOptions(items) {
             const statusSelect = document.getElementById('releaseStatusFilter');
             if (!statusSelect) {
@@ -4200,14 +4276,14 @@ function buildReviewerCell(item) {
 
                 releaseMonitorItems = releaseMonitorItems.map(item => (
                     (item.row_key || item.release_key) === releaseKey
-                        ? {
+                        ? withUpdatedWeekAssignmentFlags({
                             ...item,
                             psi_owner: data.reviewer || '',
                             psi_owner_source: data.reviewer_source || '',
                             psi_owner_date: data.reviewer_date || '',
                             psi_checker: data.checker || '',
                             psi_responsibles: Array.isArray(data.responsibles) ? data.responsibles : []
-                        }
+                        })
                         : item
                 ));
                 applyReleaseFilters();
@@ -4795,7 +4871,7 @@ function buildReviewerCell(item) {
                 );
                 const matchesView = (
                     currentReleaseViewFilter === 'all' ||
-                    (currentReleaseViewFilter === 'non_final' && item.is_non_final) ||
+                    (currentReleaseViewFilter === 'week' && isReleaseInCurrentWeek(item) && !item.is_cancelled) ||
                     (currentReleaseViewFilter === 'overdue' && item.is_overdue) ||
                     (currentReleaseViewFilter === 'today' && isReleaseStartingToday(item)) ||
                     (currentReleaseViewFilter === 'final' && item.is_final) ||

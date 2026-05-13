@@ -1,6 +1,8 @@
 ﻿<!doctype html>
 <html lang="ru">
 <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Генератор</title>
     <link href="/static/css/bootstrap.min.css" rel="stylesheet">
     <link href="/static/css/bootstrap-icons.css" rel="stylesheet">
@@ -311,17 +313,56 @@
         }
 
         @media (max-width: 768px) {
-            .agent-shell {
-                width: calc(100vw - 1.5rem);
+            .container {
+                padding-left: 0.75rem;
+                padding-right: 0.75rem;
             }
 
-            .home-menu-grid {
-                grid-template-columns: 1fr;
+            .home-workspace {
+                width: 100%;
+            }
+
+            .home-menu-card {
+                padding: 1rem;
             }
 
             .home-menu-head {
-                padding-left: 1rem;
-                padding-right: 1rem;
+                padding-left: 0.5rem;
+                padding-right: 0.5rem;
+                align-items: flex-start;
+            }
+
+            .home-menu-mark {
+                width: 40px;
+                height: 40px;
+            }
+
+            .home-menu-title {
+                font-size: clamp(1.45rem, 8vw, 1.9rem);
+            }
+
+            .home-menu-grid {
+                flex-direction: column;
+                gap: 0.45rem;
+                padding: 0.45rem;
+            }
+
+            .home-menu-tile {
+                width: 100%;
+                min-height: 54px;
+                padding: 0.75rem;
+                grid-template-columns: 34px minmax(0, 1fr);
+            }
+
+            .home-menu-name {
+                font-size: 0.95rem;
+                line-height: 1.15;
+            }
+
+            .agent-shell {
+                left: auto;
+                width: 100%;
+                transform: none;
             }
 
             .usage-chip {
