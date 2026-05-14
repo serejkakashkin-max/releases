@@ -988,6 +988,46 @@ def _get_final_manual_date_row_state(start_dt, end_dt, now_dt=None):
     return "planned"
 
 
+def _apply_active_reroll_schedule_state(item, start_dt=None, end_dt=None, now_dt=None):
+    if not item.get("is_reroll"):
+        return False
+
+    now_dt = now_dt or datetime.now()
+    start_dt = start_dt or _parse_release_monitor_date(
+        item.get("deployment_start_iso")
+        or item.get("source_deployment_start_iso")
+        or item.get("deployment_start")
+        or item.get("source_deployment_start")
+    )
+    end_dt = end_dt or _parse_release_monitor_date(
+        item.get("deployment_end_iso")
+        or item.get("source_deployment_end_iso")
+        or item.get("deployment_end")
+        or item.get("source_deployment_end")
+    )
+    window_end_dt = end_dt or start_dt
+    if not window_end_dt or _is_release_window_expired(window_end_dt, now_dt):
+        return False
+
+    today = now_dt.date()
+    start_date = start_dt.date() if start_dt else None
+    end_date = end_dt.date() if end_dt else None
+    is_today = bool(
+        (start_date and start_date == today)
+        or (end_date and end_date == today)
+    )
+
+    item["is_final"] = False
+    item["is_non_final"] = True
+    item["is_pre_final"] = False
+    item["is_ready_for_prom"] = False
+    item["is_overdue"] = False
+    item["is_today"] = is_today
+    item["days_overdue"] = 0
+    item["row_state"] = "today" if is_today else "planned"
+    return True
+
+
 def _resolve_effective_release_date(base_dt, manual_dt):
     return manual_dt or base_dt
 
@@ -1618,6 +1658,9 @@ def _apply_release_status_consistency(items):
         is_cancelled_status = normalized_status == cancelled_status
 
         if is_final_status:
+            if _apply_active_reroll_schedule_state(item):
+                item["is_cancelled"] = False
+                continue
             item["is_final"] = True
             item["is_cancelled"] = False
             item["is_non_final"] = False
@@ -2913,6 +2956,8 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
         )
         row_is_cancelled = is_cancelled
         row_is_final = is_final
+        if is_reroll and (rov_start or rov_end) and not _is_release_window_expired(rov_end or rov_start, now_dt):
+            row_is_final = False
         row_is_non_final = not row_is_final and not row_is_cancelled
         row_is_pre_final = is_pre_final and not row_is_final
 
