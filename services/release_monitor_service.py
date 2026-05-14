@@ -451,10 +451,10 @@ def _normalize_rollout_note_flags(payload):
         raw_level = str(value.get("rollout_notes_level") or value.get("level") or "").strip().lower()
         if not raw_level and bool(value.get("has_rollout_notes")):
             raw_level = "warning"
-        if raw_level not in {"success", "warning", "danger"}:
+        if raw_level not in {"success", "warning", "danger", "none"}:
             continue
         normalized[row_key] = {
-            "has_rollout_notes": True,
+            "has_rollout_notes": raw_level != "none",
             "rollout_notes_level": raw_level,
             "updated_at": str(value.get("updated_at") or "").strip(),
         }
@@ -1759,17 +1759,19 @@ def _apply_zni_assignments(items):
         rollout_flag_key = assignment_key if assignment_key in flags else item.get("release_key")
         rollout_note = flags.get(rollout_flag_key) or {}
         rollout_level = ""
-        if isinstance(rollout_note, dict) and rollout_note.get("has_rollout_notes"):
+        if isinstance(rollout_note, dict) and (
+            rollout_note.get("has_rollout_notes") or str(rollout_note.get("rollout_notes_level") or "").strip()
+        ):
             rollout_level = str(rollout_note.get("rollout_notes_level") or "warning").strip().lower()
-            if rollout_level not in {"success", "warning", "danger"}:
+            if rollout_level not in {"success", "warning", "danger", "none"}:
                 rollout_level = "warning"
-            if rollout_level == _get_release_auto_color_level(item):
+            if rollout_level != "none" and rollout_level == _get_release_auto_color_level(item):
                 if rollout_flag_key in flags:
                     flags.pop(rollout_flag_key, None)
                     flags_changed = True
                 rollout_level = ""
         item["rollout_notes_level"] = rollout_level
-        item["has_rollout_notes"] = bool(rollout_level)
+        item["has_rollout_notes"] = bool(rollout_level and rollout_level != "none")
     if flags_changed:
         _save_rollout_note_flags(flags)
     return items
@@ -2287,6 +2289,8 @@ def _render_confluence_release_row(item):
         row_bg = "#fdebec"
     elif rollout_level == "warning":
         row_bg = "#fff7db"
+    elif rollout_level == "none":
+        row_bg = ""
     row_style = f' style="background-color: {row_bg};"' if row_bg else ""
 
     row_number = str(item.get("release_number") or "").strip() or "—"
@@ -4401,7 +4405,7 @@ def set_release_monitor_rollout_notes(release_key, enabled=False, level=""):
 
     enabled = bool(enabled)
     level = str(level or "").strip().lower()
-    if enabled and level not in {"success", "warning", "danger"}:
+    if enabled and level not in {"success", "warning", "danger", "none"}:
         level = "warning"
     if not enabled:
         level = ""
@@ -4410,7 +4414,7 @@ def set_release_monitor_rollout_notes(release_key, enabled=False, level=""):
         flags = _load_rollout_note_flags()
         if enabled:
             flags[release_key] = {
-                "has_rollout_notes": True,
+                "has_rollout_notes": level != "none",
                 "rollout_notes_level": level,
                 "updated_at": _format_timestamp(),
             }
@@ -4426,12 +4430,12 @@ def set_release_monitor_rollout_notes(release_key, enabled=False, level=""):
         if _cached_data is not None:
             for item in _cached_data.get("items") or []:
                 if _get_assignment_key_for_item(item) == release_key:
-                    if enabled and level == _get_release_auto_color_level(item):
+                    if enabled and level != "none" and level == _get_release_auto_color_level(item):
                         enabled = False
                         level = ""
                         flags.pop(release_key, None)
                         _save_rollout_note_flags(flags)
-                    item["has_rollout_notes"] = enabled
+                    item["has_rollout_notes"] = bool(enabled and level != "none")
                     item["rollout_notes_level"] = level
                     break
             _save_snapshot_to_disk(_cached_data)
@@ -4442,7 +4446,7 @@ def set_release_monitor_rollout_notes(release_key, enabled=False, level=""):
 
     return {
         "release_key": release_key,
-        "has_rollout_notes": enabled,
+        "has_rollout_notes": bool(enabled and level != "none"),
         "rollout_notes_level": level,
         "data": payload,
     }

@@ -731,6 +731,11 @@
             background: rgba(248, 81, 73, 0.12);
         }
 
+        .release-row.rollout-notes-none,
+        .release-row.rollout-notes-none td {
+            background: transparent;
+        }
+
         .release-key-link {
             font-weight: 700;
             color: var(--primary);
@@ -2611,6 +2616,8 @@ function buildReviewerCell(item) {
                 ? 'rollout-notes-danger'
                 : rolloutLevel === 'warning'
                     ? 'rollout-notes-warning'
+                    : rolloutLevel === 'none'
+                        ? 'rollout-notes-none'
                     : '';
             return `
                 <tr
@@ -4322,7 +4329,18 @@ function buildReviewerCell(item) {
             const normalizedLevel = ['success', 'warning', 'danger'].includes(level) ? level : '';
             const currentLevel = item.rollout_notes_level || (item.has_rollout_notes ? 'warning' : '');
             const autoLevel = getReleaseAutoColorLevel(item);
-            const nextLevel = currentLevel === normalizedLevel || normalizedLevel === autoLevel ? '' : normalizedLevel;
+            let nextLevel = '';
+            if (currentLevel === normalizedLevel) {
+                nextLevel = autoLevel ? 'none' : '';
+            } else if (!currentLevel && normalizedLevel === autoLevel) {
+                nextLevel = 'none';
+            } else if (currentLevel === 'none') {
+                nextLevel = normalizedLevel;
+            } else if (normalizedLevel === autoLevel) {
+                nextLevel = '';
+            } else {
+                nextLevel = normalizedLevel;
+            }
             const enabled = Boolean(nextLevel);
             try {
                 const response = await fetch(BASE_PATH + '/dashboard/release-monitor/rollout-notes', {
