@@ -1,0 +1,703 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Помощь по Oplot</title>
+    <link href="/static/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/static/css/bootstrap-icons.css" rel="stylesheet">
+    <script src="/static/js/bootstrap.bundle.min.js"></script>
+    {% include 'base_styles.html' %}
+    <style>
+        body {
+            min-height: 100vh;
+            --help-panel-bg: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96));
+            --help-surface-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96));
+            --help-strip-bg: rgba(241, 245, 249, 0.84);
+            --help-soft-bg: rgba(15, 23, 42, 0.035);
+            --help-soft-border: rgba(148, 163, 184, 0.24);
+            --help-shadow: rgba(15, 23, 42, 0.10);
+        }
+
+        [data-theme="dark"] body {
+            --help-panel-bg:
+                radial-gradient(circle at 50% 0%, rgba(59, 130, 246, 0.13), transparent 34%),
+                linear-gradient(135deg, rgba(31, 41, 55, 0.94), rgba(17, 24, 39, 0.96));
+            --help-surface-bg: linear-gradient(180deg, rgba(31, 41, 55, 0.92), rgba(17, 24, 39, 0.94));
+            --help-strip-bg: rgba(15, 23, 42, 0.13);
+            --help-soft-bg: rgba(255, 255, 255, 0.035);
+            --help-soft-border: rgba(148, 163, 184, 0.13);
+            --help-shadow: rgba(0, 0, 0, 0.14);
+        }
+
+        .help-shell {
+            max-width: 1320px;
+            margin: 0 auto;
+            padding: 0 1rem 3rem;
+        }
+
+        .help-hero {
+            max-width: 980px;
+            margin: 0 auto 1rem;
+            padding: 1.2rem 1.35rem 1.25rem;
+            border-radius: 20px;
+            border: 1px solid var(--border-color);
+            background: var(--help-panel-bg);
+            box-shadow: 0 20px 44px var(--help-shadow);
+            text-align: center;
+        }
+
+        .help-title {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 0.75rem;
+            margin: 0;
+            color: var(--text-primary);
+            font-size: clamp(1.75rem, 3vw, 2.35rem);
+            font-weight: 850;
+            line-height: 1.1;
+        }
+
+        .help-title .bi {
+            width: 44px;
+            height: 44px;
+            border-radius: 15px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            background: linear-gradient(135deg, #3b82f6, #22c55e);
+            box-shadow: 0 12px 28px rgba(59, 130, 246, 0.28);
+            font-size: 1.15rem;
+        }
+
+        .help-subtitle {
+            width: min(100%, 760px);
+            margin: 0.8rem auto 0;
+            color: var(--text-secondary);
+            font-size: 0.98rem;
+            font-weight: 600;
+            line-height: 1.55;
+        }
+
+        .help-layout {
+            display: grid;
+            grid-template-columns: 280px minmax(0, 1fr);
+            gap: 1rem;
+            align-items: start;
+        }
+
+        .help-nav {
+            position: sticky;
+            top: 1rem;
+            border: 1px solid var(--border-color);
+            border-radius: 18px;
+            background: var(--help-surface-bg);
+            box-shadow: 0 14px 34px var(--help-shadow);
+            padding: 0.8rem;
+        }
+
+        .help-nav-title {
+            padding: 0.45rem 0.6rem 0.7rem;
+            color: var(--text-secondary);
+            font-size: 0.75rem;
+            font-weight: 850;
+            text-transform: uppercase;
+        }
+
+        .help-nav a {
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+            color: var(--text-primary);
+            text-decoration: none;
+            border-radius: 12px;
+            padding: 0.62rem 0.7rem;
+            font-weight: 750;
+            font-size: 0.9rem;
+        }
+
+        .help-nav a:hover {
+            background: rgba(59, 130, 246, 0.12);
+            color: var(--primary);
+        }
+
+        .help-content {
+            display: grid;
+            gap: 1rem;
+        }
+
+        .help-section {
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            background: var(--help-surface-bg);
+            box-shadow: 0 14px 34px var(--help-shadow);
+            padding: 1.15rem;
+            scroll-margin-top: 1rem;
+        }
+
+        .help-section h2 {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            margin: 0 0 0.85rem;
+            color: var(--text-primary);
+            font-size: 1.25rem;
+            font-weight: 850;
+        }
+
+        .help-section h2 .bi {
+            color: var(--primary);
+        }
+
+        .help-section p {
+            color: var(--text-secondary);
+            line-height: 1.6;
+            margin-bottom: 0.75rem;
+        }
+
+        .help-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.85rem;
+        }
+
+        .help-card {
+            border: 1px solid var(--help-soft-border);
+            border-radius: 16px;
+            background: var(--help-soft-bg);
+            padding: 0.95rem;
+        }
+
+        .help-card h3 {
+            margin: 0 0 0.55rem;
+            color: var(--text-primary);
+            font-size: 1rem;
+            font-weight: 850;
+        }
+
+        .help-list {
+            margin: 0;
+            padding-left: 1.1rem;
+            color: var(--text-secondary);
+            line-height: 1.55;
+        }
+
+        .help-list li {
+            margin-bottom: 0.32rem;
+        }
+
+        .command-list {
+            display: grid;
+            gap: 0.55rem;
+        }
+
+        .command-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 0.55rem;
+            padding: 0.58rem;
+            border-radius: 13px;
+            border: 1px solid var(--help-soft-border);
+            background: rgba(59, 130, 246, 0.055);
+        }
+
+        .command-text {
+            color: var(--text-primary);
+            font-weight: 750;
+            font-size: 0.9rem;
+            overflow-wrap: anywhere;
+        }
+
+        .copy-command {
+            border: 1px solid rgba(59, 130, 246, 0.26);
+            background: rgba(59, 130, 246, 0.12);
+            color: var(--primary);
+            border-radius: 11px;
+            width: 36px;
+            height: 36px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .copy-command.copied {
+            color: #22c55e;
+            border-color: rgba(34, 197, 94, 0.38);
+            background: rgba(34, 197, 94, 0.12);
+        }
+
+        .help-shot {
+            width: 100%;
+            border-radius: 16px;
+            border: 1px solid var(--help-soft-border);
+            background: var(--help-soft-bg);
+            box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12);
+            display: block;
+        }
+
+        .shot-caption {
+            margin-top: 0.45rem;
+            color: var(--text-muted);
+            font-size: 0.82rem;
+            font-weight: 650;
+        }
+
+        .flow {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.55rem;
+            margin: 0.7rem 0;
+        }
+
+        .flow-step {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            border-radius: 999px;
+            border: 1px solid var(--help-soft-border);
+            background: var(--help-strip-bg);
+            color: var(--text-primary);
+            padding: 0.48rem 0.68rem;
+            font-weight: 800;
+            font-size: 0.84rem;
+        }
+
+        .report-preview {
+            border-radius: 16px;
+            border: 1px solid var(--help-soft-border);
+            background:
+                linear-gradient(135deg, rgba(59, 130, 246, 0.12), rgba(34, 197, 94, 0.08)),
+                var(--bg-card);
+            padding: 1rem;
+        }
+
+        .report-preview-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 1rem;
+            flex-wrap: wrap;
+            color: var(--text-primary);
+            font-weight: 850;
+            margin-bottom: 0.85rem;
+        }
+
+        .report-stat-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.55rem;
+            margin-bottom: 0.85rem;
+        }
+
+        .report-stat {
+            border-radius: 13px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid var(--help-soft-border);
+            padding: 0.7rem;
+        }
+
+        .report-stat span {
+            display: block;
+            color: var(--text-secondary);
+            font-size: 0.72rem;
+            font-weight: 850;
+            text-transform: uppercase;
+        }
+
+        .report-stat strong {
+            color: var(--primary);
+            font-size: 1.4rem;
+        }
+
+        .report-line {
+            height: 10px;
+            border-radius: 999px;
+            background: rgba(148, 163, 184, 0.28);
+            margin-bottom: 0.45rem;
+        }
+
+        .report-line.short {
+            width: 68%;
+        }
+
+        .tip-box {
+            border-radius: 15px;
+            border: 1px solid rgba(245, 158, 11, 0.24);
+            background: rgba(245, 158, 11, 0.10);
+            color: var(--text-primary);
+            padding: 0.85rem;
+            font-weight: 650;
+        }
+
+        .copy-toast {
+            position: fixed;
+            right: 1rem;
+            bottom: 1rem;
+            border-radius: 999px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 0.65rem 0.9rem;
+            box-shadow: 0 16px 38px rgba(15, 23, 42, 0.18);
+            opacity: 0;
+            transform: translateY(10px);
+            pointer-events: none;
+            transition: opacity 0.18s ease, transform 0.18s ease;
+            z-index: 1000;
+            font-weight: 800;
+        }
+
+        .copy-toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        @media (max-width: 980px) {
+            .help-layout {
+                grid-template-columns: 1fr;
+            }
+
+            .help-nav {
+                position: static;
+                display: flex;
+                gap: 0.3rem;
+                overflow-x: auto;
+            }
+
+            .help-nav-title {
+                display: none;
+            }
+
+            .help-nav a {
+                white-space: nowrap;
+            }
+        }
+
+        @media (max-width: 720px) {
+            .help-grid,
+            .report-stat-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .command-row {
+                grid-template-columns: 1fr;
+            }
+
+            .copy-command {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark mb-3">
+        <div class="container-fluid">
+            <a class="nav-home-btn" href="/" id="helpHomeLink" title="На главную">
+                <i class="bi bi-house-door-fill"></i>
+            </a>
+            <div class="d-flex align-items-center gap-2">
+                <button class="theme-toggle" onclick="toggleTheme()" title="Переключить тему">
+                    <i class="bi bi-sun"></i>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <main class="help-shell">
+        <section class="help-hero">
+            <h1 class="help-title">
+                <i class="bi bi-question-circle"></i>
+                Как работать с Oplot
+            </h1>
+            <p class="help-subtitle">
+                Короткий рабочий справочник по AI-боту, Блоку релизов, документам, отчетам, Confluence, ПСИ-инструкциям и SMS-оповещениям.
+            </p>
+        </section>
+
+        <div class="help-layout">
+            <aside class="help-nav" aria-label="Разделы FAQ">
+                <div class="help-nav-title">Разделы</div>
+                <a href="#start"><i class="bi bi-play-circle"></i>Быстрый старт</a>
+                <a href="#bot"><i class="bi bi-stars"></i>AI-бот Oplot</a>
+                <a href="#docs"><i class="bi bi-file-earmark-zip"></i>Документы</a>
+                <a href="#release-block"><i class="bi bi-rocket-takeoff"></i>Блок релизов</a>
+                <a href="#week-control"><i class="bi bi-shield-check"></i>Контроль недели</a>
+                <a href="#reports"><i class="bi bi-bar-chart-line"></i>Отчеты</a>
+                <a href="#issues"><i class="bi bi-exclamation-triangle"></i>Типовые ситуации</a>
+                <a href="#commands"><i class="bi bi-terminal"></i>Шпаргалка</a>
+            </aside>
+
+            <div class="help-content">
+                <section class="help-section" id="start">
+                    <h2><i class="bi bi-play-circle"></i>Быстрый старт</h2>
+                    <div class="help-grid">
+                        <div>
+                            <p>
+                                Oplot - рабочий AI-бот команды. Основной сценарий теперь находится на главной странице: можно писать обычными словами, а бот сам определит, нужно ли искать релизы, формировать документы, готовить отчет или уточнить недостающие данные.
+                            </p>
+                            <ul class="help-list">
+                                <li>Главная страница - единая точка входа в бота.</li>
+                                <li>Блок релизов - онлайн-таблица релизов, ответственных, РОВ и документов.</li>
+                                <li>Рабочий стол дежурного - задачи смены и Jira-статистика.</li>
+                                <li>SMS-оповещения - CSV-шаблоны по итогам внедрения.</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <img class="help-shot" src="/static/img/help/home.png" alt="Главная страница с AI-ботом Oplot">
+                            <div class="shot-caption">Главная страница: меню модулей и чат Oplot.</div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="help-section" id="bot">
+                    <h2><i class="bi bi-stars"></i>AI-бот Oplot</h2>
+                    <p>
+                        Бот понимает рабочие запросы по релизам, документам, ПСИ, Confluence и Jira. Если данных не хватает, он задаст один конкретный уточняющий вопрос.
+                    </p>
+                    <div class="help-grid">
+                        <div class="help-card">
+                            <h3>Что можно спросить</h3>
+                            <ul class="help-list">
+                                <li>Какие релизы закреплены за инженером на текущей неделе.</li>
+                                <li>Сформировать документы по одному релизу или по списку релизов.</li>
+                                <li>Дать ПСИ-инструкцию по релизу через КЭ.</li>
+                                <li>Выгрузить таблицу релизов в Confluence.</li>
+                                <li>Найти Jira/OPLOT-задачу, собрать сводку смены или статистику.</li>
+                            </ul>
+                        </div>
+                        <div class="help-card">
+                            <h3>Как лучше формулировать</h3>
+                            <ul class="help-list">
+                                <li>Пишите обычным языком: “покажи релизы за Ивановым”.</li>
+                                <li>Если знаете ключ релиза, указывайте его сразу.</li>
+                                <li>Если бот уточняет РОВ, проверяющего или версию, ответьте следующим сообщением.</li>
+                                <li>Для сброса сценария используйте кнопку “Сброс” или напишите “отмена”.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="help-section" id="docs">
+                    <h2><i class="bi bi-file-earmark-zip"></i>Формирование документов</h2>
+                    <p>
+                        Документы через чат формируются тем же механизмом, что и кнопка в строке релиза. Oplot сам подтягивает данные из Jira, таблицы релизов и текущего контекста.
+                    </p>
+                    <div class="flow" aria-label="Сценарий формирования документов">
+                        <span class="flow-step"><i class="bi bi-1-circle"></i>Релиз</span>
+                        <span class="flow-step"><i class="bi bi-2-circle"></i>Проверяющий</span>
+                        <span class="flow-step"><i class="bi bi-3-circle"></i>Инструкция</span>
+                        <span class="flow-step"><i class="bi bi-4-circle"></i>Версия отката</span>
+                        <span class="flow-step"><i class="bi bi-5-circle"></i>ЗНИ</span>
+                        <span class="flow-step"><i class="bi bi-6-circle"></i>ZIP</span>
+                    </div>
+                    <div class="help-grid">
+                        <div class="help-card">
+                            <h3>Один релиз</h3>
+                            <p>Напишите `Сформируй документы по EMRM-12345`. Если у релиза несколько вариантов шаблонов, бот предложит выбрать нужный вариант, например GREEN или BLUE.</p>
+                        </div>
+                        <div class="help-card">
+                            <h3>Несколько релизов подряд</h3>
+                            <p>Сначала запросите релизы по ответственному, затем напишите “давай поочередно подготовим документы по всем данным релизам”. Бот пройдет сценарий по каждому релизу.</p>
+                        </div>
+                    </div>
+                    <div class="tip-box mt-3">
+                        ZIP-документы и HTML-отчеты доступны по ссылке 1 час. После этого их нужно сформировать заново.
+                    </div>
+                </section>
+
+                <section class="help-section" id="release-block">
+                    <h2><i class="bi bi-rocket-takeoff"></i>Блок релизов</h2>
+                    <div class="help-grid">
+                        <div>
+                            <p>
+                                Блок релизов показывает актуальную онлайн-таблицу: даты внедрения, РОВ, статус, ответственных, проверяющего, ЗНИ, документы и ручные корректировки.
+                            </p>
+                            <ul class="help-list">
+                                <li>Фильтр “Релизы текущей недели” показывает все релизы недели, включая финальные.</li>
+                                <li>Ручная дата меняет порядок и временную логику строки.</li>
+                                <li>Палитра цвета имеет приоритет над автоматической раскраской.</li>
+                                <li>Просроченный РОВ у нефинального релиза подсвечивается красным.</li>
+                                <li>Новый РОВ у уже финального релиза считается перераскаткой.</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <img class="help-shot" src="/static/img/help/release-monitor.png" alt="Блок релизов">
+                            <div class="shot-caption">Блок релизов: шапка, основные действия и фильтры.</div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="help-section" id="week-control">
+                    <h2><i class="bi bi-shield-check"></i>Контроль недели</h2>
+                    <p>
+                        Контроль недели помогает быстро найти релизы текущей недели без ответственного и подобрать кандидатов с учетом графика дежурств и нагрузки.
+                    </p>
+                    <div class="help-grid">
+                        <div class="help-card">
+                            <h3>Кого AI исключает</h3>
+                            <ul class="help-list">
+                                <li>ДД, ВД, ВР - жестко исключаются.</li>
+                                <li>ХД и ХР не участвуют в релизном процессе.</li>
+                                <li>Отпуск исключается.</li>
+                                <li>ДР используется только как резерв при высокой нагрузке.</li>
+                            </ul>
+                        </div>
+                        <div class="help-card">
+                            <h3>Как принять рекомендации</h3>
+                            <ul class="help-list">
+                                <li>Откройте “Контроль недели”.</li>
+                                <li>Нажмите “AI-сводка и предложения”.</li>
+                                <li>Примените рекомендации по нужным релизам.</li>
+                                <li>При необходимости попросите бота изменить конкретного ответственного.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="help-section" id="reports">
+                    <h2><i class="bi bi-bar-chart-line"></i>Отчеты и статистика</h2>
+                    <div class="help-grid">
+                        <div class="help-card">
+                            <h3>Jira-статистика</h3>
+                            <p>Используется для задач рабочего стола: сколько закрыто, по каким исполнителям, за какой период, какие теги и категории встречаются чаще.</p>
+                            <p>Пример: `Сформируй статистику по Jira за 30 дней`.</p>
+                        </div>
+                        <div class="help-card">
+                            <h3>Релизная статистика</h3>
+                            <p>Используется для Блока релизов: релизы недели, финальные, отмененные, перераскатки, hotfix и другие срезы по таблице релизов.</p>
+                            <p>Пример: `Сформируй отчет по релизам текущей недели`.</p>
+                        </div>
+                    </div>
+                    <div class="report-preview mt-3" aria-label="Пример HTML-отчета">
+                        <div class="report-preview-head">
+                            <span>Пример HTML-отчета</span>
+                            <span>период: текущая неделя</span>
+                        </div>
+                        <div class="report-stat-grid">
+                            <div class="report-stat"><span>релизы</span><strong>12</strong></div>
+                            <div class="report-stat"><span>без ответственного</span><strong>3</strong></div>
+                            <div class="report-stat"><span>исполнители</span><strong>8</strong></div>
+                        </div>
+                        <div class="report-line"></div>
+                        <div class="report-line short"></div>
+                        <div class="report-line"></div>
+                    </div>
+                </section>
+
+                <section class="help-section" id="issues">
+                    <h2><i class="bi bi-exclamation-triangle"></i>Типовые ситуации</h2>
+                    <div class="help-grid">
+                        <div class="help-card">
+                            <h3>Не заполнен проверяющий</h3>
+                            <p>Бот попросит ФИО проверяющего, сохранит его в таблицу и продолжит формирование документов.</p>
+                        </div>
+                        <div class="help-card">
+                            <h3>Нет зарегистрированного дистрибутива</h3>
+                            <p>Бот предупредит, что в Jira нет дистрибутива. Если нужно продолжить, пришлите версию сборки и КЭ дистрибутива одним сообщением.</p>
+                        </div>
+                        <div class="help-card">
+                            <h3>Нет шаблонов документов</h3>
+                            <p>Oplot сообщит, что шаблонов для этого типа релиза нет. Через ручной формирователь можно попробовать похожий шаблон и скорректировать файлы вручную.</p>
+                        </div>
+                        <div class="help-card">
+                            <h3>Несколько РОВ или вариантов</h3>
+                            <p>Если строк несколько, бот сначала берет самый свежий релиз текущей недели. При неоднозначности он уточнит конкретный вариант.</p>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="help-section" id="screens">
+                    <h2><i class="bi bi-images"></i>Как выглядят основные модули</h2>
+                    <div class="help-grid">
+                        <div>
+                            <img class="help-shot" src="/static/img/help/dashboard.png" alt="Рабочий стол дежурного">
+                            <div class="shot-caption">Рабочий стол дежурного: задачи смены и Jira-статистика.</div>
+                        </div>
+                        <div>
+                            <img class="help-shot" src="/static/img/help/sms.png" alt="SMS-оповещения">
+                            <div class="shot-caption">SMS-оповещения: загрузка планов и генерация CSV.</div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="help-section" id="commands">
+                    <h2><i class="bi bi-terminal"></i>Шпаргалка команд</h2>
+                    <p>Можно скопировать команду и вставить ее в чат на главной странице.</p>
+                    <div class="command-list">
+                        {% set commands = [
+                            'Какие релизы текущей недели закреплены за Ивановым?',
+                            'Сформируй документы по EMRM-12345',
+                            'Дай инструкцию ПСИ по релизу SMECLM-37005',
+                            'Покажи контроль недели',
+                            'Предложи ответственных',
+                            'Сформируй статистику по Jira за 30 дней',
+                            'Сформируй отчет по релизам текущей недели',
+                            'Выгрузи таблицу релизов в Confluence',
+                            'Найди задачу OPLOT-12345'
+                        ] %}
+                        {% for command in commands %}
+                        <div class="command-row">
+                            <div class="command-text">{{ command }}</div>
+                            <button class="copy-command" type="button" data-copy="{{ command }}" title="Скопировать команду">
+                                <i class="bi bi-copy"></i>
+                            </button>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </section>
+            </div>
+        </div>
+    </main>
+
+    <div class="copy-toast" id="copyToast">Команда скопирована</div>
+
+    <script>
+        const BASE_PATH = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '' : '/releases';
+        document.getElementById('helpHomeLink').href = BASE_PATH + '/';
+
+        function showCopyToast() {
+            const toast = document.getElementById('copyToast');
+            toast.classList.add('show');
+            window.clearTimeout(showCopyToast.timer);
+            showCopyToast.timer = window.setTimeout(() => toast.classList.remove('show'), 1500);
+        }
+
+        async function copyText(text) {
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(text);
+                return;
+            }
+
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.focus();
+            textarea.select();
+            document.execCommand('copy');
+            textarea.remove();
+        }
+
+        document.querySelectorAll('.copy-command').forEach(button => {
+            button.addEventListener('click', async () => {
+                const text = button.dataset.copy || '';
+                try {
+                    await copyText(text);
+                    button.classList.add('copied');
+                    button.innerHTML = '<i class="bi bi-check-lg"></i>';
+                    showCopyToast();
+                    window.setTimeout(() => {
+                        button.classList.remove('copied');
+                        button.innerHTML = '<i class="bi bi-copy"></i>';
+                    }, 1200);
+                } catch (error) {
+                    console.error('Copy failed:', error);
+                }
+            });
+        });
+    </script>
+</body>
+</html>

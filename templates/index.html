@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Генератор</title>
+    <title>AI-агент команды OPLOT</title>
     <link href="/static/css/bootstrap.min.css" rel="stylesheet">
     <link href="/static/css/bootstrap-icons.css" rel="stylesheet">
     <link href="/static/css/chatbot.css" rel="stylesheet">
@@ -85,7 +85,38 @@
             font-size: 1.42rem;
             font-weight: 800;
             color: var(--text-primary);
+            margin: 0;
+        }
+
+        .agent-head {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 0.65rem;
             margin-bottom: 0.35rem;
+        }
+
+        .help-pill {
+            border: 1px solid rgba(59, 130, 246, 0.24);
+            background: rgba(59, 130, 246, 0.10);
+            color: var(--primary);
+            border-radius: 999px;
+            padding: 0.45rem 0.7rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            text-decoration: none;
+            font-size: 0.82rem;
+            font-weight: 800;
+            line-height: 1;
+            transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+        }
+
+        .help-pill:hover {
+            color: var(--primary);
+            transform: translateY(-1px);
+            border-color: rgba(59, 130, 246, 0.45);
+            background: rgba(59, 130, 246, 0.16);
         }
 
         .agent-subtitle {
@@ -365,6 +396,11 @@
                 transform: none;
             }
 
+            .agent-head {
+                flex-direction: column;
+                gap: 0.55rem;
+            }
+
             .usage-chip {
                 right: 0.75rem;
                 bottom: 0.75rem;
@@ -410,6 +446,7 @@
             // Устанавливаем правильные ссылки
             document.getElementById('link-sms').href = BASE_PATH + '/sms';
             document.getElementById('link-release-monitor').href = BASE_PATH + '/release-monitor';
+            document.getElementById('link-help').href = BASE_PATH + '/help';
             // Дашборд теперь через onclick
         };
 
@@ -505,7 +542,13 @@
         </div>
 
         <div class="agent-shell">
-            <div class="agent-title">AI-бот Oplot</div>
+            <div class="agent-head">
+                <div class="agent-title">AI-бот Oplot</div>
+                <a id="link-help" class="help-pill" href="/help" title="Открыть FAQ по Oplot">
+                    <i class="bi bi-question-circle"></i>
+                    Помощь по Oplot
+                </a>
+            </div>
             <div class="agent-subtitle">Живой рабочий помощник по релизам, документам и сменным задачам.</div>
             <div class="agent-chat-wrap">
                 <div id="embeddedChatBot"></div>

@@ -8,3 +8,8 @@ main_bp = Blueprint('main', __name__)
 def index():
     stats = get_stats()
     return render_template('index.html', stats=stats, version=VERSION, version_history=VERSION_HISTORY)
+
+
+@main_bp.route('/help')
+def help_page():
+    return render_template('help.html')
