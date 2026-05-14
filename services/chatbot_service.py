@@ -38,6 +38,7 @@ from config import OPLOT_VALUES
 
 BASE_PATH = os.getenv("BASE_PATH", "")
 RELEASE_DOCS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "reports", "release_docs")
+RELEASE_DOCS_MAX_AGE_HOURS = int(os.getenv("RELEASE_DOCS_MAX_AGE_HOURS", "1"))
 
 
 def get_release_document_path(document_id: str) -> str:
@@ -49,6 +50,35 @@ def get_release_document_path(document_id: str) -> str:
     if not path.startswith(root):
         return ""
     return path
+
+
+def cleanup_old_release_documents(max_age_hours: int = RELEASE_DOCS_MAX_AGE_HOURS) -> int:
+    if not os.path.exists(RELEASE_DOCS_DIR):
+        return 0
+
+    now = datetime.now()
+    removed_count = 0
+    root = os.path.abspath(RELEASE_DOCS_DIR)
+
+    for filename in os.listdir(RELEASE_DOCS_DIR):
+        if not filename.endswith(".zip"):
+            continue
+
+        filepath = os.path.abspath(os.path.join(RELEASE_DOCS_DIR, filename))
+        if not filepath.startswith(root):
+            continue
+
+        try:
+            mtime = datetime.fromtimestamp(os.path.getmtime(filepath))
+            age_hours = (now - mtime).total_seconds() / 3600
+            if age_hours > max_age_hours:
+                os.remove(filepath)
+                removed_count += 1
+                logging.info("Release document cache: removed old ZIP %s", filename)
+        except Exception as exc:
+            logging.warning("Release document cache: failed to remove %s: %s", filename, exc)
+
+    return removed_count
 
 
 @dataclass
@@ -828,6 +858,7 @@ Oplot умеет работать с рабочим столом дежурно�
 
     def _save_release_zip_for_chat(self, release_key: str, zip_buffer) -> str:
         os.makedirs(RELEASE_DOCS_DIR, exist_ok=True)
+        cleanup_old_release_documents()
         document_id = f"{release_key}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}"
         path = get_release_document_path(document_id)
         with open(path, "wb") as file:

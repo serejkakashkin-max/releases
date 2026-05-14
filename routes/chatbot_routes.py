@@ -8,7 +8,12 @@ import uuid
 from datetime import datetime
 from flask import Blueprint, request, jsonify, session, send_file
 
-from services.chatbot_service import get_chatbot, ChatMessage, get_release_document_path
+from services.chatbot_service import (
+    get_chatbot,
+    ChatMessage,
+    get_release_document_path,
+    cleanup_old_release_documents,
+)
 from services.dashboard_service import get_dashboard_data
 
 chatbot_bp = Blueprint('chatbot', __name__)
@@ -438,6 +443,7 @@ def download_report(report_id):
 def download_release_documents(document_id):
     """Скачивает ZIP-документы релиза, сформированные через чат."""
     try:
+        cleanup_old_release_documents()
         path = get_release_document_path(document_id)
         if not path or not os.path.exists(path):
             return jsonify({
