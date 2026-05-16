@@ -153,6 +153,39 @@ class DashboardChatBot:
             "Контроль недели",
             "Что ты умеешь",
         ]
+
+    def _sanitize_suggestions_for_active_flow(self, session: ChatContext, suggestions: Optional[List[str]]) -> List[str]:
+        """Не показываем быстрые кнопки, которые ломают текущий пошаговый сценарий."""
+        flow = session.active_release_flow or {}
+        flow_type = flow.get("type")
+        state = flow.get("state")
+        current = list(suggestions or [])
+
+        if flow_type == "release_document_flow":
+            if state == "need_release_key":
+                return ["Отмена"]
+            if state == "checker_requested":
+                return ["Отмена"]
+            if state == "distribution_requested":
+                return ["Отмена"]
+            if state == "instruction_requested":
+                return ["Инструкции нет", "Отмена"]
+            if state == "prev_version_requested":
+                return ["Отмена"]
+            if state == "playbooks_requested":
+                return ["Плейбуки не нужны", "Отмена"]
+            if state == "template_choice_requested":
+                return current or ["Отмена"]
+            if state in {"prev_version_confirm", "zni_confirm"}:
+                return current or ["Отмена"]
+
+        if flow_type == "release_psi_instruction" and state == "need_release_key":
+            return ["Отмена"]
+
+        if flow_type == "release_week_assignee" and state == "need_surname":
+            return ["Отмена"]
+
+        return current
     
     def process_message(self, message: str, session_id: str, dashboard_context: Dict = None) -> Dict:
         """
@@ -195,12 +228,13 @@ class DashboardChatBot:
             # даем модели шанс нормализовать "человеческую" формулировку.
             release_agent_response = self._handle_release_agent_command(message, session, dashboard_context)
             if release_agent_response:
+                suggestions = self._sanitize_suggestions_for_active_flow(session, release_agent_response.get('suggestions', []))
                 session.add_message('user', message, release_agent_response.get('intent', 'release_agent'))
                 session.add_message('assistant', release_agent_response['text'], metadata=release_agent_response.get('metadata', {}))
                 return {
                     'text': release_agent_response['text'],
                     'intent': release_agent_response.get('intent', 'release_agent'),
-                    'suggestions': release_agent_response.get('suggestions', []),
+                    'suggestions': suggestions,
                     'metadata': release_agent_response.get('metadata', {})
                 }
 
@@ -221,12 +255,13 @@ class DashboardChatBot:
                 dashboard_context=dashboard_context,
             )
             if release_ai_response:
+                suggestions = self._sanitize_suggestions_for_active_flow(session, release_ai_response.get('suggestions', []))
                 session.add_message('user', message, release_ai_response.get('intent', 'release_agent'))
                 session.add_message('assistant', release_ai_response['text'], metadata=release_ai_response.get('metadata', {}))
                 return {
                     'text': release_ai_response['text'],
                     'intent': release_ai_response.get('intent', 'release_agent'),
-                    'suggestions': release_ai_response.get('suggestions', []),
+                    'suggestions': suggestions,
                     'metadata': {
                         **release_ai_response.get('metadata', {}),
                         **({'normalized_message': normalized_message} if normalized_message != message else {})
@@ -268,10 +303,14 @@ class DashboardChatBot:
             session.add_message('assistant', response['text'], metadata=response.get('metadata', {}))
             
             # Формируем результат
+            suggestions = self._sanitize_suggestions_for_active_flow(
+                session,
+                response.get('suggestions', self.intent_classifier.get_suggestions(resolved_intent))
+            )
             return {
                 'text': response['text'],
                 'intent': resolved_intent.value if resolved_intent else 'unknown',
-                'suggestions': response.get('suggestions', self.intent_classifier.get_suggestions(resolved_intent)),
+                'suggestions': suggestions,
                 'metadata': {
                     **response.get('metadata', {}),
                     **({'normalized_message': normalized_message} if normalized_message != message else {})
@@ -1631,7 +1670,7 @@ Oplot умеет работать с рабочим столом дежурно�
             return {
                 "text": "По кому показать релизы текущей недели? Пришли фамилию одним сообщением, например `Иванов`.",
                 "intent": "release_week_query",
-                "suggestions": ["Контроль недели", "Сформировать документы по релизу", "Что ты умеешь"],
+                "suggestions": ["Отмена"],
                 "metadata": {"type": "release_week_query", "reason": "missing_surname"},
             }
 
@@ -1736,7 +1775,7 @@ Oplot умеет работать с рабочим столом дежурно�
             return {
                 "text": "Нужна только фамилия ответственного. Пришли ее одним сообщением, например `Иванов`.",
                 "intent": "release_week_query",
-                "suggestions": ["Контроль недели", "Сформировать документы по релизу", "Отмена"],
+                "suggestions": ["Отмена"],
                 "metadata": {"type": "release_week_query", "state": "need_surname"},
             }
 
@@ -1816,7 +1855,7 @@ Oplot умеет работать с рабочим столом дежурно�
             return {
                 "text": "Нужен номер релиза. Пришли его одним сообщением, например `SMECLM-37025`, и я найду инструкцию ПСИ.",
                 "intent": "release_psi_instruction",
-                "suggestions": ["Показать релизы недели по ответственному", "Сформировать документы по релизу"],
+                "suggestions": ["Отмена"],
                 "metadata": {"type": "release_psi_instruction", "state": "need_release_key"},
             }
 
@@ -2280,7 +2319,7 @@ Oplot умеет работать с рабочим столом дежурно�
             return {
                 "text": "Нужен номер релиза. Пришли его одним сообщением, например `EMRM-12345`, и я продолжу формирование документов.",
                 "intent": "release_document_flow",
-                "suggestions": ["Показать релизы недели по ответственному", "Инструкция ПСИ по релизу"],
+                "suggestions": ["Отмена"],
                 "metadata": {"type": "release_document_flow", "state": "need_release_key"},
             }
 
