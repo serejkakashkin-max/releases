@@ -3622,8 +3622,7 @@ function buildReviewerCell(item) {
         function isReleaseAssignmentScopeForCurrentWeek(item) {
             return Boolean(
                 isReleaseInCurrentWeek(item) &&
-                !item?.is_cancelled &&
-                !item?.is_final
+                !item?.is_cancelled
             );
         }
 

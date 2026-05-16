@@ -1570,7 +1570,7 @@ def _is_release_assignment_relevant_for_week(item, week_start=None, week_end=Non
     start_date = _get_release_start_date(item)
     if not start_date or start_date < week_start or start_date > week_end:
         return False
-    if item.get("is_cancelled") or item.get("is_final"):
+    if item.get("is_cancelled"):
         return False
     return True
 
