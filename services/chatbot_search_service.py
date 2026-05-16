@@ -352,6 +352,10 @@ class ChatbotSearchService:
             return 'all_oplot'
         return 'duty'
 
+    def _has_explicit_duty_scope(self, message: str) -> bool:
+        message_lower = message.lower()
+        return bool(re.search(r'\b(?:дежурн\w*|дежурк\w*|рабоч\w*\s+стол\w*)\b', message_lower, re.IGNORECASE))
+
     def _normalize_task_types(self, raw_task_types) -> List[str]:
         if not isinstance(raw_task_types, list):
             return []
@@ -872,6 +876,12 @@ class ChatbotSearchService:
         """
         # Парсим запрос
         query = self.parse_query(user_message)
+
+        # В основном чат-боте поиск по ключевым словам должен смотреть весь проект OPLOT.
+        # Ограничение на людей из рабочего стола оставляем только когда пользователь явно
+        # просит искать по дежурным/рабочему столу.
+        if not query.assignee and not self._has_explicit_duty_scope(user_message):
+            query.assignee_scope = 'all_oplot'
         
         # Выполняем поиск
         tasks = self.execute_search(query)

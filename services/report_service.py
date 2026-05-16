@@ -45,6 +45,11 @@ class ReportService:
             start_date, end_date = self._get_quarter_dates(quarter, year)
             period_type = f"{quarter} квартал {start_date.year}"
             days = (end_date - start_date).days
+        elif year:
+            start_date = datetime(year, 1, 1)
+            end_date = datetime(year, 12, 31, 23, 59, 59)
+            period_type = f"{year} год"
+            days = (end_date - start_date).days
         else:
             # Используем количество дней
             end_date = datetime.now()
@@ -65,7 +70,7 @@ class ReportService:
                 'end': end_date.strftime('%Y-%m-%d'),
                 'days': days,
                 'quarter': quarter,
-                'year': year if quarter else None,
+                'year': year if (quarter or year) else None,
                 'period_type': period_type
             },
             'statistics': stats,
