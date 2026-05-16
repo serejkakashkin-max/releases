@@ -144,7 +144,7 @@ def get_suggestions():
             {"text": "Выгрузить таблицу релизов в Confluence", "action": "release_confluence_export"},
             {"text": "Контроль недели", "action": "release_week_control"},
             {"text": "Сводка дневной смены", "action": "handover_day"},
-            {"text": "Поиск задач", "action": "search_tasks"},
+            {"text": "Сформируй статистику", "action": "statistics"},
         ]
 
         contextual_suggestions = {

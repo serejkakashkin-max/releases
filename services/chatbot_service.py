@@ -141,7 +141,7 @@ class DashboardChatBot:
             "Выгрузить таблицу релизов в Confluence",
             "Контроль недели",
             "Сводка дневной смены",
-            "Поиск задач",
+            "Сформируй статистику",
         ]
 
     def _release_work_suggestions(self) -> List[str]:
