@@ -10,6 +10,8 @@ from collections import Counter
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
+from config import OPLOT_VALUES
+
 
 EM_DASH = "\u2014"
 
@@ -142,10 +144,13 @@ class ReleaseReportService:
             if duty_owner:
                 duty_counter[duty_owner] += 1
 
-            for responsible in item.get("psi_responsibles") or []:
-                responsible_name = str(responsible or "").strip()
+            for responsible_name in self._get_item_responsibles(item):
                 if responsible_name:
                     responsible_counter[responsible_name] += 1
+
+        for responsible_name in OPLOT_VALUES:
+            if responsible_name not in responsible_counter:
+                responsible_counter[responsible_name] = 0
 
         return {
             "period": {
@@ -202,11 +207,14 @@ class ReleaseReportService:
             </details>
             """
 
-        def render_counter_list(title: str, data: Dict[str, int], filter_type: str = "") -> str:
+        def render_counter_list(title: str, data: Dict[str, int], filter_type: str = "", limit: Optional[int] = 8) -> str:
             if not data:
                 return f'<div class="mini-card"><h4>{html.escape(title)}</h4><p>Нет данных</p></div>'
             entries_parts = []
-            for name, count in list(data.items())[:8]:
+            entries_source = list(data.items())
+            if limit is not None:
+                entries_source = entries_source[:limit]
+            for name, count in entries_source:
                 label = html.escape(name)
                 if filter_type:
                     entries_parts.append(
@@ -540,7 +548,7 @@ class ReleaseReportService:
         <section class="detail-grid">
             {render_counter_list("По системам", stats["systems"], "system")}
             {render_counter_list("По дежурным", stats["duty_owners"], "duty_owner")}
-            {render_counter_list("По ответственным", stats["responsibles"], "responsible")}
+            {render_counter_list("По ответственным", stats["responsibles"], "responsible", limit=None)}
         </section>
 
         <section class="table-card">
@@ -1156,11 +1164,31 @@ class ReleaseReportService:
         </table>
         """
 
+    def _get_item_responsibles(self, item: Dict[str, Any]) -> List[str]:
+        raw_responsibles = (item or {}).get("psi_responsibles") or []
+        if isinstance(raw_responsibles, str):
+            raw_responsibles = re.split(r"[,;/|\n]+", raw_responsibles)
+        elif not isinstance(raw_responsibles, list):
+            raw_responsibles = [raw_responsibles] if raw_responsibles else []
+
+        result: List[str] = []
+        seen = set()
+        for value in raw_responsibles:
+            responsible_name = str(value or "").strip()
+            if not responsible_name:
+                continue
+            if responsible_name in seen:
+                continue
+            seen.add(responsible_name)
+            result.append(responsible_name)
+        return result
+
     def _render_rows(self, rows_source: List[Dict[str, Any]]) -> str:
         rows = []
         for item in rows_source:
             row_kind = self._get_item_kind_label(item)
-            responsibles = ", ".join(item.get("psi_responsibles") or []) or EM_DASH
+            item_responsibles = self._get_item_responsibles(item)
+            responsibles = ", ".join(item_responsibles) or EM_DASH
             duty_owner = str(item.get("psi_owner") or "").strip() or EM_DASH
             row_state = "final" if item.get("is_final") else "cancelled" if item.get("is_cancelled") else "active"
             row_title = " / ".join(
@@ -1171,7 +1199,7 @@ class ReleaseReportService:
             rov_key_html = self._render_key_link(item.get("rov_url"), item.get("rov_key"))
             responsibles_attr = "|".join(
                 str(value or "").strip().lower()
-                for value in (item.get("psi_responsibles") or [])
+                for value in item_responsibles
                 if str(value or "").strip()
             )
             rows.append(
