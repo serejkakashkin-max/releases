@@ -12,6 +12,7 @@ env/
 # Distribution / packaging
 .Python
 build/
+doc_templates/
 develop-eggs/
 dist/
 downloads/
