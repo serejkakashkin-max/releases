@@ -2563,7 +2563,10 @@ function buildReviewerCell(item) {
                 : currentReviewer;
 
             pendingManualDutyFocusReleaseKey = nextSource === 'manual_text' ? releaseKey : '';
-            await saveReleaseAssignment(releaseKey, reviewer, currentChecker, null, nextSource);
+            const zniReviewer = nextSource === 'manual_text' && RELEASE_REVIEWER_OPTIONS.includes(currentReviewer)
+                ? currentReviewer
+                : '';
+            await saveReleaseAssignment(releaseKey, reviewer, currentChecker, null, nextSource, zniReviewer);
         }
 
         function buildReleaseOrderControls(item) {
@@ -4396,7 +4399,7 @@ function buildReviewerCell(item) {
             applyReleaseFilters();
         }
 
-        async function saveReleaseAssignment(releaseKey, reviewerOverride = null, checkerOverride = null, responsiblesOverride = null, reviewerSourceOverride = null) {
+        async function saveReleaseAssignment(releaseKey, reviewerOverride = null, checkerOverride = null, responsiblesOverride = null, reviewerSourceOverride = null, zniReviewerOverride = null) {
             if (!releaseKey) {
                 return;
             }
@@ -4404,6 +4407,7 @@ function buildReviewerCell(item) {
             const item = getReleaseMonitorItem(releaseKey);
             const reviewer = reviewerOverride !== null ? reviewerOverride : (item?.psi_owner || '');
             const reviewerSource = reviewerSourceOverride !== null ? reviewerSourceOverride : (item?.psi_owner_source || '');
+            const zniReviewer = zniReviewerOverride !== null ? zniReviewerOverride : (item?.psi_zni_reviewer || '');
             const checker = checkerOverride !== null ? checkerOverride : (item?.psi_checker || '');
             const responsibles = responsiblesOverride !== null
                 ? responsiblesOverride
@@ -4421,6 +4425,7 @@ function buildReviewerCell(item) {
                         release_key: releaseKey,
                         reviewer: reviewer,
                         reviewer_source: reviewerSource,
+                        zni_reviewer: zniReviewer,
                         checker: checker,
                         responsibles: filteredResponsibles
                     })
@@ -4442,6 +4447,7 @@ function buildReviewerCell(item) {
                             psi_owner: data.reviewer || '',
                             psi_owner_source: data.reviewer_source || '',
                             psi_owner_date: data.reviewer_date || '',
+                            psi_zni_reviewer: data.zni_reviewer || '',
                             psi_checker: data.checker || '',
                             psi_responsibles: Array.isArray(data.responsibles) ? data.responsibles : []
                         })

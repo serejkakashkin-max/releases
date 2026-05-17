@@ -312,15 +312,24 @@ def update_release_monitor_reviewer():
         release_key = data.get("release_key", "")
         reviewer = data.get("reviewer", "")
         reviewer_source = data.get("reviewer_source")
+        zni_reviewer = data.get("zni_reviewer")
         checker = data.get("checker", "")
         responsibles = data.get("responsibles", [])
-        saved_assignment = set_release_monitor_assignment(release_key, reviewer, checker, responsibles, reviewer_source=reviewer_source)
+        saved_assignment = set_release_monitor_assignment(
+            release_key,
+            reviewer,
+            checker,
+            responsibles,
+            reviewer_source=reviewer_source,
+            zni_reviewer=zni_reviewer,
+        )
         return jsonify({
             "success": True,
             "release_key": release_key,
             "reviewer": saved_assignment.get("reviewer", ""),
             "reviewer_source": saved_assignment.get("reviewer_source", ""),
             "reviewer_date": saved_assignment.get("reviewer_date", ""),
+            "zni_reviewer": saved_assignment.get("zni_reviewer", ""),
             "checker": saved_assignment.get("checker", ""),
             "responsibles": saved_assignment.get("responsibles", []),
             "data_revision": saved_assignment.get("data_revision", ""),

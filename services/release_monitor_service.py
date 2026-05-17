@@ -374,6 +374,7 @@ def _load_reviewer_assignments():
                         "reviewer": str(value.get("reviewer", "") or "").strip(),
                         "reviewer_source": str(value.get("reviewer_source") or "").strip(),
                         "reviewer_date": str(value.get("reviewer_date", "") or "").strip(),
+                        "zni_reviewer": str(value.get("zni_reviewer", "") or "").strip(),
                         "checker": str(value.get("checker", "") or "").strip(),
                         "responsibles": [
                             str(item or "").strip()
@@ -386,6 +387,7 @@ def _load_reviewer_assignments():
                         "reviewer": str(value).strip(),
                         "reviewer_source": "manual",
                         "reviewer_date": "",
+                        "zni_reviewer": "",
                         "checker": "",
                         "responsibles": [],
                     }
@@ -1396,6 +1398,44 @@ def _apply_duty_schedule_assignments(items, persist=False, force=False, debug_li
     return applied_count
 
 
+def _get_scheduled_duty_reviewer_for_item(item):
+    deployment_dt = _parse_release_monitor_date(item.get("deployment_start_iso") or item.get("deployment_start"))
+    if not deployment_dt or deployment_dt.date().weekday() >= 5:
+        return ""
+
+    duty_payload = _load_duty_schedule_payload()
+    duty_dates = duty_payload.get("dates") or {}
+    reviewer_name = str(duty_dates.get(deployment_dt.date().isoformat()) or "").strip()
+    if reviewer_name and reviewer_name not in OPLOT_VALUES:
+        reviewer_name = _match_oplot_name(reviewer_name)
+    return reviewer_name or ""
+
+
+def _prepare_item_for_zni_creation(item):
+    zni_item = dict(item or {})
+    if str(zni_item.get("psi_owner_source") or "").strip() != "manual_text":
+        return zni_item
+
+    zni_reviewer = str(zni_item.get("psi_zni_reviewer") or "").strip()
+    if zni_reviewer and zni_reviewer not in OPLOT_VALUES:
+        zni_reviewer = _match_oplot_name(zni_reviewer)
+
+    if not zni_reviewer:
+        zni_reviewer = _get_scheduled_duty_reviewer_for_item(zni_item)
+
+    if not zni_reviewer:
+        raise ValueError(
+            "Для создания ЗНИ не удалось определить дежурного ОПЛОТ. "
+            "Если в строке указан устанавливающий, сначала выберите дежурного в таблице, "
+            "а затем переключите поле обратно в режим устанавливающего."
+        )
+
+    zni_item["manual_installer"] = str(zni_item.get("psi_owner") or "").strip()
+    zni_item["psi_owner"] = zni_reviewer
+    zni_item["psi_owner_source"] = "manual"
+    return zni_item
+
+
 def _append_duty_schedule_meta(meta):
     duty_payload = _load_duty_schedule_payload()
     meta["last_duty_schedule_upload"] = duty_payload.get("last_upload")
@@ -1537,6 +1577,7 @@ def _apply_reviewer_assignments(items):
         item["psi_owner"] = release_assignment.get("reviewer", "")
         item["psi_owner_source"] = release_assignment.get("reviewer_source", "")
         item["psi_owner_date"] = release_assignment.get("reviewer_date", "")
+        item["psi_zni_reviewer"] = release_assignment.get("zni_reviewer", "")
         item["psi_checker"] = release_assignment.get("checker", "")
         item["psi_responsibles"] = list(release_assignment.get("responsibles", []))
     return items
@@ -4410,7 +4451,8 @@ def create_release_monitor_zni(release_key, reporter=""):
                 "data": _normalize_release_payload(_get_cached_payload_copy() or _build_empty_release_monitor_payload()),
             }
 
-    issue = create_oplot_release_issue(target_item, reporter_name=reporter)
+    issue_item = _prepare_item_for_zni_creation(target_item)
+    issue = create_oplot_release_issue(issue_item, reporter_name=reporter)
 
     with _cache_lock:
         assignments = _load_zni_assignments()
@@ -5121,7 +5163,7 @@ def set_release_monitor_reviewer(release_key, reviewer):
     return reviewer
 
 
-def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=None, reviewer_source=None):
+def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=None, reviewer_source=None, zni_reviewer=None):
     global _cached_data
 
     release_key = (release_key or "").strip()
@@ -5148,6 +5190,14 @@ def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=
     if reviewer_source is None:
         reviewer_source = current_assignment.get("reviewer_source")
     reviewer_source = str(reviewer_source or "").strip()
+    if zni_reviewer is None:
+        zni_reviewer = current_assignment.get("zni_reviewer", "")
+    zni_reviewer = str(zni_reviewer or "").strip()
+    if zni_reviewer and zni_reviewer not in OPLOT_VALUES:
+        zni_reviewer = _match_oplot_name(zni_reviewer)
+    if zni_reviewer and zni_reviewer not in OPLOT_VALUES:
+        raise ValueError("Выбранный дежурный для ЗНИ отсутствует в списке ОПЛОТ")
+
     if reviewer_source == "manual_text" and reviewer:
         resolved_reviewer_source = "manual_text"
         reviewer_date = "manual"
@@ -5158,11 +5208,20 @@ def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=
         resolved_reviewer_source = "manual" if reviewer else ""
         reviewer_date = "manual" if reviewer else ""
 
+    if resolved_reviewer_source != "manual_text":
+        zni_reviewer = ""
+    elif not zni_reviewer:
+        previous_reviewer = str(current_assignment.get("reviewer") or "").strip()
+        previous_source = str(current_assignment.get("reviewer_source") or "").strip()
+        if previous_source != "manual_text" and previous_reviewer in OPLOT_VALUES:
+            zni_reviewer = previous_reviewer
+
     if reviewer or checker or normalized_responsibles:
         assignments[release_key] = {
             "reviewer": reviewer,
             "reviewer_source": resolved_reviewer_source,
             "reviewer_date": reviewer_date,
+            "zni_reviewer": zni_reviewer,
             "checker": checker,
             "responsibles": normalized_responsibles,
         }
@@ -5182,6 +5241,7 @@ def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=
                     item["psi_owner"] = reviewer
                     item["psi_owner_source"] = resolved_reviewer_source
                     item["psi_owner_date"] = reviewer_date
+                    item["psi_zni_reviewer"] = zni_reviewer
                     item["psi_checker"] = checker
                     item["psi_responsibles"] = list(normalized_responsibles)
                     break
@@ -5193,6 +5253,7 @@ def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=
         "reviewer": reviewer,
         "reviewer_source": resolved_reviewer_source,
         "reviewer_date": reviewer_date,
+        "zni_reviewer": zni_reviewer,
         "checker": checker,
         "responsibles": normalized_responsibles,
         "data_revision": _read_data_revision(),
