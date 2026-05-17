@@ -90,8 +90,12 @@
         
         // для локально запущенной не нужно path /releases
         const pathname = '{{basepath}}';
+        let releasePlaybookRequirements = {};
 
         function releaseUsesPlaybooks(releaseName) {
+            if (Object.prototype.hasOwnProperty.call(releasePlaybookRequirements, releaseName)) {
+                return releasePlaybookRequirements[releaseName];
+            }
             var normalizedReleaseName = (releaseName || '').toUpperCase();
             var blockedMarkers = ['SOWA', 'ЕФС.AUTHENTICATION_USER', 'AUTH', 'RESSTORE(2889318)'];
             return !blockedMarkers.some(function(marker) {
@@ -166,6 +170,7 @@
                 .then(releases => {
                     var select = document.getElementById('release');
                     select.innerHTML = '';
+                    releasePlaybookRequirements = {};
                     if (releases.length === 0) {
                         var option = document.createElement('option');
                         option.value = '';
@@ -177,6 +182,7 @@
                             option.value = rel.full;
                             option.text = rel.clean;
                             select.add(option);
+                            releasePlaybookRequirements[rel.full] = rel.requires_playbooks !== false;
                         });
                     }
                     syncPlaybooksState();
@@ -354,7 +360,12 @@
     </nav>
     <div class="container mt-5">
         <div class="card p-4">
-            <h2 class="card-title text-center mb-4">Генератор релизных документов</h2>
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+                <h2 class="card-title mb-0">Генератор релизных документов</h2>
+                <a class="btn btn-outline-secondary" href="{{basepath}}/release/template-constructor">
+                    <i class="bi bi-tools me-2"></i>Конструктор шаблонов
+                </a>
+            </div>
             <div id="autoDetectStatus" class="mb-3"></div>
             <form method="post" action="{{basepath}}/release" id="releaseForm">
                 <!-- Шаг 1: Ввод номера релиза -->

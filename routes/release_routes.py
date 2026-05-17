@@ -21,6 +21,15 @@ from services.release_monitor_service import get_release_monitor_snapshot, sync_
 from services.docx_service import replace_keys_in_doc, check_document
 from services.gigachat_service import GIGA_HELPER
 from services.counter_service import increment_counter  # НОВОЕ: импорт счетчика
+from services.template_constructor_service import (
+    build_template_candidate,
+    analyze_template_package,
+    find_template_entries_by_ke,
+    get_catalog_release_structure,
+    select_template_by_summary,
+    summarize_template_catalog,
+    template_requires_playbooks,
+)
 
 BASE_PATH = os.getenv("BASE_PATH", "")
 
@@ -29,8 +38,12 @@ release_bp = Blueprint('release', __name__)
 # УБРАНО: определение get_release_structure() - оно теперь в extensions.py
 
 
-def release_uses_playbooks(release_name: str) -> bool:
-    """Для части релизов плейбуки не используются."""
+def release_uses_playbooks(release_name: str, category: str = "") -> bool:
+    """Определяет необходимость плейбуков по каталогу или старому fallback-правилу."""
+    catalog_value = template_requires_playbooks(release_full=release_name, category=category)
+    if catalog_value is not None:
+        return catalog_value
+
     release_name_upper = (release_name or "").upper()
     blocked_markers = ("SOWA", "ЕФС.AUTHENTICATION_USER", "AUTH", "RESSTORE(2889318)")
     return not any(marker in release_name_upper for marker in blocked_markers)
@@ -42,6 +55,46 @@ def detect_release_template(release_id: str):
         return {"found": False, "candidates": [], "error": "No release_id provided"}
 
     sm_id, summary = extract_sm_id_and_summary(release_id)
+    catalog_candidates = find_template_entries_by_ke(sm_id) if sm_id else []
+    if catalog_candidates:
+        if len(catalog_candidates) == 1:
+            candidate = catalog_candidates[0]
+            return {
+                "found": True,
+                "category": candidate["category"],
+                "release_clean": candidate["release_clean"],
+                "release_full": candidate["release_full"],
+                "variant": candidate.get("variant", ""),
+                "requires_playbooks": candidate.get("requires_playbooks"),
+                "candidates": None,
+            }
+
+        selected = select_template_by_summary(catalog_candidates, summary)
+        if selected:
+            return {
+                "found": True,
+                "category": selected["category"],
+                "release_clean": selected["release_clean"],
+                "release_full": selected["release_full"],
+                "variant": selected.get("variant", ""),
+                "requires_playbooks": selected.get("requires_playbooks"),
+                "candidates": None,
+            }
+
+        return {
+            "found": False,
+            "candidates": [
+                {
+                    "category": candidate["category"],
+                    "release_clean": candidate["release_clean"],
+                    "release_full": candidate["release_full"],
+                    "variant": candidate.get("variant", ""),
+                    "requires_playbooks": candidate.get("requires_playbooks"),
+                }
+                for candidate in catalog_candidates
+            ],
+        }
+
     if sm_id and sm_id in ID_MAP:
         candidates = ID_MAP[sm_id]
         if len(candidates) == 1:
@@ -332,8 +385,15 @@ def get_ke():
 @release_bp.route('/get_releases')
 def get_releases():
     category = request.args.get('category')
-    releases = RELEASE_STRUCTURE.get(category, [])
-    return jsonify([{"clean": clean, "full": full} for clean, full in releases])
+    releases = get_catalog_release_structure().get(category, RELEASE_STRUCTURE.get(category, []))
+    return jsonify([
+        {
+            "clean": clean,
+            "full": full,
+            "requires_playbooks": release_uses_playbooks(full, category),
+        }
+        for clean, full in releases
+    ])
 
 @release_bp.route('/auto_detect')
 def auto_detect():
@@ -342,6 +402,97 @@ def auto_detect():
         return jsonify({"error": "No release_id provided"}), 400
 
     return jsonify(detect_release_template(release_id))
+
+
+def _read_constructor_uploads(files):
+    uploaded_docs = []
+
+    def append_upload(upload):
+        if not upload or not upload.filename:
+            return
+        upload_bytes = upload.read()
+        filename = upload.filename
+        filename_lower = filename.lower()
+        if filename_lower.endswith(".zip"):
+            try:
+                with ZipFile(BytesIO(upload_bytes)) as archive:
+                    for info in archive.infolist():
+                        if info.is_dir() or not info.filename.lower().endswith(".docx"):
+                            continue
+                        if info.file_size <= 0:
+                            continue
+                        uploaded_docs.append({
+                            "filename": Path(info.filename.replace("\\", "/")).name,
+                            "data": archive.read(info),
+                        })
+            except Exception as exc:
+                raise ValueError(f"Не удалось прочитать ZIP: {exc}")
+        elif filename_lower.endswith(".docx"):
+            uploaded_docs.append({"filename": filename, "data": upload_bytes})
+
+    for package in files.getlist("package"):
+        append_upload(package)
+
+    for document in files.getlist("documents"):
+        append_upload(document)
+
+    if len(uploaded_docs) > 10:
+        raise ValueError("Слишком много DOCX-файлов. Загрузите ZIP с 3 документами или ровно 3 DOCX.")
+    if not uploaded_docs:
+        raise ValueError("Загрузите ZIP с шаблонами или 3 DOCX-документа.")
+    return uploaded_docs
+
+
+def _constructor_metadata_from_request(form):
+    return {
+        "category": (form.get("category") or "").strip(),
+        "name": (form.get("name") or "").strip(),
+        "ke": (form.get("ke") or "").strip(),
+        "variant": (form.get("variant") or "").strip(),
+        "aliases": (form.get("aliases") or "").strip(),
+        "requires_playbooks": form.get("requires_playbooks"),
+        "requires_instruction": form.get("requires_instruction"),
+        "replacements": (form.get("replacements") or "").strip(),
+    }
+
+
+@release_bp.route('/release/template-constructor')
+def release_template_constructor():
+    categories = sorted(get_catalog_release_structure().keys())
+    return render_template(
+        'template_constructor.html',
+        basepath=BASE_PATH,
+        categories=categories,
+        catalog_summary=summarize_template_catalog(),
+    )
+
+
+@release_bp.route('/release/template-constructor/analyze', methods=['POST'])
+def release_template_constructor_analyze():
+    try:
+        uploaded_docs = _read_constructor_uploads(request.files)
+        analysis = analyze_template_package(uploaded_docs, _constructor_metadata_from_request(request.form))
+        return jsonify({"success": True, "analysis": analysis})
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    except Exception as exc:
+        logging.error("Ошибка анализа пакета шаблонов: %s", exc)
+        return jsonify({"success": False, "error": "Не удалось проанализировать пакет шаблонов"}), 500
+
+
+@release_bp.route('/release/template-constructor/build', methods=['POST'])
+def release_template_constructor_build():
+    try:
+        uploaded_docs = _read_constructor_uploads(request.files)
+        metadata = _constructor_metadata_from_request(request.form)
+        zip_buffer = build_template_candidate(uploaded_docs, metadata)
+        filename = f"template_candidate_{metadata.get('category') or 'release'}_{metadata.get('ke') or 'new'}.zip"
+        return send_file(zip_buffer, as_attachment=True, download_name=filename)
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    except Exception as exc:
+        logging.error("Ошибка сборки кандидата шаблона: %s", exc)
+        return jsonify({"success": False, "error": "Не удалось собрать кандидат шаблона"}), 500
 
 
 @release_bp.route('/release/monitor-init', methods=['POST'])
@@ -464,7 +615,7 @@ def release_monitor_generate():
 
 @release_bp.route('/release', methods=['GET', 'POST'])
 def release():
-    categories = list(RELEASE_STRUCTURE.keys())
+    categories = list(get_catalog_release_structure().keys() or RELEASE_STRUCTURE.keys())
     oplot_values = OPLOT_VALUES
     playbooks = DEFAULT_BH_PLAYBOOKS
     status = ""
