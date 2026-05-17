@@ -27,7 +27,6 @@ from services.template_constructor_service import (
     find_template_entries_by_ke,
     get_catalog_release_structure,
     select_template_by_summary,
-    summarize_template_catalog,
     template_requires_playbooks,
 )
 
@@ -453,17 +452,16 @@ def _constructor_metadata_from_request(form):
         "requires_playbooks": form.get("requires_playbooks"),
         "requires_instruction": form.get("requires_instruction"),
         "replacements": (form.get("replacements") or "").strip(),
+        "enhancements": form.getlist("enhancements") if hasattr(form, "getlist") else [],
     }
 
 
 @release_bp.route('/release/template-constructor')
 def release_template_constructor():
-    categories = sorted(get_catalog_release_structure().keys())
     return render_template(
         'template_constructor.html',
         basepath=BASE_PATH,
-        categories=categories,
-        catalog_summary=summarize_template_catalog(),
+        categories=["CLM", "EMRM", "AIST", "AI-agents"],
     )
 
 

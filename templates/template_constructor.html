@@ -311,6 +311,45 @@
             white-space: nowrap;
         }
 
+        .enhancement-panel {
+            border: 1px solid rgba(88, 166, 255, 0.24);
+            border-radius: 14px;
+            background: rgba(88, 166, 255, 0.08);
+            padding: 14px;
+        }
+
+        .enhancement-list {
+            display: grid;
+            gap: 10px;
+        }
+
+        .enhancement-item {
+            display: grid;
+            grid-template-columns: 34px minmax(0, 1fr);
+            gap: 10px;
+            align-items: start;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            background: var(--bg-card);
+            padding: 10px;
+        }
+
+        .enhancement-item .form-check-input {
+            margin-top: 4px;
+        }
+
+        .enhancement-title {
+            font-weight: 800;
+            color: var(--text-primary);
+        }
+
+        .enhancement-description,
+        .enhancement-reason {
+            color: var(--text-muted);
+            font-size: 0.86rem;
+            overflow-wrap: anywhere;
+        }
+
         #replacements {
             resize: vertical;
             min-height: 132px;
@@ -398,24 +437,6 @@
                         </div>
                     </div>
                 </div>
-                <div class="metric-grid" style="min-width: min(520px, 100%);">
-                    <div class="metric-card">
-                        <div class="metric-label">Типов</div>
-                        <div class="metric-value">{{ catalog_summary.total_types }}</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-label">DOCX</div>
-                        <div class="metric-value">{{ catalog_summary.total_documents }}</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-label">С плейбуками</div>
-                        <div class="metric-value">{{ catalog_summary.with_playbooks }}</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-label">Без</div>
-                        <div class="metric-value">{{ catalog_summary.without_playbooks }}</div>
-                    </div>
-                </div>
             </div>
         </section>
 
@@ -434,12 +455,12 @@
                         <div class="row g-3">
                             <div class="col-md-6">
                                 <label class="form-label">Категория</label>
-                                <input class="form-control" id="category" name="category" list="categoryList" placeholder="Например, EMRM">
-                                <datalist id="categoryList">
+                                <select class="form-select" id="category" name="category">
+                                    <option value="">Выберите категорию</option>
                                     {% for category in categories %}
-                                    <option value="{{ category }}"></option>
+                                    <option value="{{ category }}">{{ category }}</option>
                                     {% endfor %}
-                                </datalist>
+                                </select>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label">КЭ релиза</label>
@@ -514,6 +535,9 @@
             ['category', 'name', 'ke', 'variant', 'aliases', 'replacements'].forEach(id => {
                 formData.append(id, form.querySelector('#' + id).value || '');
             });
+            document.querySelectorAll('.constructor-enhancement:checked').forEach(input => {
+                formData.append('enhancements', input.value);
+            });
             formData.append('requires_instruction', 'true');
             return formData;
         }
@@ -579,6 +603,35 @@
                     <input class="form-control missing-marker-input" data-marker="${escapeHtml(marker)}" placeholder="${escapeHtml(markerPlaceholder(marker))}">
                 </div>
             `).join('');
+        }
+
+        function renderEnhancements(items) {
+            const list = Array.isArray(items) ? items : [];
+            if (!list.length) {
+                return '';
+            }
+            const cards = list.map(item => `
+                <label class="enhancement-item">
+                    <input class="form-check-input constructor-enhancement" type="checkbox" value="${escapeHtml(item.key)}" ${item.default === false ? '' : 'checked'}>
+                    <span>
+                        <span class="enhancement-title">${escapeHtml(item.title || item.key)}</span>
+                        <span class="enhancement-description d-block">${escapeHtml(item.description || '')}</span>
+                        ${item.reason ? `<span class="enhancement-reason d-block mt-1">${escapeHtml(item.reason)}</span>` : ''}
+                    </span>
+                </label>
+            `).join('');
+            return `
+                <div class="enhancement-panel mb-3">
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                        <i class="bi bi-magic text-info"></i>
+                        <strong>Что можно добавить в кандидат</strong>
+                    </div>
+                    <div class="text-muted small mb-3">
+                        Отмеченные пункты будут добавлены только в ZIP-кандидат. Исходные документы и боевые шаблоны не меняются.
+                    </div>
+                    <div class="enhancement-list">${cards}</div>
+                </div>
+            `;
         }
 
         function applyMissingFields(showNotice = true) {
@@ -723,6 +776,7 @@
                         </div>
                     </div>
                 </div>
+                ${renderEnhancements(analysis.enhancements)}
                 <div class="analysis-scroll mb-3">
                     <table class="doc-table">
                         <thead>
