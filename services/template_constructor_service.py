@@ -81,6 +81,7 @@ _ROLLBACK_PLAN_RE = re.compile(r"(?:план(?:овый)?\s+возврат|пл�
 _EMERGENCY_ROLLBACK_PLAN_RE = re.compile(r"(?:аварийн\w*\s+возврат|план\s+аварийн\w*\s+возврата)", re.IGNORECASE)
 _SUCCESS_NOTIFICATION_RE = re.compile(r"оповещени\w+\s+об\s+успешн\w+\s+внедрени\w+\s+релиза", re.IGNORECASE)
 _FAILURE_NOTIFICATION_RE = re.compile(r"оповещени\w+\s+о\s*неуспешн\w+\s+внедрени\w+\s+релиза", re.IGNORECASE)
+_CATALOG_CACHE = {}
 
 
 def _safe_filename(filename: str) -> str:
@@ -89,7 +90,7 @@ def _safe_filename(filename: str) -> str:
     return name or "document.docx"
 
 
-def _read_docx_text(data: bytes) -> str:
+def _read_docx_text(data: bytes, deep: bool = True) -> str:
     parts = []
     with zipfile.ZipFile(BytesIO(data)) as archive:
         for name in archive.namelist():
@@ -104,6 +105,9 @@ def _read_docx_text(data: bytes) -> str:
             for node in root.iter(_WORD_XML_NS + "t"):
                 if node.text:
                     parts.append(node.text)
+    if not deep:
+        return "\n".join(parts)
+
     try:
         document = Document(BytesIO(data))
         for paragraph in document.paragraphs:
@@ -179,7 +183,7 @@ def _directory_text_and_files(directory: Path) -> Tuple[str, List[Path]]:
     texts = []
     for path in files:
         try:
-            texts.append(_read_docx_text(path.read_bytes()))
+            texts.append(_read_docx_text(path.read_bytes(), deep=False))
         except Exception:
             continue
     return "\n".join(texts), files
@@ -222,7 +226,35 @@ def _load_global_catalog(root: Path) -> Dict[Tuple[str, str], Dict]:
     return result
 
 
+def _catalog_signature(root: Path) -> Tuple:
+    if not root.exists():
+        return ()
+    signature = []
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
+        if path.suffix.lower() not in {".docx", ".json"}:
+            continue
+        try:
+            stat = path.stat()
+            relative = str(path.relative_to(root)).replace("\\", "/")
+            signature.append((relative, stat.st_mtime_ns, stat.st_size))
+        except OSError:
+            continue
+    return tuple(sorted(signature))
+
+
+def clear_template_catalog_cache() -> None:
+    _CATALOG_CACHE.clear()
+
+
 def build_template_catalog(root: Path = DOC_TEMPLATES_ROOT) -> List[Dict]:
+    cache_key = str(root.resolve())
+    signature = _catalog_signature(root)
+    cached = _CATALOG_CACHE.get(cache_key)
+    if cached and cached.get("signature") == signature:
+        return [dict(entry) for entry in cached.get("catalog", [])]
+
     catalog = []
     if not root.exists():
         return catalog
@@ -271,6 +303,10 @@ def build_template_catalog(root: Path = DOC_TEMPLATES_ROOT) -> List[Dict]:
             "source": "manifest" if manifest else "folder",
         })
 
+    _CATALOG_CACHE[cache_key] = {
+        "signature": signature,
+        "catalog": [dict(entry) for entry in catalog],
+    }
     return catalog
 
 

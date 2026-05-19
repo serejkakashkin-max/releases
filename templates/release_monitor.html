@@ -152,6 +152,59 @@
             text-align: center;
         }
 
+        .page-meta-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.55rem;
+            flex-wrap: wrap;
+        }
+
+        .auto-refresh-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.35rem;
+            min-height: 24px;
+            padding: 0.16rem 0.48rem;
+            border-radius: 999px;
+            border: 1px solid var(--release-soft-border);
+            background: var(--release-soft-bg);
+            color: var(--text-secondary);
+            font-size: 0.72rem;
+            font-weight: 800;
+            line-height: 1;
+            white-space: nowrap;
+        }
+
+        .auto-refresh-badge i {
+            font-size: 0.78rem;
+        }
+
+        .auto-refresh-badge.is-ok {
+            color: #16a34a;
+            border-color: rgba(34, 197, 94, 0.28);
+            background: rgba(34, 197, 94, 0.08);
+        }
+
+        .auto-refresh-badge.is-running {
+            color: #3b82f6;
+            border-color: rgba(59, 130, 246, 0.30);
+            background: rgba(59, 130, 246, 0.10);
+        }
+
+        .auto-refresh-badge.is-error {
+            color: #ef4444;
+            border-color: rgba(239, 68, 68, 0.32);
+            background: rgba(239, 68, 68, 0.10);
+        }
+
+        .auto-refresh-badge.is-paused {
+            color: #d97706;
+            border-color: rgba(245, 158, 11, 0.32);
+            background: rgba(245, 158, 11, 0.10);
+        }
+
         .hero-action-stack {
             display: flex;
             flex-direction: row;
@@ -1825,8 +1878,18 @@
                     </h1>
                 </div>
                 <div class="page-hero-side">
-                    <div class="page-meta">
-                        Открыто: <strong>{{ last_update }}</strong>
+                    <div class="page-meta-row">
+                        <div class="page-meta">
+                            Открыто: <strong>{{ last_update }}</strong>
+                        </div>
+                        <div
+                            id="releaseAutoRefreshBadge"
+                            class="auto-refresh-badge is-paused"
+                            title="Тихое автообновление пока не выполнялось"
+                        >
+                            <i class="bi bi-arrow-repeat"></i>
+                            <span id="releaseAutoRefreshText">Авто: ожидает</span>
+                        </div>
                     </div>
                     <div class="hero-action-stack">
                     <button id="releaseMonitorDocsBtn" class="hero-week-report-btn docs" onclick="openReleaseDocumentsPage()">
@@ -2307,6 +2370,83 @@
             const hours = Math.floor(diffMinutes / 60);
             const minutes = diffMinutes % 60;
             return minutes ? `${hours} ч ${minutes} мин назад` : `${hours} ч назад`;
+        }
+
+        function getReleaseMonitorShortTime(value) {
+            const text = String(value || '').trim();
+            const match = text.match(/\b(\d{2}):(\d{2})(?::(\d{2}))?\b/);
+            if (!match) {
+                return '';
+            }
+            return match[3] ? `${match[1]}:${match[2]}:${match[3]}` : `${match[1]}:${match[2]}`;
+        }
+
+        function updateReleaseAutoRefreshBadge(meta = releaseMonitorMeta) {
+            const badge = document.getElementById('releaseAutoRefreshBadge');
+            const text = document.getElementById('releaseAutoRefreshText');
+            if (!badge || !text) {
+                return;
+            }
+
+            const status = meta?.auto_incremental_status || {};
+            const enabled = meta?.auto_incremental_refresh_enabled !== false && status.enabled !== false;
+            const state = String(status.state || '').trim();
+            const timeText = getReleaseMonitorShortTime(
+                status.last_finished_at || meta?.last_auto_incremental_sync || ''
+            );
+
+            badge.classList.remove('is-ok', 'is-running', 'is-error', 'is-paused');
+            if (!enabled) {
+                badge.classList.add('is-paused');
+                text.textContent = 'Авто: выкл';
+                badge.title = 'Тихое автообновление выключено';
+                return;
+            }
+
+            if (status.running || state === 'running') {
+                badge.classList.add('is-running');
+                text.textContent = 'Авто: идет';
+                badge.title = status.last_started_at
+                    ? `Тихое автообновление выполняется с ${status.last_started_at}`
+                    : 'Тихое автообновление выполняется';
+                return;
+            }
+
+            if (state === 'failed') {
+                badge.classList.add('is-error');
+                text.textContent = timeText ? `Авто: ошибка ${timeText}` : 'Авто: ошибка';
+                badge.title = status.last_error
+                    ? `Последнее тихое автообновление завершилось ошибкой: ${status.last_error}`
+                    : 'Последнее тихое автообновление завершилось ошибкой';
+                return;
+            }
+
+            if (state === 'completed') {
+                badge.classList.add('is-ok');
+                text.textContent = timeText ? `Авто: ок ${timeText}` : 'Авто: ок';
+                badge.title = status.last_changed
+                    ? 'Тихое автообновление успешно завершилось, найдены изменения'
+                    : 'Тихое автообновление успешно завершилось, изменений нет';
+                return;
+            }
+
+            if (state === 'skipped') {
+                badge.classList.add('is-paused');
+                text.textContent = timeText ? `Авто: пауза ${timeText}` : 'Авто: пауза';
+                badge.title = 'Тихое автообновление пропущено, потому что выполнялось ручное обновление';
+                return;
+            }
+
+            if (state === 'waiting') {
+                badge.classList.add('is-paused');
+                text.textContent = 'Авто: ждет данные';
+                badge.title = 'Тихое автообновление начнется после появления снимка данных';
+                return;
+            }
+
+            badge.classList.add('is-paused');
+            text.textContent = 'Авто: ожидает';
+            badge.title = 'Тихое автообновление пока не выполнялось';
         }
 
         function updateReleaseUpdateBannerText() {
@@ -3710,6 +3850,7 @@ function buildReviewerCell(item) {
             releaseMonitorMeta = meta || {};
             releaseMonitorKnownRevision = getReleaseMonitorRevision(releaseMonitorMeta) || releaseMonitorKnownRevision;
             hideReleaseUpdateBanner();
+            updateReleaseAutoRefreshBadge(releaseMonitorMeta);
             ensureResponsibleHeaderFilter();
 
             window.dashboardData = window.dashboardData || {};
@@ -4983,6 +5124,7 @@ function buildReviewerCell(item) {
                 setReleaseMonitorGlobalRefreshing(isRefreshing);
 
                 const meta = data.release_monitor_meta || {};
+                updateReleaseAutoRefreshBadge(meta);
                 const latestRevision = getReleaseMonitorRevision(meta);
                 if (
                     latestRevision &&

@@ -36,6 +36,10 @@ ROV_ISSUE_TYPE = "Introduction Order"
 QUICK_REFRESH_DAYS = 9
 AUTO_FULL_REFRESH_HOUR = 6
 AUTO_REFRESH_CHECK_INTERVAL = 300
+AUTO_INCREMENTAL_REFRESH_ENABLED = True
+AUTO_INCREMENTAL_REFRESH_INTERVAL_SECONDS = 180
+AUTO_INCREMENTAL_REFRESH_LOOKBACK_MINUTES = 60
+AUTO_INCREMENTAL_REFRESH_CHECK_INTERVAL = 30
 SNAPSHOT_DIR = Path(__file__).resolve().parent.parent / "cache"
 SNAPSHOT_FILE = SNAPSHOT_DIR / "release_monitor_snapshot.json"
 MANUAL_OVERRIDES_FILE = SNAPSHOT_DIR / "release_monitor_manual_overrides.json"
@@ -118,6 +122,15 @@ _last_cache_update = None
 _manual_order_cache = None
 _field_map_cache = {}
 _refresh_thread = None
+_auto_incremental_thread = None
+_last_auto_incremental_refresh_at = None
+_auto_incremental_status = {
+    "state": "idle",
+    "last_started_at": None,
+    "last_finished_at": None,
+    "last_changed": False,
+    "last_error": None,
+}
 _scheduler_thread = None
 _scheduler_started = False
 _refresh_status = {
@@ -178,11 +191,15 @@ def _build_empty_release_monitor_payload():
             "last_updated": None,
             "last_full_sync": None,
             "last_quick_sync": None,
+            "last_auto_incremental_sync": None,
             "last_confluence_sync": None,
             "last_duty_schedule_upload": None,
             "last_sync_mode": None,
             "quick_refresh_days": QUICK_REFRESH_DAYS,
             "auto_full_refresh_hour": AUTO_FULL_REFRESH_HOUR,
+            "auto_incremental_refresh_enabled": AUTO_INCREMENTAL_REFRESH_ENABLED,
+            "auto_incremental_refresh_interval_seconds": AUTO_INCREMENTAL_REFRESH_INTERVAL_SECONDS,
+            "auto_incremental_refresh_lookback_minutes": AUTO_INCREMENTAL_REFRESH_LOOKBACK_MINUTES,
             "data_revision": _read_data_revision(),
             "is_cached": False,
         },
@@ -231,6 +248,26 @@ def _append_revision_meta(meta):
     if not revision:
         revision = str(_get_snapshot_mtime() or "")
     meta["data_revision"] = revision
+    return meta
+
+
+def _get_auto_incremental_status():
+    status = dict(_auto_incremental_status)
+    status["enabled"] = AUTO_INCREMENTAL_REFRESH_ENABLED
+    status["interval_seconds"] = AUTO_INCREMENTAL_REFRESH_INTERVAL_SECONDS
+    status["lookback_minutes"] = AUTO_INCREMENTAL_REFRESH_LOOKBACK_MINUTES
+    status["running"] = bool(_auto_incremental_thread and _auto_incremental_thread.is_alive())
+    return status
+
+
+def _update_auto_incremental_status(**updates):
+    with _cache_lock:
+        _auto_incremental_status.update(updates)
+
+
+def _append_auto_incremental_meta(meta):
+    meta = dict(meta or {})
+    meta["auto_incremental_status"] = _get_auto_incremental_status()
     return meta
 
 
@@ -2799,6 +2836,36 @@ def _execute_quick_release_search(domain, token, prefix, updated_since, fields_t
     return _execute_search(domain, token, jql, fields_to_load)
 
 
+def _execute_incremental_release_search(domain, token, prefix, lookback_minutes, fields_to_load):
+    current_year = datetime.now().year
+    previous_year = current_year - 1
+    lookback_minutes = max(1, int(lookback_minutes or AUTO_INCREMENTAL_REFRESH_LOOKBACK_MINUTES))
+    jql = (
+        f'project = {prefix} AND '
+        f'issuetype = "{RELEASE_ISSUE_TYPE}" AND '
+        f'updated >= -{lookback_minutes}m AND '
+        f'created >= "{previous_year}-01-01" AND '
+        f'created < "{current_year + 1}-01-01" '
+        f'ORDER BY updated DESC, key ASC'
+    )
+    return _execute_search(domain, token, jql, fields_to_load)
+
+
+def _execute_incremental_rov_search(domain, token, prefix, lookback_minutes, fields_to_load):
+    current_year = datetime.now().year
+    previous_year = current_year - 1
+    lookback_minutes = max(1, int(lookback_minutes or AUTO_INCREMENTAL_REFRESH_LOOKBACK_MINUTES))
+    jql = (
+        f'project = {prefix} AND '
+        f'issuetype = "{ROV_ISSUE_TYPE}" AND '
+        f'updated >= -{lookback_minutes}m AND '
+        f'created >= "{previous_year}-01-01" AND '
+        f'created < "{current_year + 1}-01-01" '
+        f'ORDER BY updated DESC, key ASC'
+    )
+    return _execute_search(domain, token, jql, fields_to_load)
+
+
 def _execute_issue_keys_search(domain, token, issue_keys, fields_to_load):
     issues = []
     for offset in range(0, len(issue_keys), 50):
@@ -2845,6 +2912,43 @@ def _extract_release_io_keys(issue):
 def _extract_release_io_key(issue):
     keys = _extract_release_io_keys(issue)
     return keys[-1] if keys else ""
+
+
+def _issue_type_name(issue):
+    return str(((issue.get("fields") or {}).get("issuetype") or {}).get("name") or "")
+
+
+def _extract_linked_release_keys_from_rov(issue):
+    release_keys = []
+    for link in (issue.get("fields") or {}).get("issuelinks", []):
+        linked_issues = []
+        if link.get("inwardIssue"):
+            linked_issues.append(link.get("inwardIssue"))
+        if link.get("outwardIssue"):
+            linked_issues.append(link.get("outwardIssue"))
+
+        link_type = link.get("type", {})
+        link_name = str(link_type.get("name") or "")
+        inward_name = str(link_type.get("inward") or "")
+        outward_name = str(link_type.get("outward") or "")
+        is_release_io = (
+            link_name == "ReleaseIO"
+            or "Introduction Order" in inward_name
+            or "Introduction Order" in outward_name
+        )
+        if not is_release_io:
+            continue
+
+        for linked_issue in linked_issues:
+            key = str(linked_issue.get("key") or "").strip()
+            if not key:
+                continue
+            linked_type = _issue_type_name(linked_issue)
+            if linked_type and linked_type != RELEASE_ISSUE_TYPE:
+                continue
+            release_keys.append(key)
+
+    return sorted(dict.fromkeys(release_keys))
 
 
 def _sort_rov_records_for_release(rov_records):
@@ -3436,10 +3540,14 @@ def _compose_release_payload(all_records, mode):
             "current_year": current_year,
             "last_updated": _format_timestamp(),
             "last_sync_mode": mode,
+            "last_auto_incremental_sync": None,
             "last_confluence_sync": None,
             "last_duty_schedule_upload": None,
             "quick_refresh_days": QUICK_REFRESH_DAYS,
             "auto_full_refresh_hour": AUTO_FULL_REFRESH_HOUR,
+            "auto_incremental_refresh_enabled": AUTO_INCREMENTAL_REFRESH_ENABLED,
+            "auto_incremental_refresh_interval_seconds": AUTO_INCREMENTAL_REFRESH_INTERVAL_SECONDS,
+            "auto_incremental_refresh_lookback_minutes": AUTO_INCREMENTAL_REFRESH_LOOKBACK_MINUTES,
             "data_revision": _read_data_revision(),
             "is_cached": True,
         },
@@ -3660,6 +3768,159 @@ def _fetch_quick_release_monitor_data(base_items=None):
     return _merge_release_records(base_items or [], updated_records)
 
 
+def _fetch_incremental_release_monitor_data(base_items=None, lookback_minutes=AUTO_INCREMENTAL_REFRESH_LOOKBACK_MINUTES):
+    current_year = datetime.now().year
+    previous_year = current_year - 1
+    updated_records = []
+
+    for (domain, token), prefixes in _get_domain_groups().items():
+        resolved_fields = _resolve_field_ids(domain, token)
+        release_fields_to_load = {
+            "key",
+            "summary",
+            "status",
+            "resolution",
+            "assignee",
+            "reporter",
+            "created",
+            "updated",
+            "issuetype",
+            "priority",
+            "issuelinks",
+            resolved_fields["planned_prom_start"],
+            resolved_fields["planned_prom_end"],
+            resolved_fields["system_info"],
+            resolved_fields["ke_object"],
+            resolved_fields["release_distributive"],
+            resolved_fields["delta_release_distributive"],
+        }
+        rov_fields_to_load = {
+            "key",
+            "summary",
+            "status",
+            "updated",
+            "created",
+            "issuetype",
+            "issuelinks",
+            resolved_fields["rov_start"],
+            resolved_fields["rov_end"],
+        }
+
+        release_issues_by_key = {}
+        updated_rov_issues_by_key = {}
+        linked_release_keys = set()
+
+        for prefix in prefixes:
+            try:
+                issues = _execute_incremental_release_search(
+                    domain,
+                    token,
+                    prefix,
+                    lookback_minutes,
+                    release_fields_to_load,
+                )
+                logging.info(
+                    "Release monitor: auto incremental loaded %s updated releases for prefix %s",
+                    len(issues),
+                    prefix,
+                )
+                for issue in issues:
+                    if _issue_type_name(issue) == RELEASE_ISSUE_TYPE and issue.get("key"):
+                        release_issues_by_key[issue.get("key")] = (prefix, issue)
+            except Exception as exc:
+                logging.error(
+                    "Release monitor: auto incremental failed to load releases for prefix %s: %s",
+                    prefix,
+                    exc,
+                )
+
+            try:
+                rov_issues = _execute_incremental_rov_search(
+                    domain,
+                    token,
+                    prefix,
+                    lookback_minutes,
+                    rov_fields_to_load,
+                )
+                logging.info(
+                    "Release monitor: auto incremental loaded %s updated ROV issues for prefix %s",
+                    len(rov_issues),
+                    prefix,
+                )
+                for issue in rov_issues:
+                    if issue.get("key"):
+                        updated_rov_issues_by_key[issue.get("key")] = issue
+                    linked_release_keys.update(_extract_linked_release_keys_from_rov(issue))
+            except Exception as exc:
+                logging.error(
+                    "Release monitor: auto incremental failed to load ROV issues for prefix %s: %s",
+                    prefix,
+                    exc,
+                )
+
+        missing_release_keys = sorted(
+            key for key in linked_release_keys if key and key not in release_issues_by_key
+        )
+        if missing_release_keys:
+            try:
+                parent_issues = _execute_issue_keys_search(domain, token, missing_release_keys, release_fields_to_load)
+                for issue in parent_issues:
+                    if _issue_type_name(issue) != RELEASE_ISSUE_TYPE or not issue.get("key"):
+                        continue
+                    prefix = str(issue.get("key") or "").split("-", 1)[0]
+                    release_issues_by_key[issue.get("key")] = (prefix, issue)
+                logging.info(
+                    "Release monitor: auto incremental loaded %s parent releases from updated ROV issues",
+                    len(parent_issues),
+                )
+            except Exception as exc:
+                logging.error(
+                    "Release monitor: auto incremental failed to load parent releases from updated ROV issues: %s",
+                    exc,
+                )
+
+        release_issues = list(release_issues_by_key.values())
+        rov_keys = sorted(
+            {
+                rov_key
+                for _, issue in release_issues
+                for rov_key in _extract_release_io_keys(issue)
+                if rov_key
+            }
+            | set(updated_rov_issues_by_key)
+        )
+        rov_map = {}
+        if rov_keys:
+            try:
+                rov_issues = _execute_issue_keys_search(domain, token, rov_keys, rov_fields_to_load)
+                rov_map = {
+                    issue.get("key"): _build_rov_record(issue, domain, resolved_fields)
+                    for issue in rov_issues
+                    if issue.get("key")
+                }
+            except Exception as exc:
+                logging.error("Release monitor: auto incremental failed to load linked ROV issues from %s: %s", domain, exc)
+                rov_map = {
+                    key: _build_rov_record(issue, domain, resolved_fields)
+                    for key, issue in updated_rov_issues_by_key.items()
+                }
+
+        for prefix, issue in release_issues:
+            records = _build_release_record(
+                issue,
+                domain,
+                prefix,
+                resolved_fields,
+                rov_map,
+                current_year,
+                previous_year,
+            )
+            if records:
+                updated_records.extend(records)
+
+    return _merge_release_records(base_items or [], updated_records)
+
+
 def get_release_monitor_data(force_refresh=False):
     global _cached_data, _last_cache_update
 
@@ -3792,19 +4053,158 @@ def _get_cached_payload_copy():
     }
 
 
+def _release_monitor_payload_fingerprint(payload):
+    normalized = _normalize_release_payload(payload or _build_empty_release_monitor_payload())
+    comparable = {
+        "items": normalized.get("items", []),
+        "summary": normalized.get("summary", {}),
+    }
+    return json.dumps(comparable, ensure_ascii=False, sort_keys=True, default=str)
+
+
+def _run_auto_incremental_release_monitor_refresh():
+    global _cached_data, _last_cache_update, _last_auto_incremental_refresh_at
+
+    try:
+        started_at = _format_timestamp()
+        with _cache_lock:
+            manual_refresh_running = bool(
+                (_refresh_thread and _refresh_thread.is_alive())
+                or _refresh_status.get("state") == "refreshing"
+            )
+            if manual_refresh_running:
+                logging.info("Release monitor: skipped auto incremental refresh because manual refresh is running")
+                return
+
+            _auto_incremental_status.update(
+                {
+                    "state": "running",
+                    "last_started_at": started_at,
+                    "last_error": None,
+                }
+            )
+
+            base_payload = _get_cached_payload_copy()
+            if base_payload is None:
+                disk_payload = _load_snapshot_from_disk()
+                if disk_payload is not None:
+                    base_payload = _hydrate_release_monitor_payload(disk_payload)
+                    _cached_data = base_payload
+                    _last_cache_update = _get_snapshot_mtime() or time.time()
+
+            if not base_payload or not base_payload.get("items"):
+                logging.info("Release monitor: skipped auto incremental refresh because snapshot is empty")
+                _auto_incremental_status.update(
+                    {
+                        "state": "waiting",
+                        "last_finished_at": _format_timestamp(),
+                        "last_changed": False,
+                        "last_error": None,
+                    }
+                )
+                return
+
+            base_items = list(base_payload.get("items", []))
+            current_meta = dict(base_payload.get("meta", {}))
+            before_fingerprint = _release_monitor_payload_fingerprint(base_payload)
+
+        data = _fetch_incremental_release_monitor_data(
+            base_items,
+            lookback_minutes=AUTO_INCREMENTAL_REFRESH_LOOKBACK_MINUTES,
+        )
+
+        now_str = _format_timestamp()
+        meta = dict(data.get("meta", {}))
+        meta["last_updated"] = now_str
+        meta["last_sync_mode"] = "auto_incremental"
+        meta["quick_refresh_days"] = QUICK_REFRESH_DAYS
+        meta["auto_full_refresh_hour"] = AUTO_FULL_REFRESH_HOUR
+        meta["auto_incremental_refresh_enabled"] = AUTO_INCREMENTAL_REFRESH_ENABLED
+        meta["auto_incremental_refresh_interval_seconds"] = AUTO_INCREMENTAL_REFRESH_INTERVAL_SECONDS
+        meta["auto_incremental_refresh_lookback_minutes"] = AUTO_INCREMENTAL_REFRESH_LOOKBACK_MINUTES
+        meta["last_full_sync"] = current_meta.get("last_full_sync")
+        meta["last_quick_sync"] = current_meta.get("last_quick_sync")
+        meta["last_auto_incremental_sync"] = now_str
+        meta["last_confluence_sync"] = current_meta.get("last_confluence_sync")
+        data["meta"] = meta
+
+        manual_overrides = _load_manual_release_overrides()
+        finalized = _finalize_release_monitor_payload(data, manual_overrides)
+        after_fingerprint = _release_monitor_payload_fingerprint(finalized)
+        if before_fingerprint == after_fingerprint:
+            logging.info("Release monitor: auto incremental refresh completed without data changes")
+            _update_auto_incremental_status(
+                state="completed",
+                last_finished_at=now_str,
+                last_changed=False,
+                last_error=None,
+            )
+            return
+
+        with _cache_lock:
+            manual_refresh_running = bool(
+                (_refresh_thread and _refresh_thread.is_alive())
+                or _refresh_status.get("state") == "refreshing"
+            )
+            if manual_refresh_running:
+                logging.info("Release monitor: skipped saving auto incremental refresh because manual refresh started")
+                _auto_incremental_status.update(
+                    {
+                        "state": "skipped",
+                        "last_finished_at": _format_timestamp(),
+                        "last_changed": False,
+                        "last_error": None,
+                    }
+                )
+                return
+            _cached_data = finalized
+            _last_cache_update = time.time()
+            _save_snapshot_to_disk(_cached_data)
+            _auto_incremental_status.update(
+                {
+                    "state": "completed",
+                    "last_finished_at": now_str,
+                    "last_changed": True,
+                    "last_error": None,
+                }
+            )
+
+        logging.info(
+            "Release monitor: auto incremental refresh saved updated snapshot, items=%s",
+            len(finalized.get("items", [])),
+        )
+    except Exception as exc:
+        logging.exception("Release monitor: auto incremental refresh failed")
+        _update_auto_incremental_status(
+            state="failed",
+            last_finished_at=_format_timestamp(),
+            last_changed=False,
+            last_error=str(exc),
+        )
+    finally:
+        with _cache_lock:
+            _last_auto_incremental_refresh_at = time.time()
+
+
 def _ensure_scheduler_started():
-    global _scheduler_thread, _scheduler_started
+    global _scheduler_thread, _scheduler_started, _auto_incremental_thread
 
     if _scheduler_started:
         return
 
     def _scheduler_loop():
+        global _auto_incremental_thread
         while True:
             try:
                 with _cache_lock:
                     snapshot = _cached_data or _load_snapshot_from_disk() or _build_empty_release_monitor_payload()
                     last_full_sync = (snapshot.get("meta") or {}).get("last_full_sync")
-                    running = _refresh_thread is not None and _refresh_thread.is_alive()
+                    running = bool(
+                        (_refresh_thread is not None and _refresh_thread.is_alive())
+                        or _refresh_status.get("state") == "refreshing"
+                    )
+                    auto_running = _auto_incremental_thread is not None and _auto_incremental_thread.is_alive()
+                    last_auto_ts = _last_auto_incremental_refresh_at
 
                 now = datetime.now()
                 last_full_date = None
@@ -3822,10 +4222,35 @@ def _ensure_scheduler_started():
 
                 if should_run:
                     start_release_monitor_refresh(mode="full", trigger="auto")
+                    running = True
+
+                now_ts = time.time()
+                should_run_auto_incremental = (
+                    AUTO_INCREMENTAL_REFRESH_ENABLED
+                    and not running
+                    and not auto_running
+                    and (
+                        last_auto_ts is None
+                        or (now_ts - last_auto_ts) >= AUTO_INCREMENTAL_REFRESH_INTERVAL_SECONDS
+                    )
+                )
+
+                if should_run_auto_incremental:
+                    with _cache_lock:
+                        manual_refresh_running = bool(
+                            (_refresh_thread and _refresh_thread.is_alive())
+                            or _refresh_status.get("state") == "refreshing"
+                        )
+                        if not manual_refresh_running:
+                            _auto_incremental_thread = threading.Thread(
+                                target=_run_auto_incremental_release_monitor_refresh,
+                                daemon=True,
+                            )
+                            _auto_incremental_thread.start()
             except Exception:
                 logging.exception("Release monitor: auto full refresh scheduler failed")
 
-            time.sleep(AUTO_REFRESH_CHECK_INTERVAL)
+            time.sleep(min(AUTO_REFRESH_CHECK_INTERVAL, AUTO_INCREMENTAL_REFRESH_CHECK_INTERVAL))
 
     _scheduler_thread = threading.Thread(target=_scheduler_loop, daemon=True)
     _scheduler_thread.start()
@@ -3854,9 +4279,14 @@ def get_release_monitor_data(force_refresh=False):
 
     manual_overrides = _load_manual_release_overrides()
     data = _fetch_release_monitor_data()
+    current_meta = (_cached_data or {}).get("meta", {})
     data["meta"]["last_full_sync"] = data["meta"].get("last_updated")
-    data["meta"]["last_quick_sync"] = (_cached_data or {}).get("meta", {}).get("last_quick_sync")
-    data["meta"]["last_confluence_sync"] = (_cached_data or {}).get("meta", {}).get("last_confluence_sync")
+    data["meta"]["last_quick_sync"] = current_meta.get("last_quick_sync")
+    data["meta"]["last_auto_incremental_sync"] = current_meta.get("last_auto_incremental_sync")
+    data["meta"]["last_confluence_sync"] = current_meta.get("last_confluence_sync")
+    data["meta"]["auto_incremental_refresh_enabled"] = AUTO_INCREMENTAL_REFRESH_ENABLED
+    data["meta"]["auto_incremental_refresh_interval_seconds"] = AUTO_INCREMENTAL_REFRESH_INTERVAL_SECONDS
+    data["meta"]["auto_incremental_refresh_lookback_minutes"] = AUTO_INCREMENTAL_REFRESH_LOOKBACK_MINUTES
 
     with _cache_lock:
         _cached_data = _finalize_release_monitor_payload(data, manual_overrides)
@@ -3893,8 +4323,12 @@ def _run_release_monitor_refresh(mode="full", trigger="manual"):
         meta["last_sync_mode"] = mode
         meta["quick_refresh_days"] = QUICK_REFRESH_DAYS
         meta["auto_full_refresh_hour"] = AUTO_FULL_REFRESH_HOUR
+        meta["auto_incremental_refresh_enabled"] = AUTO_INCREMENTAL_REFRESH_ENABLED
+        meta["auto_incremental_refresh_interval_seconds"] = AUTO_INCREMENTAL_REFRESH_INTERVAL_SECONDS
+        meta["auto_incremental_refresh_lookback_minutes"] = AUTO_INCREMENTAL_REFRESH_LOOKBACK_MINUTES
         meta["last_full_sync"] = now_str if mode == "full" else current_meta.get("last_full_sync")
         meta["last_quick_sync"] = now_str if mode == "quick" else current_meta.get("last_quick_sync")
+        meta["last_auto_incremental_sync"] = current_meta.get("last_auto_incremental_sync")
         meta["last_confluence_sync"] = current_meta.get("last_confluence_sync")
         data["meta"] = meta
         data = _finalize_release_monitor_payload(data, manual_overrides)
@@ -3986,7 +4420,9 @@ def _normalize_release_payload(payload):
         "items": normalized_items,
         "manual_overrides": _normalize_manual_release_overrides(payload.get("manual_overrides") or {}),
         "summary": _build_summary(normalized_items, current_year, previous_year),
-        "meta": _append_revision_meta(_append_duty_schedule_meta(dict(payload.get("meta", {})))),
+        "meta": _append_auto_incremental_meta(
+            _append_revision_meta(_append_duty_schedule_meta(dict(payload.get("meta", {}))))
+        ),
     }
 
 
