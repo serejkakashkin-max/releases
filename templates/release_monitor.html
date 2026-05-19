@@ -2081,7 +2081,7 @@
                             </button>
                             <div id="releaseMonitorFullRefreshMeta" class="release-action-meta" style="display: none;">
                                 Полное: <strong id="releaseMonitorLastFullSync">{{ release_monitor_meta.last_full_sync or 'еще не выполнялось' }}</strong><br>
-                                Автопересборка: <strong>{{ '%02d:00'|format(release_monitor_meta.auto_full_refresh_hour or 6) }}</strong>
+                                Автопересборка: <strong>{% if release_monitor_meta.auto_full_refresh_enabled %}{{ '%02d:00'|format(release_monitor_meta.auto_full_refresh_hour or 6) }}{% else %}отключена{% endif %}</strong>
                             </div>
                         </div>
                         <div class="release-action-stack">

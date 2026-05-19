@@ -270,7 +270,7 @@
         .usage-chip {
             position: fixed;
             right: 1.25rem;
-            bottom: 1.25rem;
+            top: 5.25rem;
             z-index: 980;
             border: 1px solid var(--border-color);
             background: var(--bg-card);
@@ -294,7 +294,7 @@
         .usage-panel {
             position: fixed;
             right: 1.25rem;
-            bottom: 5rem;
+            top: 8.75rem;
             width: min(360px, calc(100vw - 2rem));
             z-index: 981;
             background: var(--bg-card);
@@ -304,7 +304,7 @@
             padding: 1rem;
             opacity: 0;
             visibility: hidden;
-            transform: translateY(10px);
+            transform: translateY(-8px);
             transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease;
         }
 
@@ -403,7 +403,12 @@
 
             .usage-chip {
                 right: 0.75rem;
-                bottom: 0.75rem;
+                top: 4.75rem;
+            }
+
+            .usage-panel {
+                right: 0.75rem;
+                top: 7.75rem;
             }
         }
         

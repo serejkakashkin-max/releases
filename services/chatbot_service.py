@@ -38,6 +38,7 @@ from config import OPLOT_VALUES
 
 
 BASE_PATH = os.getenv("BASE_PATH", "")
+JIRA_DELTA_BASE = "https://jira.delta.sbrf.ru"
 RELEASE_DOCS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "reports", "release_docs")
 RELEASE_DOCS_MAX_AGE_HOURS = int(os.getenv("RELEASE_DOCS_MAX_AGE_HOURS", "1"))
 
@@ -1283,7 +1284,16 @@ Oplot умеет работать с рабочим столом дежурно�
     def _format_release_link(self, release_key: str, release_url: str = "") -> str:
         release_key = str(release_key or "").strip() or "-"
         release_url = str(release_url or "").strip()
+        if not release_url and re.match(r"^[A-Z]+-\d+$", release_key, re.IGNORECASE):
+            release_url = f"{JIRA_DELTA_BASE}/browse/{release_key.upper()}"
         return f"[{release_key}]({release_url})" if release_url else release_key
+
+    def _format_jira_issue_link(self, issue_key: str, issue_url: str = "") -> str:
+        issue_key = str(issue_key or "").strip()
+        if not issue_key:
+            return ""
+        issue_url = str(issue_url or "").strip() or f"{JIRA_DELTA_BASE}/browse/{issue_key.upper()}"
+        return f"[{issue_key}]({issue_url})"
 
     def _handle_release_week_control(self) -> Dict:
         try:
@@ -2557,6 +2567,7 @@ Oplot умеет работать с рабочим столом дежурно�
                 "release_key": release_key,
                 "row_key": row_key,
                 "rov_key": rov_key,
+                "release_url": str(item.get("release_url") or "").strip(),
                 "release_version": str(item.get("release_version") or "").strip(),
                 "prev_version": self._get_release_doc_previous_version(row_key, release_key),
                 "oplot": oplot,
@@ -2568,6 +2579,7 @@ Oplot умеет работать с рабочим столом дежурно�
                 "instruction_link": "",
                 "instruction_provided": False,
                 "zni_key": str(item.get("zni_key") or item.get("base_zni_key") or "").strip(),
+                "zni_url": str(item.get("zni_url") or item.get("base_zni_url") or "").strip(),
                 "batch_context": batch_context,
                 "jira_status": "checking",
                 "jira_error": "",
@@ -2989,11 +3001,13 @@ Oplot умеет работать с рабочим столом дежурно�
     def _generate_release_documents_from_flow(self, session: ChatContext, create_zni: bool = False) -> Dict:
         flow = session.active_release_flow or {}
         release_key = flow.get("release_key", "")
+        release_link = self._format_release_link(release_key, flow.get("release_url", ""))
         try:
             gate_response = self._ensure_release_document_jira_gate(session)
             if gate_response:
                 return gate_response
             flow = session.active_release_flow or flow
+            release_link = self._format_release_link(release_key, flow.get("release_url", ""))
 
             zni_text = ""
             if create_zni and not flow.get("zni_key"):
@@ -3001,7 +3015,10 @@ Oplot умеет работать с рабочим столом дежурно�
                 issue_result = create_release_monitor_zni(flow.get("row_key", ""))
                 issue = issue_result.get("issue", {})
                 flow["zni_key"] = issue.get("key", "")
-                zni_text = f"\nЗНИ создана: `{flow['zni_key']}`." if flow.get("zni_key") else ""
+                flow["zni_url"] = issue.get("url", "")
+            if flow.get("zni_key"):
+                zni_link = self._format_jira_issue_link(flow.get("zni_key", ""), flow.get("zni_url", ""))
+                zni_text = f"\nЗНИ: {zni_link}."
 
             from routes.release_routes import _generate_release_zip_buffer
             zip_buffer = _generate_release_zip_buffer(
@@ -3024,6 +3041,7 @@ Oplot умеет работать с рабочим столом дежурно�
                 completed = list(batch_context.get("completed") or [])
                 completed.append({
                     "release_key": release_key,
+                    "release_url": flow.get("release_url", ""),
                     "download_url": download_url,
                 })
                 batch_context["completed"] = completed
@@ -3041,7 +3059,7 @@ Oplot умеет работать с рабочим столом дежурно�
                         batch_context=batch_context,
                     )
                     next_response["text"] = (
-                        f"Документы по *{release_key}* готовы.{zni_text}\n"
+                        f"Документы по {release_link} готовы.{zni_text}\n"
                         f"[Скачать ZIP]({download_url})\n\n"
                         f"Переходим к релизу {next_index + 1} из {len(batch_items)}.\n\n"
                         f"{next_response['text']}"
@@ -3056,7 +3074,7 @@ Oplot умеет работать с рабочим столом дежурно�
 
                 session.active_release_flow = None
                 lines = [
-                    f"Документы по *{release_key}* готовы.{zni_text}",
+                    f"Документы по {release_link} готовы.{zni_text}",
                     f"[Скачать ZIP]({download_url})",
                     "",
                     f"Пакетное оформление завершено: {len(completed)} из {len(batch_items)}.",
@@ -3064,7 +3082,8 @@ Oplot умеет работать с рабочим столом дежурно�
                     "*Готовые архивы:*",
                 ]
                 for item in completed:
-                    lines.append(f"• {item['release_key']}: [Скачать ZIP]({item['download_url']})")
+                    item_link = self._format_release_link(item.get("release_key", ""), item.get("release_url", ""))
+                    lines.append(f"• {item_link}: [Скачать ZIP]({item['download_url']})")
                 return {
                     "text": "\n".join(lines),
                     "intent": "release_document_batch",
@@ -3074,7 +3093,7 @@ Oplot умеет работать с рабочим столом дежурно�
 
             session.active_release_flow = None
             return {
-                "text": f"Документы по *{release_key}* готовы.{zni_text}\n[Скачать ZIP]({download_url})",
+                "text": f"Документы по {release_link} готовы.{zni_text}\n[Скачать ZIP]({download_url})",
                 "intent": "release_document_flow",
                 "suggestions": ["Показать релизы недели по ответственному", "Выгрузить таблицу релизов в Confluence"],
                 "metadata": {"type": "release_document_flow", "state": "generated", "download_url": download_url},

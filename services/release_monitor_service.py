@@ -30,10 +30,17 @@ PRE_FINAL_RELEASE_STATUSES = (
     "\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0430 \u043d\u0430 \u041f\u0420\u041e\u041c",
     READY_FOR_PROM_STATUS,
 )
+APPROVED_ROV_STATUSES = (
+    "\u0423\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d",
+    "\u0423\u0442\u0432\u0435\u0440\u0436\u0434\u0451\u043d",
+    "\u0423\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u043e",
+    "\u0423\u0442\u0432\u0435\u0440\u0436\u0434\u0451\u043d\u043e",
+)
 RELEASE_PREFIXES = ("EMRM", "SMECLM", "SMECSC", "HELPERAI", "AIGAS")
 RELEASE_ISSUE_TYPE = "Release 2.0"
 ROV_ISSUE_TYPE = "Introduction Order"
 QUICK_REFRESH_DAYS = 9
+AUTO_FULL_REFRESH_ENABLED = False
 AUTO_FULL_REFRESH_HOUR = 6
 AUTO_REFRESH_CHECK_INTERVAL = 300
 AUTO_INCREMENTAL_REFRESH_ENABLED = True
@@ -196,6 +203,7 @@ def _build_empty_release_monitor_payload():
             "last_duty_schedule_upload": None,
             "last_sync_mode": None,
             "quick_refresh_days": QUICK_REFRESH_DAYS,
+            "auto_full_refresh_enabled": AUTO_FULL_REFRESH_ENABLED,
             "auto_full_refresh_hour": AUTO_FULL_REFRESH_HOUR,
             "auto_incremental_refresh_enabled": AUTO_INCREMENTAL_REFRESH_ENABLED,
             "auto_incremental_refresh_interval_seconds": AUTO_INCREMENTAL_REFRESH_INTERVAL_SECONDS,
@@ -267,6 +275,8 @@ def _update_auto_incremental_status(**updates):
 
 def _append_auto_incremental_meta(meta):
     meta = dict(meta or {})
+    meta["auto_full_refresh_enabled"] = AUTO_FULL_REFRESH_ENABLED
+    meta["auto_full_refresh_hour"] = AUTO_FULL_REFRESH_HOUR
     meta["auto_incremental_status"] = _get_auto_incremental_status()
     return meta
 
@@ -1013,6 +1023,24 @@ def _release_days_overdue(end_dt, now_dt=None):
     return max((now_dt.date() - end_dt.date()).days, 0)
 
 
+def _normalize_rule_status(value):
+    return _normalize_text(value).replace("\u0451", "\u0435")
+
+
+def _is_approved_rov_status(status):
+    normalized = _normalize_rule_status(status)
+    approved_statuses = {_normalize_rule_status(value) for value in APPROVED_ROV_STATUSES}
+    return normalized in approved_statuses
+
+
+def _is_confirmed_deployment_attempt(item):
+    if not isinstance(item, dict):
+        return False
+    if item.get("is_pre_final") or item.get("is_ready_for_prom"):
+        return True
+    return _is_approved_rov_status(item.get("rov_status"))
+
+
 def _get_final_manual_date_row_state(start_dt, end_dt, now_dt=None):
     now_dt = now_dt or datetime.now()
     today = now_dt.date()
@@ -1513,12 +1541,15 @@ def _apply_date_overrides(items):
                 today = now_dt.date()
                 source_start_date = source_start_dt.date() if source_start_dt else None
                 source_end_date = source_end_dt.date() if source_end_dt else None
-                item["is_overdue"] = _is_release_window_expired(source_end_dt, now_dt)
+                item["is_overdue"] = bool(
+                    _is_confirmed_deployment_attempt(item)
+                    and _is_release_window_expired(source_end_dt, now_dt)
+                )
                 item["is_today"] = bool(
                     (source_start_date and source_start_date == today)
                     or (source_end_date and source_end_date == today)
                 )
-                item["days_overdue"] = _release_days_overdue(source_end_dt, now_dt)
+                item["days_overdue"] = _release_days_overdue(source_end_dt, now_dt) if item.get("is_overdue") else 0
                 if item.get("is_overdue"):
                     item["row_state"] = "overdue"
                 elif item.get("is_today"):
@@ -1578,12 +1609,15 @@ def _apply_date_overrides(items):
             today = now_dt.date()
             effective_start_date = effective_start_dt.date() if effective_start_dt else None
             effective_end_date = effective_end_dt.date() if effective_end_dt else None
-            item["is_overdue"] = _is_release_window_expired(effective_end_dt, now_dt)
+            item["is_overdue"] = bool(
+                _is_confirmed_deployment_attempt(item)
+                and _is_release_window_expired(effective_end_dt, now_dt)
+            )
             item["is_today"] = bool(
                 (effective_start_date and effective_start_date == today)
                 or (effective_end_date and effective_end_date == today)
             )
-            item["days_overdue"] = _release_days_overdue(effective_end_dt, now_dt)
+            item["days_overdue"] = _release_days_overdue(effective_end_dt, now_dt) if item.get("is_overdue") else 0
 
             if item.get("is_overdue"):
                 item["row_state"] = "overdue"
@@ -1780,11 +1814,27 @@ def _apply_release_attempt_outcomes(items):
         if not row_key:
             continue
 
+        has_confirmed_attempt = _is_confirmed_deployment_attempt(item)
+        if (
+            row_key in outcomes
+            and not item.get("is_final")
+            and not item.get("is_cancelled")
+            and (
+                not item.get("has_rov")
+                or not item.get("is_overdue")
+                or not has_confirmed_attempt
+            )
+        ):
+            outcomes.pop(row_key, None)
+            changed = True
+            continue
+
         if (
             item.get("has_rov")
             and not item.get("is_final")
             and not item.get("is_cancelled")
             and item.get("is_overdue")
+            and has_confirmed_attempt
         ):
             current = dict(outcomes.get(row_key) or {})
             outcomes[row_key] = {
@@ -3105,8 +3155,19 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
             row_is_final = False
         row_is_non_final = not row_is_final and not row_is_cancelled
         row_is_pre_final = is_pre_final and not row_is_final
+        row_has_confirmed_attempt = _is_confirmed_deployment_attempt(
+            {
+                "is_pre_final": row_is_pre_final,
+                "is_ready_for_prom": is_ready_for_prom and not row_is_final,
+                "rov_status": rov_data.get("status", ""),
+            }
+        )
 
-        is_overdue = bool(row_is_non_final and _is_release_window_expired(rov_end, now_dt))
+        is_overdue = bool(
+            row_is_non_final
+            and row_has_confirmed_attempt
+            and _is_release_window_expired(rov_end, now_dt)
+        )
         is_today = bool(
             row_is_non_final
             and (
@@ -3126,7 +3187,7 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
         else:
             row_state = "planned"
 
-        days_overdue = _release_days_overdue(rov_end, now_dt)
+        days_overdue = _release_days_overdue(rov_end, now_dt) if is_overdue else 0
         is_hotfix = str(release_version or "").upper().startswith("P-")
         if is_reroll:
             row_label = "(\u041f\u0435\u0440\u0435\u0440\u0430\u0441\u043a\u0430\u0442\u043a\u0430)"
@@ -3544,6 +3605,7 @@ def _compose_release_payload(all_records, mode):
             "last_confluence_sync": None,
             "last_duty_schedule_upload": None,
             "quick_refresh_days": QUICK_REFRESH_DAYS,
+            "auto_full_refresh_enabled": AUTO_FULL_REFRESH_ENABLED,
             "auto_full_refresh_hour": AUTO_FULL_REFRESH_HOUR,
             "auto_incremental_refresh_enabled": AUTO_INCREMENTAL_REFRESH_ENABLED,
             "auto_incremental_refresh_interval_seconds": AUTO_INCREMENTAL_REFRESH_INTERVAL_SECONDS,
@@ -4118,6 +4180,7 @@ def _run_auto_incremental_release_monitor_refresh():
         meta["last_updated"] = now_str
         meta["last_sync_mode"] = "auto_incremental"
         meta["quick_refresh_days"] = QUICK_REFRESH_DAYS
+        meta["auto_full_refresh_enabled"] = AUTO_FULL_REFRESH_ENABLED
         meta["auto_full_refresh_hour"] = AUTO_FULL_REFRESH_HOUR
         meta["auto_incremental_refresh_enabled"] = AUTO_INCREMENTAL_REFRESH_ENABLED
         meta["auto_incremental_refresh_interval_seconds"] = AUTO_INCREMENTAL_REFRESH_INTERVAL_SECONDS
@@ -4215,7 +4278,8 @@ def _ensure_scheduler_started():
                         last_full_date = None
 
                 should_run = (
-                    now.hour >= AUTO_FULL_REFRESH_HOUR
+                    AUTO_FULL_REFRESH_ENABLED
+                    and now.hour >= AUTO_FULL_REFRESH_HOUR
                     and last_full_date != now.date()
                     and not running
                 )
@@ -4248,7 +4312,7 @@ def _ensure_scheduler_started():
                             )
                             _auto_incremental_thread.start()
             except Exception:
-                logging.exception("Release monitor: auto full refresh scheduler failed")
+                logging.exception("Release monitor: refresh scheduler failed")
 
             time.sleep(min(AUTO_REFRESH_CHECK_INTERVAL, AUTO_INCREMENTAL_REFRESH_CHECK_INTERVAL))
 
@@ -4284,6 +4348,8 @@ def get_release_monitor_data(force_refresh=False):
     data["meta"]["last_quick_sync"] = current_meta.get("last_quick_sync")
     data["meta"]["last_auto_incremental_sync"] = current_meta.get("last_auto_incremental_sync")
     data["meta"]["last_confluence_sync"] = current_meta.get("last_confluence_sync")
+    data["meta"]["auto_full_refresh_enabled"] = AUTO_FULL_REFRESH_ENABLED
+    data["meta"]["auto_full_refresh_hour"] = AUTO_FULL_REFRESH_HOUR
     data["meta"]["auto_incremental_refresh_enabled"] = AUTO_INCREMENTAL_REFRESH_ENABLED
     data["meta"]["auto_incremental_refresh_interval_seconds"] = AUTO_INCREMENTAL_REFRESH_INTERVAL_SECONDS
     data["meta"]["auto_incremental_refresh_lookback_minutes"] = AUTO_INCREMENTAL_REFRESH_LOOKBACK_MINUTES
@@ -4322,6 +4388,7 @@ def _run_release_monitor_refresh(mode="full", trigger="manual"):
         meta["last_updated"] = now_str
         meta["last_sync_mode"] = mode
         meta["quick_refresh_days"] = QUICK_REFRESH_DAYS
+        meta["auto_full_refresh_enabled"] = AUTO_FULL_REFRESH_ENABLED
         meta["auto_full_refresh_hour"] = AUTO_FULL_REFRESH_HOUR
         meta["auto_incremental_refresh_enabled"] = AUTO_INCREMENTAL_REFRESH_ENABLED
         meta["auto_incremental_refresh_interval_seconds"] = AUTO_INCREMENTAL_REFRESH_INTERVAL_SECONDS
