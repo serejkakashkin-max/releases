@@ -1708,6 +1708,23 @@
             flex-direction: column;
         }
 
+        .release-doc-pending-panel {
+            border-radius: 16px;
+            border: 1px solid rgba(13, 110, 253, 0.25);
+            background: rgba(13, 110, 253, 0.08);
+            padding: 1rem;
+            margin-top: 0.5rem;
+        }
+
+        .release-doc-pending-status {
+            display: flex;
+            align-items: center;
+            gap: 0.7rem;
+            color: var(--text-primary);
+            font-weight: 800;
+            margin-bottom: 0.45rem;
+        }
+
         .release-doc-error {
             border-radius: 14px;
             border: 1px solid rgba(220, 53, 69, 0.25);
@@ -2276,6 +2293,7 @@
         const RELEASE_REVIEWER_OPTIONS = {{ reviewer_options | tojson | safe }};
         let releaseDocumentModalInstance = null;
         let releaseDocumentWizardState = null;
+        let releaseDocumentInitSequence = 0;
         let releaseDateOverrideModalInstance = null;
         let releaseDateOverrideState = null;
         let releaseManualOverrideModalInstance = null;
@@ -3070,7 +3088,9 @@ function buildReviewerCell(item) {
                 ? `${state.templateChoice.category} / ${state.templateChoice.release_clean}`
                 : state.initData?.detection?.found
                     ? `${state.initData.detection.category} / ${state.initData.detection.release_clean}`
-                    : 'Будет уточнен по шагам';
+                    : state.initStatus === 'loading'
+                        ? 'Проверяю Jira'
+                        : 'Будет уточнен по шагам';
 
             return `
                 <div class="release-doc-summary">
@@ -3123,7 +3143,14 @@ function buildReviewerCell(item) {
 
         function ensureReleaseDocumentModal() {
             if (!releaseDocumentModalInstance) {
-                releaseDocumentModalInstance = new bootstrap.Modal(document.getElementById('releaseDocumentModal'));
+                const modalElement = document.getElementById('releaseDocumentModal');
+                releaseDocumentModalInstance = new bootstrap.Modal(modalElement);
+                modalElement.addEventListener('hide.bs.modal', () => {
+                    if (releaseDocumentWizardState) {
+                        releaseDocumentWizardState.cancelled = true;
+                    }
+                    releaseDocumentInitSequence += 1;
+                });
             }
             return releaseDocumentModalInstance;
         }
@@ -3166,6 +3193,141 @@ function buildReviewerCell(item) {
             if (releaseDocumentModalInstance) {
                 releaseDocumentModalInstance.hide();
             }
+        }
+
+        function isReleaseDocumentStateCurrent(state) {
+            return Boolean(
+                state &&
+                releaseDocumentWizardState === state &&
+                state.initRequestId === releaseDocumentInitSequence &&
+                !state.cancelled
+            );
+        }
+
+        function renderReleaseDocumentInitPending(state) {
+            const body = document.getElementById('releaseDocumentModalBody');
+            const prevBtn = document.getElementById('releaseDocumentPrevBtn');
+            const nextBtn = document.getElementById('releaseDocumentNextBtn');
+            if (!state || !body) {
+                return;
+            }
+
+            const item = state.item || {};
+            body.innerHTML = `
+                ${getReleaseDocumentSummaryCards(state)}
+                <div class="release-doc-pending-panel">
+                    <div class="release-doc-pending-status">
+                        <span class="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></span>
+                        Проверяю актуальные данные в Jira
+                    </div>
+                    <div class="release-doc-step-description mb-3">
+                        Окно уже открыто по данным таблицы. Сейчас фоном уточняю шаблон, версию дистрибутива, КЭ и предыдущую версию.
+                    </div>
+                    <div class="release-doc-summary mb-0">
+                        <div class="release-doc-summary-card">
+                            <span class="release-doc-summary-label">РОВ</span>
+                            <div class="release-doc-summary-value">${escapeHtml(item.pob_key || item.rov_key || '-')}</div>
+                        </div>
+                        <div class="release-doc-summary-card">
+                            <span class="release-doc-summary-label">Дата из таблицы</span>
+                            <div class="release-doc-summary-value">${escapeHtml(item.deployment_start || '-')}</div>
+                        </div>
+                        <div class="release-doc-summary-card">
+                            <span class="release-doc-summary-label">Сборка из таблицы</span>
+                            <div class="release-doc-summary-value">${escapeHtml(state.form.release_version || 'проверяю')}</div>
+                        </div>
+                        <div class="release-doc-summary-card">
+                            <span class="release-doc-summary-label">Предыдущая версия</span>
+                            <div class="release-doc-summary-value">${escapeHtml(state.form.prev_version || 'проверяю')}</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            if (prevBtn) {
+                prevBtn.style.display = 'none';
+            }
+            if (nextBtn) {
+                nextBtn.disabled = true;
+                nextBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Проверяем Jira...';
+            }
+        }
+
+        async function loadReleaseDocumentInit(state) {
+            if (!state?.item) {
+                return;
+            }
+
+            const item = state.item;
+            try {
+                const response = await fetch(BASE_PATH + '/release/monitor-init', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        row_key: item.row_key || '',
+                        release_id: item.release_key,
+                        ke: item.ke || '',
+                        oplot: item.psi_owner || '',
+                        checker: item.psi_checker || '',
+                        date: item.deployment_start || ''
+                    })
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Не удалось подготовить генератор документов');
+                }
+
+                if (!isReleaseDocumentStateCurrent(state)) {
+                    return;
+                }
+
+                state.initData = data;
+                state.initStatus = 'ready';
+                applyReleaseMonitorJiraSyncPatch(data.sync_patch || {});
+                state.form.release_version = data.release_version || state.form.release_version;
+                state.form.ke = data.ke || state.form.ke;
+                state.form.prev_version = data.prev_version || state.form.prev_version;
+                if (!data.detection?.found && !(Array.isArray(data.detection?.candidates) && data.detection.candidates.length)) {
+                    throw new Error('К сожалению, для данного типа релиза шаблоны документов сейчас не найдены. Через ручной формирователь документов можно попробовать выбрать шаблон другого подходящего типа и затем скорректировать сформированные файлы вручную.');
+                }
+                state.steps = buildReleaseDocumentSteps(state);
+                state.stepIndex = 0;
+                renderReleaseDocumentWizardStep();
+            } catch (error) {
+                console.error('Release document init error:', error);
+                if (!isReleaseDocumentStateCurrent(state)) {
+                    return;
+                }
+                state.initStatus = 'error';
+                state.initError = error.message || 'Не удалось подготовить форму генерации';
+                setReleaseDocumentModalError(state.initError);
+            }
+        }
+
+        async function waitReleaseDocumentInitReady(state) {
+            if (!state) {
+                return false;
+            }
+            if (state.initStatus === 'ready') {
+                return true;
+            }
+            if (state.initStatus === 'error') {
+                alert(state.initError || 'Не удалось подготовить форму генерации.');
+                return false;
+            }
+            if (state.initPromise) {
+                const nextBtn = document.getElementById('releaseDocumentNextBtn');
+                const prevBtn = document.getElementById('releaseDocumentPrevBtn');
+                if (nextBtn) {
+                    nextBtn.disabled = true;
+                    nextBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Дожидаюсь Jira...';
+                }
+                if (prevBtn) {
+                    prevBtn.disabled = true;
+                }
+                await state.initPromise;
+            }
+            return isReleaseDocumentStateCurrent(state) && state.initStatus === 'ready';
         }
 
         function applyReleaseMonitorJiraSyncPatch(syncPatch) {
@@ -3225,7 +3387,7 @@ function buildReviewerCell(item) {
             }
         }
 
-        async function openReleaseDocumentWizard(releaseKey) {
+        function openReleaseDocumentWizard(releaseKey) {
             const item = getReleaseMonitorItem(releaseKey);
             if (!item) {
                 alert('Не удалось найти релиз в текущей таблице.');
@@ -3242,20 +3404,27 @@ function buildReviewerCell(item) {
                 return;
             }
 
-                releaseDocumentWizardState = {
-                    item,
-                    initData: null,
-                    templateChoice: null,
-                    steps: [],
-                    stepIndex: 0,
-                    form: {
-                        release_id: item.release_key || '',
-                        release_version: item.release_version || '',
-                        prev_version: '',
-                        oplot: item.psi_owner || '',
-                        checker: item.psi_checker || '',
-                        instruction_link: '',
-                        date: dateToInputValue(item.deployment_start || ''),
+            const initRequestId = releaseDocumentInitSequence + 1;
+            releaseDocumentInitSequence = initRequestId;
+            releaseDocumentWizardState = {
+                item: { ...item },
+                initData: null,
+                initStatus: 'loading',
+                initError: '',
+                initRequestId,
+                initPromise: null,
+                cancelled: false,
+                templateChoice: null,
+                steps: [],
+                stepIndex: 0,
+                form: {
+                    release_id: item.release_key || '',
+                    release_version: item.release_version || '',
+                    prev_version: '',
+                    oplot: item.psi_owner || '',
+                    checker: item.psi_checker || '',
+                    instruction_link: '',
+                    date: dateToInputValue(item.deployment_start || ''),
                     ke: item.ke || '',
                     playbooks: [],
                     create_zni: false,
@@ -3265,42 +3434,9 @@ function buildReviewerCell(item) {
 
             const modal = ensureReleaseDocumentModal();
             document.getElementById('releaseDocumentModalSubtitle').textContent = `Релиз ${item.release_key}`;
-            setReleaseDocumentModalLoading('Подтягиваем шаблоны и автозаполненные поля...');
+            renderReleaseDocumentInitPending(releaseDocumentWizardState);
             modal.show();
-
-            try {
-                const response = await fetch(BASE_PATH + '/release/monitor-init', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        row_key: item.row_key || '',
-                        release_id: item.release_key,
-                        ke: item.ke || '',
-                        oplot: item.psi_owner || '',
-                        checker: item.psi_checker || '',
-                        date: item.deployment_start || ''
-                    })
-                });
-                const data = await response.json();
-                if (!response.ok || !data.success) {
-                    throw new Error(data.error || 'Не удалось подготовить генератор документов');
-                }
-
-                releaseDocumentWizardState.initData = data;
-                applyReleaseMonitorJiraSyncPatch(data.sync_patch || {});
-                releaseDocumentWizardState.form.release_version = data.release_version || releaseDocumentWizardState.form.release_version;
-                releaseDocumentWizardState.form.ke = data.ke || releaseDocumentWizardState.form.ke;
-                releaseDocumentWizardState.form.prev_version = data.prev_version || releaseDocumentWizardState.form.prev_version;
-                if (!data.detection?.found && !(Array.isArray(data.detection?.candidates) && data.detection.candidates.length)) {
-                    throw new Error('К сожалению, для данного типа релиза шаблоны документов сейчас не найдены. Через ручной формирователь документов можно попробовать выбрать шаблон другого подходящего типа и затем скорректировать сформированные файлы вручную.');
-                }
-                releaseDocumentWizardState.steps = buildReleaseDocumentSteps(releaseDocumentWizardState);
-                releaseDocumentWizardState.stepIndex = 0;
-                renderReleaseDocumentWizardStep();
-            } catch (error) {
-                console.error('Release document init error:', error);
-                setReleaseDocumentModalError(error.message || 'Не удалось подготовить форму генерации');
-            }
+            releaseDocumentWizardState.initPromise = loadReleaseDocumentInit(releaseDocumentWizardState);
         }
 
         function syncReleaseDocumentZniForm(state) {
@@ -3627,6 +3763,10 @@ function buildReviewerCell(item) {
                 return;
             }
 
+            if (!(await waitReleaseDocumentInitReady(state))) {
+                return;
+            }
+
             if (!(await validateReleaseDocumentCurrentStep())) {
                 return;
             }
@@ -3645,6 +3785,10 @@ function buildReviewerCell(item) {
             const nextBtn = document.getElementById('releaseDocumentNextBtn');
             const prevBtn = document.getElementById('releaseDocumentPrevBtn');
             if (!state || !nextBtn) {
+                return;
+            }
+
+            if (!(await waitReleaseDocumentInitReady(state))) {
                 return;
             }
 
