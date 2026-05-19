@@ -1,6 +1,7 @@
 import html
 import json
 import re
+import time
 import zipfile
 from collections import Counter, defaultdict
 from copy import deepcopy
@@ -82,6 +83,7 @@ _EMERGENCY_ROLLBACK_PLAN_RE = re.compile(r"(?:аварийн\w*\s+возврат
 _SUCCESS_NOTIFICATION_RE = re.compile(r"оповещени\w+\s+об\s+успешн\w+\s+внедрени\w+\s+релиза", re.IGNORECASE)
 _FAILURE_NOTIFICATION_RE = re.compile(r"оповещени\w+\s+о\s*неуспешн\w+\s+внедрени\w+\s+релиза", re.IGNORECASE)
 _CATALOG_CACHE = {}
+_RUNTIME_CATALOG_TTL_SECONDS = 300
 
 
 def _safe_filename(filename: str) -> str:
@@ -248,12 +250,25 @@ def clear_template_catalog_cache() -> None:
     _CATALOG_CACHE.clear()
 
 
-def build_template_catalog(root: Path = DOC_TEMPLATES_ROOT) -> List[Dict]:
-    cache_key = str(root.resolve())
-    signature = _catalog_signature(root)
+def _count_docx_files_shallow(directory: Path) -> int:
+    try:
+        return sum(1 for path in directory.iterdir() if path.is_file() and path.suffix.lower() == ".docx")
+    except OSError:
+        return 0
+
+
+def build_template_catalog(root: Path = DOC_TEMPLATES_ROOT, deep: bool = True) -> List[Dict]:
+    cache_key = f"{'deep' if deep else 'runtime'}:{root.resolve()}"
     cached = _CATALOG_CACHE.get(cache_key)
-    if cached and cached.get("signature") == signature:
-        return [dict(entry) for entry in cached.get("catalog", [])]
+    if deep:
+        signature = _catalog_signature(root)
+        if cached and cached.get("signature") == signature:
+            return [dict(entry) for entry in cached.get("catalog", [])]
+    else:
+        now = time.time()
+        if cached and cached.get("expires_at", 0) > now:
+            return [dict(entry) for entry in cached.get("catalog", [])]
+        signature = None
 
     catalog = []
     if not root.exists():
@@ -261,8 +276,8 @@ def build_template_catalog(root: Path = DOC_TEMPLATES_ROOT) -> List[Dict]:
     global_catalog = _load_global_catalog(root)
 
     for directory in sorted(path for path in root.rglob("*") if path.is_dir()):
-        files = sorted(directory.glob("*.docx"))
-        if not files:
+        doc_count = len(sorted(directory.glob("*.docx"))) if deep else _count_docx_files_shallow(directory)
+        if not doc_count:
             continue
 
         relative = directory.relative_to(root)
@@ -281,10 +296,25 @@ def build_template_catalog(root: Path = DOC_TEMPLATES_ROOT) -> List[Dict]:
         clean_name = str(manifest.get("name") or _strip_folder_id(release_full) or release_full).strip()
         ke = str(manifest.get("ke") or folder_ke).strip()
         variant = _normalize_variant(manifest.get("variant") or _infer_variant(clean_name))
-        text, _ = _directory_text_and_files(directory)
-        normalized_text = _normalize_placeholder_text(text)
+        normalized_text = ""
+        if deep:
+            text, _ = _directory_text_and_files(directory)
+            normalized_text = _normalize_placeholder_text(text)
         aliases = manifest.get("aliases") if isinstance(manifest.get("aliases"), list) else []
         aliases = [str(alias).strip() for alias in aliases if str(alias or "").strip()]
+        if "requires_playbooks" in manifest:
+            requires_playbooks = bool(manifest.get("requires_playbooks"))
+        elif deep:
+            requires_playbooks = "PLAYBOOKS" in normalized_text
+        else:
+            requires_playbooks = None
+
+        if "requires_instruction" in manifest:
+            requires_instruction = bool(manifest.get("requires_instruction"))
+        elif deep:
+            requires_instruction = "INSTRUCTION_BLOCK" in normalized_text
+        else:
+            requires_instruction = None
 
         catalog.append({
             "category": category,
@@ -292,27 +322,29 @@ def build_template_catalog(root: Path = DOC_TEMPLATES_ROOT) -> List[Dict]:
             "release_full": release_full,
             "ke": ke,
             "variant": variant,
-            "requires_playbooks": bool(manifest.get("requires_playbooks"))
-            if "requires_playbooks" in manifest
-            else "PLAYBOOKS" in normalized_text,
-            "requires_instruction": bool(manifest.get("requires_instruction"))
-            if "requires_instruction" in manifest
-            else "INSTRUCTION_BLOCK" in normalized_text,
+            "requires_playbooks": requires_playbooks,
+            "requires_instruction": requires_instruction,
             "aliases": list(dict.fromkeys([clean_name, release_full, variant, *aliases])),
-            "doc_count": len(files),
+            "doc_count": doc_count,
             "source": "manifest" if manifest else "folder",
         })
 
-    _CATALOG_CACHE[cache_key] = {
-        "signature": signature,
-        "catalog": [dict(entry) for entry in catalog],
-    }
+    cache_payload = {"catalog": [dict(entry) for entry in catalog]}
+    if deep:
+        cache_payload["signature"] = signature
+    else:
+        cache_payload["expires_at"] = time.time() + _RUNTIME_CATALOG_TTL_SECONDS
+    _CATALOG_CACHE[cache_key] = cache_payload
     return catalog
+
+
+def build_runtime_template_catalog(root: Path = DOC_TEMPLATES_ROOT) -> List[Dict]:
+    return build_template_catalog(root=root, deep=False)
 
 
 def get_catalog_release_structure() -> Dict[str, List[Tuple[str, str]]]:
     grouped = defaultdict(list)
-    for entry in build_template_catalog():
+    for entry in build_runtime_template_catalog():
         grouped[entry["category"]].append((entry["release_clean"], entry["release_full"]))
     return {
         category: sorted(values, key=lambda item: item[0].lower())
@@ -336,17 +368,19 @@ def find_template_entries_by_ke(ke: str) -> List[Dict]:
     normalized_ke = str(ke or "").strip()
     if not normalized_ke:
         return []
-    return [entry for entry in build_template_catalog() if str(entry.get("ke") or "") == normalized_ke]
+    return [entry for entry in build_runtime_template_catalog() if str(entry.get("ke") or "") == normalized_ke]
 
 
 def template_requires_playbooks(release_full: str = "", category: str = "") -> Optional[bool]:
     release_full = str(release_full or "").strip()
     category = str(category or "").strip()
-    for entry in build_template_catalog():
+    for entry in build_runtime_template_catalog():
         if release_full and entry.get("release_full") != release_full:
             continue
         if category and entry.get("category") != category:
             continue
+        if entry.get("requires_playbooks") is None:
+            return None
         return bool(entry.get("requires_playbooks"))
     return None
 
