@@ -2065,7 +2065,7 @@
                                 Обновлено: <strong id="releaseMonitorLastUpdated">{{ release_monitor_meta.last_updated or 'еще не загружалось' }}</strong>
                             </div>
                         </div>
-                        <div class="release-action-stack">
+                        <div id="releaseMonitorQuickRefreshStack" class="release-action-stack" style="display: none;">
                             <button id="releaseMonitorQuickRefreshBtn" class="release-monitor-btn quick" onclick="refreshReleaseMonitor('quick')">
                                 <i class="bi bi-lightning-charge"></i>
                                 <span class="btn-label">Быстрое обновление</span>
@@ -4463,6 +4463,7 @@ function buildReviewerCell(item) {
             const orderBtn = document.getElementById('releaseMonitorOrderBtn');
             const saveBtn = document.getElementById('releaseMonitorOrderSaveBtn');
             const cancelBtn = document.getElementById('releaseMonitorOrderCancelBtn');
+            const quickRefreshStack = document.getElementById('releaseMonitorQuickRefreshStack');
             const fullRefreshBtn = document.getElementById('releaseMonitorRefreshBtn');
             const fullRefreshMeta = document.getElementById('releaseMonitorFullRefreshMeta');
             const hint = document.getElementById('releaseOrderModeHint');
@@ -4479,6 +4480,9 @@ function buildReviewerCell(item) {
             }
             if (cancelBtn) {
                 cancelBtn.style.display = isReleaseOrderMode ? '' : 'none';
+            }
+            if (quickRefreshStack) {
+                quickRefreshStack.style.display = isReleaseOrderMode ? '' : 'none';
             }
             if (fullRefreshBtn) {
                 fullRefreshBtn.style.display = isReleaseOrderMode ? '' : 'none';
