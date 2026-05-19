@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import threading
 import uuid
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Tuple
@@ -2252,6 +2253,225 @@ Oplot умеет работать с рабочим столом дежурно�
             },
         }
 
+    def _get_release_doc_previous_version(self, row_key: str, release_key: str) -> str:
+        try:
+            from routes.release_routes import get_previous_version_from_monitor_items
+            snapshot = get_release_monitor_snapshot() or {}
+            return str(
+                get_previous_version_from_monitor_items(
+                    snapshot.get("items") or [],
+                    row_key,
+                    release_key,
+                )
+                or ""
+            ).strip()
+        except Exception as exc:
+            logging.debug("Release document previous version lookup failed for %s: %s", release_key, exc)
+            return ""
+
+    def _build_release_doc_preliminary_detection(self, item: Dict) -> Dict:
+        try:
+            from routes.release_routes import detect_release_template_from_values
+            summary = (
+                item.get("release_summary")
+                or item.get("base_release_summary")
+                or " ".join(item.get("release_name_lines") or [])
+            )
+            return detect_release_template_from_values(str(item.get("ke_id") or ""), summary)
+        except Exception as exc:
+            logging.debug("Release document preliminary template lookup failed: %s", exc)
+            return {"found": False, "candidates": []}
+
+    def _set_release_doc_flow_template(self, flow: Dict, detection: Dict, original_message: str = "") -> Optional[Dict]:
+        try:
+            from routes.release_routes import release_uses_playbooks
+            candidates = detection.get("candidates") or []
+            if detection.get("found"):
+                flow["category"] = detection.get("category", "")
+                flow["release_full"] = detection.get("release_full", "")
+                flow["release_clean"] = detection.get("release_clean", "")
+                flow["playbooks_required"] = release_uses_playbooks(flow["release_full"])
+                return None
+            if candidates:
+                selected_candidate = self._select_template_candidate(candidates, original_message)
+                if selected_candidate:
+                    self._apply_template_candidate_to_flow(flow, selected_candidate, release_uses_playbooks)
+                    flow["template_user_selected"] = True
+                    return None
+                flow["state"] = "template_choice_requested"
+                flow["template_candidates"] = candidates
+                return {"type": "template_choice", "candidates": candidates}
+        except Exception as exc:
+            logging.debug("Release document template setup failed: %s", exc)
+        return None
+
+    def _start_release_document_jira_init(self, session_id: str, flow: Dict) -> None:
+        thread_key = uuid.uuid4().hex
+        flow["jira_thread_key"] = thread_key
+        flow["jira_status"] = "checking"
+        flow["jira_error"] = ""
+
+        def worker():
+            release_key = str(flow.get("release_key") or "").strip()
+            row_key = str(flow.get("row_key") or release_key).strip()
+            try:
+                from routes.release_routes import detect_release_template, release_uses_playbooks
+                from services.jira_service import get_release_jira_snapshot
+
+                jira_snapshot = get_release_jira_snapshot(release_key)
+                detection = detect_release_template(release_key, jira_snapshot=jira_snapshot)
+                if detection.get("error"):
+                    raise ValueError(detection["error"])
+
+                jira_version = str(jira_snapshot.get("release_version") or "").strip()
+                jira_ke = str(jira_snapshot.get("ke") or "").strip()
+                missing_distribution_fields = []
+                if not jira_version:
+                    missing_distribution_fields.append("release_version")
+                if not jira_ke:
+                    missing_distribution_fields.append("ke")
+
+                try:
+                    sync_release_monitor_jira_fields(
+                        row_key=row_key,
+                        release_key=release_key,
+                        release_version=jira_version,
+                        ke=jira_ke,
+                    )
+                except Exception as exc:
+                    logging.warning("Release document flow Jira sync failed for %s: %s", release_key, exc)
+
+                current_session = self.sessions.get(session_id)
+                current_flow = current_session.active_release_flow if current_session else None
+                if current_flow is not flow or flow.get("jira_thread_key") != thread_key:
+                    return
+
+                flow["jira_status"] = "ready"
+                flow["jira_checked_at"] = datetime.now().isoformat()
+                flow["jira_detection"] = detection
+                flow["missing_distribution_fields"] = missing_distribution_fields
+                if jira_version:
+                    flow["release_version"] = jira_version
+                if jira_ke:
+                    flow["ke"] = jira_ke
+
+                current_signature = self._template_signature(flow)
+                candidates = detection.get("candidates") or []
+                if detection.get("found"):
+                    jira_signature = self._template_signature(detection)
+                    if not flow.get("template_user_selected") or not current_signature:
+                        flow["category"] = detection.get("category", "")
+                        flow["release_full"] = detection.get("release_full", "")
+                        flow["release_clean"] = detection.get("release_clean", "")
+                        flow["playbooks_required"] = release_uses_playbooks(flow["release_full"])
+                    elif jira_signature and current_signature != jira_signature:
+                        flow["jira_template_notice"] = (
+                            f"Jira предлагает другой шаблон: {detection.get('category', '')} / "
+                            f"{detection.get('release_clean', '')}. Оставил выбранный ранее вариант."
+                        )
+                elif candidates:
+                    if not current_signature:
+                        flow["template_candidates"] = candidates
+                        flow["template_choice_required_after_jira"] = True
+                else:
+                    flow["template_not_found_after_jira"] = True
+            except Exception as exc:
+                logging.error("Release document flow Jira init failed for %s: %s", flow.get("release_key", ""), exc)
+                current_session = self.sessions.get(session_id)
+                current_flow = current_session.active_release_flow if current_session else None
+                if current_flow is flow and flow.get("jira_thread_key") == thread_key:
+                    flow["jira_status"] = "error"
+                    flow["jira_error"] = str(exc)
+
+        thread = threading.Thread(target=worker, name=f"release-doc-jira-{flow.get('release_key', '')}", daemon=True)
+        flow["jira_thread"] = thread
+        thread.start()
+
+    def _template_signature(self, template_or_flow: Dict) -> str:
+        if not template_or_flow:
+            return ""
+        return "::".join([
+            str(template_or_flow.get("category") or ""),
+            str(template_or_flow.get("release_full") or ""),
+            str(template_or_flow.get("release_clean") or ""),
+        ])
+
+    def _wait_release_document_jira_ready(self, flow: Dict, timeout: float = 30.0) -> Tuple[bool, str]:
+        if not flow:
+            return False, "Сценарий формирования документов не найден."
+        status = flow.get("jira_status")
+        if status == "ready":
+            return True, ""
+        if status == "error":
+            return False, flow.get("jira_error") or "Jira-проверка завершилась ошибкой."
+
+        thread = flow.get("jira_thread")
+        if thread and hasattr(thread, "join"):
+            thread.join(timeout=timeout)
+
+        status = flow.get("jira_status")
+        if status == "ready":
+            return True, ""
+        if status == "error":
+            return False, flow.get("jira_error") or "Jira-проверка завершилась ошибкой."
+        return False, "Jira-проверка еще выполняется. Повтори команду через несколько секунд."
+
+    def _ensure_release_document_jira_gate(self, session: ChatContext) -> Optional[Dict]:
+        flow = session.active_release_flow or {}
+        ready, error = self._wait_release_document_jira_ready(flow)
+        release_key = str(flow.get("release_key") or "").strip()
+        if not ready:
+            return {
+                "text": f"Пока не могу сформировать ZIP по *{release_key}*: {error}",
+                "intent": "release_document_flow",
+                "suggestions": ["Да, формируй документы", "Отмена"],
+                "metadata": {"type": "release_document_flow", "state": "jira_wait_error", "error": error},
+            }
+
+        if flow.get("template_not_found_after_jira") and not self._template_signature(flow):
+            return {
+                "text": (
+                    f"К сожалению, для *{release_key}* шаблоны документов сейчас не найдены. "
+                    "Через ручной формирователь можно попробовать выбрать похожий шаблон и скорректировать файлы вручную."
+                ),
+                "intent": "release_document_flow",
+                "suggestions": ["Открыть ручной генератор", "Сформировать документы по релизу"],
+                "metadata": {"type": "release_document_flow", "state": "template_not_found", "release_key": release_key},
+            }
+
+        if flow.get("template_choice_required_after_jira") and not self._template_signature(flow):
+            flow["state"] = "template_choice_requested"
+            flow["resume_after_template_choice"] = True
+            session.active_release_flow = flow
+            return self._build_template_choice_response(flow, flow.get("template_candidates") or [])
+
+        missing_distribution_fields = flow.get("missing_distribution_fields") or []
+        if missing_distribution_fields:
+            flow["state"] = "distribution_requested"
+            flow["resume_after_distribution"] = True
+            session.active_release_flow = flow
+            missing_text = ", ".join(
+                "версия сборки" if field == "release_version" else "КЭ дистрибутива"
+                for field in missing_distribution_fields
+            )
+            return {
+                "text": (
+                    f"В Jira по *{release_key}* не найден зарегистрированный дистрибутив: {missing_text}. "
+                    "Рекомендуем сначала зарегистрировать дистрибутив в релизе. Если документы нужно сформировать сейчас, "
+                    "пришли версию сборки и КЭ дистрибутива одним сообщением, например: `D-01.001.00-201 CI15184160`."
+                ),
+                "intent": "release_document_flow",
+                "suggestions": ["Отмена"],
+                "metadata": {
+                    "type": "release_document_flow",
+                    "state": "distribution_requested",
+                    "release_key": release_key,
+                    "missing_distribution_fields": missing_distribution_fields,
+                },
+            }
+
+        return None
+
     def _apply_template_candidate_to_flow(self, flow: Dict, candidate: Dict, release_uses_playbooks_func) -> None:
         release_full = str(candidate.get("release_full") or "").strip()
         flow["category"] = str(candidate.get("category") or "").strip()
@@ -2266,12 +2486,17 @@ Oplot умеет работать с рабочим столом дежурно�
         date_value = flow.get("date") or "-"
         oplot = flow.get("oplot") or "-"
         checker = flow.get("checker") or "-"
-        template_label = flow.get("release_full") or self._format_template_candidate_label(flow)
+        template_label = flow.get("release_full") or self._format_template_candidate_label(flow) or "уточняю по Jira"
+        jira_text = ""
+        if flow.get("jira_status") == "checking":
+            jira_text = "\nJira проверяю фоном: перед ZIP сверю актуальную сборку и КЭ."
+        elif flow.get("jira_status") == "ready":
+            jira_text = "\nJira-проверка уже завершена."
         return {
             "text": (
                 f"Нашел *{release_key} / {rov_key}* на {date_value}.\n"
                 f"Шаблон: `{template_label}`.\n"
-                f"OPLOT: `{oplot}`, проверяет: `{checker}`.\n\n"
+                f"OPLOT: `{oplot}`, проверяет: `{checker}`.{jira_text}\n\n"
                 "Пришли ссылку на инструкцию Confluence или напиши `инструкции нет`."
             ),
             "intent": "release_document_flow",
@@ -2325,103 +2550,38 @@ Oplot умеет работать с рабочим столом дежурно�
             }
 
         try:
-            from routes.release_routes import (
-                detect_release_template,
-                release_uses_playbooks,
-                _get_previous_version_from_monitor_snapshot,
-            )
-            from services.jira_service import get_release_jira_snapshot
-            jira_snapshot = get_release_jira_snapshot(release_key)
-            detection = detect_release_template(release_key, jira_snapshot=jira_snapshot)
-            if detection.get("error"):
-                raise ValueError(detection["error"])
-            candidates = detection.get("candidates") or []
-            jira_version = str(jira_snapshot.get("release_version") or "").strip()
-            jira_ke = str(jira_snapshot.get("ke") or "").strip()
-            missing_distribution_fields = []
-            if not jira_version:
-                missing_distribution_fields.append("release_version")
-            if not jira_ke:
-                missing_distribution_fields.append("ke")
-            try:
-                sync_release_monitor_jira_fields(
-                    row_key=row_key,
-                    release_key=release_key,
-                    release_version=jira_version,
-                    ke=jira_ke,
-                )
-            except Exception as exc:
-                logging.warning("Release document flow Jira sync failed for %s: %s", release_key, exc)
+            detection = self._build_release_doc_preliminary_detection(item)
             flow = {
                 "type": "release_document_flow",
                 "state": "instruction_requested",
                 "release_key": release_key,
                 "row_key": row_key,
                 "rov_key": rov_key,
-                "release_version": str(jira_version or item.get("release_version") or "").strip(),
-                "prev_version": str(_get_previous_version_from_monitor_snapshot(row_key, release_key) or "").strip(),
+                "release_version": str(item.get("release_version") or "").strip(),
+                "prev_version": self._get_release_doc_previous_version(row_key, release_key),
                 "oplot": oplot,
                 "checker": checker,
                 "date": date_value,
-                "ke": str(jira_ke or item.get("ke") or "").strip(),
-                "missing_distribution_fields": missing_distribution_fields,
+                "ke": str(item.get("ke") or "").strip(),
+                "missing_distribution_fields": [],
                 "playbooks": [],
                 "instruction_link": "",
+                "instruction_provided": False,
                 "zni_key": str(item.get("zni_key") or item.get("base_zni_key") or "").strip(),
                 "batch_context": batch_context,
+                "jira_status": "checking",
+                "jira_error": "",
+                "jira_checked_at": "",
             }
 
-            if detection.get("found"):
-                flow["category"] = detection.get("category", "")
-                flow["release_full"] = detection.get("release_full", "")
-                flow["release_clean"] = detection.get("release_clean", "")
-                flow["playbooks_required"] = release_uses_playbooks(flow["release_full"])
-            elif candidates:
-                selected_candidate = self._select_template_candidate(candidates, original_message)
-                if selected_candidate:
-                    self._apply_template_candidate_to_flow(flow, selected_candidate, release_uses_playbooks)
-                else:
-                    flow["state"] = "template_choice_requested"
-                    flow["template_candidates"] = candidates
-                    session.active_release_flow = flow
-                    return self._build_template_choice_response(flow, candidates)
-            else:
-                return {
-                    "text": (
-                        f"К сожалению, для *{release_key}* шаблоны документов сейчас не найдены. "
-                        "Через ручной формирователь документов можно попробовать выбрать шаблон другого подходящего типа "
-                        "и затем скорректировать сформированные файлы вручную."
-                    ),
-                    "intent": "release_document_flow",
-                    "suggestions": ["Открыть ручной генератор", "Сформировать документы по релизу"],
-                    "metadata": {"type": "release_document_flow", "state": "template_not_found", "release_key": release_key},
-                }
-
-            if missing_distribution_fields:
-                flow["state"] = "distribution_requested"
+            template_result = self._set_release_doc_flow_template(flow, detection, original_message)
+            if template_result and template_result.get("type") == "template_choice":
                 session.active_release_flow = flow
-                missing_text = ", ".join(
-                    "версия сборки" if field == "release_version" else "КЭ дистрибутива"
-                    for field in missing_distribution_fields
-                )
-                return {
-                    "text": (
-                        f"В Jira по *{release_key}* не найден зарегистрированный дистрибутив: {missing_text}. "
-                        "Рекомендуем сначала зарегистрировать дистрибутив в релизе. "
-                        "Если документы нужно сформировать сейчас, пришли версию сборки и КЭ дистрибутива одним сообщением, "
-                        "например: `D-01.001.00-201 CI15184160`."
-                    ),
-                    "intent": "release_document_flow",
-                    "suggestions": ["Отмена"],
-                    "metadata": {
-                        "type": "release_document_flow",
-                        "state": "distribution_requested",
-                        "release_key": release_key,
-                        "missing_distribution_fields": missing_distribution_fields,
-                    },
-                }
+                self._start_release_document_jira_init(session.session_id, flow)
+                return self._build_template_choice_response(flow, template_result.get("candidates") or [])
 
             session.active_release_flow = flow
+            self._start_release_document_jira_init(session.session_id, flow)
         except Exception as exc:
             logging.error("Release document flow init failed: %s", exc)
             return {
@@ -2521,6 +2681,25 @@ Oplot умеет работать с рабочим столом дежурно�
     def _handle_release_document_flow_reply(self, message: str, session: ChatContext) -> Dict:
         return self._handle_release_document_flow_reply_v2(message, session)
 
+    def _resume_release_doc_after_jira_interruption(self, session: ChatContext) -> Dict:
+        flow = session.active_release_flow or {}
+        if not flow.get("instruction_provided"):
+            flow["state"] = "instruction_requested"
+            session.active_release_flow = flow
+            return self._build_release_doc_instruction_response(flow)
+
+        if not flow.get("prev_version"):
+            flow["state"] = "prev_version_requested"
+            session.active_release_flow = flow
+            return {
+                "text": "Не смог автоматически определить версию отката. Напиши ее вручную.",
+                "intent": "release_document_flow",
+                "suggestions": ["Отмена"],
+                "metadata": {"type": "release_document_flow", "state": "prev_version_requested"},
+            }
+
+        return self._advance_release_doc_after_prev_version(session)
+
     def _extract_release_document_distribution_values(self, message: str, flow: Dict) -> Tuple[str, str]:
         text = str(message or "").strip()
         version_match = re.search(r"[DP]-\d+(?:\.\d+){2}(?:[.-][A-Za-z0-9_]+)+", text, re.IGNORECASE)
@@ -2611,8 +2790,10 @@ Oplot умеет работать с рабочим столом дежурно�
             flow["release_version"] = version
             flow["ke"] = ke
             flow["missing_distribution_fields"] = []
-            flow["state"] = "instruction_requested"
             session.active_release_flow = flow
+            if flow.pop("resume_after_distribution", False):
+                return self._resume_release_doc_after_jira_interruption(session)
+            flow["state"] = "instruction_requested"
             return self._build_release_doc_instruction_response(flow)
 
         if state == "checker_requested":
@@ -2672,6 +2853,7 @@ Oplot умеет работать с рабочим столом дежурно�
             try:
                 from routes.release_routes import release_uses_playbooks
                 self._apply_template_candidate_to_flow(flow, selected_candidate, release_uses_playbooks)
+                flow["template_user_selected"] = True
             except Exception as exc:
                 logging.error("Release template candidate selection failed: %s", exc)
                 return {
@@ -2679,6 +2861,18 @@ Oplot умеет работать с рабочим столом дежурно�
                     "intent": "release_document_flow",
                     "suggestions": ["Отмена"],
                     "metadata": {"type": "release_document_flow", "state": "template_choice_error", "error": str(exc)},
+                }
+            if flow.pop("resume_after_template_choice", False):
+                return self._resume_release_doc_after_jira_interruption(session)
+            if flow.get("instruction_link") or flow.get("prev_version"):
+                if flow.get("prev_version"):
+                    return self._advance_release_doc_after_prev_version(session)
+                flow["state"] = "prev_version_requested"
+                return {
+                    "text": "Не смог автоматически определить версию отката. Напиши ее вручную.",
+                    "intent": "release_document_flow",
+                    "suggestions": ["Отмена"],
+                    "metadata": {"type": "release_document_flow", "state": "prev_version_requested"},
                 }
             return self._build_release_doc_instruction_response(flow)
 
@@ -2696,6 +2890,7 @@ Oplot умеет работать с рабочим столом дежурно�
                     "metadata": {"type": "release_document_flow", "state": state},
                 }
             flow["instruction_link"] = instruction_link
+            flow["instruction_provided"] = True
             if flow.get("prev_version"):
                 flow["state"] = "prev_version_confirm"
                 return {
@@ -2795,6 +2990,11 @@ Oplot умеет работать с рабочим столом дежурно�
         flow = session.active_release_flow or {}
         release_key = flow.get("release_key", "")
         try:
+            gate_response = self._ensure_release_document_jira_gate(session)
+            if gate_response:
+                return gate_response
+            flow = session.active_release_flow or flow
+
             zni_text = ""
             if create_zni and not flow.get("zni_key"):
                 from services.release_monitor_service import create_release_monitor_zni
