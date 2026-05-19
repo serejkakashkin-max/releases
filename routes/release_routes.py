@@ -15,7 +15,8 @@ from extensions import RELEASE_STRUCTURE, ID_MAP  # Импортируем из 
 from config import DOC_TEMPLATES_ROOT, DEFAULT_BH_PLAYBOOKS, OPLOT_VALUES
 from services.jira_service import (
     get_release_version, get_issues_from_jira, get_ke_from_release, 
-    get_pob_from_release, extract_sm_id_and_summary, get_distributives_info
+    get_pob_from_release, extract_sm_id_and_summary, get_distributives_info,
+    get_release_jira_snapshot,
 )
 from services.release_monitor_service import get_release_monitor_snapshot, sync_release_monitor_jira_fields
 from services.docx_service import replace_keys_in_doc, check_document
@@ -48,12 +49,16 @@ def release_uses_playbooks(release_name: str, category: str = "") -> bool:
     return not any(marker in release_name_upper for marker in blocked_markers)
 
 
-def detect_release_template(release_id: str):
+def detect_release_template(release_id: str, jira_snapshot: dict = None):
     release_id = (release_id or "").strip()
     if not release_id:
         return {"found": False, "candidates": [], "error": "No release_id provided"}
 
-    sm_id, summary = extract_sm_id_and_summary(release_id)
+    if jira_snapshot is not None:
+        sm_id = jira_snapshot.get("template_sm_id")
+        summary = jira_snapshot.get("summary") or ""
+    else:
+        sm_id, summary = extract_sm_id_and_summary(release_id)
     catalog_candidates = find_template_entries_by_ke(sm_id) if sm_id else []
     if catalog_candidates:
         if len(catalog_candidates) == 1:
@@ -308,6 +313,7 @@ def _generate_release_zip_buffer(
     date_str: str,
     ke: str,
     selected_playbooks,
+    jira_snapshot: dict = None,
 ):
     if not category or not release_full:
         raise ValueError("Не выбраны категория и релиз. Используйте автоопределение или выберите вручную.")
@@ -324,10 +330,12 @@ def _generate_release_zip_buffer(
     if not template_files:
         raise ValueError(f"Шаблоны не найдены в директории: {template_dir}")
 
-    release_version = (get_release_version(release_id) or release_version or "").strip()
-    jira_issues = get_issues_from_jira(release_id)
+    snapshot = jira_snapshot or get_release_jira_snapshot(release_id)
+    release_version = (snapshot.get("release_version") or release_version or "").strip()
+    ke = (snapshot.get("ke") or ke or "").strip()
+    jira_issues = list(snapshot.get("issues") or [])
     instruction_block = "Выполнить пункты инструкции по внедрению ИНСТРУКЦИЯ" if instruction_link else "Отсутствуют"
-    pob = get_pob_from_release(release_id)
+    pob = snapshot.get("pob") or ""
     playbooks_text = "\n".join(selected_playbooks)
 
     context = {
@@ -400,7 +408,8 @@ def auto_detect():
     if not release_id:
         return jsonify({"error": "No release_id provided"}), 400
 
-    return jsonify(detect_release_template(release_id))
+    jira_snapshot = get_release_jira_snapshot(release_id)
+    return jsonify(detect_release_template(release_id, jira_snapshot=jira_snapshot))
 
 
 def _read_constructor_uploads(files):
@@ -501,14 +510,22 @@ def release_monitor_init():
     if not release_id:
         return jsonify({"success": False, "error": "Не указан номер релиза"}), 400
 
-    detection = detect_release_template(release_id)
+    started = datetime.now()
+    jira_snapshot = get_release_jira_snapshot(release_id)
+    detection = detect_release_template(release_id, jira_snapshot=jira_snapshot)
     if detection.get("error"):
         return jsonify({"success": False, "error": detection["error"]}), 400
 
     release_full = detection.get("release_full", "")
-    playbooks_required = release_uses_playbooks(release_full) if detection.get("found") else None
-    jira_version = get_release_version(release_id)
-    jira_ke = get_ke_from_release(release_id)
+    playbooks_required = (
+        detection.get("requires_playbooks")
+        if isinstance(detection.get("requires_playbooks"), bool)
+        else release_uses_playbooks(release_full)
+        if detection.get("found")
+        else None
+    )
+    jira_version = jira_snapshot.get("release_version") or ""
+    jira_ke = jira_snapshot.get("ke") or ""
     incoming_ke = (data.get("ke") or "").strip()
     missing_distribution_fields = []
     if not jira_version:
@@ -525,6 +542,12 @@ def release_monitor_init():
         )
     except Exception as exc:
         logging.warning("Не удалось точечно обновить строку релиза из Jira: %s", exc)
+    logging.debug(
+        "Release monitor document init for %s completed in %.1f ms (jira_cache=%s)",
+        release_id,
+        (datetime.now() - started).total_seconds() * 1000,
+        bool(jira_snapshot.get("from_cache")),
+    )
 
     return jsonify({
         "success": True,
@@ -570,13 +593,13 @@ def release_monitor_generate():
     if not date_str:
         return jsonify({"success": False, "error": "Не указана дата релиза"}), 400
 
-    if not release_version:
-        release_version = get_release_version(release_id)
-    if not ke:
-        ke = get_ke_from_release(release_id)
+    started = datetime.now()
+    jira_snapshot = get_release_jira_snapshot(release_id)
+    release_version = (jira_snapshot.get("release_version") or release_version or "").strip()
+    ke = (jira_snapshot.get("ke") or ke or "").strip()
 
     if not category or not release_full:
-        detection = detect_release_template(release_id)
+        detection = detect_release_template(release_id, jira_snapshot=jira_snapshot)
         if not detection.get("found"):
             return jsonify({
                 "success": False,
@@ -602,6 +625,13 @@ def release_monitor_generate():
             date_str=date_str,
             ke=ke,
             selected_playbooks=selected_playbooks,
+            jira_snapshot=jira_snapshot,
+        )
+        logging.debug(
+            "Release monitor document generate for %s completed in %.1f ms (jira_cache=%s)",
+            release_id,
+            (datetime.now() - started).total_seconds() * 1000,
+            bool(jira_snapshot.get("from_cache")),
         )
         increment_counter('release')
         return send_file(zip_buffer, as_attachment=True, download_name=f"{release_id}.zip")
@@ -649,10 +679,11 @@ def release():
             status = "Ошибка: Неверный формат даты"
             return render_template('release.html', basepath=BASE_PATH, categories=categories, releases=[], oplot_values=oplot_values, playbooks=playbooks, status=status, current_date=current_date, results=results)
         
-        release_version = get_release_version(release_id)
-        jira_issues = get_issues_from_jira(release_id)
+        jira_snapshot = get_release_jira_snapshot(release_id)
+        release_version = jira_snapshot.get("release_version") or ""
+        jira_issues = list(jira_snapshot.get("issues") or [])
         instruction_block = "Выполнить пункты инструкции по внедрению ИНСТРУКЦИЯ" if instruction_link else "Отсутствуют"
-        pob = get_pob_from_release(release_id)
+        pob = jira_snapshot.get("pob") or ""
         
         context = {
             "RELEASE_VERSION": release_version,

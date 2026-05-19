@@ -2,11 +2,24 @@
 import logging
 import requests
 import time
+import threading
 from datetime import datetime, timedelta
 from config import TOKENS
 
 
 VERSION_PATTERN = re.compile(r"[DP]-\d+(?:\.\d+){2}(?:-[A-Za-z0-9_]+)+")
+RELEASE_SNAPSHOT_TTL_SECONDS = 120
+RELEASE_SNAPSHOT_FIELDS = ",".join([
+    "summary",
+    "issuelinks",
+    "customfield_21710",
+    "customfield_27011",
+    "customfield_21713",
+    "customfield_18300",
+    "customfield_22200",
+])
+_RELEASE_SNAPSHOT_CACHE = {}
+_RELEASE_SNAPSHOT_LOCK = threading.RLock()
 
 
 def _iter_nested_values(value):
@@ -74,175 +87,223 @@ def get_jira_domain_and_token(release_id):
         return "https://jira.delta.sbrf.ru", TOKENS["delta_token"]
     return "https://jira.sberbank.ru", TOKENS["sberbank_token"]
 
-def get_release_version(release_id):
-    # ИСПРАВЛЕНО: Очищаем пробелы в начале и конце
-    release_id = release_id.strip()
-    
+
+def _extract_release_version_from_fields(fields):
+    for field_id in ("customfield_21710", "customfield_27011"):
+        version = _extract_version_from_distributive_field(fields.get(field_id, []))
+        if version:
+            return version
+
+    customfield_21713 = fields.get("customfield_21713", "")
+    if customfield_21713:
+        match = VERSION_PATTERN.search(str(customfield_21713))
+        if match:
+            return match.group(0)
+    return ""
+
+
+def _extract_distribution_ke_from_fields(fields):
+    for field_id in ("customfield_21710", "customfield_27011"):
+        ke = _extract_ke_from_distributive_field(fields.get(field_id, []))
+        if ke:
+            return ke
+    return ""
+
+
+def _extract_template_sm_id_from_fields(fields):
+    customfield_27011 = fields.get("customfield_27011", [])
+    if customfield_27011 and isinstance(customfield_27011, list):
+        for dist in customfield_27011:
+            if not isinstance(dist, dict):
+                continue
+            parent_ci = dist.get("PARENT_CI")
+            if parent_ci and str(parent_ci).startswith("CI"):
+                sm_id = str(parent_ci)[2:].lstrip("0")
+                if sm_id:
+                    return sm_id
+
+    for field in ["customfield_18300", "customfield_22200"]:
+        value = fields.get(field, [])
+        if value and isinstance(value, list):
+            first_value = value[0] if value else {}
+            if isinstance(first_value, dict):
+                sm_id = first_value.get("smId")
+                if sm_id:
+                    return sm_id
+    return None
+
+
+def _extract_related_issues_from_fields(fields):
+    issues = []
+    for link in fields.get("issuelinks", []) or []:
+        issue = link.get("inwardIssue")
+        if not issue:
+            continue
+        issue_type_name = issue.get("fields", {}).get("issuetype", {}).get("name", "")
+        if issue_type_name not in ("Bug", "Story"):
+            continue
+        key = issue.get("key")
+        summary = issue.get("fields", {}).get("summary", "")
+        issue_type = "Bug" if issue_type_name == "Bug" else "Story"
+        issues.append({"key": key, "summary": summary, "type": issue_type})
+    return issues
+
+
+def _extract_pob_from_fields(fields):
+    issuelinks = fields.get("issuelinks", []) or []
+    pobs = []
+    for link in issuelinks:
+        if link.get("type", {}).get("id") == "11500" and "inwardIssue" in link:
+            key = link["inwardIssue"].get("key")
+            if key:
+                match = re.search(r'(?:EMRM|SMECLM)-(\d+)', key)
+                if match:
+                    pobs.append((int(match.group(1)), key))
+    if pobs:
+        pobs.sort(reverse=True)
+        return pobs[0][1]
+
+    pobs = []
+    for link in issuelinks:
+        if link.get("type", {}).get("id") == "11600" and "inwardIssue" in link:
+            key = link["inwardIssue"].get("key")
+            if key:
+                match = re.search(r'(?:SMECSC|SMEPG)-(\d+)', key)
+                if match:
+                    pobs.append((int(match.group(1)), key))
+    if pobs:
+        pobs.sort(reverse=True)
+        return pobs[0][1]
+    return ""
+
+
+def _build_release_snapshot(release_id, domain, issue_data):
+    fields = issue_data.get("fields", {}) if isinstance(issue_data, dict) else {}
+    summary = fields.get("summary", "")
+    return {
+        "release_id": release_id,
+        "domain": domain,
+        "summary": summary,
+        "template_sm_id": _extract_template_sm_id_from_fields(fields),
+        "release_version": _extract_release_version_from_fields(fields),
+        "ke": _extract_distribution_ke_from_fields(fields),
+        "pob": _extract_pob_from_fields(fields),
+        "issues": _extract_related_issues_from_fields(fields),
+        "fields": fields,
+        "fetched_at": time.time(),
+    }
+
+
+def get_release_jira_snapshot(release_id, force_refresh=False):
+    release_id = (release_id or "").strip().upper()
+    if not release_id:
+        return {
+            "release_id": "",
+            "domain": "",
+            "summary": "",
+            "template_sm_id": None,
+            "release_version": "",
+            "ke": "",
+            "pob": "",
+            "issues": [],
+            "fields": {},
+            "fetched_at": time.time(),
+            "error": "No release_id provided",
+        }
+
+    now = time.time()
+    with _RELEASE_SNAPSHOT_LOCK:
+        cached = _RELEASE_SNAPSHOT_CACHE.get(release_id)
+        if (
+            not force_refresh
+            and cached
+            and (now - float(cached.get("fetched_at") or 0)) < RELEASE_SNAPSHOT_TTL_SECONDS
+        ):
+            snapshot = dict(cached)
+            snapshot["from_cache"] = True
+            return snapshot
+
+    started = time.perf_counter()
     domain, token = get_jira_domain_and_token(release_id)
     url = f"{domain}/rest/api/2/issue/{release_id}"
     headers = {"Authorization": f"Bearer {token}"}
     try:
-        response = requests.get(url, headers=headers, verify=False)
+        response = requests.get(
+            url,
+            headers=headers,
+            params={"fields": RELEASE_SNAPSHOT_FIELDS},
+            verify=False,
+            timeout=30,
+        )
         response.raise_for_status()
-        data = response.json()
-        
-        # Сначала пробуем получить версию из структурированных полей дистрибутива.
-        # Для CLM/Delta версия может лежать как в customfield_21710, так и в customfield_27011,
-        # иногда внутри вложенного объекта или текстового value/url.
-        fields = data.get("fields", {})
-        for field_id in ("customfield_21710", "customfield_27011"):
-            version = _extract_version_from_distributive_field(fields.get(field_id, []))
-            if version:
-                logging.info(f"Версия релиза {release_id} найдена в {field_id}: {version}")
-                return version
-        
-        # Fallback на customfield_21713
-        customfield_21713 = fields.get("customfield_21713", "")
-        if customfield_21713:
-            match = VERSION_PATTERN.search(customfield_21713)
-            if match:
-                version = match.group(0)
-                logging.info(f"Версия релиза {release_id} найдена в customfield_21713: {version}")
-                return version
-        
-        logging.warning(f"Версия релиза {release_id} не найдена ни в одном источнике")
-        return ""
+        snapshot = _build_release_snapshot(release_id, domain, response.json())
+        snapshot["from_cache"] = False
+        with _RELEASE_SNAPSHOT_LOCK:
+            _RELEASE_SNAPSHOT_CACHE[release_id] = dict(snapshot)
+        logging.debug(
+            "Jira release snapshot loaded for %s in %.1f ms",
+            release_id,
+            (time.perf_counter() - started) * 1000,
+        )
+        return snapshot
     except Exception as e:
-        logging.error(f"Ошибка получения версии релиза: {e}")
-        return ""
+        logging.error(f"Ошибка получения снимка релиза {release_id}: {e}")
+        return {
+            "release_id": release_id,
+            "domain": domain,
+            "summary": "",
+            "template_sm_id": None,
+            "release_version": "",
+            "ke": "",
+            "pob": "",
+            "issues": [],
+            "fields": {},
+            "fetched_at": time.time(),
+            "from_cache": False,
+            "error": str(e),
+        }
+
+def get_release_version(release_id):
+    # ИСПРАВЛЕНО: Очищаем пробелы в начале и конце
+    release_id = release_id.strip()
+    snapshot = get_release_jira_snapshot(release_id)
+    version = snapshot.get("release_version") or ""
+    if version:
+        logging.info(f"Версия релиза {release_id} найдена: {version}")
+        return version
+    logging.warning(f"Версия релиза {release_id} не найдена ни в одном источнике")
+    return ""
 
 
 def get_issues_from_jira(release_id):
     # ИСПРАВЛЕНО: Очищаем пробелы
     release_id = release_id.strip()
-    
-    domain, token = get_jira_domain_and_token(release_id)
-    url = f"{domain}/rest/api/2/issue/{release_id}"
-    headers = {"Authorization": f"Bearer {token}"}
-    try:
-        response = requests.get(url, headers=headers, verify=False)
-        response.raise_for_status()
-        data = response.json()
-        issues = []
-        issuelinks = data.get("fields", {}).get("issuelinks", [])
-        for link in issuelinks:
-            issue = link.get("inwardIssue")
-            if issue:
-                issue_type_name = issue.get("fields", {}).get("issuetype", {}).get("name", "")
-                if issue_type_name not in ("Bug", "Story"):
-                    continue
-                key = issue.get("key")
-                summary = issue.get("fields", {}).get("summary", "")
-                issue_type = "Bug" if issue_type_name == "Bug" else "Story"
-                issues.append({"key": key, "summary": summary, "type": issue_type})
-        return issues
-    except Exception as e:
-        logging.error(f"Ошибка получения задач: {e}")
-        return []
+    return list(get_release_jira_snapshot(release_id).get("issues") or [])
 
 def get_ke_from_release(release_id):
     # ИСПРАВЛЕНО: Очищаем пробелы
     release_id = release_id.strip()
-    
-    domain, token = get_jira_domain_and_token(release_id)
-    url = f"{domain}/rest/api/2/issue/{release_id}"
-    headers = {"Authorization": f"Bearer {token}"}
-    try:
-        response = requests.get(url, headers=headers, verify=False)
-        response.raise_for_status()
-        data = response.json()
-        fields = data.get("fields", {})
-        for field_id in ("customfield_21710", "customfield_27011"):
-            ke = _extract_ke_from_distributive_field(fields.get(field_id, []))
-            if ke:
-                logging.info(f"КЭ релиза {release_id} найден в {field_id}: {ke}")
-                return ke
-        return ""
-    except Exception as e:
-        logging.error(f"Ошибка получения КЭ: {e}")
-        return ""
+    ke = get_release_jira_snapshot(release_id).get("ke") or ""
+    if ke:
+        logging.info(f"КЭ релиза {release_id} найден: {ke}")
+    return ke
 
 def get_pob_from_release(release_id):
     # ИСПРАВЛЕНО: Очищаем пробелы
     release_id = release_id.strip()
-    
-    domain, token = get_jira_domain_and_token(release_id)
-    url = f"{domain}/rest/api/2/issue/{release_id}"
-    headers = {"Authorization": f"Bearer {token}"}
-    try:
-        response = requests.get(url, headers=headers, verify=False)
-        response.raise_for_status()
-        data = response.json()
-        issuelinks = data.get("fields", {}).get("issuelinks", [])
-        pobs = []
-        for link in issuelinks:
-            if link.get("type", {}).get("id") == "11500" and "inwardIssue" in link:
-                key = link["inwardIssue"].get("key")
-                if key:
-                    match = re.search(r'(?:EMRM|SMECLM)-(\d+)', key)
-                    if match:
-                        pobs.append((int(match.group(1)), key))
-        if pobs:
-            pobs.sort(reverse=True)
-            return pobs[0][1]
-        
-        pobs = []
-        for link in issuelinks:
-            if link.get("type", {}).get("id") == "11600" and "inwardIssue" in link:
-                key = link["inwardIssue"].get("key")
-                if key:
-                    # ИЗМЕНЕНО: Добавлена поддержка SMEPG в дополнение к SMECSC
-                    match = re.search(r'(?:SMECSC|SMEPG)-(\d+)', key)
-                    if match:
-                        pobs.append((int(match.group(1)), key))
-        if pobs:
-            pobs.sort(reverse=True)
-            return pobs[0][1]
-        return ""
-    except Exception as e:
-        logging.error(f"Ошибка получения POB: {e}")
-        return ""
+    return get_release_jira_snapshot(release_id).get("pob") or ""
 
 def extract_sm_id_and_summary(release_id):
     # ИСПРАВЛЕНО: Очищаем пробелы
     release_id = release_id.strip()
-    
-    domain, token = get_jira_domain_and_token(release_id)
-    url = f"{domain}/rest/api/2/issue/{release_id}"
-    headers = {"Authorization": f"Bearer {token}"}
-    try:
-        response = requests.get(url, headers=headers, verify=False)
-        response.raise_for_status()
-        data = response.json()
-        fields = data.get("fields", {})
-        summary = fields.get("summary", "")
-        
-        # ДОБАВЛЕНО: Сначала пробуем извлечь smId из customfield_27011 (новый формат для SMEPG/SMECSC)
-        # через поле PARENT_CI (формат CI00356132 -> 356132)
-        customfield_27011 = fields.get("customfield_27011", [])
-        if customfield_27011 and isinstance(customfield_27011, list) and len(customfield_27011) > 0:
-            for dist in customfield_27011:
-                parent_ci = dist.get("PARENT_CI")
-                if parent_ci and parent_ci.startswith("CI"):
-                    # Извлекаем числовую часть из PARENT_CI (формат CI00356132 -> 356132)
-                    sm_id = parent_ci[2:].lstrip('0')
-                    if sm_id:
-                        logging.info(f"Извлечен smId: {sm_id} из PARENT_CI {parent_ci} в customfield_27011")
-                        return sm_id, summary
-        
-        # Продолжаем поиск в старых полях, если в customfield_27011 не нашли
-        for field in ["customfield_18300", "customfield_22200"]:
-            value = fields.get(field, [])
-            if value and isinstance(value, list) and len(value) > 0:
-                sm_id = value[0].get("smId")
-                if sm_id:
-                    logging.info(f"Извлечен smId: {sm_id} и summary: {summary} из {field}")
-                    return sm_id, summary
-        logging.warning(f"smId не найден для {release_id}")
-        return None, summary
-    except Exception as e:
-        logging.error(f"Ошибка извлечения smId и summary: {e}")
-        return None, ""
+    snapshot = get_release_jira_snapshot(release_id)
+    sm_id = snapshot.get("template_sm_id")
+    summary = snapshot.get("summary") or ""
+    if sm_id:
+        logging.info(f"Извлечен smId: {sm_id} и summary: {summary}")
+        return sm_id, summary
+    logging.warning(f"smId не найден для {release_id}")
+    return None, summary
 
 # --- Функции для получения дистрибутивов ---
 def get_issue_id(issue_key):
