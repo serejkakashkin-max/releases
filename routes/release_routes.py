@@ -49,44 +49,47 @@ def release_uses_playbooks(release_name: str, category: str = "") -> bool:
     return not any(marker in release_name_upper for marker in blocked_markers)
 
 
-def detect_release_template(release_id: str, jira_snapshot: dict = None):
-    release_id = (release_id or "").strip()
-    if not release_id:
-        return {"found": False, "candidates": [], "error": "No release_id provided"}
+def _catalog_template_payload(candidate: dict) -> dict:
+    return {
+        "found": True,
+        "category": candidate["category"],
+        "release_clean": candidate["release_clean"],
+        "release_full": candidate["release_full"],
+        "variant": candidate.get("variant", ""),
+        "requires_playbooks": candidate.get("requires_playbooks"),
+        "candidates": None,
+    }
 
-    if jira_snapshot is not None:
-        sm_id = jira_snapshot.get("template_sm_id")
-        summary = jira_snapshot.get("summary") or ""
-    else:
-        sm_id, summary = extract_sm_id_and_summary(release_id)
+
+def _legacy_template_payload(category: str, release_clean: str, release_full: str) -> dict:
+    return {
+        "found": True,
+        "category": category,
+        "release_clean": release_clean,
+        "release_full": release_full,
+        "requires_playbooks": release_uses_playbooks(release_full, category),
+        "candidates": None,
+    }
+
+
+def detect_release_template_from_values(sm_id: str, summary: str = ""):
+    """Определяет шаблон по уже известным КЭ релиза и summary без запроса в Jira."""
+    sm_id = (sm_id or "").strip()
+    summary = summary or ""
+    result = {"found": False, "candidates": [], "template_sm_id": sm_id}
+
     catalog_candidates = find_template_entries_by_ke(sm_id) if sm_id else []
     if catalog_candidates:
         if len(catalog_candidates) == 1:
-            candidate = catalog_candidates[0]
-            return {
-                "found": True,
-                "category": candidate["category"],
-                "release_clean": candidate["release_clean"],
-                "release_full": candidate["release_full"],
-                "variant": candidate.get("variant", ""),
-                "requires_playbooks": candidate.get("requires_playbooks"),
-                "candidates": None,
-            }
+            return {**_catalog_template_payload(catalog_candidates[0]), "template_sm_id": sm_id}
 
         selected = select_template_by_summary(catalog_candidates, summary)
         if selected:
-            return {
-                "found": True,
-                "category": selected["category"],
-                "release_clean": selected["release_clean"],
-                "release_full": selected["release_full"],
-                "variant": selected.get("variant", ""),
-                "requires_playbooks": selected.get("requires_playbooks"),
-                "candidates": None,
-            }
+            return {**_catalog_template_payload(selected), "template_sm_id": sm_id}
 
         return {
             "found": False,
+            "template_sm_id": sm_id,
             "candidates": [
                 {
                     "category": candidate["category"],
@@ -105,13 +108,7 @@ def detect_release_template(release_id: str, jira_snapshot: dict = None):
             category, release_name_clean = candidates[0]
             for clean, full in RELEASE_STRUCTURE.get(category, []):
                 if clean == release_name_clean:
-                    return {
-                        "found": True,
-                        "category": category,
-                        "release_clean": release_name_clean,
-                        "release_full": full,
-                        "candidates": None,
-                    }
+                    return {**_legacy_template_payload(category, release_name_clean, full), "template_sm_id": sm_id}
         else:
             summary_lower = summary.lower() if summary else ""
             selected = None
@@ -133,28 +130,35 @@ def detect_release_template(release_id: str, jira_snapshot: dict = None):
                 category, release_name_clean = selected
                 for clean, full in RELEASE_STRUCTURE.get(category, []):
                     if clean == release_name_clean:
-                        return {
-                            "found": True,
-                            "category": category,
-                            "release_clean": release_name_clean,
-                            "release_full": full,
-                            "candidates": None,
-                        }
+                        return {**_legacy_template_payload(category, release_name_clean, full), "template_sm_id": sm_id}
+
             candidates_list = []
             for cand_category, cand_release_clean in candidates:
                 for clean, full in RELEASE_STRUCTURE.get(cand_category, []):
                     if clean == cand_release_clean:
-                        candidates_list.append(
-                            {
-                                "category": cand_category,
-                                "release_clean": cand_release_clean,
-                                "release_full": full,
-                            }
-                        )
+                        candidates_list.append({
+                            "category": cand_category,
+                            "release_clean": cand_release_clean,
+                            "release_full": full,
+                            "requires_playbooks": release_uses_playbooks(full, cand_category),
+                        })
                         break
-            return {"found": False, "candidates": candidates_list}
+            return {"found": False, "template_sm_id": sm_id, "candidates": candidates_list}
 
-    return {"found": False, "candidates": []}
+    return result
+
+
+def detect_release_template(release_id: str, jira_snapshot: dict = None):
+    release_id = (release_id or "").strip()
+    if not release_id:
+        return {"found": False, "candidates": [], "error": "No release_id provided"}
+
+    if jira_snapshot is not None:
+        sm_id = jira_snapshot.get("template_sm_id")
+        summary = jira_snapshot.get("summary") or ""
+    else:
+        sm_id, summary = extract_sm_id_and_summary(release_id)
+    return detect_release_template_from_values(sm_id, summary)
 
 
 def _safe_int(value):
@@ -190,9 +194,7 @@ def _get_constructor_rollback_group(item):
     return ""
 
 
-def _get_previous_version_from_monitor_snapshot(row_key: str, release_id: str):
-    snapshot = get_release_monitor_snapshot() or {}
-    items = snapshot.get("items") or []
+def get_previous_version_from_monitor_items(items, row_key: str, release_id: str):
     if not items:
         return ""
 
@@ -287,6 +289,11 @@ def _get_previous_version_from_monitor_snapshot(row_key: str, release_id: str):
             return _candidate_version(max(previous_numbered_candidates, key=_candidate_sort_key))
 
     return ""
+
+
+def _get_previous_version_from_monitor_snapshot(row_key: str, release_id: str):
+    snapshot = get_release_monitor_snapshot() or {}
+    return get_previous_version_from_monitor_items(snapshot.get("items") or [], row_key, release_id)
 
 
 def _normalize_release_date(raw_date: str):

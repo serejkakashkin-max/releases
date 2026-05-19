@@ -1617,6 +1617,55 @@
             font-size: 0.88rem;
         }
 
+        .release-doc-jira-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.42rem;
+            padding: 0.35rem 0.65rem;
+            border-radius: 999px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            font-size: 0.78rem;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+
+        .release-doc-jira-status.checking {
+            border-color: rgba(13, 110, 253, 0.3);
+            background: rgba(13, 110, 253, 0.1);
+            color: var(--primary);
+        }
+
+        .release-doc-jira-status.ready {
+            border-color: rgba(25, 135, 84, 0.3);
+            background: rgba(25, 135, 84, 0.1);
+            color: #2fbf71;
+        }
+
+        .release-doc-jira-status.warning {
+            border-color: rgba(255, 193, 7, 0.35);
+            background: rgba(255, 193, 7, 0.12);
+            color: #d99a00;
+        }
+
+        .release-doc-jira-status.error {
+            border-color: rgba(220, 53, 69, 0.32);
+            background: rgba(220, 53, 69, 0.1);
+            color: #ff6b7a;
+        }
+
+        .release-doc-inline-alert {
+            border-radius: 14px;
+            border: 1px solid rgba(255, 193, 7, 0.28);
+            background: rgba(255, 193, 7, 0.08);
+            color: var(--text-primary);
+            padding: 0.75rem 0.9rem;
+            margin-bottom: 1rem;
+            font-size: 0.88rem;
+            line-height: 1.45;
+        }
+
         .release-doc-summary {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1706,23 +1755,6 @@
             min-height: 220px;
             color: var(--text-secondary);
             flex-direction: column;
-        }
-
-        .release-doc-pending-panel {
-            border-radius: 16px;
-            border: 1px solid rgba(13, 110, 253, 0.25);
-            background: rgba(13, 110, 253, 0.08);
-            padding: 1rem;
-            margin-top: 0.5rem;
-        }
-
-        .release-doc-pending-status {
-            display: flex;
-            align-items: center;
-            gap: 0.7rem;
-            color: var(--text-primary);
-            font-weight: 800;
-            margin-bottom: 0.45rem;
         }
 
         .release-doc-error {
@@ -2291,6 +2323,8 @@
         let releaseUpdateBannerMeta = null;
         let releaseUpdateBannerTimer = null;
         const RELEASE_REVIEWER_OPTIONS = {{ reviewer_options | tojson | safe }};
+        const RELEASE_TEMPLATE_HINTS = {{ release_monitor_template_hints | default({}) | tojson | safe }};
+        const RELEASE_DOCUMENT_PLAYBOOKS = {{ release_document_playbooks | default([]) | tojson | safe }};
         let releaseDocumentModalInstance = null;
         let releaseDocumentWizardState = null;
         let releaseDocumentInitSequence = 0;
@@ -3082,15 +3116,75 @@ function buildReviewerCell(item) {
             saveReleaseManualOverride(true);
         }
 
+        function getReleaseDocumentTemplateHint(item) {
+            if (!item) {
+                return { found: false, candidates: [] };
+            }
+            const rowKey = item.row_key || item.release_key || '';
+            return RELEASE_TEMPLATE_HINTS[rowKey] || RELEASE_TEMPLATE_HINTS[item.release_key] || { found: false, candidates: [] };
+        }
+
+        function buildReleaseDocumentInitialData(item) {
+            const detection = getReleaseDocumentTemplateHint(item);
+            const templateSource = detection?.found ? detection : null;
+            return {
+                success: true,
+                detection,
+                distribution_missing: false,
+                missing_distribution_fields: [],
+                playbooks_required: typeof templateSource?.requires_playbooks === 'boolean'
+                    ? templateSource.requires_playbooks
+                    : templateSource?.release_full
+                        ? releaseUsesPlaybooks(templateSource.release_full)
+                        : null,
+                playbooks: RELEASE_DOCUMENT_PLAYBOOKS,
+                prev_version: detection?.prev_version || '',
+                sync_patch: {},
+            };
+        }
+
+        function getReleaseDocumentTemplateChoice(state) {
+            const detection = state?.initData?.detection || {};
+            return state?.templateChoice || (detection.found ? detection : null);
+        }
+
+        function getReleaseDocumentTemplateSignature(template) {
+            if (!template) {
+                return '';
+            }
+            return [
+                template.category || '',
+                template.release_full || '',
+                template.release_clean || '',
+            ].join('::');
+        }
+
+        function getReleaseDocumentJiraStatusHtml(state) {
+            const status = state?.initStatus || 'loading';
+            if (status === 'ready') {
+                const timeText = state.initCompletedAt ? ` ${state.initCompletedAt}` : '';
+                return `<span class="release-doc-jira-status ready"><i class="bi bi-check2-circle"></i> Jira: проверено${escapeHtml(timeText)}</span>`;
+            }
+            if (status === 'error') {
+                return `<span class="release-doc-jira-status error"><i class="bi bi-exclamation-triangle"></i> Jira: ошибка проверки</span>`;
+            }
+            return `
+                <span class="release-doc-jira-status checking">
+                    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                    Jira: проверяю
+                </span>
+            `;
+        }
+
         function getReleaseDocumentSummaryCards(state) {
             const item = state.item;
-            const templateTitle = state.templateChoice
-                ? `${state.templateChoice.category} / ${state.templateChoice.release_clean}`
-                : state.initData?.detection?.found
-                    ? `${state.initData.detection.category} / ${state.initData.detection.release_clean}`
-                    : state.initStatus === 'loading'
-                        ? 'Проверяю Jira'
-                        : 'Будет уточнен по шагам';
+            const detection = state.initData?.detection || {};
+            const templateChoice = getReleaseDocumentTemplateChoice(state);
+            const templateTitle = templateChoice
+                ? `${templateChoice.category} / ${templateChoice.release_clean}`
+                : Array.isArray(detection.candidates) && detection.candidates.length
+                    ? 'Нужно выбрать шаблон'
+                    : 'Будет уточнен по шагам';
 
             return `
                 <div class="release-doc-summary">
@@ -3139,6 +3233,125 @@ function buildReviewerCell(item) {
             }
 
             return steps;
+        }
+
+        function syncReleaseDocumentVisibleForm(state) {
+            if (!state?.form) {
+                return;
+            }
+            state.dirty = state.dirty || {};
+
+            const updateField = (field, value) => {
+                if (value !== state.form[field]) {
+                    state.dirty[field] = true;
+                    state.form[field] = value;
+                }
+            };
+
+            const versionInput = document.getElementById('releaseDocumentReleaseVersion');
+            if (versionInput) updateField('release_version', (versionInput.value || '').trim());
+
+            const keInput = document.getElementById('releaseDocumentKe');
+            if (keInput) updateField('ke', (keInput.value || '').trim());
+
+            const prevInput = document.getElementById('releaseDocumentPrevVersion');
+            if (prevInput) updateField('prev_version', (prevInput.value || '').trim());
+
+            const instructionInput = document.getElementById('releaseDocumentInstructionLink');
+            if (instructionInput) updateField('instruction_link', (instructionInput.value || '').trim());
+
+            const dateInput = document.getElementById('releaseDocumentDate');
+            if (dateInput) updateField('date', dateInput.value || '');
+
+            const playbookInputs = Array.from(document.querySelectorAll('input[name="releaseDocumentPlaybooks"]'));
+            if (playbookInputs.length) {
+                const selected = playbookInputs.filter(input => input.checked).map(input => input.value);
+                if (selected.join('\n') !== (state.form.playbooks || []).join('\n')) {
+                    state.dirty.playbooks = true;
+                    state.form.playbooks = selected;
+                }
+            }
+
+            const createZniInput = document.getElementById('releaseDocumentCreateZni');
+            if (createZniInput && createZniInput.checked !== state.form.create_zni) {
+                state.dirty.create_zni = true;
+                state.form.create_zni = createZniInput.checked;
+            }
+
+            const reporterSelect = document.getElementById('releaseDocumentZniReporter');
+            if (reporterSelect) updateField('zni_reporter', reporterSelect.value || '');
+        }
+
+        function markReleaseDocumentStepCompleted(state, stepType) {
+            state.completedStepTypes = state.completedStepTypes || {};
+            if (stepType) {
+                state.completedStepTypes[stepType] = true;
+            }
+        }
+
+        function rebuildReleaseDocumentStepsKeepingProgress(state, previousStepType) {
+            const nextSteps = buildReleaseDocumentSteps(state);
+            const completed = state.completedStepTypes || {};
+            let nextIndex = previousStepType
+                ? nextSteps.findIndex(step => step.type === previousStepType)
+                : state.stepIndex;
+            if (nextIndex < 0) {
+                nextIndex = Math.min(state.stepIndex || 0, Math.max(nextSteps.length - 1, 0));
+            }
+
+            const firstIncompleteBefore = nextSteps.findIndex((step, index) => (
+                index <= nextIndex && !completed[step.type]
+            ));
+
+            state.steps = nextSteps;
+            state.stepIndex = firstIncompleteBefore >= 0 ? firstIncompleteBefore : nextIndex;
+        }
+
+        function applyReleaseDocumentInitData(state, data) {
+            if (!state || !data) {
+                return;
+            }
+
+            syncReleaseDocumentVisibleForm(state);
+            const previousStepType = state.steps[state.stepIndex]?.type || '';
+            const previousTemplate = getReleaseDocumentTemplateChoice(state);
+            const previousSignature = getReleaseDocumentTemplateSignature(previousTemplate);
+            const jiraDetection = data.detection || {};
+            const jiraTemplate = jiraDetection.found ? jiraDetection : null;
+            const jiraSignature = getReleaseDocumentTemplateSignature(jiraTemplate);
+
+            state.initData = {
+                ...data,
+                playbooks: Array.isArray(data.playbooks) ? data.playbooks : RELEASE_DOCUMENT_PLAYBOOKS,
+            };
+
+            const hasTemplate = jiraDetection.found || (Array.isArray(jiraDetection.candidates) && jiraDetection.candidates.length);
+            state.initStatus = hasTemplate ? 'ready' : 'error';
+            state.initCompletedAt = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+            state.initError = hasTemplate
+                ? ''
+                : 'К сожалению, для данного типа релиза шаблоны документов сейчас не найдены. Через ручной формирователь документов можно попробовать выбрать шаблон другого подходящего типа и затем скорректировать сформированные файлы вручную.';
+
+            applyReleaseMonitorJiraSyncPatch(data.sync_patch || {});
+
+            if (!state.dirty.release_version) {
+                state.form.release_version = data.release_version || state.form.release_version;
+            }
+            if (!state.dirty.ke) {
+                state.form.ke = data.ke || state.form.ke;
+            }
+            if (!state.dirty.prev_version) {
+                state.form.prev_version = data.prev_version || state.form.prev_version;
+            }
+
+            state.jiraNotice = '';
+            if (state.userSelectedTemplate && jiraSignature && previousSignature && jiraSignature !== previousSignature) {
+                state.jiraNotice = 'Jira предлагает другой шаблон. Я оставил выбранный вами вариант, чтобы не сбивать заполнение.';
+            } else if (!state.userSelectedTemplate && previousSignature && jiraSignature && previousSignature !== jiraSignature) {
+                state.jiraNotice = `Jira уточнила шаблон: ${jiraTemplate.category} / ${jiraTemplate.release_clean}.`;
+            }
+
+            rebuildReleaseDocumentStepsKeepingProgress(state, previousStepType);
         }
 
         function ensureReleaseDocumentModal() {
@@ -3204,55 +3417,6 @@ function buildReviewerCell(item) {
             );
         }
 
-        function renderReleaseDocumentInitPending(state) {
-            const body = document.getElementById('releaseDocumentModalBody');
-            const prevBtn = document.getElementById('releaseDocumentPrevBtn');
-            const nextBtn = document.getElementById('releaseDocumentNextBtn');
-            if (!state || !body) {
-                return;
-            }
-
-            const item = state.item || {};
-            body.innerHTML = `
-                ${getReleaseDocumentSummaryCards(state)}
-                <div class="release-doc-pending-panel">
-                    <div class="release-doc-pending-status">
-                        <span class="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></span>
-                        Проверяю актуальные данные в Jira
-                    </div>
-                    <div class="release-doc-step-description mb-3">
-                        Окно уже открыто по данным таблицы. Сейчас фоном уточняю шаблон, версию дистрибутива, КЭ и предыдущую версию.
-                    </div>
-                    <div class="release-doc-summary mb-0">
-                        <div class="release-doc-summary-card">
-                            <span class="release-doc-summary-label">РОВ</span>
-                            <div class="release-doc-summary-value">${escapeHtml(item.pob_key || item.rov_key || '-')}</div>
-                        </div>
-                        <div class="release-doc-summary-card">
-                            <span class="release-doc-summary-label">Дата из таблицы</span>
-                            <div class="release-doc-summary-value">${escapeHtml(item.deployment_start || '-')}</div>
-                        </div>
-                        <div class="release-doc-summary-card">
-                            <span class="release-doc-summary-label">Сборка из таблицы</span>
-                            <div class="release-doc-summary-value">${escapeHtml(state.form.release_version || 'проверяю')}</div>
-                        </div>
-                        <div class="release-doc-summary-card">
-                            <span class="release-doc-summary-label">Предыдущая версия</span>
-                            <div class="release-doc-summary-value">${escapeHtml(state.form.prev_version || 'проверяю')}</div>
-                        </div>
-                    </div>
-                </div>
-            `;
-
-            if (prevBtn) {
-                prevBtn.style.display = 'none';
-            }
-            if (nextBtn) {
-                nextBtn.disabled = true;
-                nextBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Проверяем Jira...';
-            }
-        }
-
         async function loadReleaseDocumentInit(state) {
             if (!state?.item) {
                 return;
@@ -3281,17 +3445,7 @@ function buildReviewerCell(item) {
                     return;
                 }
 
-                state.initData = data;
-                state.initStatus = 'ready';
-                applyReleaseMonitorJiraSyncPatch(data.sync_patch || {});
-                state.form.release_version = data.release_version || state.form.release_version;
-                state.form.ke = data.ke || state.form.ke;
-                state.form.prev_version = data.prev_version || state.form.prev_version;
-                if (!data.detection?.found && !(Array.isArray(data.detection?.candidates) && data.detection.candidates.length)) {
-                    throw new Error('К сожалению, для данного типа релиза шаблоны документов сейчас не найдены. Через ручной формирователь документов можно попробовать выбрать шаблон другого подходящего типа и затем скорректировать сформированные файлы вручную.');
-                }
-                state.steps = buildReleaseDocumentSteps(state);
-                state.stepIndex = 0;
+                applyReleaseDocumentInitData(state, data);
                 renderReleaseDocumentWizardStep();
             } catch (error) {
                 console.error('Release document init error:', error);
@@ -3300,7 +3454,8 @@ function buildReviewerCell(item) {
                 }
                 state.initStatus = 'error';
                 state.initError = error.message || 'Не удалось подготовить форму генерации';
-                setReleaseDocumentModalError(state.initError);
+                state.jiraNotice = state.initError;
+                renderReleaseDocumentWizardStep();
             }
         }
 
@@ -3406,21 +3561,26 @@ function buildReviewerCell(item) {
 
             const initRequestId = releaseDocumentInitSequence + 1;
             releaseDocumentInitSequence = initRequestId;
+            const initialData = buildReleaseDocumentInitialData(item);
             releaseDocumentWizardState = {
                 item: { ...item },
-                initData: null,
+                initData: initialData,
                 initStatus: 'loading',
                 initError: '',
                 initRequestId,
                 initPromise: null,
                 cancelled: false,
+                dirty: {},
+                completedStepTypes: {},
+                userSelectedTemplate: false,
+                jiraNotice: '',
                 templateChoice: null,
                 steps: [],
                 stepIndex: 0,
                 form: {
                     release_id: item.release_key || '',
                     release_version: item.release_version || '',
-                    prev_version: '',
+                    prev_version: initialData.prev_version || '',
                     oplot: item.psi_owner || '',
                     checker: item.psi_checker || '',
                     instruction_link: '',
@@ -3431,10 +3591,11 @@ function buildReviewerCell(item) {
                     zni_reporter: ''
                 }
             };
+            releaseDocumentWizardState.steps = buildReleaseDocumentSteps(releaseDocumentWizardState);
 
             const modal = ensureReleaseDocumentModal();
             document.getElementById('releaseDocumentModalSubtitle').textContent = `Релиз ${item.release_key}`;
-            renderReleaseDocumentInitPending(releaseDocumentWizardState);
+            renderReleaseDocumentWizardStep();
             modal.show();
             releaseDocumentWizardState.initPromise = loadReleaseDocumentInit(releaseDocumentWizardState);
         }
@@ -3444,8 +3605,15 @@ function buildReviewerCell(item) {
             if (!createZniInput || !state) {
                 return true;
             }
+            state.dirty = state.dirty || {};
+            if (state.form.create_zni !== createZniInput.checked) {
+                state.dirty.create_zni = true;
+            }
             state.form.create_zni = createZniInput.checked;
             const reporterSelect = document.getElementById('releaseDocumentZniReporter');
+            if (reporterSelect && state.form.zni_reporter !== (reporterSelect.value || '')) {
+                state.dirty.zni_reporter = true;
+            }
             state.form.zni_reporter = reporterSelect?.value || '';
             if (!state.form.create_zni) {
                 return true;
@@ -3519,7 +3687,11 @@ function buildReviewerCell(item) {
                     return false;
                 }
                 state.templateChoice = candidate;
+                state.userSelectedTemplate = true;
+                state.dirty.template = true;
                 state.steps = buildReleaseDocumentSteps(state);
+                state.stepIndex = -1;
+                markReleaseDocumentStepCompleted(state, step.type);
                 return syncReleaseDocumentZniForm(state);
             }
 
@@ -3538,6 +3710,8 @@ function buildReviewerCell(item) {
                 }
                 state.form.release_version = version;
                 state.form.ke = ke;
+                state.dirty.release_version = true;
+                state.dirty.ke = true;
                 try {
                     await saveReleaseDocumentManualDistribution(state);
                 } catch (error) {
@@ -3545,6 +3719,7 @@ function buildReviewerCell(item) {
                     alert('Ошибка сохранения ручных данных дистрибутива: ' + error.message);
                     return false;
                 }
+                markReleaseDocumentStepCompleted(state, step.type);
                 return syncReleaseDocumentZniForm(state);
             }
 
@@ -3556,12 +3731,16 @@ function buildReviewerCell(item) {
                     return false;
                 }
                 state.form.prev_version = value;
+                state.dirty.prev_version = true;
+                markReleaseDocumentStepCompleted(state, step.type);
                 return syncReleaseDocumentZniForm(state);
             }
 
             if (step.type === 'instruction_link') {
                 const input = document.getElementById('releaseDocumentInstructionLink');
                 state.form.instruction_link = (input?.value || '').trim();
+                state.dirty.instruction_link = true;
+                markReleaseDocumentStepCompleted(state, step.type);
                 return syncReleaseDocumentZniForm(state);
             }
 
@@ -3573,12 +3752,16 @@ function buildReviewerCell(item) {
                     return false;
                 }
                 state.form.date = value;
+                state.dirty.date = true;
+                markReleaseDocumentStepCompleted(state, step.type);
                 return syncReleaseDocumentZniForm(state);
             }
 
             if (step.type === 'playbooks') {
                 state.form.playbooks = Array.from(document.querySelectorAll('input[name="releaseDocumentPlaybooks"]:checked'))
                     .map(input => input.value);
+                state.dirty.playbooks = true;
+                markReleaseDocumentStepCompleted(state, step.type);
             }
             return syncReleaseDocumentZniForm(state);
         }
@@ -3586,7 +3769,7 @@ function buildReviewerCell(item) {
         function getReleaseDocumentStepContent(state, step, stepNumber, totalSteps) {
             const item = state.item;
             const detection = state.initData?.detection || {};
-            const templateChoice = state.templateChoice || (detection.found ? detection : null);
+            const templateChoice = getReleaseDocumentTemplateChoice(state);
             const templateText = templateChoice
                 ? `${templateChoice.category} / ${templateChoice.release_clean}`
                 : Array.isArray(detection.candidates) && detection.candidates.length
@@ -3596,8 +3779,12 @@ function buildReviewerCell(item) {
             let content = `
                 <div class="release-doc-step-meta">
                     <div class="release-doc-step-badge"><i class="bi bi-magic"></i> Шаг ${stepNumber} из ${totalSteps}</div>
-                    <div class="release-doc-template">Шаблон: ${escapeHtml(templateText)}</div>
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <div class="release-doc-template">Шаблон: ${escapeHtml(templateText)}</div>
+                        ${getReleaseDocumentJiraStatusHtml(state)}
+                    </div>
                 </div>
+                ${state.jiraNotice ? `<div class="release-doc-inline-alert">${escapeHtml(state.jiraNotice)}</div>` : ''}
                 ${getReleaseDocumentSummaryCards(state)}
             `;
 
@@ -3671,7 +3858,7 @@ function buildReviewerCell(item) {
                     <div class="release-doc-field-help">Текущая дата из таблицы: ${escapeHtml(item.deployment_start || 'не указана, можно выбрать вручную')}</div>
                 `;
             } else if (step.type === 'playbooks') {
-                const playbooks = Array.isArray(state.initData?.playbooks) ? state.initData.playbooks : [];
+                const playbooks = Array.isArray(state.initData?.playbooks) ? state.initData.playbooks : RELEASE_DOCUMENT_PLAYBOOKS;
                 content += `
                     <div class="release-doc-step-title">Выбор плейбуков</div>
                     <div class="release-doc-step-description">
@@ -3763,10 +3950,6 @@ function buildReviewerCell(item) {
                 return;
             }
 
-            if (!(await waitReleaseDocumentInitReady(state))) {
-                return;
-            }
-
             if (!(await validateReleaseDocumentCurrentStep())) {
                 return;
             }
@@ -3789,6 +3972,11 @@ function buildReviewerCell(item) {
             }
 
             if (!(await waitReleaseDocumentInitReady(state))) {
+                return;
+            }
+
+            if (state.stepIndex < state.steps.length - 1) {
+                renderReleaseDocumentWizardStep();
                 return;
             }
 

@@ -30,11 +30,43 @@ from services.release_monitor_service import (
 )
 from services.report_service import save_report_to_disk
 from services.release_report_service import get_release_report_service
-from config import DASHBOARD_CACHE_TTL, DASHBOARD_ASSIGNEES_DISPLAY
+from routes.release_routes import detect_release_template_from_values, get_previous_version_from_monitor_items
+from config import DASHBOARD_CACHE_TTL, DASHBOARD_ASSIGNEES_DISPLAY, DEFAULT_BH_PLAYBOOKS
 
 BASE_PATH = os.getenv("BASE_PATH", "")
 
 dashboard_bp = Blueprint('dashboard', __name__)
+
+
+def _build_release_monitor_template_hints(items):
+    """Готовит быстрые подсказки шаблонов по КЭ релиза из snapshot без Jira-запросов."""
+    hints = {}
+    for item in items or []:
+        row_key = str(item.get("row_key") or item.get("release_key") or "").strip()
+        release_key = str(item.get("release_key") or "").strip()
+        if not row_key and not release_key:
+            continue
+
+        summary = (
+            item.get("release_summary")
+            or item.get("base_release_summary")
+            or " ".join(item.get("release_name_lines") or [])
+        )
+        try:
+            detection = detect_release_template_from_values(str(item.get("ke_id") or ""), summary)
+        except Exception as exc:
+            logging.debug("Не удалось подготовить подсказку шаблона для %s: %s", row_key or release_key, exc)
+            detection = {"found": False, "candidates": []}
+
+        prev_version = get_previous_version_from_monitor_items(items, row_key, release_key)
+        detection["prev_version"] = prev_version
+
+        if detection.get("found") or detection.get("candidates"):
+            if row_key:
+                hints[row_key] = detection
+            if release_key and release_key != row_key:
+                hints[release_key] = detection
+    return hints
 
 @dashboard_bp.route('/dashboard')
 def dashboard():
@@ -129,12 +161,15 @@ def release_monitor_page():
     """Отдельная страница контроля релизов."""
     try:
         release_monitor_data = get_release_monitor_snapshot()
+        release_monitor_items = release_monitor_data.get('items', [])
         return render_template(
             'release_monitor.html',
             basepath=BASE_PATH,
-            release_monitor=release_monitor_data.get('items', []),
+            release_monitor=release_monitor_items,
             release_monitor_summary=release_monitor_data.get('summary', {}),
             release_monitor_meta=release_monitor_data.get('meta', {}),
+            release_monitor_template_hints=_build_release_monitor_template_hints(release_monitor_items),
+            release_document_playbooks=DEFAULT_BH_PLAYBOOKS,
             reviewer_options=get_release_monitor_reviewer_options(),
             last_update=datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
         )
@@ -146,6 +181,8 @@ def release_monitor_page():
             release_monitor=[],
             release_monitor_summary={},
             release_monitor_meta={},
+            release_monitor_template_hints={},
+            release_document_playbooks=DEFAULT_BH_PLAYBOOKS,
             reviewer_options=get_release_monitor_reviewer_options(),
             last_update=datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
             error="Ошибка загрузки данных по релизам. Попробуйте обновить страницу позже.",
