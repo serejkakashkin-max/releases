@@ -3,8 +3,10 @@ import json
 import html
 import os
 import re
+import shutil
 import threading
 import time
+import uuid
 from collections import defaultdict
 from datetime import datetime, timedelta
 from html.parser import HTMLParser
@@ -49,6 +51,8 @@ AUTO_INCREMENTAL_REFRESH_LOOKBACK_MINUTES = 60
 AUTO_INCREMENTAL_REFRESH_CHECK_INTERVAL = 30
 SNAPSHOT_DIR = Path(__file__).resolve().parent.parent / "cache"
 SNAPSHOT_FILE = SNAPSHOT_DIR / "release_monitor_snapshot.json"
+STATE_BACKUP_DIR = SNAPSHOT_DIR / "backups"
+STATE_BACKUP_KEEP = 30
 MANUAL_OVERRIDES_FILE = SNAPSHOT_DIR / "release_monitor_manual_overrides.json"
 REVIEWERS_FILE = SNAPSHOT_DIR / "release_monitor_reviewers.json"
 ORDER_FILE = SNAPSHOT_DIR / "release_monitor_order.json"
@@ -127,6 +131,7 @@ _cache_lock = threading.RLock()
 _cached_data = None
 _last_cache_update = None
 _manual_order_cache = None
+_manual_overrides_legacy_migration_checked = False
 _field_map_cache = {}
 _refresh_thread = None
 _auto_incremental_thread = None
@@ -216,6 +221,136 @@ def _build_empty_release_monitor_payload():
 
 def _ensure_snapshot_dir():
     os.makedirs(SNAPSHOT_DIR, exist_ok=True)
+
+
+def _ensure_state_backup_dir():
+    os.makedirs(STATE_BACKUP_DIR, exist_ok=True)
+
+
+def _state_backup_pattern(file_path):
+    return f"{Path(file_path).name}.*.bak"
+
+
+def _state_backup_candidates(file_path):
+    try:
+        if not STATE_BACKUP_DIR.exists():
+            return []
+        candidates = [
+            path
+            for path in STATE_BACKUP_DIR.glob(_state_backup_pattern(file_path))
+            if ".rejected." not in path.name
+        ]
+        return sorted(candidates, key=lambda path: path.stat().st_mtime, reverse=True)
+    except Exception as exc:
+        logging.warning("Release monitor: failed to list state backups for %s: %s", file_path, exc)
+        return []
+
+
+def _rotate_state_backups(file_path):
+    backups = _state_backup_candidates(file_path)
+    for stale_path in backups[STATE_BACKUP_KEEP:]:
+        try:
+            stale_path.unlink(missing_ok=True)
+        except Exception as exc:
+            logging.warning("Release monitor: failed to remove stale backup %s: %s", stale_path, exc)
+
+
+def _backup_state_file(file_path):
+    file_path = Path(file_path)
+    if not file_path.exists():
+        return ""
+
+    try:
+        _ensure_state_backup_dir()
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        backup_path = STATE_BACKUP_DIR / f"{file_path.name}.{timestamp}.bak"
+        shutil.copy2(file_path, backup_path)
+        _rotate_state_backups(file_path)
+        return str(backup_path)
+    except Exception as exc:
+        logging.warning("Release monitor: failed to backup state file %s: %s", file_path, exc)
+        return ""
+
+
+def _save_rejected_state_payload(file_path, payload, reason=""):
+    try:
+        _ensure_state_backup_dir()
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        rejected_path = STATE_BACKUP_DIR / f"{Path(file_path).name}.rejected.{timestamp}.json"
+        rejected_path.write_text(
+            json.dumps(
+                {
+                    "reason": str(reason or "").strip(),
+                    "created_at": _format_timestamp(),
+                    "payload": payload,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        return str(rejected_path)
+    except Exception as exc:
+        logging.warning("Release monitor: failed to save rejected payload for %s: %s", file_path, exc)
+        return ""
+
+
+def _read_json_file(path):
+    return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def _load_state_json(file_path, default=None):
+    file_path = Path(file_path)
+    if not file_path.exists():
+        return default
+
+    try:
+        return _read_json_file(file_path)
+    except Exception as exc:
+        logging.warning("Release monitor: failed to load state file %s: %s", file_path, exc)
+
+    for backup_path in _state_backup_candidates(file_path):
+        try:
+            payload = _read_json_file(backup_path)
+            logging.warning(
+                "Release monitor: restored state for %s from backup %s",
+                file_path.name,
+                backup_path.name,
+            )
+            return payload
+        except Exception as backup_exc:
+            logging.warning("Release monitor: failed to load state backup %s: %s", backup_path, backup_exc)
+    return default
+
+
+def _safe_write_state_json(file_path, payload, guard=None):
+    file_path = Path(file_path)
+    _ensure_snapshot_dir()
+
+    if guard:
+        guard(payload)
+
+    text = json.dumps(payload, ensure_ascii=False, indent=2)
+    json.loads(text)
+    tmp_path = file_path.with_name(f".{file_path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        _backup_state_file(file_path)
+        tmp_path.write_text(text, encoding="utf-8")
+        _read_json_file(tmp_path)
+        os.replace(tmp_path, file_path)
+    finally:
+        try:
+            if tmp_path.exists():
+                tmp_path.unlink()
+        except Exception:
+            pass
+
+
+def _mark_release_monitor_state_changed():
+    revision = _touch_release_monitor_revision()
+    if isinstance(_cached_data, dict):
+        _cached_data.setdefault("meta", {})["data_revision"] = revision
+    return revision
 
 
 def _count_payload_items(payload):
@@ -403,57 +538,96 @@ def _reload_snapshot_from_disk_if_newer():
         _last_cache_update = disk_mtime
 
 
-def _load_reviewer_assignments():
-    if not REVIEWERS_FILE.exists():
-        return {}
+def _normalize_reviewer_assignments_payload(payload):
+    normalized = {}
+    if not isinstance(payload, dict):
+        return normalized
 
-    try:
-        payload = json.loads(REVIEWERS_FILE.read_text(encoding="utf-8"))
-        if isinstance(payload, dict):
-            normalized = {}
-            for key, value in payload.items():
-                release_key = str(key)
-                if isinstance(value, dict):
-                    raw_responsibles = value.get("responsibles", [])
-                    if not isinstance(raw_responsibles, list):
-                        raw_responsibles = [raw_responsibles] if raw_responsibles else []
-                    normalized[release_key] = {
-                        "reviewer": str(value.get("reviewer", "") or "").strip(),
-                        "reviewer_source": str(value.get("reviewer_source") or "").strip(),
-                        "reviewer_date": str(value.get("reviewer_date", "") or "").strip(),
-                        "zni_reviewer": str(value.get("zni_reviewer", "") or "").strip(),
-                        "checker": str(value.get("checker", "") or "").strip(),
-                        "responsibles": [
-                            str(item or "").strip()
-                            for item in raw_responsibles
-                            if str(item or "").strip()
-                        ],
-                    }
-                elif value:
-                    normalized[release_key] = {
-                        "reviewer": str(value).strip(),
-                        "reviewer_source": "manual",
-                        "reviewer_date": "",
-                        "zni_reviewer": "",
-                        "checker": "",
-                        "responsibles": [],
-                    }
-            return normalized
-        return {}
-    except Exception as exc:
-        logging.warning("Release monitor: failed to load reviewer assignments: %s", exc)
-        return {}
+    for key, value in payload.items():
+        release_key = str(key or "").strip()
+        if not release_key:
+            continue
+        if isinstance(value, dict):
+            raw_responsibles = value.get("responsibles", [])
+            if not isinstance(raw_responsibles, list):
+                raw_responsibles = [raw_responsibles] if raw_responsibles else []
+            normalized[release_key] = {
+                "reviewer": str(value.get("reviewer", "") or "").strip(),
+                "reviewer_source": str(value.get("reviewer_source") or "").strip(),
+                "reviewer_date": str(value.get("reviewer_date", "") or "").strip(),
+                "zni_reviewer": str(value.get("zni_reviewer", "") or "").strip(),
+                "checker": str(value.get("checker", "") or "").strip(),
+                "responsibles": [
+                    str(item or "").strip()
+                    for item in raw_responsibles
+                    if str(item or "").strip()
+                ],
+            }
+        elif value:
+            normalized[release_key] = {
+                "reviewer": str(value).strip(),
+                "reviewer_source": "manual",
+                "reviewer_date": "",
+                "zni_reviewer": "",
+                "checker": "",
+                "responsibles": [],
+            }
+    return normalized
+
+
+def _count_meaningful_reviewer_assignments(assignments):
+    count = 0
+    for value in (assignments or {}).values():
+        if not isinstance(value, dict):
+            continue
+        responsibles = value.get("responsibles")
+        has_responsibles = isinstance(responsibles, list) and any(str(item or "").strip() for item in responsibles)
+        if (
+            str(value.get("reviewer") or "").strip()
+            or str(value.get("checker") or "").strip()
+            or str(value.get("zni_reviewer") or "").strip()
+            or has_responsibles
+        ):
+            count += 1
+    return count
+
+
+def _guard_reviewer_assignments_write(next_payload):
+    current_payload = _load_state_json(REVIEWERS_FILE, default={})
+    current_assignments = _normalize_reviewer_assignments_payload(current_payload)
+    next_assignments = _normalize_reviewer_assignments_payload(next_payload)
+    old_count = _count_meaningful_reviewer_assignments(current_assignments)
+    new_count = _count_meaningful_reviewer_assignments(next_assignments)
+
+    if old_count < 10:
+        return
+    allowed_floor = max(3, int(old_count * 0.25))
+    if new_count >= allowed_floor:
+        return
+
+    reason = (
+        f"suspicious reviewers shrink: old meaningful records={old_count}, "
+        f"new meaningful records={new_count}"
+    )
+    rejected_path = _save_rejected_state_payload(REVIEWERS_FILE, next_assignments, reason)
+    raise ValueError(
+        "Release monitor reviewers save blocked: suspicious data shrink. "
+        f"{reason}. Rejected payload: {rejected_path or 'not saved'}"
+    )
+
+
+def _load_reviewer_assignments():
+    payload = _load_state_json(REVIEWERS_FILE, default={})
+    return _normalize_reviewer_assignments_payload(payload)
 
 
 def _save_reviewer_assignments(assignments):
     try:
-        _ensure_snapshot_dir()
-        REVIEWERS_FILE.write_text(
-            json.dumps(assignments, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        normalized = _normalize_reviewer_assignments_payload(assignments)
+        _safe_write_state_json(REVIEWERS_FILE, normalized, guard=_guard_reviewer_assignments_write)
     except Exception as exc:
         logging.warning("Release monitor: failed to save reviewer assignments: %s", exc)
+        raise
 
 
 def _normalize_zni_assignments(payload):
@@ -511,49 +685,52 @@ def _normalize_rollout_note_flags(payload):
 
 
 def _load_zni_payload():
-    if not ZNI_FILE.exists():
+    payload = _load_state_json(ZNI_FILE, default=None)
+    if payload is None:
         return {"issues": {}, "flags": {}}
 
-    try:
-        payload = json.loads(ZNI_FILE.read_text(encoding="utf-8"))
-        if not isinstance(payload, dict):
-            return {"issues": {}, "flags": {}}
-
-        if "issues" in payload or "flags" in payload:
-            return {
-                "issues": _normalize_zni_assignments(payload.get("issues") or {}),
-                "flags": _normalize_rollout_note_flags(payload.get("flags") or {}),
-            }
-
+    if not isinstance(payload, dict):
         return {
-            "issues": _normalize_zni_assignments(payload),
+            "issues": {},
             "flags": {},
         }
-    except Exception as exc:
-        logging.warning("Release monitor: failed to load ZNI payload: %s", exc)
-        return {"issues": {}, "flags": {}}
+
+    if "issues" in payload or "flags" in payload:
+        return {
+            "issues": _normalize_zni_assignments(payload.get("issues") or {}),
+            "flags": _normalize_rollout_note_flags(payload.get("flags") or {}),
+        }
+
+    return {
+        "issues": _normalize_zni_assignments(payload),
+        "flags": {},
+    }
 
 
 def _save_zni_payload(payload):
     try:
-        _ensure_snapshot_dir()
-        ZNI_FILE.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        normalized_payload = {
+            "issues": _normalize_zni_assignments((payload or {}).get("issues") or {}),
+            "flags": _normalize_rollout_note_flags((payload or {}).get("flags") or {}),
+        }
+        _safe_write_state_json(ZNI_FILE, normalized_payload)
     except Exception as exc:
         logging.warning("Release monitor: failed to save ZNI payload: %s", exc)
+        raise
 
 
 def _load_manual_overrides_payload():
-    if MANUAL_OVERRIDES_FILE.exists():
-        try:
-            payload = json.loads(MANUAL_OVERRIDES_FILE.read_text(encoding="utf-8"))
-            if isinstance(payload, dict):
-                return _normalize_manual_release_overrides(payload)
-        except Exception as exc:
-            logging.warning("Release monitor: failed to load manual overrides payload: %s", exc)
+    global _manual_overrides_legacy_migration_checked
 
+    payload = _load_state_json(MANUAL_OVERRIDES_FILE, default=None)
+    if isinstance(payload, dict):
+        _manual_overrides_legacy_migration_checked = True
+        return _normalize_manual_release_overrides(payload)
+
+    if _manual_overrides_legacy_migration_checked:
+        return {}
+
+    _manual_overrides_legacy_migration_checked = True
     legacy_payload = _load_snapshot_from_disk() or {}
     legacy_overrides = _normalize_manual_release_overrides(legacy_payload.get("manual_overrides") or {})
     if legacy_overrides:
@@ -563,13 +740,10 @@ def _load_manual_overrides_payload():
 
 def _save_manual_overrides_payload(overrides):
     try:
-        _ensure_snapshot_dir()
-        MANUAL_OVERRIDES_FILE.write_text(
-            json.dumps(_normalize_manual_release_overrides(overrides), ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        _safe_write_state_json(MANUAL_OVERRIDES_FILE, _normalize_manual_release_overrides(overrides))
     except Exception as exc:
         logging.warning("Release monitor: failed to save manual overrides payload: %s", exc)
+        raise
 
 
 def _load_zni_assignments():
@@ -690,51 +864,40 @@ def _load_manual_order():
     if isinstance(_manual_order_cache, dict):
         return _manual_order_cache
 
-    if not ORDER_FILE.exists():
+    payload = _load_state_json(ORDER_FILE, default=None)
+    if not isinstance(payload, dict):
         _manual_order_cache = {}
         return {}
 
-    try:
-        payload = json.loads(ORDER_FILE.read_text(encoding="utf-8"))
-        if not isinstance(payload, dict):
-            _manual_order_cache = {}
-            return {}
+    normalized = {}
+    for year, value in payload.items():
+        year_key = str(year or "").strip()
+        if not year_key or not isinstance(value, dict):
+            continue
 
-        normalized = {}
-        for year, value in payload.items():
-            year_key = str(year or "").strip()
-            if not year_key or not isinstance(value, dict):
-                continue
-
-            normalized[year_key] = {
-                "waiting": _normalize_group_order(value.get("waiting")),
-                "numbered": _normalize_group_order(value.get("numbered")),
-                "force_unnumbered": [
-                    str(item or "").strip()
-                    for item in (value.get("force_unnumbered") or [])
-                    if str(item or "").strip()
-                ],
-            }
-        _manual_order_cache = normalized
-        return normalized
-    except Exception as exc:
-        logging.warning("Release monitor: failed to load manual order: %s", exc)
-        _manual_order_cache = {}
-        return {}
+        normalized[year_key] = {
+            "waiting": _normalize_group_order(value.get("waiting")),
+            "numbered": _normalize_group_order(value.get("numbered")),
+            "force_unnumbered": [
+                str(item or "").strip()
+                for item in (value.get("force_unnumbered") or [])
+                if str(item or "").strip()
+            ],
+        }
+    _manual_order_cache = normalized
+    return normalized
 
 
 def _save_manual_order(order_payload):
     global _manual_order_cache
 
     try:
-        _ensure_snapshot_dir()
-        _manual_order_cache = dict(order_payload or {})
-        ORDER_FILE.write_text(
-            json.dumps(order_payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        payload = dict(order_payload or {})
+        _safe_write_state_json(ORDER_FILE, payload)
+        _manual_order_cache = payload
     except Exception as exc:
         logging.warning("Release monitor: failed to save manual order: %s", exc)
+        raise
 
 
 def _remove_row_from_manual_order(row_key):
@@ -853,93 +1016,73 @@ def _normalize_duty_availability_payload(value):
 
 
 def _load_duty_schedule_payload():
-    if not DUTY_SCHEDULE_FILE.exists():
+    payload = _load_state_json(DUTY_SCHEDULE_FILE, default=None)
+    if not isinstance(payload, dict):
         return _build_empty_duty_schedule_payload()
 
-    try:
-        payload = json.loads(DUTY_SCHEDULE_FILE.read_text(encoding="utf-8"))
-        if not isinstance(payload, dict):
-            return _build_empty_duty_schedule_payload()
-
-        dates = {
-            str(date_key).strip(): str(reviewer).strip()
-            for date_key, reviewer in (payload.get("dates") or {}).items()
-            if str(date_key).strip() and str(reviewer).strip()
-        }
-        availability = _normalize_duty_availability_payload(payload.get("availability") or {})
-        months = [
-            str(month_label).strip()
-            for month_label in (payload.get("months") or [])
-            if str(month_label).strip()
-        ]
-        files = [
-            dict(file_info)
-            for file_info in (payload.get("files") or [])
-            if isinstance(file_info, dict)
-        ]
-        return {
-            "dates": dates,
-            "availability": availability,
-            "months": list(dict.fromkeys(months)),
-            "files": files,
-            "last_upload": str(payload.get("last_upload") or "").strip() or None,
-        }
-    except Exception as exc:
-        logging.warning("Release monitor: failed to load duty schedules: %s", exc)
-        return _build_empty_duty_schedule_payload()
+    dates = {
+        str(date_key).strip(): str(reviewer).strip()
+        for date_key, reviewer in (payload.get("dates") or {}).items()
+        if str(date_key).strip() and str(reviewer).strip()
+    }
+    availability = _normalize_duty_availability_payload(payload.get("availability") or {})
+    months = [
+        str(month_label).strip()
+        for month_label in (payload.get("months") or [])
+        if str(month_label).strip()
+    ]
+    files = [
+        dict(file_info)
+        for file_info in (payload.get("files") or [])
+        if isinstance(file_info, dict)
+    ]
+    return {
+        "dates": dates,
+        "availability": availability,
+        "months": list(dict.fromkeys(months)),
+        "files": files,
+        "last_upload": str(payload.get("last_upload") or "").strip() or None,
+    }
 
 
 def _save_duty_schedule_payload(payload):
     try:
-        _ensure_snapshot_dir()
-        DUTY_SCHEDULE_FILE.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        _safe_write_state_json(DUTY_SCHEDULE_FILE, payload or _build_empty_duty_schedule_payload())
     except Exception as exc:
         logging.warning("Release monitor: failed to save duty schedules: %s", exc)
+        raise
 
 
 def _load_date_overrides():
-    if not DATE_OVERRIDES_FILE.exists():
+    payload = _load_state_json(DATE_OVERRIDES_FILE, default=None)
+    if not isinstance(payload, dict):
         return {}
 
-    try:
-        payload = json.loads(DATE_OVERRIDES_FILE.read_text(encoding="utf-8"))
-        if not isinstance(payload, dict):
-            return {}
+    normalized = {}
+    for row_key, value in payload.items():
+        key = str(row_key or "").strip()
+        if not key or not isinstance(value, dict):
+            continue
 
-        normalized = {}
-        for row_key, value in payload.items():
-            key = str(row_key or "").strip()
-            if not key or not isinstance(value, dict):
-                continue
+        start_value = str(value.get("start", "") or "").strip()
+        end_value = str(value.get("end", "") or "").strip()
+        if not start_value and not end_value:
+            continue
 
-            start_value = str(value.get("start", "") or "").strip()
-            end_value = str(value.get("end", "") or "").strip()
-            if not start_value and not end_value:
-                continue
-
-            normalized[key] = {
-                "start": start_value,
-                "end": end_value,
-                "updated_at": str(value.get("updated_at", "") or "").strip(),
-            }
-        return normalized
-    except Exception as exc:
-        logging.warning("Release monitor: failed to load date overrides: %s", exc)
-        return {}
+        normalized[key] = {
+            "start": start_value,
+            "end": end_value,
+            "updated_at": str(value.get("updated_at", "") or "").strip(),
+        }
+    return normalized
 
 
 def _save_date_overrides(payload):
     try:
-        _ensure_snapshot_dir()
-        DATE_OVERRIDES_FILE.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        _safe_write_state_json(DATE_OVERRIDES_FILE, payload or {})
     except Exception as exc:
         logging.warning("Release monitor: failed to save date overrides: %s", exc)
+        raise
 
 
 def _normalize_release_attempt_outcomes(payload):
@@ -965,26 +1108,16 @@ def _normalize_release_attempt_outcomes(payload):
 
 
 def _load_release_attempt_outcomes():
-    if not ATTEMPTS_FILE.exists():
-        return {}
-
-    try:
-        payload = json.loads(ATTEMPTS_FILE.read_text(encoding="utf-8"))
-        return _normalize_release_attempt_outcomes(payload)
-    except Exception as exc:
-        logging.warning("Release monitor: failed to load release attempt outcomes: %s", exc)
-        return {}
+    payload = _load_state_json(ATTEMPTS_FILE, default={})
+    return _normalize_release_attempt_outcomes(payload)
 
 
 def _save_release_attempt_outcomes(payload):
     try:
-        _ensure_snapshot_dir()
-        ATTEMPTS_FILE.write_text(
-            json.dumps(_normalize_release_attempt_outcomes(payload), ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        _safe_write_state_json(ATTEMPTS_FILE, _normalize_release_attempt_outcomes(payload))
     except Exception as exc:
         logging.warning("Release monitor: failed to save release attempt outcomes: %s", exc)
+        raise
 
 
 def _parse_release_monitor_date(value):
@@ -3486,14 +3619,10 @@ def save_release_monitor_manual_order(year, waiting_row_keys=None, numbered_row_
             items = list(_cached_data.get("items", []))
             _apply_reviewer_assignments(items)
             _apply_date_overrides(items)
-            _apply_duty_schedule_assignments(items, persist=True)
+            _apply_duty_schedule_assignments(items, persist=False)
             _sort_and_number_records(items)
             _cached_data["items"] = items
-            _save_snapshot_to_disk(_cached_data)
-            disk_payload = _load_snapshot_from_disk()
-            if disk_payload is not None:
-                _cached_data = _hydrate_release_monitor_payload(disk_payload)
-                _last_cache_update = _get_snapshot_mtime() or time.time()
+            _mark_release_monitor_state_changed()
 
         payload = _get_cached_payload_copy() or _build_empty_release_monitor_payload()
         if not payload.get("items"):
@@ -3586,7 +3715,7 @@ def _compose_release_payload(all_records, mode):
     previous_year = current_year - 1
     _apply_reviewer_assignments(all_records)
     _apply_date_overrides(all_records)
-    _apply_duty_schedule_assignments(all_records, persist=True)
+    _apply_duty_schedule_assignments(all_records, persist=False)
     _sort_and_number_records(all_records)
     payload = {
         "items": all_records,
@@ -4475,7 +4604,7 @@ def _normalize_release_payload(payload):
     _apply_release_status_consistency(normalized_items)
     _apply_date_overrides(normalized_items)
     _apply_release_attempt_outcomes(normalized_items)
-    _apply_duty_schedule_assignments(normalized_items, persist=True)
+    _apply_duty_schedule_assignments(normalized_items, persist=False)
     _apply_zni_assignments(normalized_items)
     _apply_manual_release_overrides(normalized_items, payload.get("manual_overrides") or {})
     _apply_week_control_flags(normalized_items)
@@ -4511,14 +4640,9 @@ def _hydrate_release_monitor_payload(payload):
 
 
 def get_release_monitor_refresh_status():
-    global _cached_data
-
     with _cache_lock:
         _ensure_scheduler_started()
-        disk_payload = _load_snapshot_from_disk()
-        if disk_payload is not None:
-            _cached_data = _hydrate_release_monitor_payload(disk_payload)
-            _last_cache_update = _get_snapshot_mtime() or time.time()
+        _reload_snapshot_from_disk_if_newer()
 
         payload = {
             "status": dict(_refresh_status),
@@ -4528,14 +4652,9 @@ def get_release_monitor_refresh_status():
 
 
 def get_release_monitor_snapshot():
-    global _cached_data, _last_cache_update
-
     with _cache_lock:
         _ensure_scheduler_started()
-        disk_payload = _load_snapshot_from_disk()
-        if disk_payload is not None:
-            _cached_data = _hydrate_release_monitor_payload(disk_payload)
-            _last_cache_update = _get_snapshot_mtime() or time.time()
+        _reload_snapshot_from_disk_if_newer()
         if _cached_data is None:
             return _build_empty_release_monitor_payload()
 
@@ -4892,13 +5011,13 @@ def upload_release_monitor_duty_schedules(uploaded_files):
             items = _cached_data.get("items") or []
             _apply_reviewer_assignments(items)
             _apply_date_overrides(items)
-            duty_result = _apply_duty_schedule_assignments(items, persist=True, force=True, debug_limit=20)
+            duty_result = _apply_duty_schedule_assignments(items, persist=False, force=True, debug_limit=20)
             applied_count = duty_result.get("applied_count", 0) if isinstance(duty_result, dict) else int(duty_result or 0)
             duty_debug_rows = duty_result.get("debug_rows", []) if isinstance(duty_result, dict) else []
             _sort_and_number_records(items)
             meta = _cached_data.setdefault("meta", {})
             meta["last_duty_schedule_upload"] = merged_payload.get("last_upload")
-            _save_snapshot_to_disk(_cached_data)
+            _mark_release_monitor_state_changed()
 
         payload = _normalize_release_payload(_get_cached_payload_copy() or _build_empty_release_monitor_payload())
 
@@ -4934,7 +5053,7 @@ def create_release_monitor_zni(release_key, reporter=""):
         items = _cached_data.get("items") or []
         _apply_reviewer_assignments(items)
         _apply_date_overrides(items)
-        _apply_duty_schedule_assignments(items, persist=True)
+        _apply_duty_schedule_assignments(items, persist=False)
         _apply_zni_assignments(items)
         target_item = None
         for item in items:
@@ -4976,7 +5095,7 @@ def create_release_monitor_zni(release_key, reporter=""):
                     item["zni_key"] = issue.get("key", "")
                     item["zni_url"] = issue.get("url", "")
                     break
-            _save_snapshot_to_disk(_cached_data)
+            _mark_release_monitor_state_changed()
 
         payload = _normalize_release_payload(_get_cached_payload_copy() or _build_empty_release_monitor_payload())
 
@@ -5028,7 +5147,7 @@ def set_release_monitor_rollout_notes(release_key, enabled=False, level=""):
                     item["has_rollout_notes"] = bool(enabled and level != "none")
                     item["rollout_notes_level"] = level
                     break
-            _save_snapshot_to_disk(_cached_data)
+            _mark_release_monitor_state_changed()
         else:
             _touch_release_monitor_revision()
 
@@ -5078,9 +5197,9 @@ def set_release_monitor_date_override(release_key, start_value="", end_value="",
             items = _cached_data.get("items") or []
             _apply_reviewer_assignments(items)
             _apply_date_overrides(items)
-            _apply_duty_schedule_assignments(items, persist=True)
+            _apply_duty_schedule_assignments(items, persist=False)
             _sort_and_number_records(items)
-            _save_snapshot_to_disk(_cached_data)
+            _mark_release_monitor_state_changed()
 
         payload = _normalize_release_payload(_get_cached_payload_copy() or _build_empty_release_monitor_payload())
         return payload
@@ -5171,7 +5290,7 @@ def set_release_monitor_manual_override(
                 ).strip()
                 _apply_reviewer_assignments(items)
                 _apply_date_overrides(items)
-                _apply_duty_schedule_assignments(items, persist=True)
+                _apply_duty_schedule_assignments(items, persist=False)
                 _apply_zni_assignments(items)
                 for item in items:
                     if _get_assignment_key_for_item(item) != release_key:
@@ -5193,7 +5312,7 @@ def set_release_monitor_manual_override(
                     break
                 _apply_manual_release_overrides(items)
                 _sort_and_number_records(items)
-                _save_snapshot_to_disk(_cached_data)
+                _mark_release_monitor_state_changed()
 
             payload = _normalize_release_payload(_get_cached_payload_copy() or _build_empty_release_monitor_payload())
             return payload
@@ -5277,11 +5396,11 @@ def set_release_monitor_manual_override(
             items = _cached_data.get("items") or []
             _apply_reviewer_assignments(items)
             _apply_date_overrides(items)
-            _apply_duty_schedule_assignments(items, persist=True)
+            _apply_duty_schedule_assignments(items, persist=False)
             _apply_zni_assignments(items)
             _apply_manual_release_overrides(items)
             _sort_and_number_records(items)
-            _save_snapshot_to_disk(_cached_data)
+            _mark_release_monitor_state_changed()
 
         payload = _normalize_release_payload(_get_cached_payload_copy() or _build_empty_release_monitor_payload())
         return payload
@@ -5451,12 +5570,11 @@ def set_release_monitor_manual_distribution_override(release_key, release_versio
         items = _cached_data.get("items") or []
         _apply_reviewer_assignments(items)
         _apply_date_overrides(items)
-        _apply_duty_schedule_assignments(items, persist=True)
+        _apply_duty_schedule_assignments(items, persist=False)
         _apply_zni_assignments(items)
         _apply_manual_release_overrides(items)
         _sort_and_number_records(items)
-        _save_snapshot_to_disk(_cached_data)
-        _last_cache_update = _get_snapshot_mtime() or time.time()
+        _mark_release_monitor_state_changed()
 
         payload = _normalize_release_payload(_get_cached_payload_copy() or _build_empty_release_monitor_payload())
         return payload
@@ -5613,7 +5731,7 @@ def sync_release_monitor_assignments_from_confluence(year):
 
         _save_reviewer_assignments(assignments)
         _cached_data.setdefault("meta", {})["last_confluence_sync"] = _format_timestamp()
-        _save_snapshot_to_disk(_cached_data)
+        _mark_release_monitor_state_changed()
 
         return {
             "matched_rows": matched_rows,
@@ -5661,7 +5779,7 @@ def set_release_monitor_reviewer(release_key, reviewer):
                     item["psi_checker"] = current_assignment.get("checker", "")
                     item["psi_responsibles"] = list(current_assignment.get("responsibles", []))
                     break
-            _save_snapshot_to_disk(_cached_data)
+            _mark_release_monitor_state_changed()
 
     return reviewer
 
@@ -5748,7 +5866,7 @@ def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=
                     item["psi_checker"] = checker
                     item["psi_responsibles"] = list(normalized_responsibles)
                     break
-            _save_snapshot_to_disk(_cached_data)
+            _mark_release_monitor_state_changed()
         else:
             _touch_release_monitor_revision()
 

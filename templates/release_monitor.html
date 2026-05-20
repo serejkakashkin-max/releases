@@ -3124,6 +3124,17 @@ function buildReviewerCell(item) {
             return RELEASE_TEMPLATE_HINTS[rowKey] || RELEASE_TEMPLATE_HINTS[item.release_key] || { found: false, candidates: [] };
         }
 
+        function isReleaseDocumentTemplateMissingByTable(item, detection) {
+            const releaseKe = String(item?.ke_id || '').trim();
+            const candidates = Array.isArray(detection?.candidates) ? detection.candidates : [];
+            return Boolean(releaseKe && !detection?.found && !candidates.length);
+        }
+
+        function getReleaseDocumentTemplateNotFoundMessage(item) {
+            const releaseKey = item?.release_key ? ` по ${item.release_key}` : '';
+            return `К сожалению, для данного типа релиза${releaseKey} шаблоны документов сейчас не найдены. Через ручной формирователь документов можно попробовать выбрать шаблон другого подходящего типа и затем скорректировать сформированные файлы вручную.`;
+        }
+
         function buildReleaseDocumentInitialData(item) {
             const detection = getReleaseDocumentTemplateHint(item);
             const templateSource = detection?.found ? detection : null;
@@ -3562,6 +3573,16 @@ function buildReviewerCell(item) {
             const initRequestId = releaseDocumentInitSequence + 1;
             releaseDocumentInitSequence = initRequestId;
             const initialData = buildReleaseDocumentInitialData(item);
+
+            if (isReleaseDocumentTemplateMissingByTable(item, initialData.detection || {})) {
+                releaseDocumentWizardState = null;
+                const modal = ensureReleaseDocumentModal();
+                document.getElementById('releaseDocumentModalSubtitle').textContent = `Релиз ${item.release_key}`;
+                setReleaseDocumentModalError(getReleaseDocumentTemplateNotFoundMessage(item));
+                modal.show();
+                return;
+            }
+
             releaseDocumentWizardState = {
                 item: { ...item },
                 initData: initialData,
