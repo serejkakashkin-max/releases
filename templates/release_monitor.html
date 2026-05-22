@@ -205,6 +205,12 @@
             background: rgba(245, 158, 11, 0.10);
         }
 
+        .auto-refresh-badge.is-partial {
+            color: #d97706;
+            border-color: rgba(245, 158, 11, 0.32);
+            background: rgba(245, 158, 11, 0.10);
+        }
+
         .hero-action-stack {
             display: flex;
             flex-direction: row;
@@ -2447,7 +2453,7 @@
                 status.last_finished_at || meta?.last_auto_incremental_sync || ''
             );
 
-            badge.classList.remove('is-ok', 'is-running', 'is-error', 'is-paused');
+            badge.classList.remove('is-ok', 'is-running', 'is-error', 'is-paused', 'is-partial');
             if (!enabled) {
                 badge.classList.add('is-paused');
                 text.textContent = 'Авто: выкл';
@@ -2470,6 +2476,15 @@
                 badge.title = status.last_error
                     ? `Последнее тихое автообновление завершилось ошибкой: ${status.last_error}`
                     : 'Последнее тихое автообновление завершилось ошибкой';
+                return;
+            }
+
+            if (state === 'partial') {
+                badge.classList.add('is-partial');
+                text.textContent = timeText ? `Авто: частично ${timeText}` : 'Авто: частично';
+                badge.title = status.last_error
+                    ? `Часть Jira-запросов тихого обновления завершилась ошибкой: ${status.last_error}`
+                    : 'Часть Jira-запросов тихого обновления завершилась ошибкой';
                 return;
             }
 

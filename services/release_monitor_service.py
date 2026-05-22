@@ -3,10 +3,8 @@ import json
 import html
 import os
 import re
-import shutil
 import threading
 import time
-import uuid
 from collections import defaultdict
 from datetime import datetime, timedelta
 from html.parser import HTMLParser
@@ -51,8 +49,6 @@ AUTO_INCREMENTAL_REFRESH_LOOKBACK_MINUTES = 60
 AUTO_INCREMENTAL_REFRESH_CHECK_INTERVAL = 30
 SNAPSHOT_DIR = Path(__file__).resolve().parent.parent / "cache"
 SNAPSHOT_FILE = SNAPSHOT_DIR / "release_monitor_snapshot.json"
-STATE_BACKUP_DIR = SNAPSHOT_DIR / "backups"
-STATE_BACKUP_KEEP = 30
 MANUAL_OVERRIDES_FILE = SNAPSHOT_DIR / "release_monitor_manual_overrides.json"
 REVIEWERS_FILE = SNAPSHOT_DIR / "release_monitor_reviewers.json"
 ORDER_FILE = SNAPSHOT_DIR / "release_monitor_order.json"
@@ -142,6 +138,9 @@ _auto_incremental_status = {
     "last_finished_at": None,
     "last_changed": False,
     "last_error": None,
+    "jira_checks_total": 0,
+    "jira_checks_success": 0,
+    "jira_checks_failed": 0,
 }
 _scheduler_thread = None
 _scheduler_started = False
@@ -223,78 +222,6 @@ def _ensure_snapshot_dir():
     os.makedirs(SNAPSHOT_DIR, exist_ok=True)
 
 
-def _ensure_state_backup_dir():
-    os.makedirs(STATE_BACKUP_DIR, exist_ok=True)
-
-
-def _state_backup_pattern(file_path):
-    return f"{Path(file_path).name}.*.bak"
-
-
-def _state_backup_candidates(file_path):
-    try:
-        if not STATE_BACKUP_DIR.exists():
-            return []
-        candidates = [
-            path
-            for path in STATE_BACKUP_DIR.glob(_state_backup_pattern(file_path))
-            if ".rejected." not in path.name
-        ]
-        return sorted(candidates, key=lambda path: path.stat().st_mtime, reverse=True)
-    except Exception as exc:
-        logging.warning("Release monitor: failed to list state backups for %s: %s", file_path, exc)
-        return []
-
-
-def _rotate_state_backups(file_path):
-    backups = _state_backup_candidates(file_path)
-    for stale_path in backups[STATE_BACKUP_KEEP:]:
-        try:
-            stale_path.unlink(missing_ok=True)
-        except Exception as exc:
-            logging.warning("Release monitor: failed to remove stale backup %s: %s", stale_path, exc)
-
-
-def _backup_state_file(file_path):
-    file_path = Path(file_path)
-    if not file_path.exists():
-        return ""
-
-    try:
-        _ensure_state_backup_dir()
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        backup_path = STATE_BACKUP_DIR / f"{file_path.name}.{timestamp}.bak"
-        shutil.copy2(file_path, backup_path)
-        _rotate_state_backups(file_path)
-        return str(backup_path)
-    except Exception as exc:
-        logging.warning("Release monitor: failed to backup state file %s: %s", file_path, exc)
-        return ""
-
-
-def _save_rejected_state_payload(file_path, payload, reason=""):
-    try:
-        _ensure_state_backup_dir()
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        rejected_path = STATE_BACKUP_DIR / f"{Path(file_path).name}.rejected.{timestamp}.json"
-        rejected_path.write_text(
-            json.dumps(
-                {
-                    "reason": str(reason or "").strip(),
-                    "created_at": _format_timestamp(),
-                    "payload": payload,
-                },
-                ensure_ascii=False,
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
-        return str(rejected_path)
-    except Exception as exc:
-        logging.warning("Release monitor: failed to save rejected payload for %s: %s", file_path, exc)
-        return ""
-
-
 def _read_json_file(path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
@@ -308,42 +235,16 @@ def _load_state_json(file_path, default=None):
         return _read_json_file(file_path)
     except Exception as exc:
         logging.warning("Release monitor: failed to load state file %s: %s", file_path, exc)
-
-    for backup_path in _state_backup_candidates(file_path):
-        try:
-            payload = _read_json_file(backup_path)
-            logging.warning(
-                "Release monitor: restored state for %s from backup %s",
-                file_path.name,
-                backup_path.name,
-            )
-            return payload
-        except Exception as backup_exc:
-            logging.warning("Release monitor: failed to load state backup %s: %s", backup_path, backup_exc)
     return default
 
 
-def _safe_write_state_json(file_path, payload, guard=None):
+def _write_state_json(file_path, payload):
     file_path = Path(file_path)
     _ensure_snapshot_dir()
 
-    if guard:
-        guard(payload)
-
     text = json.dumps(payload, ensure_ascii=False, indent=2)
     json.loads(text)
-    tmp_path = file_path.with_name(f".{file_path.name}.{uuid.uuid4().hex}.tmp")
-    try:
-        _backup_state_file(file_path)
-        tmp_path.write_text(text, encoding="utf-8")
-        _read_json_file(tmp_path)
-        os.replace(tmp_path, file_path)
-    finally:
-        try:
-            if tmp_path.exists():
-                tmp_path.unlink()
-        except Exception:
-            pass
+    file_path.write_text(text, encoding="utf-8")
 
 
 def _mark_release_monitor_state_changed():
@@ -575,47 +476,6 @@ def _normalize_reviewer_assignments_payload(payload):
     return normalized
 
 
-def _count_meaningful_reviewer_assignments(assignments):
-    count = 0
-    for value in (assignments or {}).values():
-        if not isinstance(value, dict):
-            continue
-        responsibles = value.get("responsibles")
-        has_responsibles = isinstance(responsibles, list) and any(str(item or "").strip() for item in responsibles)
-        if (
-            str(value.get("reviewer") or "").strip()
-            or str(value.get("checker") or "").strip()
-            or str(value.get("zni_reviewer") or "").strip()
-            or has_responsibles
-        ):
-            count += 1
-    return count
-
-
-def _guard_reviewer_assignments_write(next_payload):
-    current_payload = _load_state_json(REVIEWERS_FILE, default={})
-    current_assignments = _normalize_reviewer_assignments_payload(current_payload)
-    next_assignments = _normalize_reviewer_assignments_payload(next_payload)
-    old_count = _count_meaningful_reviewer_assignments(current_assignments)
-    new_count = _count_meaningful_reviewer_assignments(next_assignments)
-
-    if old_count < 10:
-        return
-    allowed_floor = max(3, int(old_count * 0.25))
-    if new_count >= allowed_floor:
-        return
-
-    reason = (
-        f"suspicious reviewers shrink: old meaningful records={old_count}, "
-        f"new meaningful records={new_count}"
-    )
-    rejected_path = _save_rejected_state_payload(REVIEWERS_FILE, next_assignments, reason)
-    raise ValueError(
-        "Release monitor reviewers save blocked: suspicious data shrink. "
-        f"{reason}. Rejected payload: {rejected_path or 'not saved'}"
-    )
-
-
 def _load_reviewer_assignments():
     payload = _load_state_json(REVIEWERS_FILE, default={})
     return _normalize_reviewer_assignments_payload(payload)
@@ -624,7 +484,7 @@ def _load_reviewer_assignments():
 def _save_reviewer_assignments(assignments):
     try:
         normalized = _normalize_reviewer_assignments_payload(assignments)
-        _safe_write_state_json(REVIEWERS_FILE, normalized, guard=_guard_reviewer_assignments_write)
+        _write_state_json(REVIEWERS_FILE, normalized)
     except Exception as exc:
         logging.warning("Release monitor: failed to save reviewer assignments: %s", exc)
         raise
@@ -713,7 +573,7 @@ def _save_zni_payload(payload):
             "issues": _normalize_zni_assignments((payload or {}).get("issues") or {}),
             "flags": _normalize_rollout_note_flags((payload or {}).get("flags") or {}),
         }
-        _safe_write_state_json(ZNI_FILE, normalized_payload)
+        _write_state_json(ZNI_FILE, normalized_payload)
     except Exception as exc:
         logging.warning("Release monitor: failed to save ZNI payload: %s", exc)
         raise
@@ -740,7 +600,7 @@ def _load_manual_overrides_payload():
 
 def _save_manual_overrides_payload(overrides):
     try:
-        _safe_write_state_json(MANUAL_OVERRIDES_FILE, _normalize_manual_release_overrides(overrides))
+        _write_state_json(MANUAL_OVERRIDES_FILE, _normalize_manual_release_overrides(overrides))
     except Exception as exc:
         logging.warning("Release monitor: failed to save manual overrides payload: %s", exc)
         raise
@@ -893,7 +753,7 @@ def _save_manual_order(order_payload):
 
     try:
         payload = dict(order_payload or {})
-        _safe_write_state_json(ORDER_FILE, payload)
+        _write_state_json(ORDER_FILE, payload)
         _manual_order_cache = payload
     except Exception as exc:
         logging.warning("Release monitor: failed to save manual order: %s", exc)
@@ -1047,7 +907,7 @@ def _load_duty_schedule_payload():
 
 def _save_duty_schedule_payload(payload):
     try:
-        _safe_write_state_json(DUTY_SCHEDULE_FILE, payload or _build_empty_duty_schedule_payload())
+        _write_state_json(DUTY_SCHEDULE_FILE, payload or _build_empty_duty_schedule_payload())
     except Exception as exc:
         logging.warning("Release monitor: failed to save duty schedules: %s", exc)
         raise
@@ -1079,7 +939,7 @@ def _load_date_overrides():
 
 def _save_date_overrides(payload):
     try:
-        _safe_write_state_json(DATE_OVERRIDES_FILE, payload or {})
+        _write_state_json(DATE_OVERRIDES_FILE, payload or {})
     except Exception as exc:
         logging.warning("Release monitor: failed to save date overrides: %s", exc)
         raise
@@ -1114,7 +974,7 @@ def _load_release_attempt_outcomes():
 
 def _save_release_attempt_outcomes(payload):
     try:
-        _safe_write_state_json(ATTEMPTS_FILE, _normalize_release_attempt_outcomes(payload))
+        _write_state_json(ATTEMPTS_FILE, _normalize_release_attempt_outcomes(payload))
     except Exception as exc:
         logging.warning("Release monitor: failed to save release attempt outcomes: %s", exc)
         raise
@@ -3865,6 +3725,64 @@ def _merge_release_records(existing_items, updated_items):
     return _compose_release_payload(merged_items, "quick")
 
 
+def _build_auto_incremental_jira_diagnostics():
+    return {
+        "jira_checks_total": 0,
+        "jira_checks_success": 0,
+        "jira_checks_failed": 0,
+        "jira_errors": [],
+    }
+
+
+def _record_auto_incremental_jira_check(diagnostics, *, label="", error=None):
+    if not isinstance(diagnostics, dict):
+        return
+    diagnostics["jira_checks_total"] = int(diagnostics.get("jira_checks_total") or 0) + 1
+    if error is None:
+        diagnostics["jira_checks_success"] = int(diagnostics.get("jira_checks_success") or 0) + 1
+        return
+
+    diagnostics["jira_checks_failed"] = int(diagnostics.get("jira_checks_failed") or 0) + 1
+    error_text = f"{label}: {error}" if label else str(error)
+    errors = diagnostics.setdefault("jira_errors", [])
+    if len(errors) < 8:
+        errors.append(error_text)
+
+
+def _apply_auto_incremental_jira_diagnostics(payload, diagnostics):
+    payload = dict(payload or {})
+    meta = dict(payload.get("meta") or {})
+    diagnostics = dict(diagnostics or {})
+    meta["auto_incremental_jira_checks_total"] = int(diagnostics.get("jira_checks_total") or 0)
+    meta["auto_incremental_jira_checks_success"] = int(diagnostics.get("jira_checks_success") or 0)
+    meta["auto_incremental_jira_checks_failed"] = int(diagnostics.get("jira_checks_failed") or 0)
+    meta["auto_incremental_jira_errors"] = list(diagnostics.get("jira_errors") or [])
+    payload["meta"] = meta
+    return payload
+
+
+def _get_auto_incremental_jira_failure_state(diagnostics):
+    total = int((diagnostics or {}).get("jira_checks_total") or 0)
+    failed = int((diagnostics or {}).get("jira_checks_failed") or 0)
+    success = int((diagnostics or {}).get("jira_checks_success") or 0)
+    if total <= 0 or failed <= 0:
+        return ""
+    if success <= 0 and failed >= total:
+        return "failed"
+    return "partial"
+
+
+def _format_auto_incremental_jira_error(diagnostics):
+    errors = list((diagnostics or {}).get("jira_errors") or [])
+    total = int((diagnostics or {}).get("jira_checks_total") or 0)
+    failed = int((diagnostics or {}).get("jira_checks_failed") or 0)
+    success = int((diagnostics or {}).get("jira_checks_success") or 0)
+    summary = f"Jira checks: success={success}, failed={failed}, total={total}"
+    if errors:
+        return f"{summary}. " + "; ".join(errors[:4])
+    return summary
+
+
 def _fetch_quick_release_monitor_data(base_items=None):
     current_year = datetime.now().year
     previous_year = current_year - 1
@@ -3963,6 +3881,7 @@ def _fetch_incremental_release_monitor_data(base_items=None, lookback_minutes=AU
     current_year = datetime.now().year
     previous_year = current_year - 1
     updated_records = []
+    jira_diagnostics = _build_auto_incremental_jira_diagnostics()
 
     for (domain, token), prefixes in _get_domain_groups().items():
         resolved_fields = _resolve_field_ids(domain, token)
@@ -4015,6 +3934,7 @@ def _fetch_incremental_release_monitor_data(base_items=None, lookback_minutes=AU
                     len(issues),
                     prefix,
                 )
+                _record_auto_incremental_jira_check(jira_diagnostics, label=f"{domain} {prefix} releases")
                 for issue in issues:
                     if _issue_type_name(issue) == RELEASE_ISSUE_TYPE and issue.get("key"):
                         release_issues_by_key[issue.get("key")] = (prefix, issue)
@@ -4023,6 +3943,11 @@ def _fetch_incremental_release_monitor_data(base_items=None, lookback_minutes=AU
                     "Release monitor: auto incremental failed to load releases for prefix %s: %s",
                     prefix,
                     exc,
+                )
+                _record_auto_incremental_jira_check(
+                    jira_diagnostics,
+                    label=f"{domain} {prefix} releases",
+                    error=exc,
                 )
 
             try:
@@ -4038,6 +3963,7 @@ def _fetch_incremental_release_monitor_data(base_items=None, lookback_minutes=AU
                     len(rov_issues),
                     prefix,
                 )
+                _record_auto_incremental_jira_check(jira_diagnostics, label=f"{domain} {prefix} ROV")
                 for issue in rov_issues:
                     if issue.get("key"):
                         updated_rov_issues_by_key[issue.get("key")] = issue
@@ -4047,6 +3973,11 @@ def _fetch_incremental_release_monitor_data(base_items=None, lookback_minutes=AU
                     "Release monitor: auto incremental failed to load ROV issues for prefix %s: %s",
                     prefix,
                     exc,
+                )
+                _record_auto_incremental_jira_check(
+                    jira_diagnostics,
+                    label=f"{domain} {prefix} ROV",
+                    error=exc,
                 )
 
         missing_release_keys = sorted(
@@ -4064,10 +3995,19 @@ def _fetch_incremental_release_monitor_data(base_items=None, lookback_minutes=AU
                     "Release monitor: auto incremental loaded %s parent releases from updated ROV issues",
                     len(parent_issues),
                 )
+                _record_auto_incremental_jira_check(
+                    jira_diagnostics,
+                    label=f"{domain} parent releases from ROV",
+                )
             except Exception as exc:
                 logging.error(
                     "Release monitor: auto incremental failed to load parent releases from updated ROV issues: %s",
                     exc,
+                )
+                _record_auto_incremental_jira_check(
+                    jira_diagnostics,
+                    label=f"{domain} parent releases from ROV",
+                    error=exc,
                 )
 
         release_issues = list(release_issues_by_key.values())
@@ -4089,8 +4029,14 @@ def _fetch_incremental_release_monitor_data(base_items=None, lookback_minutes=AU
                     for issue in rov_issues
                     if issue.get("key")
                 }
+                _record_auto_incremental_jira_check(jira_diagnostics, label=f"{domain} linked ROV")
             except Exception as exc:
                 logging.error("Release monitor: auto incremental failed to load linked ROV issues from %s: %s", domain, exc)
+                _record_auto_incremental_jira_check(
+                    jira_diagnostics,
+                    label=f"{domain} linked ROV",
+                    error=exc,
+                )
                 rov_map = {
                     key: _build_rov_record(issue, domain, resolved_fields)
                     for key, issue in updated_rov_issues_by_key.items()
@@ -4109,7 +4055,10 @@ def _fetch_incremental_release_monitor_data(base_items=None, lookback_minutes=AU
             if records:
                 updated_records.extend(records)
 
-    return _merge_release_records(base_items or [], updated_records)
+    return _apply_auto_incremental_jira_diagnostics(
+        _merge_release_records(base_items or [], updated_records),
+        jira_diagnostics,
+    )
 
 
 def get_release_monitor_data(force_refresh=False):
@@ -4272,6 +4221,9 @@ def _run_auto_incremental_release_monitor_refresh():
                     "state": "running",
                     "last_started_at": started_at,
                     "last_error": None,
+                    "jira_checks_total": 0,
+                    "jira_checks_success": 0,
+                    "jira_checks_failed": 0,
                 }
             )
 
@@ -4306,6 +4258,27 @@ def _run_auto_incremental_release_monitor_refresh():
 
         now_str = _format_timestamp()
         meta = dict(data.get("meta", {}))
+        jira_diagnostics = {
+            "jira_checks_total": meta.get("auto_incremental_jira_checks_total", 0),
+            "jira_checks_success": meta.get("auto_incremental_jira_checks_success", 0),
+            "jira_checks_failed": meta.get("auto_incremental_jira_checks_failed", 0),
+            "jira_errors": meta.get("auto_incremental_jira_errors", []),
+        }
+        jira_failure_state = _get_auto_incremental_jira_failure_state(jira_diagnostics)
+        jira_failure_text = _format_auto_incremental_jira_error(jira_diagnostics) if jira_failure_state else None
+        if jira_failure_state == "failed":
+            logging.warning("Release monitor: auto incremental refresh failed all Jira checks: %s", jira_failure_text)
+            _update_auto_incremental_status(
+                state="failed",
+                last_finished_at=now_str,
+                last_changed=False,
+                last_error=jira_failure_text,
+                jira_checks_total=int(jira_diagnostics.get("jira_checks_total") or 0),
+                jira_checks_success=int(jira_diagnostics.get("jira_checks_success") or 0),
+                jira_checks_failed=int(jira_diagnostics.get("jira_checks_failed") or 0),
+            )
+            return
+
         meta["last_updated"] = now_str
         meta["last_sync_mode"] = "auto_incremental"
         meta["quick_refresh_days"] = QUICK_REFRESH_DAYS
@@ -4326,10 +4299,13 @@ def _run_auto_incremental_release_monitor_refresh():
         if before_fingerprint == after_fingerprint:
             logging.info("Release monitor: auto incremental refresh completed without data changes")
             _update_auto_incremental_status(
-                state="completed",
+                state="partial" if jira_failure_state == "partial" else "completed",
                 last_finished_at=now_str,
                 last_changed=False,
-                last_error=None,
+                last_error=jira_failure_text if jira_failure_state == "partial" else None,
+                jira_checks_total=int(jira_diagnostics.get("jira_checks_total") or 0),
+                jira_checks_success=int(jira_diagnostics.get("jira_checks_success") or 0),
+                jira_checks_failed=int(jira_diagnostics.get("jira_checks_failed") or 0),
             )
             return
 
@@ -4354,10 +4330,13 @@ def _run_auto_incremental_release_monitor_refresh():
             _save_snapshot_to_disk(_cached_data)
             _auto_incremental_status.update(
                 {
-                    "state": "completed",
+                    "state": "partial" if jira_failure_state == "partial" else "completed",
                     "last_finished_at": now_str,
                     "last_changed": True,
-                    "last_error": None,
+                    "last_error": jira_failure_text if jira_failure_state == "partial" else None,
+                    "jira_checks_total": int(jira_diagnostics.get("jira_checks_total") or 0),
+                    "jira_checks_success": int(jira_diagnostics.get("jira_checks_success") or 0),
+                    "jira_checks_failed": int(jira_diagnostics.get("jira_checks_failed") or 0),
                 }
             )
 
