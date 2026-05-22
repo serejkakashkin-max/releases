@@ -106,8 +106,8 @@
 }
 
 .chat-widget.embedded .chat-messages {
-    min-height: 92px;
-    max-height: 420px;
+    min-height: clamp(84px, 13vh, 118px);
+    max-height: clamp(260px, 42vh, 420px);
     overflow-y: auto;
     border: 1px solid rgba(14, 165, 233, 0.36);
     border-radius: 18px;
@@ -176,6 +176,56 @@
 
 .chat-widget.embedded .chat-send-btn {
     border-radius: 14px;
+}
+
+@media (max-height: 860px) and (min-width: 769px) {
+    .chat-widget.embedded::before {
+        width: 78px;
+        margin-bottom: 9px;
+    }
+
+    .chat-widget.embedded .chat-messages {
+        max-height: clamp(220px, 34vh, 300px);
+        padding: 14px 16px;
+        border-radius: 17px;
+    }
+
+    .chat-widget.embedded .chat-message.assistant .chat-message-content {
+        padding: 10px 12px;
+        font-size: 14px;
+    }
+
+    .chat-widget.embedded .chat-message.user .chat-message-content {
+        padding: 9px 12px;
+    }
+
+    .chat-widget.embedded .chat-suggestions {
+        gap: 6px;
+        padding-top: 8px;
+    }
+
+    .chat-widget.embedded .chat-suggestion-btn {
+        min-height: 30px;
+        padding: 6px 10px;
+        font-size: 11px;
+    }
+
+    .chat-widget.embedded .chat-input-container {
+        margin-top: 8px;
+        gap: 8px;
+    }
+
+    .chat-widget.embedded .chat-input {
+        min-height: 40px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+    }
+
+    .chat-widget.embedded .chat-send-btn,
+    .chat-reset-btn {
+        min-height: 40px;
+        height: 40px;
+    }
 }
 
 .chat-reset-btn {
