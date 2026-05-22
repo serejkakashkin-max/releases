@@ -3311,7 +3311,12 @@ def _apply_group_manual_order(year, group_name, items):
                 bucket_orders[_get_release_order_bucket(item)].append(row_key)
 
     for bucket, ordered_row_keys in bucket_orders.items():
-        present_manual_keys = [row_key for row_key in ordered_row_keys if row_key in item_by_key]
+        present_manual_keys = [
+            row_key
+            for row_key in ordered_row_keys
+            if row_key in item_by_key
+            and _get_release_order_bucket(item_by_key[row_key]) == bucket
+        ]
         if not present_manual_keys:
             continue
 

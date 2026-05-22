@@ -712,238 +712,493 @@ class ReleaseReportService:
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Релизы текущей недели — {html.escape(period['label'])}</title>
+    <link href="/static/css/bootstrap-icons.css" rel="stylesheet">
+    <script>
+        (function () {{
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+        }})();
+    </script>
     <style>
         * {{
             box-sizing: border-box;
         }}
+        :root {{
+            --cw-bg: #f4f7fb;
+            --cw-panel: rgba(255, 255, 255, 0.94);
+            --cw-panel-strong: #ffffff;
+            --cw-soft: rgba(15, 23, 42, 0.035);
+            --cw-soft-hover: rgba(13, 110, 253, 0.08);
+            --cw-border: rgba(148, 163, 184, 0.24);
+            --cw-border-strong: rgba(148, 163, 184, 0.36);
+            --cw-text: #172033;
+            --cw-muted: #66748a;
+            --cw-blue: #0d6efd;
+            --cw-green: #16a34a;
+            --cw-amber: #d97706;
+            --cw-red: #dc2626;
+            --cw-shadow: rgba(15, 23, 42, 0.10);
+            --cw-table-head: rgba(241, 245, 249, 0.92);
+            --cw-icon-filter: none;
+        }}
+        [data-theme="dark"] {{
+            --cw-bg: #141922;
+            --cw-panel:
+                radial-gradient(circle at 50% 0%, rgba(59, 130, 246, 0.13), transparent 34%),
+                linear-gradient(135deg, rgba(31, 41, 55, 0.94), rgba(17, 24, 39, 0.96));
+            --cw-panel-strong: rgba(31, 41, 55, 0.92);
+            --cw-soft: rgba(255, 255, 255, 0.04);
+            --cw-soft-hover: rgba(59, 130, 246, 0.12);
+            --cw-border: rgba(148, 163, 184, 0.14);
+            --cw-border-strong: rgba(148, 163, 184, 0.23);
+            --cw-text: #e5edf7;
+            --cw-muted: #9aa7ba;
+            --cw-blue: #60a5fa;
+            --cw-green: #86efac;
+            --cw-amber: #fbbf24;
+            --cw-red: #fb7185;
+            --cw-shadow: rgba(0, 0, 0, 0.20);
+            --cw-table-head: rgba(255, 255, 255, 0.055);
+            --cw-icon-filter: invert(1);
+        }}
         body {{
             margin: 0;
-            font-family: "Segoe UI", Tahoma, sans-serif;
-            background: linear-gradient(180deg, #eef3ff 0%, #f8fafc 100%);
-            color: #18212f;
-            padding: 24px;
+            min-height: 100vh;
+            font-family: "Inter", "Segoe UI", Tahoma, sans-serif;
+            background:
+                radial-gradient(circle at 18% -10%, rgba(13, 110, 253, 0.11), transparent 34%),
+                radial-gradient(circle at 88% 0%, rgba(34, 197, 94, 0.10), transparent 28%),
+                var(--cw-bg);
+            color: var(--cw-text);
+            padding: 18px;
         }}
         .container {{
-            max-width: 1320px;
+            max-width: 1500px;
             margin: 0 auto;
         }}
+        .top-bar {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 0.9rem;
+        }}
+        .nav-pill,
+        .refresh-page-btn,
+        .clear-filter-btn {{
+            min-height: 40px;
+            border: 1px solid var(--cw-border);
+            border-radius: 999px;
+            background: var(--cw-soft);
+            color: var(--cw-text);
+            padding: 0.55rem 0.85rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.45rem;
+            font: inherit;
+            font-size: 0.9rem;
+            font-weight: 800;
+            text-decoration: none;
+            cursor: pointer;
+            transition: transform 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+        }}
+
+        .theme-toggle {{
+            width: 40px;
+            height: 40px;
+            border: 1px solid var(--cw-border);
+            border-radius: 12px;
+            background: var(--cw-soft);
+            color: var(--cw-text);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            font: inherit;
+            font-size: 1.05rem;
+            cursor: pointer;
+            transition: transform 0.16s ease, background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+        }}
+
+        .theme-toggle i {{
+            font-size: 1rem;
+            line-height: 1;
+        }}
+
+        .nav-pill:hover,
+        .theme-toggle:hover,
+        .clear-filter-btn:hover {{
+            color: var(--cw-blue);
+            background: var(--cw-soft-hover);
+            border-color: rgba(59, 130, 246, 0.35);
+            transform: translateY(-1px);
+        }}
+        .refresh-page-btn {{
+            background: rgba(13, 110, 253, 0.12);
+            color: var(--cw-blue);
+            border-color: rgba(59, 130, 246, 0.30);
+        }}
+        .clear-filter-btn[hidden] {{
+            display: none;
+        }}
         .hero {{
-            background: #ffffff;
+            position: relative;
+            background: var(--cw-panel);
+            border: 1px solid var(--cw-border);
             border-radius: 22px;
-            padding: 28px 32px;
-            box-shadow: 0 18px 44px rgba(15, 23, 42, 0.08);
-            margin-bottom: 22px;
+            padding: 1rem 1.25rem 1.15rem;
+            box-shadow: 0 20px 44px var(--cw-shadow);
+            margin: 0 auto 1rem;
+            overflow: hidden;
+        }}
+        .hero-main {{
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+            text-align: center;
+        }}
+        .hero-icon {{
+            width: 40px;
+            height: 40px;
+            border-radius: 14px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            background: linear-gradient(135deg, #3b82f6, #0ea5e9);
+            font-size: 1.05rem;
+            box-shadow: 0 14px 28px rgba(59, 130, 246, 0.24);
         }}
         .hero h1 {{
-            margin: 0 0 10px;
-            font-size: 32px;
+            margin: 0;
+            font-size: clamp(1.55rem, 2.6vw, 2.15rem);
+            font-weight: 850;
+            letter-spacing: 0;
+            line-height: 1.1;
         }}
         .hero .meta {{
-            color: #526071;
-            font-size: 15px;
-            line-height: 1.6;
+            margin-top: 0.55rem;
+            color: var(--cw-muted);
+            font-size: 0.92rem;
+            line-height: 1.45;
+            text-align: center;
+        }}
+        .hero .meta strong {{
+            color: var(--cw-text);
         }}
         .summary-grid {{
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 16px;
-            margin-bottom: 22px;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 0.7rem;
+            margin-bottom: 1rem;
+        }}
+        .summary-card,
+        .mini-card,
+        .table-card {{
+            background: var(--cw-panel-strong);
+            border: 1px solid var(--cw-border);
+            box-shadow: 0 18px 42px var(--cw-shadow);
         }}
         .summary-card {{
-            background: #ffffff;
             border-radius: 18px;
-            padding: 22px;
-            box-shadow: 0 16px 36px rgba(15, 23, 42, 0.07);
+            overflow: hidden;
         }}
         .summary-card-button {{
             width: 100%;
+            min-height: 98px;
             border: 0;
             background: transparent;
-            padding: 0;
+            padding: 1rem;
             text-align: left;
             font: inherit;
             color: inherit;
             cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            gap: 0.7rem;
+            transition: background 0.16s ease;
         }}
-        .summary-card-button:hover h3,
-        .summary-card-button:hover .value {{
-            color: #0d6efd;
+        .summary-card-button:hover {{
+            background: var(--cw-soft-hover);
         }}
         .summary-card h3 {{
-            margin: 0 0 10px;
-            color: #5b6878;
-            font-size: 13px;
+            margin: 0;
+            color: var(--cw-muted);
+            font-size: 0.72rem;
             text-transform: uppercase;
-            letter-spacing: 0.08em;
+            letter-spacing: 0.04em;
+            line-height: 1.35;
         }}
         .summary-card .value {{
-            font-size: 38px;
-            font-weight: 800;
+            color: var(--cw-text);
+            font-size: clamp(1.7rem, 3vw, 2.35rem);
+            font-weight: 900;
+            line-height: 1;
         }}
         .detail-grid {{
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-            gap: 16px;
-            margin-bottom: 22px;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.85rem;
+            margin-bottom: 1rem;
         }}
         .mini-card {{
-            background: #ffffff;
             border-radius: 18px;
-            padding: 20px 22px;
-            box-shadow: 0 14px 34px rgba(15, 23, 42, 0.07);
+            padding: 1rem;
         }}
         .mini-card h4 {{
-            margin: 0 0 14px;
-            font-size: 16px;
+            margin: 0 0 0.85rem;
+            font-size: 1rem;
+            font-weight: 850;
         }}
         .counter-list {{
             list-style: none;
             padding: 0;
             margin: 0;
-            display: grid;
-            gap: 10px;
-        }}
-        .counter-filter {{
-            width: 100%;
-            border: 0;
-            background: transparent;
-            padding: 0;
             display: flex;
-            justify-content: space-between;
-            gap: 12px;
-            color: #394657;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }}
+        .counter-list li {{
+            min-width: 0;
+        }}
+        .counter-filter,
+        .counter-list li > span {{
+            border: 1px solid var(--cw-border);
+            border-radius: 999px;
+            background: var(--cw-soft);
+            color: var(--cw-text);
+            min-height: 34px;
+            padding: 0.38rem 0.62rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.55rem;
             font: inherit;
+            font-size: 0.83rem;
+            font-weight: 750;
             text-align: left;
             cursor: pointer;
         }}
-        .counter-filter-label {{
-            flex: 1 1 auto;
-            padding-right: 18px;
+        .counter-list li > span {{
+            cursor: default;
         }}
-        .counter-filter:hover span {{
-            color: #0d6efd;
-            text-decoration: underline;
+        .counter-filter:hover {{
+            color: var(--cw-blue);
+            background: var(--cw-soft-hover);
+            border-color: rgba(59, 130, 246, 0.35);
+        }}
+        .counter-filter-label {{
+            min-width: 0;
+            max-width: 260px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }}
         .counter-list strong {{
-            color: #0d6efd;
+            color: var(--cw-blue);
+            font-size: 0.9rem;
         }}
         .table-card {{
-            background: #ffffff;
             border-radius: 22px;
-            padding: 22px;
-            box-shadow: 0 18px 44px rgba(15, 23, 42, 0.08);
+            padding: 1rem;
             overflow: hidden;
         }}
+        .table-card-head {{
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-bottom: 0.85rem;
+            flex-wrap: wrap;
+        }}
         .table-card h3 {{
-            margin: 0 0 8px;
-            font-size: 22px;
+            margin: 0;
+            font-size: 1.25rem;
+            font-weight: 850;
         }}
         .hint {{
-            margin: 0 0 16px;
-            color: #607083;
-            font-size: 14px;
+            margin: 0.35rem 0 0;
+            color: var(--cw-muted);
+            font-size: 0.88rem;
+            line-height: 1.45;
+            max-width: 900px;
         }}
         .report-toolbar {{
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 12px;
-            margin-bottom: 16px;
+            gap: 0.65rem;
+            margin-bottom: 0.85rem;
+            flex-wrap: wrap;
+            padding: 0.55rem;
+            border: 1px solid var(--cw-border);
+            border-radius: 16px;
+            background: var(--cw-soft);
+        }}
+        .toolbar-actions {{
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
             flex-wrap: wrap;
         }}
         .report-filter-state {{
-            color: #607083;
-            font-size: 14px;
+            color: var(--cw-muted);
+            font-size: 0.88rem;
+            font-weight: 650;
         }}
         .report-filter-state strong {{
-            color: #1d2a3a;
+            color: var(--cw-text);
         }}
-        .clear-filter-btn,
-        .refresh-page-btn {{
-            border: 1px solid #d7e1ef;
+        .final-toggle {{
+            min-height: 40px;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            border: 1px solid var(--cw-border);
             border-radius: 999px;
-            background: #ffffff;
-            color: #1d2a3a;
-            padding: 8px 14px;
+            background: var(--cw-panel-strong);
+            color: var(--cw-text);
+            padding: 0.48rem 0.75rem;
             font: inherit;
+            font-size: 0.88rem;
+            font-weight: 800;
             cursor: pointer;
         }}
-        .clear-filter-btn[hidden] {{
-            display: none;
+        .final-toggle input {{
+            accent-color: var(--cw-blue);
         }}
-        .refresh-page-btn {{
-            background: #0d6efd;
-            border-color: #0d6efd;
-            color: #ffffff;
+        .week-table-scroll {{
+            overflow-x: auto;
+            border: 1px solid var(--cw-border);
+            border-radius: 16px;
+            background: var(--cw-soft);
         }}
         table {{
             width: 100%;
             border-collapse: collapse;
             table-layout: fixed;
+            min-width: 1180px;
         }}
         th, td {{
-            padding: 12px 10px;
+            padding: 0.72rem 0.62rem;
             text-align: left;
-            border-bottom: 1px solid #e6ebf3;
+            border-bottom: 1px solid var(--cw-border);
             vertical-align: top;
             white-space: normal;
             word-break: break-word;
             overflow-wrap: anywhere;
         }}
         th {{
-            background: #f5f8fe;
-            color: #546274;
-            font-size: 12px;
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            background: var(--cw-table-head);
+            color: var(--cw-muted);
+            font-size: 0.7rem;
             text-transform: uppercase;
-            letter-spacing: 0.06em;
+            letter-spacing: 0.03em;
+            line-height: 1.25;
+            backdrop-filter: blur(10px);
         }}
-        th:nth-child(1), td:nth-child(1) {{ width: 54px; }}
-        th:nth-child(2), td:nth-child(2) {{ width: 24%; }}
-        th:nth-child(3), td:nth-child(3) {{ width: 7%; }}
+        th:nth-child(1), td:nth-child(1) {{ width: 50px; }}
+        th:nth-child(2), td:nth-child(2) {{ width: 25%; }}
+        th:nth-child(3), td:nth-child(3) {{ width: 7.5%; }}
         th:nth-child(4), td:nth-child(4), th:nth-child(5), td:nth-child(5) {{ width: 9%; }}
         th:nth-child(6), td:nth-child(6) {{ width: 9%; }}
         th:nth-child(7), td:nth-child(7) {{ width: 8%; }}
         th:nth-child(8), td:nth-child(8), th:nth-child(9), td:nth-child(9) {{ width: 8%; }}
-        th:nth-child(10), td:nth-child(10) {{ width: 8%; }}
+        th:nth-child(10), td:nth-child(10) {{ width: 8.5%; }}
+        tbody tr {{
+            transition: background 0.16s ease, box-shadow 0.16s ease;
+        }}
+        tbody tr:hover {{
+            box-shadow: inset 3px 0 0 var(--cw-blue);
+        }}
+        tbody tr:hover td {{
+            background-image: linear-gradient(var(--cw-soft-hover), var(--cw-soft-hover));
+        }}
+        tbody tr:last-child td {{
+            border-bottom: 0;
+        }}
         .monitor-link {{
-            color: #0d6efd;
-            font-weight: 700;
+            color: var(--cw-blue);
+            font-weight: 800;
             text-decoration: none;
         }}
         .monitor-link:hover {{
             text-decoration: underline;
         }}
-        .final-toggle {{
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            border: 1px solid #d7e1ef;
-            border-radius: 999px;
-            background: #f8fbff;
-            color: #1d2a3a;
-            padding: 8px 14px;
-            font: inherit;
-            cursor: pointer;
-        }}
-        .final-toggle input {{
-            accent-color: #0d6efd;
-        }}
-        tr.state-cancelled {{ background: rgba(224, 49, 49, 0.07); }}
+        tr.state-cancelled {{ background: rgba(220, 38, 38, 0.08); }}
         tr.state-overdue {{ background: rgba(248, 81, 73, 0.12); }}
-        tr.state-notes {{ background: rgba(255, 193, 7, 0.16); }}
-        tr.state-final {{ background: rgba(25, 135, 84, 0.07); }}
+        tr.state-notes {{ background: rgba(245, 158, 11, 0.14); }}
+        tr.state-final {{ background: rgba(22, 163, 74, 0.09); }}
         .footer {{
-            color: #6b7785;
+            color: var(--cw-muted);
             text-align: center;
-            padding: 14px 0 4px;
-            font-size: 14px;
+            padding: 0.9rem 0 0.25rem;
+            font-size: 0.85rem;
+        }}
+        @media (max-width: 1100px) {{
+            .summary-grid {{
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }}
+            .detail-grid {{
+                grid-template-columns: 1fr;
+            }}
+        }}
+        @media (max-width: 720px) {{
+            body {{
+                padding: 0.75rem;
+            }}
+            .top-bar,
+            .table-card-head,
+            .report-toolbar {{
+                align-items: stretch;
+                flex-direction: column;
+            }}
+            .summary-grid {{
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }}
+            .summary-card-button {{
+                min-height: 86px;
+                padding: 0.85rem;
+            }}
+            .hero {{
+                border-radius: 18px;
+            }}
+            .toolbar-actions {{
+                align-items: stretch;
+                flex-direction: column;
+            }}
+            .nav-pill,
+            .refresh-page-btn,
+            .clear-filter-btn,
+            .final-toggle {{
+                width: 100%;
+            }}
+            .theme-toggle {{
+                width: 40px;
+                align-self: flex-end;
+            }}
         }}
     </style>
 </head>
 <body>
     <div class="container">
+        <div class="top-bar">
+            <a class="nav-pill" href="../../release-monitor">← Блок релизов</a>
+            <button type="button" class="theme-toggle" id="themeToggle" title="Переключить тему" aria-label="Переключить тему">
+                <i id="themeToggleIcon" class="bi bi-sun" aria-hidden="true"></i>
+            </button>
+        </div>
         <section class="hero">
-            <h1>Релизы текущей недели</h1>
+            <div class="hero-main">
+                <span class="hero-icon">▣</span>
+                <h1>Релизы текущей недели</h1>
+            </div>
             <div class="meta">
                 Период: <strong>{html.escape(period['label'])}</strong>
             </div>
@@ -963,42 +1218,51 @@ class ReleaseReportService:
         </section>
 
         <section class="table-card">
-            <h3>Список релизов недели</h3>
-            <p class="hint">По умолчанию показаны предстоящие релизы. Установлленные на ПРОМ остаются в мониторинге и открываются переключателем.</p>
+            <div class="table-card-head">
+                <div>
+                    <h3>Список релизов недели</h3>
+                    <p class="hint">По умолчанию показаны предстоящие релизы. Установленные на ПРОМ остаются в мониторинге и открываются переключателем.</p>
+                </div>
+            </div>
             <div class="report-toolbar">
                 <div class="report-filter-state">Фильтр: <strong id="activeFilterLabel">не выбран</strong></div>
-                <label class="final-toggle">
-                    <input type="checkbox" id="showFinalRows">
-                    Показать установленные на ПРОМ ({stats.get('hidden_by_default', stats['installed'])})
-                </label>
-                <button type="button" class="refresh-page-btn" onclick="window.location.reload()">Обновить</button>
-                <button type="button" class="clear-filter-btn" id="clearReportFilter" hidden>Сбросить фильтр</button>
+                <div class="toolbar-actions">
+                    <label class="final-toggle">
+                        <input type="checkbox" id="showFinalRows">
+                        Показать установленные на ПРОМ ({stats.get('hidden_by_default', stats['installed'])})
+                    </label>
+                    <button type="button" class="refresh-page-btn" onclick="window.location.reload()">Обновить</button>
+                    <button type="button" class="clear-filter-btn" id="clearReportFilter" hidden>Сбросить фильтр</button>
+                </div>
             </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>№</th>
-                        <th>Название</th>
-                        <th>№ ЗНИ</th>
-                        <th>ID релиза</th>
-                        <th>ID РОВ</th>
-                        <th>Сборка</th>
-                        <th>Тип</th>
-                        <th>Дата начала</th>
-                        <th>Дата окончания</th>
-                        <th>Система</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {rows_html if rows_html else '<tr><td colspan="10">На текущую неделю релизы не найдены.</td></tr>'}
-                </tbody>
-            </table>
+            <div class="week-table-scroll">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>№</th>
+                            <th>Название</th>
+                            <th>№ ЗНИ</th>
+                            <th>ID релиза</th>
+                            <th>ID РОВ</th>
+                            <th>Сборка</th>
+                            <th>Тип</th>
+                            <th>Дата начала</th>
+                            <th>Дата окончания</th>
+                            <th>Система</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {rows_html if rows_html else '<tr><td colspan="10">На текущую неделю релизы не найдены.</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
         </section>
 
         <div class="footer">Отчет сформирован: {html.escape(report_data['generated_at'])}</div>
     </div>
     <script>
         (function () {{
+            const themeToggle = document.getElementById('themeToggle');
             const filterButtons = Array.from(document.querySelectorAll('.counter-filter'));
             const summaryButtons = Array.from(document.querySelectorAll('.summary-card-button'));
             const clearButton = document.getElementById('clearReportFilter');
@@ -1009,6 +1273,27 @@ class ReleaseReportService:
 
             function normalize(value) {{
                 return String(value || '').trim().toLowerCase();
+            }}
+
+            function setTheme(theme) {{
+                document.documentElement.setAttribute('data-theme', theme);
+                localStorage.setItem('theme', theme);
+                if (themeToggle) {{
+                    const icon = document.getElementById('themeToggleIcon');
+                    if (icon) {{
+                        icon.classList.toggle('bi-sun', theme !== 'dark');
+                        icon.classList.toggle('bi-moon', theme === 'dark');
+                    }}
+                }}
+            }}
+
+            setTheme(document.documentElement.getAttribute('data-theme') || 'light');
+
+            if (themeToggle) {{
+                themeToggle.addEventListener('click', () => {{
+                    const current = document.documentElement.getAttribute('data-theme') || 'light';
+                    setTheme(current === 'dark' ? 'light' : 'dark');
+                }});
             }}
 
             function applyFilter() {{
