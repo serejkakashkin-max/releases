@@ -544,26 +544,40 @@ def _normalize_rollout_note_flags(payload):
     return normalized
 
 
+def _normalize_zni_meta(payload):
+    raw_meta = payload if isinstance(payload, dict) else {}
+    normalized = {}
+    if raw_meta.get("auto_color_migration_done"):
+        normalized["auto_color_migration_done"] = True
+    migrated_at = str(raw_meta.get("auto_color_migration_at") or "").strip()
+    if migrated_at:
+        normalized["auto_color_migration_at"] = migrated_at
+    return normalized
+
+
 def _load_zni_payload():
     payload = _load_state_json(ZNI_FILE, default=None)
     if payload is None:
-        return {"issues": {}, "flags": {}}
+        return {"issues": {}, "flags": {}, "meta": {}}
 
     if not isinstance(payload, dict):
         return {
             "issues": {},
             "flags": {},
+            "meta": {},
         }
 
     if "issues" in payload or "flags" in payload:
         return {
             "issues": _normalize_zni_assignments(payload.get("issues") or {}),
             "flags": _normalize_rollout_note_flags(payload.get("flags") or {}),
+            "meta": _normalize_zni_meta(payload.get("meta") or {}),
         }
 
     return {
         "issues": _normalize_zni_assignments(payload),
         "flags": {},
+        "meta": {},
     }
 
 
@@ -572,6 +586,7 @@ def _save_zni_payload(payload):
         normalized_payload = {
             "issues": _normalize_zni_assignments((payload or {}).get("issues") or {}),
             "flags": _normalize_rollout_note_flags((payload or {}).get("flags") or {}),
+            "meta": _normalize_zni_meta((payload or {}).get("meta") or {}),
         }
         _write_state_json(ZNI_FILE, normalized_payload)
     except Exception as exc:
@@ -626,13 +641,48 @@ def _save_rollout_note_flags(flags):
     _save_zni_payload(payload)
 
 
-def _get_release_auto_color_level(item):
+def _derive_release_auto_color_level_for_migration(item):
     row_state = str(item.get("row_state") or "").strip().lower()
     if row_state == "final":
         return "success"
     if row_state in {"overdue", "cancelled"}:
         return "danger"
     return ""
+
+
+def _ensure_auto_color_migration_to_manual_flags(items):
+    if not items:
+        return
+
+    payload = _load_zni_payload()
+    meta = dict(payload.get("meta") or {})
+    if meta.get("auto_color_migration_done"):
+        return
+
+    flags = dict(payload.get("flags") or {})
+    migrated_at = _format_timestamp()
+    migrated_count = 0
+    for item in items:
+        row_key = str(_get_assignment_key_for_item(item) or item.get("release_key") or "").strip()
+        release_key = str(item.get("release_key") or "").strip()
+        if not row_key or row_key in flags or (release_key and release_key in flags):
+            continue
+        level = _derive_release_auto_color_level_for_migration(item)
+        if level not in {"success", "danger"}:
+            continue
+        flags[row_key] = {
+            "has_rollout_notes": True,
+            "rollout_notes_level": level,
+            "updated_at": migrated_at,
+        }
+        migrated_count += 1
+
+    meta["auto_color_migration_done"] = True
+    meta["auto_color_migration_at"] = migrated_at
+    payload["flags"] = flags
+    payload["meta"] = meta
+    _save_zni_payload(payload)
+    logging.info("Release monitor: migrated %s legacy auto color rows to manual flags", migrated_count)
 
 
 def _normalize_manual_release_override(value):
@@ -1957,7 +2007,6 @@ def _apply_release_attempt_outcomes(items):
 def _apply_zni_assignments(items):
     assignments = _load_zni_assignments()
     flags = _load_rollout_note_flags()
-    flags_changed = False
     for item in items:
         assignment_key = _get_assignment_key_for_item(item)
         zni_assignment = assignments.get(assignment_key) or assignments.get(item.get("release_key"), {})
@@ -1978,15 +2027,8 @@ def _apply_zni_assignments(items):
             rollout_level = str(rollout_note.get("rollout_notes_level") or "warning").strip().lower()
             if rollout_level not in {"success", "warning", "danger", "none"}:
                 rollout_level = "warning"
-            if rollout_level != "none" and rollout_level == _get_release_auto_color_level(item):
-                if rollout_flag_key in flags:
-                    flags.pop(rollout_flag_key, None)
-                    flags_changed = True
-                rollout_level = ""
         item["rollout_notes_level"] = rollout_level
         item["has_rollout_notes"] = bool(rollout_level and rollout_level != "none")
-    if flags_changed:
-        _save_rollout_note_flags(flags)
     return items
 
 
@@ -2486,15 +2528,7 @@ def _is_release_far_future(item):
 
 
 def _render_confluence_release_row(item):
-    row_state = str(item.get("row_state") or "planned").strip().lower()
-    row_bg = {
-        "notes": "#fff7db",
-        "final": "#eaf7ef",
-        "cancelled": "#fdebec",
-        "overdue": "#fff0f0",
-        "today": "",
-        "planned": "",
-    }.get(row_state, "")
+    row_bg = ""
     rollout_level = str(item.get("rollout_notes_level") or ("warning" if item.get("has_rollout_notes") else "")).strip().lower()
     if rollout_level == "success":
         row_bg = "#eaf7ef"
@@ -4672,6 +4706,7 @@ def _normalize_release_payload(payload):
     _apply_date_overrides(normalized_items)
     _apply_release_attempt_outcomes(normalized_items)
     _apply_duty_schedule_assignments(normalized_items, persist=False)
+    _ensure_auto_color_migration_to_manual_flags(normalized_items)
     _apply_zni_assignments(normalized_items)
     _apply_manual_release_overrides(normalized_items, payload.get("manual_overrides") or {})
     _apply_week_control_flags(normalized_items)
@@ -5207,11 +5242,6 @@ def set_release_monitor_rollout_notes(release_key, enabled=False, level=""):
         if _cached_data is not None:
             for item in _cached_data.get("items") or []:
                 if _get_assignment_key_for_item(item) == release_key:
-                    if enabled and level != "none" and level == _get_release_auto_color_level(item):
-                        enabled = False
-                        level = ""
-                        flags.pop(release_key, None)
-                        _save_rollout_note_flags(flags)
                     item["has_rollout_notes"] = bool(enabled and level != "none")
                     item["rollout_notes_level"] = level
                     break

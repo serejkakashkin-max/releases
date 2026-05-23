@@ -771,30 +771,6 @@
             border-bottom: none;
         }
 
-        .release-row.state-overdue {
-            background: rgba(248, 81, 73, 0.08);
-        }
-
-        .release-row.state-overdue td {
-            background: rgba(248, 81, 73, 0.08);
-        }
-
-        .release-row.state-final {
-            background: rgba(63, 185, 80, 0.10);
-        }
-
-        .release-row.state-final td {
-            background: rgba(63, 185, 80, 0.10);
-        }
-
-        .release-row.state-cancelled {
-            background: rgba(248, 81, 73, 0.12);
-        }
-
-        .release-row.state-cancelled td {
-            background: rgba(248, 81, 73, 0.12);
-        }
-
         .release-row.rollout-notes-success,
         .release-row.rollout-notes-success td {
             background: rgba(63, 185, 80, 0.10);
@@ -4904,17 +4880,6 @@ function buildReviewerCell(item) {
             }
         }
 
-        function getReleaseAutoColorLevel(item) {
-            const rowState = String(item?.row_state || '').trim().toLowerCase();
-            if (rowState === 'final') {
-                return 'success';
-            }
-            if (rowState === 'overdue' || rowState === 'cancelled') {
-                return 'danger';
-            }
-            return '';
-        }
-
         async function setReleaseManualColor(releaseKey, level) {
             const item = getReleaseMonitorItem(releaseKey);
             if (!item) {
@@ -4924,19 +4889,7 @@ function buildReviewerCell(item) {
 
             const normalizedLevel = ['success', 'warning', 'danger'].includes(level) ? level : '';
             const currentLevel = item.rollout_notes_level || (item.has_rollout_notes ? 'warning' : '');
-            const autoLevel = getReleaseAutoColorLevel(item);
-            let nextLevel = '';
-            if (currentLevel === normalizedLevel) {
-                nextLevel = autoLevel ? 'none' : '';
-            } else if (!currentLevel && normalizedLevel === autoLevel) {
-                nextLevel = 'none';
-            } else if (currentLevel === 'none') {
-                nextLevel = normalizedLevel;
-            } else if (normalizedLevel === autoLevel) {
-                nextLevel = '';
-            } else {
-                nextLevel = normalizedLevel;
-            }
+            const nextLevel = currentLevel === normalizedLevel ? '' : normalizedLevel;
             const enabled = Boolean(nextLevel);
             try {
                 const response = await fetch(BASE_PATH + '/dashboard/release-monitor/rollout-notes', {
