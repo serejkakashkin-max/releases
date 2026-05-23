@@ -743,6 +743,11 @@ def _load_manual_order():
                 for item in (value.get("force_unnumbered") or [])
                 if str(item or "").strip()
             ],
+            "force_numbered": [
+                str(item or "").strip()
+                for item in (value.get("force_numbered") or [])
+                if str(item or "").strip()
+            ],
         }
     _manual_order_cache = normalized
     return normalized
@@ -770,7 +775,7 @@ def _remove_row_from_manual_order(row_key):
     for year_payload in manual_order.values():
         if not isinstance(year_payload, dict):
             continue
-        for group_name in ("waiting", "numbered", "force_unnumbered"):
+        for group_name in ("waiting", "numbered", "force_unnumbered", "force_numbered"):
             values = year_payload.get(group_name)
             if isinstance(values, dict):
                 next_values = {}
@@ -1024,6 +1029,25 @@ def _is_approved_rov_status(status):
     normalized = _normalize_rule_status(status)
     approved_statuses = {_normalize_rule_status(value) for value in APPROVED_ROV_STATUSES}
     return normalized in approved_statuses
+
+
+def _is_cancelled_rov_status(status):
+    normalized = _normalize_rule_status(status)
+    return normalized in {"отменен", "отменено", "cancelled", "canceled"}
+
+
+def _is_final_release_status(status):
+    return _normalize_rule_status(status) == _normalize_rule_status(FINAL_RELEASE_STATUS)
+
+
+def _is_cancelled_reroll_rov(item):
+    if not isinstance(item, dict):
+        return False
+    return bool(
+        item.get("is_reroll")
+        and _is_final_release_status(item.get("release_status"))
+        and _is_cancelled_rov_status(item.get("rov_status"))
+    )
 
 
 def _is_confirmed_deployment_attempt(item):
@@ -1687,6 +1711,31 @@ def _apply_week_control_flags(items):
         missing_responsible = bool(is_week_release and not _has_release_responsible(item))
         item["is_current_week_assignment_scope"] = is_week_release
         item["is_missing_week_responsible"] = missing_responsible
+    return items
+
+
+def _apply_release_week_buckets(items):
+    week_start, week_end = _get_current_week_bounds()
+    next_week_end = week_end + timedelta(days=7)
+
+    for item in items:
+        bucket = ""
+        label = ""
+        start_date = _get_release_start_date(item)
+
+        if start_date and not item.get("is_cancelled"):
+            if week_start <= start_date <= week_end:
+                bucket = "current"
+            elif week_end < start_date <= next_week_end:
+                bucket = "next"
+                label = "Следующая неделя"
+            elif start_date > next_week_end:
+                bucket = "future"
+                label = "Дальше недели"
+
+        item["week_bucket"] = bucket
+        item["week_bucket_label"] = label
+
     return items
 
 
@@ -3340,6 +3389,8 @@ def _derive_natural_unnumbered(item):
     if not isinstance(item, dict):
         return False
     has_rov = bool(item.get("has_rov") or str(item.get("rov_key") or "").strip())
+    if _is_cancelled_reroll_rov(item):
+        return True
     is_cancelled = bool(item.get("is_cancelled"))
     has_ke = bool(str(item.get("ke") or "").strip())
     has_manual_start = bool(str(item.get("manual_deployment_start") or "").strip())
@@ -3361,6 +3412,11 @@ def _apply_force_unnumbered_flags(year, items):
         for row_key in (year_payload.get("force_unnumbered") or [])
         if str(row_key or "").strip()
     }
+    forced_numbered_keys = {
+        str(row_key or "").strip()
+        for row_key in (year_payload.get("force_numbered") or [])
+        if str(row_key or "").strip()
+    }
 
     for item in items:
         row_key = str(item.get("row_key") or item.get("release_key") or "").strip()
@@ -3372,10 +3428,20 @@ def _apply_force_unnumbered_flags(year, items):
         )
         is_natural_unnumbered = _derive_natural_unnumbered(item)
         is_forced = row_key in forced_keys
+        is_force_numbered = row_key in forced_numbered_keys
+        is_cancelled_reroll_rov = _is_cancelled_reroll_rov(item)
+        if is_force_numbered:
+            is_forced = False
         item["is_natural_unnumbered"] = is_natural_unnumbered
         item["is_force_unnumbered"] = is_forced
+        item["is_force_numbered"] = is_force_numbered
+        item["is_cancelled_reroll_rov"] = is_cancelled_reroll_rov
         item["is_manual_numbering_override"] = manual_numbering_override
-        item["is_unnumbered"] = bool((is_natural_unnumbered or is_forced) and not manual_numbering_override)
+        item["is_unnumbered"] = bool(
+            (is_natural_unnumbered or is_forced)
+            and not manual_numbering_override
+            and not is_force_numbered
+        )
 
 
 def _sort_and_number_records(records):
@@ -3428,7 +3494,13 @@ def _sort_and_number_records(records):
     return records
 
 
-def save_release_monitor_manual_order(year, waiting_row_keys=None, numbered_row_keys=None, force_unnumbered_row_keys=None):
+def save_release_monitor_manual_order(
+    year,
+    waiting_row_keys=None,
+    numbered_row_keys=None,
+    force_unnumbered_row_keys=None,
+    force_numbered_row_keys=None,
+):
     global _cached_data, _last_cache_update
 
     year = int(year or datetime.now().year)
@@ -3459,11 +3531,21 @@ def save_release_monitor_manual_order(year, waiting_row_keys=None, numbered_row_
     normalized_waiting = _normalize_order_payload(waiting_row_keys)
     normalized_numbered = _normalize_order_payload(numbered_row_keys)
     normalized_force_unnumbered = []
+    normalized_force_numbered = []
 
     for row_key in (force_unnumbered_row_keys or []):
         row_key = str(row_key or "").strip()
         if row_key and row_key not in normalized_force_unnumbered:
             normalized_force_unnumbered.append(row_key)
+
+    for row_key in (force_numbered_row_keys or []):
+        row_key = str(row_key or "").strip()
+        if row_key and row_key not in normalized_force_numbered:
+            normalized_force_numbered.append(row_key)
+
+    normalized_force_unnumbered = [
+        row_key for row_key in normalized_force_unnumbered if row_key not in normalized_force_numbered
+    ]
 
     with _cache_lock:
         manual_order = _load_manual_order()
@@ -3471,6 +3553,7 @@ def save_release_monitor_manual_order(year, waiting_row_keys=None, numbered_row_
             "waiting": normalized_waiting,
             "numbered": normalized_numbered,
             "force_unnumbered": normalized_force_unnumbered,
+            "force_numbered": normalized_force_numbered,
         }
         _save_manual_order(manual_order)
 
@@ -4592,6 +4675,7 @@ def _normalize_release_payload(payload):
     _apply_zni_assignments(normalized_items)
     _apply_manual_release_overrides(normalized_items, payload.get("manual_overrides") or {})
     _apply_week_control_flags(normalized_items)
+    _apply_release_week_buckets(normalized_items)
     _sort_and_number_records(normalized_items)
     current_year = datetime.now().year
     previous_year = current_year - 1

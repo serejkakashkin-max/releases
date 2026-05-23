@@ -815,6 +815,14 @@
             background: transparent;
         }
 
+        .release-row.week-next:not(.rollout-notes-success):not(.rollout-notes-warning):not(.rollout-notes-danger) td:first-child {
+            box-shadow: inset 3px 0 0 rgba(45, 212, 191, 0.34);
+        }
+
+        .release-row.week-future:not(.rollout-notes-success):not(.rollout-notes-warning):not(.rollout-notes-danger) td:first-child {
+            box-shadow: inset 3px 0 0 rgba(125, 211, 252, 0.24);
+        }
+
         .release-key-link {
             font-weight: 700;
             color: var(--primary);
@@ -873,6 +881,26 @@
         .release-badge.state-planned {
             background: rgba(25, 135, 84, 0.15);
             color: #198754;
+        }
+
+        .release-badge.week-next {
+            background: rgba(45, 212, 191, 0.12);
+            color: #0f766e;
+            border: 1px solid rgba(45, 212, 191, 0.22);
+        }
+
+        .release-badge.week-future {
+            background: rgba(125, 211, 252, 0.10);
+            color: #0369a1;
+            border: 1px solid rgba(125, 211, 252, 0.18);
+        }
+
+        [data-theme="dark"] .release-badge.week-next {
+            color: #6ee7d8;
+        }
+
+        [data-theme="dark"] .release-badge.week-future {
+            color: #bae6fd;
         }
 
         .release-visible-counter {
@@ -2589,8 +2617,15 @@
                     ? `<div class="release-name-line">сборка: <a href="${escapeHtml(item.release_dist_url)}" target="_blank" class="release-key-link">${escapeHtml(item.release_version)}</a></div>`
                     : `<div class="release-name-line">сборка: ${escapeHtml(item.release_version)}</div>`
                 : '';
-            const statusBadge = item.release_status
-                ? `<div class="release-micro-meta"><span class="release-badge ${item.is_final ? 'state-planned' : item.is_cancelled ? 'state-overdue' : item.is_overdue ? 'state-overdue' : 'state-planned'}">${escapeHtml(item.release_status)}</span>${item.is_pre_final ? '<span class="release-badge pre-final">\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0430 \u043d\u0430 \u041f\u0420\u041e\u041c</span>' : ''}</div>`
+            const weekBucket = ['next', 'future'].includes(item.week_bucket) ? item.week_bucket : '';
+            const weekBadge = weekBucket && item.week_bucket_label
+                ? `<span class="release-badge week-${escapeHtml(weekBucket)}">${escapeHtml(item.week_bucket_label)}</span>`
+                : '';
+            const releaseStatusBadge = item.release_status
+                ? `<span class="release-badge ${item.is_final ? 'state-planned' : item.is_cancelled ? 'state-overdue' : item.is_overdue ? 'state-overdue' : 'state-planned'}">${escapeHtml(item.release_status)}</span>`
+                : '';
+            const statusBadge = (releaseStatusBadge || item.is_pre_final || weekBadge)
+                ? `<div class="release-micro-meta">${releaseStatusBadge}${item.is_pre_final ? '<span class="release-badge pre-final">\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0430 \u043d\u0430 \u041f\u0420\u041e\u041c</span>' : ''}${weekBadge}</div>`
                 : '';
 
             if (!lines.length) {
@@ -2723,11 +2758,23 @@ function buildReviewerCell(item) {
                 ? 'Вернуть релиз в нумерацию'
                 : 'Отправить релиз в ненумерной отсек';
             const forceUnnumberedText = item.is_force_unnumbered ? 'Вернуть номер' : 'Не нумеровать';
-            const forceUnnumberedButton = (isReleaseOrderMode && (!item.is_natural_unnumbered || item.is_force_unnumbered))
+            const forceUnnumberedButton = (isReleaseOrderMode && !item.is_force_numbered && (!item.is_natural_unnumbered || item.is_force_unnumbered))
                 ? `
                     <button class="release-row-edit-btn ${item.is_force_unnumbered ? 'active-muted' : ''}" onclick="toggleReleaseForceUnnumbered('${escapeHtml(item.row_key || item.release_key)}')" title="${escapeHtml(forceUnnumberedTitle)}">
                         <i class="bi bi-eye-slash"></i>
                         ${escapeHtml(forceUnnumberedText)}
+                    </button>
+                `
+                : '';
+            const forceNumberedTitle = item.is_force_numbered
+                ? 'Снять ручной возврат строки в нумерацию'
+                : 'Вернуть отмененный РОВ перераскатки в нумерацию';
+            const forceNumberedText = item.is_force_numbered ? 'Снять возврат' : 'Вернуть номер';
+            const forceNumberedButton = (isReleaseOrderMode && (item.is_cancelled_reroll_rov || item.is_force_numbered))
+                ? `
+                    <button class="release-row-edit-btn ${item.is_force_numbered ? 'active-muted' : ''}" onclick="toggleReleaseForceNumbered('${escapeHtml(item.row_key || item.release_key)}')" title="${escapeHtml(forceNumberedTitle)}">
+                        <i class="bi bi-hash"></i>
+                        ${escapeHtml(forceNumberedText)}
                     </button>
                 `
                 : '';
@@ -2755,6 +2802,7 @@ function buildReviewerCell(item) {
                         ${buildColorSwatch('warning', 'Ручная желтая подсветка')}
                         ${buildColorSwatch('danger', 'Ручная красная подсветка')}
                     </div>
+                    ${forceNumberedButton}
                     ${forceUnnumberedButton}
                 </div>
             `;
@@ -2852,10 +2900,11 @@ function buildReviewerCell(item) {
                     ? 'rollout-notes-warning'
                     : rolloutLevel === 'none'
                         ? 'rollout-notes-none'
-                    : '';
+                        : '';
+            const weekClass = ['next', 'future'].includes(item.week_bucket) ? `week-${item.week_bucket}` : '';
             return `
                 <tr
-                    class="release-row state-${escapeHtml(item.row_state || 'planned')} ${rolloutClass}"
+                    class="release-row state-${escapeHtml(item.row_state || 'planned')} ${rolloutClass} ${weekClass}"
                     data-year="${escapeHtml(item.year)}"
                     data-status="${escapeHtml(item.release_status || '')}"
                     data-final-installed="${item.is_final && !item.is_cancelled ? 'true' : 'false'}"
@@ -4330,6 +4379,7 @@ function buildReviewerCell(item) {
                 waiting: buildBuckets(splitItems.waiting),
                 numbered: buildBuckets(splitItems.numbered),
                 force_unnumbered: yearItems.filter(item => item.is_force_unnumbered).map(item => item.row_key || item.release_key),
+                force_numbered: yearItems.filter(item => item.is_force_numbered).map(item => item.row_key || item.release_key),
             };
         }
 
@@ -4446,16 +4496,19 @@ function buildReviewerCell(item) {
             }
 
             const forcedKeys = new Set(releaseOrderDraft.force_unnumbered || []);
+            const forceNumberedKeys = new Set(releaseOrderDraft.force_numbered || []);
             const effectiveItems = yearItems.map(item => {
                 const rowKey = item.row_key || item.release_key;
                 const isForced = forcedKeys.has(rowKey);
+                const isForceNumbered = forceNumberedKeys.has(rowKey);
                 const isNaturalUnnumbered = Boolean(item.is_natural_unnumbered);
                 const isManualOverride = isManualNumberingOverride(item);
                 return {
                     ...item,
-                    is_force_unnumbered: isForced,
+                    is_force_unnumbered: isForced && !isForceNumbered,
+                    is_force_numbered: isForceNumbered,
                     is_manual_numbering_override: isManualOverride,
-                    is_unnumbered: (isNaturalUnnumbered || isForced) && !isManualOverride,
+                    is_unnumbered: (isNaturalUnnumbered || isForced) && !isManualOverride && !isForceNumbered,
                 };
             });
 
@@ -4653,6 +4706,7 @@ function buildReviewerCell(item) {
                         waiting_row_keys: releaseOrderDraft.waiting || [],
                         numbered_row_keys: releaseOrderDraft.numbered || [],
                         force_unnumbered_row_keys: releaseOrderDraft.force_unnumbered || [],
+                        force_numbered_row_keys: releaseOrderDraft.force_numbered || [],
                     })
                 });
                 const data = await response.json();
@@ -4919,6 +4973,9 @@ function buildReviewerCell(item) {
             releaseOrderDraft.force_unnumbered = Array.isArray(releaseOrderDraft.force_unnumbered)
                 ? releaseOrderDraft.force_unnumbered
                 : [];
+            releaseOrderDraft.force_numbered = Array.isArray(releaseOrderDraft.force_numbered)
+                ? releaseOrderDraft.force_numbered
+                : [];
 
             const forceIndex = releaseOrderDraft.force_unnumbered.indexOf(releaseKey);
             const enabled = forceIndex === -1;
@@ -4928,10 +4985,55 @@ function buildReviewerCell(item) {
             removeReleaseRowFromOrderBuckets(releaseOrderDraft.numbered, releaseKey);
 
             if (enabled) {
+                const forceNumberedIndex = releaseOrderDraft.force_numbered.indexOf(releaseKey);
+                if (forceNumberedIndex !== -1) {
+                    releaseOrderDraft.force_numbered.splice(forceNumberedIndex, 1);
+                }
                 releaseOrderDraft.force_unnumbered.push(releaseKey);
                 addReleaseRowToOrderBucket(releaseOrderDraft.waiting, item, releaseKey, 'start');
             } else {
                 releaseOrderDraft.force_unnumbered.splice(forceIndex, 1);
+            }
+
+            releaseOrderDirty = true;
+            refreshReleaseOrderModeUi();
+            applyReleaseFilters();
+        }
+
+        function toggleReleaseForceNumbered(releaseKey) {
+            if (!isReleaseOrderMode || !releaseOrderDraft) {
+                return;
+            }
+
+            const item = getReleaseMonitorItem(releaseKey);
+            if (!item) {
+                alert('Не удалось найти строку релиза.');
+                return;
+            }
+
+            releaseOrderDraft.force_numbered = Array.isArray(releaseOrderDraft.force_numbered)
+                ? releaseOrderDraft.force_numbered
+                : [];
+            releaseOrderDraft.force_unnumbered = Array.isArray(releaseOrderDraft.force_unnumbered)
+                ? releaseOrderDraft.force_unnumbered
+                : [];
+
+            const forceNumberedIndex = releaseOrderDraft.force_numbered.indexOf(releaseKey);
+            const enabled = forceNumberedIndex === -1;
+            releaseOrderDraft.waiting = normalizeReleaseOrderBuckets(releaseOrderDraft.waiting);
+            releaseOrderDraft.numbered = normalizeReleaseOrderBuckets(releaseOrderDraft.numbered);
+            removeReleaseRowFromOrderBuckets(releaseOrderDraft.waiting, releaseKey);
+            removeReleaseRowFromOrderBuckets(releaseOrderDraft.numbered, releaseKey);
+
+            if (enabled) {
+                const forceUnnumberedIndex = releaseOrderDraft.force_unnumbered.indexOf(releaseKey);
+                if (forceUnnumberedIndex !== -1) {
+                    releaseOrderDraft.force_unnumbered.splice(forceUnnumberedIndex, 1);
+                }
+                releaseOrderDraft.force_numbered.push(releaseKey);
+                addReleaseRowToOrderBucket(releaseOrderDraft.numbered, item, releaseKey, 'start');
+            } else {
+                releaseOrderDraft.force_numbered.splice(forceNumberedIndex, 1);
             }
 
             releaseOrderDirty = true;

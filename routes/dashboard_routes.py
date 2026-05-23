@@ -506,11 +506,13 @@ def save_release_monitor_order():
         waiting_row_keys = data.get("waiting_row_keys", [])
         numbered_row_keys = data.get("numbered_row_keys", [])
         force_unnumbered_row_keys = data.get("force_unnumbered_row_keys", [])
+        force_numbered_row_keys = data.get("force_numbered_row_keys", [])
         result = save_release_monitor_manual_order(
             year,
             waiting_row_keys,
             numbered_row_keys,
             force_unnumbered_row_keys,
+            force_numbered_row_keys,
         )
         payload = result.get("data", {})
         return jsonify({
