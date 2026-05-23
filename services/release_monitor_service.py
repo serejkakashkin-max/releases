@@ -544,15 +544,8 @@ def _normalize_rollout_note_flags(payload):
     return normalized
 
 
-def _normalize_zni_meta(payload):
-    raw_meta = payload if isinstance(payload, dict) else {}
-    normalized = {}
-    if raw_meta.get("auto_color_migration_done"):
-        normalized["auto_color_migration_done"] = True
-    migrated_at = str(raw_meta.get("auto_color_migration_at") or "").strip()
-    if migrated_at:
-        normalized["auto_color_migration_at"] = migrated_at
-    return normalized
+def _normalize_zni_payload_meta(payload):
+    return dict(payload) if isinstance(payload, dict) else {}
 
 
 def _load_zni_payload():
@@ -571,7 +564,7 @@ def _load_zni_payload():
         return {
             "issues": _normalize_zni_assignments(payload.get("issues") or {}),
             "flags": _normalize_rollout_note_flags(payload.get("flags") or {}),
-            "meta": _normalize_zni_meta(payload.get("meta") or {}),
+            "meta": _normalize_zni_payload_meta(payload.get("meta") or {}),
         }
 
     return {
@@ -586,7 +579,7 @@ def _save_zni_payload(payload):
         normalized_payload = {
             "issues": _normalize_zni_assignments((payload or {}).get("issues") or {}),
             "flags": _normalize_rollout_note_flags((payload or {}).get("flags") or {}),
-            "meta": _normalize_zni_meta((payload or {}).get("meta") or {}),
+            "meta": _normalize_zni_payload_meta((payload or {}).get("meta") or {}),
         }
         _write_state_json(ZNI_FILE, normalized_payload)
     except Exception as exc:
@@ -639,50 +632,6 @@ def _save_rollout_note_flags(flags):
     payload = _load_zni_payload()
     payload["flags"] = _normalize_rollout_note_flags(flags)
     _save_zni_payload(payload)
-
-
-def _derive_release_auto_color_level_for_migration(item):
-    row_state = str(item.get("row_state") or "").strip().lower()
-    if row_state == "final":
-        return "success"
-    if row_state in {"overdue", "cancelled"}:
-        return "danger"
-    return ""
-
-
-def _ensure_auto_color_migration_to_manual_flags(items):
-    if not items:
-        return
-
-    payload = _load_zni_payload()
-    meta = dict(payload.get("meta") or {})
-    if meta.get("auto_color_migration_done"):
-        return
-
-    flags = dict(payload.get("flags") or {})
-    migrated_at = _format_timestamp()
-    migrated_count = 0
-    for item in items:
-        row_key = str(_get_assignment_key_for_item(item) or item.get("release_key") or "").strip()
-        release_key = str(item.get("release_key") or "").strip()
-        if not row_key or row_key in flags or (release_key and release_key in flags):
-            continue
-        level = _derive_release_auto_color_level_for_migration(item)
-        if level not in {"success", "danger"}:
-            continue
-        flags[row_key] = {
-            "has_rollout_notes": True,
-            "rollout_notes_level": level,
-            "updated_at": migrated_at,
-        }
-        migrated_count += 1
-
-    meta["auto_color_migration_done"] = True
-    meta["auto_color_migration_at"] = migrated_at
-    payload["flags"] = flags
-    payload["meta"] = meta
-    _save_zni_payload(payload)
-    logging.info("Release monitor: migrated %s legacy auto color rows to manual flags", migrated_count)
 
 
 def _normalize_manual_release_override(value):
@@ -4706,7 +4655,6 @@ def _normalize_release_payload(payload):
     _apply_date_overrides(normalized_items)
     _apply_release_attempt_outcomes(normalized_items)
     _apply_duty_schedule_assignments(normalized_items, persist=False)
-    _ensure_auto_color_migration_to_manual_flags(normalized_items)
     _apply_zni_assignments(normalized_items)
     _apply_manual_release_overrides(normalized_items, payload.get("manual_overrides") or {})
     _apply_week_control_flags(normalized_items)
