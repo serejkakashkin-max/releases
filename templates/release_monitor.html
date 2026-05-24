@@ -81,8 +81,8 @@
             background: var(--release-panel-bg);
             border: 1px solid var(--border-color);
             border-radius: 18px;
-            padding: 1rem 1.25rem 1.15rem;
-            margin: 0 auto 1rem;
+            padding: 0.72rem 1rem 0.82rem;
+            margin: 0 auto 0.65rem;
             max-width: 1120px;
             box-shadow: 0 20px 44px var(--release-shadow);
         }
@@ -90,7 +90,7 @@
         .page-hero-top {
             display: flex;
             justify-content: center;
-            gap: 0.9rem;
+            gap: 0.55rem;
             align-items: center;
             flex-wrap: wrap;
         }
@@ -99,7 +99,7 @@
             display: flex;
             flex-direction: column;
             align-items: stretch;
-            gap: 0.65rem;
+            gap: 0.45rem;
             width: 100%;
         }
 
@@ -319,26 +319,25 @@
             border: 1px solid var(--border-color);
             border-radius: 18px;
             box-shadow: 0 18px 48px var(--release-shadow);
-            overflow: hidden;
         }
 
         .release-monitor-content {
-            padding: 1rem 1.5rem 1.35rem;
+            padding: 0.72rem 1.2rem 0.9rem;
         }
 
         .release-monitor-summary {
             display: grid;
             grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 0.55rem;
-            margin-bottom: 0.7rem;
+            gap: 0.42rem;
+            margin-bottom: 0.48rem;
         }
 
         .release-summary-card {
             background: var(--release-soft-bg);
             border: 1px solid var(--border-color);
-            border-radius: 13px;
-            padding: 0.72rem 0.85rem;
-            min-height: 78px;
+            border-radius: 12px;
+            padding: 0.54rem 0.68rem;
+            min-height: 62px;
         }
 
         .release-summary-label {
@@ -351,15 +350,15 @@
 
         .release-summary-value {
             color: var(--text-primary);
-            font-size: 1.45rem;
+            font-size: 1.24rem;
             font-weight: 800;
             line-height: 1.1;
-            margin-top: 0.28rem;
+            margin-top: 0.18rem;
         }
 
         .release-summary-note {
-            margin-top: 0.18rem;
-            font-size: 0.8rem;
+            margin-top: 0.08rem;
+            font-size: 0.72rem;
             color: var(--text-muted);
             white-space: nowrap;
             overflow: hidden;
@@ -385,11 +384,11 @@
         .release-monitor-controls {
             display: grid;
             grid-template-columns: 1.4fr 1fr 1fr 1fr;
-            gap: 0.55rem;
-            margin-bottom: 0.9rem;
-            padding: 0.35rem;
+            gap: 0.4rem;
+            margin-bottom: 0.48rem;
+            padding: 0.28rem;
             border: 1px solid var(--release-soft-border);
-            border-radius: 15px;
+            border-radius: 13px;
             background: var(--release-strip-bg);
         }
 
@@ -397,23 +396,23 @@
             display: flex;
             justify-content: space-between;
             align-items: stretch;
-            gap: 0.55rem;
-            margin: 0 0 0.75rem;
+            gap: 0.42rem;
+            margin: 0 0 0.48rem;
             flex-wrap: wrap;
-            padding: 0.35rem;
+            padding: 0.28rem;
             border: 1px solid var(--release-soft-border);
-            border-radius: 15px;
+            border-radius: 13px;
             background: var(--release-strip-bg);
         }
 
         .release-resource-links {
             display: grid;
             grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 0.35rem;
-            margin: 0 0 0.7rem;
-            padding: 0.35rem;
+            gap: 0.28rem;
+            margin: 0 0 0.48rem;
+            padding: 0.28rem;
             border: 1px solid var(--release-soft-border);
-            border-radius: 15px;
+            border-radius: 13px;
             background: var(--release-strip-bg);
         }
 
@@ -422,13 +421,13 @@
             align-items: center;
             justify-content: space-between;
             gap: 0.5rem;
-            padding: 0.52rem 0.6rem;
-            border-radius: 12px;
+            padding: 0.4rem 0.5rem;
+            border-radius: 10px;
             border: 0;
             background: transparent;
             color: var(--text-primary);
             text-decoration: none;
-            min-height: 38px;
+            min-height: 32px;
             transition: background 0.18s ease, box-shadow 0.18s ease, color 0.18s ease;
         }
 
@@ -488,13 +487,13 @@
             display: inline-flex;
             align-items: center;
             justify-content: space-between;
-            gap: 0.65rem;
-            padding: 0.58rem 0.72rem;
-            border-radius: 12px;
+            gap: 0.48rem;
+            padding: 0.42rem 0.58rem;
+            border-radius: 10px;
             border: 0;
             background: var(--release-soft-bg);
             color: var(--text-primary);
-            min-height: 42px;
+            min-height: 34px;
             align-self: flex-start;
             width: auto;
         }
@@ -573,13 +572,13 @@
         .release-search-box input,
         .release-filter-select {
             width: 100%;
-            padding: 0.68rem 0.9rem;
-            border-radius: 12px;
+            padding: 0.52rem 0.74rem;
+            border-radius: 10px;
             border: 0;
             background: var(--release-soft-bg);
             color: var(--text-primary);
-            font-size: 0.9rem;
-            min-height: 44px;
+            font-size: 0.84rem;
+            min-height: 36px;
             box-shadow: inset 0 0 0 1px var(--release-soft-border);
         }
 
@@ -624,10 +623,11 @@
         }
 
         .release-search-box input {
-            padding-left: 2.35rem;
+            padding-left: 2.2rem;
         }
 
         .release-table-wrap {
+            min-width: 0;
             overflow-x: auto;
             border: 1px solid var(--border-color);
             border-radius: 14px;
@@ -635,15 +635,16 @@
         }
 
         .release-table-wrap.compact {
-            max-height: 440px;
-            overflow-y: auto;
+            max-height: none;
         }
 
+        .release-table-wrap::-webkit-scrollbar,
         .release-table-wrap.compact::-webkit-scrollbar {
             width: 10px;
             height: 10px;
         }
 
+        .release-table-wrap::-webkit-scrollbar-thumb,
         .release-table-wrap.compact::-webkit-scrollbar-thumb {
             background: rgba(128, 128, 128, 0.35);
             border-radius: 999px;
@@ -653,15 +654,18 @@
             width: 100%;
             border-collapse: collapse;
             table-layout: fixed;
+            font-size: 12.5px;
+            line-height: 1.24;
         }
 
         .release-monitor-table th,
         .release-monitor-table td {
-            padding: 0.64rem 0.58rem;
+            padding: 0.42rem 0.44rem;
             border-bottom: 1px solid var(--release-row-line);
             vertical-align: top;
             overflow-wrap: anywhere;
             word-break: normal;
+            line-height: 1.24;
         }
 
         .release-monitor-table th:nth-child(1),
@@ -717,8 +721,8 @@
         .release-monitor-table td:nth-child(6),
         .release-monitor-table td:nth-child(7),
         .release-monitor-table td:nth-child(8) {
-            font-size: 0.82rem;
-            line-height: 1.28;
+            font-size: 0.79rem;
+            line-height: 1.24;
         }
 
         .release-th-filter {
@@ -730,29 +734,30 @@
         .release-th-filter select {
             width: 100%;
             min-width: 0;
-            border-radius: 10px;
+            border-radius: 9px;
             border: 1px solid var(--border-color);
             background: var(--bg-card);
             color: var(--text-primary);
-            padding: 0.4rem 0.55rem;
-            font-size: 0.78rem;
+            padding: 0.32rem 0.48rem;
+            font-size: 0.79rem;
             font-weight: 500;
             text-transform: none;
             letter-spacing: normal;
         }
 
         .release-monitor-table th {
-            background: var(--release-table-head-bg);
-            box-shadow: inset 0 -1px 0 var(--release-soft-border);
+            background: linear-gradient(180deg, var(--bg-card) 0%, var(--release-table-head-bg) 100%);
+            border-bottom: 1px solid var(--border-color);
+            box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06), inset 0 -1px 0 var(--release-soft-border);
             color: var(--text-secondary);
-            font-size: 0.7rem;
+            font-size: 0.69rem;
             text-transform: uppercase;
             letter-spacing: 0.02em;
             white-space: normal;
-            line-height: 1.35;
+            line-height: 1.22;
             position: sticky;
             top: 0;
-            z-index: 2;
+            z-index: 5;
         }
 
         .release-monitor-table tbody tr {
@@ -812,25 +817,25 @@
 
         .release-name-line {
             display: block;
-            line-height: 1.28;
-            margin-bottom: 0.15rem;
-            font-size: 0.84rem;
+            line-height: 1.22;
+            margin-bottom: 0.08rem;
+            font-size: 0.8rem;
         }
 
         .release-micro-meta {
             display: flex;
             flex-wrap: wrap;
-            gap: 0.4rem;
-            margin-top: 0.45rem;
+            gap: 0.28rem;
+            margin-top: 0.32rem;
         }
 
         .release-badge {
             display: inline-flex;
             align-items: center;
-            gap: 0.3rem;
-            padding: 0.26rem 0.55rem;
+            gap: 0.24rem;
+            padding: 0.2rem 0.45rem;
             border-radius: 999px;
-            font-size: 0.72rem;
+            font-size: 0.68rem;
             font-weight: 700;
             white-space: nowrap;
         }
@@ -882,7 +887,7 @@
         .release-visible-counter {
             color: var(--text-secondary);
             font-size: 0.88rem;
-            margin-bottom: 0.75rem;
+            margin-bottom: 0.45rem;
         }
 
         .release-update-banner {
@@ -890,8 +895,8 @@
             align-items: center;
             justify-content: space-between;
             gap: 0.8rem;
-            padding: 0.75rem 0.9rem;
-            margin-bottom: 0.9rem;
+            padding: 0.55rem 0.75rem;
+            margin-bottom: 0.55rem;
             border: 1px solid rgba(255, 193, 7, 0.42);
             border-radius: 12px;
             background: rgba(255, 193, 7, 0.12);
@@ -1118,12 +1123,12 @@
         .reviewer-select {
             width: 100%;
             min-width: 0;
-            padding: 0.42rem 0.58rem;
-            border-radius: 10px;
+            padding: 0.34rem 0.5rem;
+            border-radius: 9px;
             border: 1px solid var(--border-color);
             background: var(--bg-secondary);
             color: var(--text-primary);
-            font-size: 0.8rem;
+            font-size: 0.79rem;
             transition: border-color 0.2s ease, box-shadow 0.2s ease;
         }
 
@@ -1142,13 +1147,13 @@
             min-width: 0;
             display: flex;
             flex-direction: column;
-            gap: 0.38rem;
+            gap: 0.28rem;
         }
 
         .reviewer-cell.missing-week-responsible {
-            padding: 0.48rem;
-            margin: -0.48rem;
-            border-radius: 12px;
+            padding: 0.36rem;
+            margin: -0.36rem;
+            border-radius: 10px;
             border: 1px solid rgba(245, 158, 11, 0.34);
             background: rgba(245, 158, 11, 0.10);
             box-shadow: inset 3px 0 0 rgba(245, 158, 11, 0.72);
@@ -1157,10 +1162,10 @@
         .responsible-missing-badge {
             display: inline-flex;
             align-items: center;
-            gap: 0.28rem;
-            margin-top: 0.35rem;
+            gap: 0.22rem;
+            margin-top: 0.24rem;
             color: #b45309;
-            font-size: 0.72rem;
+            font-size: 0.68rem;
             font-weight: 700;
         }
 
@@ -1173,14 +1178,65 @@
             width: 100%;
         }
 
+        .reviewer-edit-row {
+            display: grid;
+            grid-template-columns: 5.9rem minmax(0, 1fr);
+            align-items: center;
+            gap: 0.34rem;
+            min-width: 0;
+        }
+
+        .reviewer-edit-row.responsibles {
+            align-items: start;
+        }
+
+        .reviewer-edit-label {
+            color: var(--text-secondary);
+            font-size: 0.68rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            white-space: nowrap;
+            line-height: 1.1;
+        }
+
+        .reviewer-edit-control {
+            min-width: 0;
+            display: flex;
+            align-items: center;
+        }
+
+        .reviewer-edit-control .reviewer-select,
+        .reviewer-edit-control .checker-input {
+            min-height: 28px;
+            padding: 0.25rem 0.44rem;
+        }
+
+        .reviewer-edit-control .responsibles-stack,
+        .reviewer-edit-control .reviewer-duty-wrap,
+        .reviewer-edit-control .reviewer-duty-control {
+            width: 100%;
+        }
+
+        .reviewer-edit-control .responsible-row {
+            grid-template-columns: minmax(0, 1fr) 22px;
+            gap: 0.18rem;
+        }
+
+        .reviewer-edit-control .responsible-icon-btn {
+            width: 22px;
+            height: 22px;
+            border-radius: 7px;
+        }
+
         .release-number-cell {
             display: flex;
             align-items: center;
-            gap: 0.32rem;
+            gap: 0.24rem;
         }
 
         .release-number-cell strong {
-            font-size: 0.86rem;
+            font-size: 0.8rem;
         }
 
         .release-order-controls {
@@ -1367,7 +1423,7 @@
         }
 
         .reviewer-block-label {
-            font-size: 0.69rem;
+            font-size: 0.68rem;
             font-weight: 700;
             color: var(--text-secondary);
             text-transform: uppercase;
@@ -1377,12 +1433,12 @@
         .checker-input {
             width: 100%;
             min-width: 0;
-            padding: 0.42rem 0.58rem;
-            border-radius: 10px;
+            padding: 0.34rem 0.5rem;
+            border-radius: 9px;
             border: 1px solid var(--border-color);
             background: var(--bg-secondary);
             color: var(--text-primary);
-            font-size: 0.8rem;
+            font-size: 0.79rem;
             transition: border-color 0.2s ease, box-shadow 0.2s ease;
         }
 
@@ -1400,21 +1456,21 @@
         .responsibles-stack {
             display: flex;
             flex-direction: column;
-            gap: 0.32rem;
+            gap: 0.24rem;
         }
 
         .responsible-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 0.4rem;
-            margin-bottom: 0.1rem;
+            gap: 0.32rem;
+            margin-bottom: 0.08rem;
         }
 
         .responsible-row {
             display: grid;
-            grid-template-columns: minmax(0, 1fr) 28px;
-            gap: 0.32rem;
+            grid-template-columns: minmax(0, 1fr) 24px;
+            gap: 0.24rem;
             align-items: center;
         }
 
@@ -1423,12 +1479,12 @@
         }
 
         .responsible-icon-btn {
-            width: 28px;
-            height: 28px;
+            width: 24px;
+            height: 24px;
             border: 1px solid var(--border-color);
             background: var(--bg-secondary);
             color: var(--text-secondary);
-            border-radius: 9px;
+            border-radius: 8px;
             display: inline-flex;
             align-items: center;
             justify-content: center;
@@ -1451,16 +1507,16 @@
             border: 1px solid rgba(13, 110, 253, 0.24);
             background: linear-gradient(135deg, rgba(13, 110, 253, 0.14), rgba(13, 110, 253, 0.05));
             color: var(--primary);
-            border-radius: 12px;
-            padding: 0.48rem 0.5rem;
-            font-size: 0.78rem;
+            border-radius: 10px;
+            padding: 0.36rem 0.46rem;
+            font-size: 0.79rem;
             font-weight: 700;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: 0.45rem;
+            gap: 0.34rem;
             transition: all 0.2s ease;
-            line-height: 1.2;
+            line-height: 1.18;
         }
 
         .release-doc-btn:hover {
@@ -1475,19 +1531,19 @@
         }
 
         .release-row-edit-btn {
-            margin-top: 0.45rem;
+            margin-top: 0.32rem;
             width: 100%;
             border: 1px solid var(--border-color);
-            background: transparent;
+            background: rgba(108, 117, 125, 0.04);
             color: var(--text-secondary);
-            border-radius: 10px;
-            padding: 0.48rem 0.7rem;
-            font-size: 0.78rem;
+            border-radius: 9px;
+            padding: 0.34rem 0.54rem;
+            font-size: 0.79rem;
             font-weight: 600;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: 0.4rem;
+            gap: 0.3rem;
             transition: all 0.2s ease;
         }
 
@@ -1525,15 +1581,15 @@
         }
 
         .release-color-palette {
-            margin-top: 0.45rem;
+            margin-top: 0.32rem;
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 0.35rem;
+            gap: 0.28rem;
         }
 
         .release-color-swatch {
-            height: 30px;
-            border-radius: 8px;
+            height: 24px;
+            border-radius: 7px;
             border: 1px solid var(--border-color);
             background: transparent;
             cursor: pointer;
@@ -1567,15 +1623,15 @@
 
         .release-date-cell {
             min-width: 0;
-            font-size: 0.82rem;
-            line-height: 1.28;
+            font-size: 0.79rem;
+            line-height: 1.22;
         }
 
         .release-date-badge {
             display: inline-flex;
             align-items: center;
-            margin-top: 0.32rem;
-            padding: 0.18rem 0.45rem;
+            margin-top: 0.22rem;
+            padding: 0.14rem 0.38rem;
             border-radius: 999px;
             background: rgba(13, 110, 253, 0.12);
             color: var(--primary);
@@ -2639,7 +2695,7 @@
             `;
         }
 
-function buildReviewerCell(item) {
+        function buildReviewerCell(item) {
             const rowKey = item.row_key || item.release_key;
             const currentReviewer = item.psi_owner || '';
             const currentReviewerSource = item.psi_owner_source || '';
@@ -2673,40 +2729,41 @@ function buildReviewerCell(item) {
                 `;
             return `
                 <div class="reviewer-cell ${missingWeekResponsible ? 'missing-week-responsible' : ''}">
-                    <div>
-                        <div class="responsible-header">
-                            <div class="reviewer-block-label">Ответственный</div>
-                            <button type="button" class="responsible-icon-btn" onclick="addResponsibleAssignment('${escapeHtml(rowKey)}')" title="Добавить ответственного">
-                                <i class="bi bi-plus-lg"></i>
-                            </button>
-                        </div>
+                    <div class="reviewer-edit-row responsibles">
+                        <div class="reviewer-edit-label">Ответственный</div>
+                        <div class="reviewer-edit-control">
                         <div class="responsibles-stack">
                             ${responsibles.map((responsible, index) => `
-                                <div class="responsible-row ${responsibles.length === 1 ? 'single' : ''}">
+                                <div class="responsible-row">
                                     <select class="reviewer-select responsible-select" onchange="updateResponsibleAssignment('${escapeHtml(rowKey)}', ${index}, this.value)">
                                         <option value="">Не назначен</option>
                                         ${RELEASE_REVIEWER_OPTIONS.map(option => `
                                             <option value="${escapeHtml(option)}" ${option === responsible ? 'selected' : ''}>${escapeHtml(option)}</option>
                                         `).join('')}
                                     </select>
-                                    ${responsibles.length > 1 ? `
-                                        <button type="button" class="responsible-icon-btn remove" onclick="removeResponsibleAssignment('${escapeHtml(rowKey)}', ${index})" title="Убрать ответственного">
-                                            <i class="bi bi-dash"></i>
-                                        </button>
-                                    ` : ''}
+                                    <button
+                                        type="button"
+                                        class="responsible-icon-btn ${index > 0 ? 'remove' : ''}"
+                                        onclick="${index > 0 ? `removeResponsibleAssignment('${escapeHtml(rowKey)}', ${index})` : `addResponsibleAssignment('${escapeHtml(rowKey)}')`}"
+                                        title="${index > 0 ? 'Убрать ответственного' : 'Добавить ответственного'}"
+                                    >
+                                        <i class="bi ${index > 0 ? 'bi-dash' : 'bi-plus-lg'}"></i>
+                                    </button>
                                 </div>
                             `).join('')}
                         </div>
-                        ${missingWeekResponsible ? '<div class="responsible-missing-badge"><i class="bi bi-exclamation-triangle"></i>Не назначен на текущую неделю</div>' : ''}
+                        </div>
                     </div>
-                    <div>
-                        <div class="reviewer-block-label" ondblclick="toggleReleaseDutyMode('${escapeHtml(rowKey)}')" title="Дважды щелкните, чтобы переключить режим">${reviewerLabel}</div>
-                        <div class="reviewer-duty-wrap">
+                    ${missingWeekResponsible ? '<div class="responsible-missing-badge"><i class="bi bi-exclamation-triangle"></i>Не назначен на текущую неделю</div>' : ''}
+                    <div class="reviewer-edit-row">
+                        <div class="reviewer-edit-label" ondblclick="toggleReleaseDutyMode('${escapeHtml(rowKey)}')" title="Дважды щелкните, чтобы переключить режим">${reviewerLabel}</div>
+                        <div class="reviewer-edit-control reviewer-duty-wrap">
                             ${reviewerControl}
                         </div>
                     </div>
-                    <div>
-                        <div class="reviewer-block-label">Проверяет</div>
+                    <div class="reviewer-edit-row">
+                        <div class="reviewer-edit-label">Проверяет</div>
+                        <div class="reviewer-edit-control">
                         <input
                             type="text"
                             class="checker-input"
@@ -2714,6 +2771,7 @@ function buildReviewerCell(item) {
                             placeholder="Введите ФИО проверяющего"
                             onchange="updateReleaseAssignment('${escapeHtml(rowKey)}', this)"
                         >
+                        </div>
                     </div>
                 </div>
             `;
