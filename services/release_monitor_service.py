@@ -788,6 +788,20 @@ def _validate_manual_release_payload(value):
     return errors
 
 
+def _build_jira_issue_url_from_key(issue_key, fallback_url=""):
+    issue_key = str(issue_key or "").strip().upper()
+    fallback_url = str(fallback_url or "").strip()
+    if fallback_url:
+        return fallback_url
+    if not issue_key:
+        return ""
+    try:
+        domain, _ = get_jira_domain_and_token(issue_key)
+    except Exception:
+        domain = JIRA_DELTA_BASE
+    return f"{str(domain or JIRA_DELTA_BASE).rstrip('/')}/browse/{issue_key}"
+
+
 def _normalize_manual_release(row_key, value):
     if not isinstance(value, dict):
         return {}
@@ -819,6 +833,10 @@ def _normalize_manual_release(row_key, value):
     created_at = str(value.get("created_at") or "").strip()
     updated_at = str(value.get("updated_at") or "").strip()
 
+    release_url = _build_jira_issue_url_from_key(release_key, value.get("release_url"))
+    rov_key = str(value.get("rov_key") or "").strip()
+    rov_url = _build_jira_issue_url_from_key(rov_key, value.get("rov_url"))
+
     manual_item = {
         "row_key": row_key,
         "manual_release": True,
@@ -828,17 +846,17 @@ def _normalize_manual_release(row_key, value):
         "release_type": release_type,
         "base_release_type": release_type,
         "release_key": release_key,
-        "release_url": str(value.get("release_url") or "").strip(),
+        "release_url": release_url,
         "release_status": str(value.get("release_status") or "").strip(),
         "release_summary": release_summary,
         "release_name_lines": _build_release_name_lines(release_summary, ke_line, row_label=row_label),
         "base_release_summary": release_summary,
         "base_release_name_lines": _build_release_name_lines(release_summary, ke_line, row_label=row_label),
         "row_label": row_label,
-        "rov_key": str(value.get("rov_key") or "").strip(),
-        "rov_url": str(value.get("rov_url") or "").strip(),
+        "rov_key": rov_key,
+        "rov_url": rov_url,
         "rov_status": str(value.get("rov_status") or "").strip(),
-        "has_rov": bool(str(value.get("rov_key") or "").strip()),
+        "has_rov": bool(rov_key),
         "ke_id": ke_id,
         "ke_name": system_name,
         "ke": _normalize_manual_scalar_field("ke", value.get("ke")),
@@ -949,6 +967,32 @@ def _find_exact_manual_release_duplicate(manual_release, items=None, *, include_
     return None
 
 
+def _find_manual_release_display_duplicate(manual_release, items=None, *, ignore_row_key=""):
+    exact_duplicate = _find_exact_manual_release_duplicate(
+        manual_release,
+        items,
+        include_manual=False,
+        ignore_row_key=ignore_row_key,
+    )
+    if exact_duplicate:
+        return exact_duplicate
+
+    release_key = _normalize_duplicate_issue_key(manual_release.get("release_key"))
+    rov_key = _normalize_duplicate_issue_key(manual_release.get("rov_key"))
+    if not release_key or rov_key:
+        return None
+
+    release_candidates = []
+    for item in items or []:
+        if not isinstance(item, dict) or item.get("manual_release"):
+            continue
+        if ignore_row_key and _get_assignment_key_for_item(item) == ignore_row_key:
+            continue
+        if _normalize_duplicate_issue_key(item.get("release_key")) == release_key:
+            release_candidates.append(item)
+    return release_candidates[0] if len(release_candidates) == 1 else None
+
+
 def _find_jira_release_candidates_for_manual_release(manual_release, jira_items=None):
     if not isinstance(manual_release, dict):
         return []
@@ -1051,13 +1095,15 @@ def _find_manual_release_duplicate_warnings(manual_release, jira_items=None, *, 
         item_rov_key = _normalize_duplicate_issue_key(item.get("rov_key"))
         if release_key and release_key == item_release_key:
             exact_duplicate = rov_key == item_rov_key
+            missing_rov_duplicate = bool(not rov_key and item_rov_key)
+            is_blocking = bool(exact_duplicate or missing_rov_duplicate)
             warnings.append({
-                "type": "exact_duplicate" if exact_duplicate else "release_key",
-                "severity": "error" if exact_duplicate else "warning",
-                "blocking": bool(exact_duplicate),
+                "type": "exact_duplicate" if exact_duplicate else "release_key_without_rov" if missing_rov_duplicate else "release_key",
+                "severity": "error" if is_blocking else "warning",
+                "blocking": is_blocking,
                 "message": (
                     f"Manual release duplicates existing row {release_key}"
-                    if exact_duplicate
+                    if is_blocking
                     else f"Manual release has the same release key {release_key}"
                 ),
                 "row_key": item_row_key,
@@ -1092,7 +1138,7 @@ def _apply_manual_releases(items):
         item_to_append = dict(manual_item)
         reconciliation_candidates = _find_jira_release_candidates_for_manual_release(item_to_append, jira_items)
         _apply_manual_release_jira_reconciliation(item_to_append, reconciliation_candidates)
-        duplicate_item = _find_exact_manual_release_duplicate(item_to_append, jira_items)
+        duplicate_item = _find_manual_release_display_duplicate(item_to_append, jira_items)
         if duplicate_item:
             item_to_append["jira_duplicate_detected"] = True
             item_to_append["jira_duplicate_row_key"] = _get_assignment_key_for_item(duplicate_item)
@@ -1107,6 +1153,48 @@ def _apply_manual_releases(items):
             item_to_append["jira_duplicate_action_required"] = False
         items.append(item_to_append)
         existing_keys.add(row_key)
+    return items
+
+
+def _apply_manual_duplicate_reconciliation(items):
+    jira_items = [item for item in items if isinstance(item, dict) and not item.get("manual_release")]
+    if not jira_items:
+        return items
+
+    for manual_item in (item for item in items if isinstance(item, dict) and item.get("manual_release")):
+        duplicate_item = _find_manual_release_display_duplicate(manual_item, jira_items)
+        if not duplicate_item:
+            manual_item["jira_duplicate_detected"] = False
+            manual_item["manual_hidden_by_jira_duplicate"] = False
+            continue
+
+        duplicate_row_key = _get_assignment_key_for_item(duplicate_item)
+        manual_item["jira_duplicate_detected"] = True
+        manual_item["manual_hidden_by_jira_duplicate"] = True
+        manual_item["jira_duplicate_row_key"] = duplicate_row_key
+        manual_item["jira_duplicate_release_key"] = str(duplicate_item.get("release_key") or "").strip()
+        manual_item["jira_duplicate_rov_key"] = str(duplicate_item.get("rov_key") or "").strip()
+        manual_item["jira_duplicate_action_required"] = True
+
+        duplicate_item["manual_duplicate_detected"] = True
+        duplicate_item["manual_duplicate_row_key"] = _get_assignment_key_for_item(manual_item)
+
+        if not _has_release_responsible(duplicate_item) and _has_release_responsible(manual_item):
+            duplicate_item["psi_responsibles"] = list(manual_item.get("psi_responsibles") or [])
+        if not str(duplicate_item.get("psi_owner") or "").strip() and str(manual_item.get("psi_owner") or "").strip():
+            duplicate_item["psi_owner"] = manual_item.get("psi_owner", "")
+            duplicate_item["psi_owner_source"] = manual_item.get("psi_owner_source", "")
+            duplicate_item["psi_owner_date"] = manual_item.get("psi_owner_date", "")
+            duplicate_item["psi_zni_reviewer"] = manual_item.get("psi_zni_reviewer", "")
+        if not str(duplicate_item.get("psi_checker") or "").strip() and str(manual_item.get("psi_checker") or "").strip():
+            duplicate_item["psi_checker"] = manual_item.get("psi_checker", "")
+
+        if not str(duplicate_item.get("zni_key") or "").strip() and str(manual_item.get("zni_key") or "").strip():
+            duplicate_item["zni_key"] = manual_item.get("zni_key", "")
+            duplicate_item["zni_url"] = manual_item.get("zni_url", "")
+        if not str(duplicate_item.get("rollout_notes_level") or "").strip() and str(manual_item.get("rollout_notes_level") or "").strip():
+            duplicate_item["rollout_notes_level"] = manual_item.get("rollout_notes_level", "")
+            duplicate_item["has_rollout_notes"] = bool(manual_item.get("has_rollout_notes"))
     return items
 
 
@@ -3919,6 +4007,8 @@ def _derive_natural_unnumbered(item):
     if _is_cancelled_reroll_rov(item):
         return True
     is_cancelled = bool(item.get("is_cancelled"))
+    if item.get("manual_release") and item.get("jira_duplicate_detected"):
+        return True
     if item.get("manual_release"):
         return bool(is_cancelled)
     has_ke = bool(str(item.get("ke") or "").strip())
@@ -5099,6 +5189,7 @@ def _normalize_release_payload(payload):
     _apply_duty_schedule_assignments(normalized_items, persist=False)
     _apply_zni_assignments(normalized_items)
     _apply_manual_release_overrides(normalized_items, payload.get("manual_overrides") or {})
+    _apply_manual_duplicate_reconciliation(normalized_items)
     _apply_week_control_flags(normalized_items)
     _apply_release_week_buckets(normalized_items)
     _sort_and_number_records(normalized_items)
@@ -6039,6 +6130,37 @@ def lookup_release_monitor_manual_release_jira(release_key):
     }
 
 
+def _autofill_manual_release_fields_from_jira(fields):
+    fields = dict(fields or {})
+    release_key = str(fields.get("release_key") or "").strip()
+    if not release_key:
+        return fields
+
+    try:
+        records = _fetch_jira_release_records_for_manual_lookup(release_key)
+    except Exception as exc:
+        logging.warning("Release monitor: manual release Jira autofill failed for %s: %s", release_key, exc)
+        return fields
+
+    if len(records) != 1:
+        return fields
+
+    jira_fields = _manual_release_form_fields_from_item(records[0])
+    for field_name, value in jira_fields.items():
+        value = str(value or "").strip()
+        if not value:
+            continue
+        current_value = str(fields.get(field_name) or "").strip()
+        if field_name == "release_key":
+            fields[field_name] = value
+        elif field_name == "release_type":
+            if not current_value or (current_value == "release" and value != "release"):
+                fields[field_name] = value
+        elif not current_value:
+            fields[field_name] = value
+    return fields
+
+
 def create_release_monitor_manual_release(data, updated_by=""):
     global _cached_data
 
@@ -6047,6 +6169,7 @@ def create_release_monitor_manual_release(data, updated_by=""):
     fields = _normalize_manual_release_input_fields(data or {}, partial=False)
     if not str(fields.get("release_key") or "").strip():
         raise ValueError("release_key is required")
+    fields = _autofill_manual_release_fields_from_jira(fields)
     fields["release_type"] = normalize_release_type(fields.get("release_type"), default="release")
     if fields.get("deployment_start") and not fields.get("deployment_end"):
         fields["deployment_end"] = fields.get("deployment_start")
@@ -6076,7 +6199,7 @@ def create_release_monitor_manual_release(data, updated_by=""):
         blocking_duplicate = next((warning for warning in duplicate_warnings if warning.get("blocking")), None)
         if blocking_duplicate:
             duplicate_row = blocking_duplicate.get("row_key") or ""
-            raise ValueError(f"Manual release duplicates existing row {duplicate_row}".strip())
+            raise ValueError(f"Релиз уже есть в таблице: {duplicate_row}".strip())
 
         manual_payload = _load_manual_releases_payload()
         manual_payload.setdefault("items", {})[row_key] = manual_release
@@ -6143,7 +6266,7 @@ def update_release_monitor_manual_release(row_key, data, updated_by=""):
         blocking_duplicate = next((warning for warning in duplicate_warnings if warning.get("blocking")), None)
         if blocking_duplicate:
             duplicate_row = blocking_duplicate.get("row_key") or ""
-            raise ValueError(f"Manual release duplicates existing row {duplicate_row}".strip())
+            raise ValueError(f"Релиз уже есть в таблице: {duplicate_row}".strip())
 
         _remove_row_from_manual_order(row_key) if date_changed else None
         manual_payload.setdefault("items", {})[row_key] = current
