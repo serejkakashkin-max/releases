@@ -393,12 +393,11 @@
         }
 
         .release-extra-controls {
-            display: flex;
-            justify-content: space-between;
-            align-items: stretch;
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr);
+            align-items: start;
             gap: 0.42rem;
             margin: 0 0 0.48rem;
-            flex-wrap: wrap;
             padding: 0.28rem;
             border: 1px solid var(--release-soft-border);
             border-radius: 13px;
@@ -884,6 +883,18 @@
             color: #bae6fd;
         }
 
+        .release-badge.manual-release {
+            border: 1px solid rgba(32, 201, 151, 0.28);
+            background: rgba(32, 201, 151, 0.12);
+            color: #0f766e;
+        }
+
+        [data-theme="dark"] .release-badge.manual-release {
+            border-color: rgba(32, 201, 151, 0.28);
+            background: rgba(32, 201, 151, 0.1);
+            color: #7ee4ca;
+        }
+
         .release-visible-counter {
             color: var(--text-secondary);
             font-size: 0.88rem;
@@ -934,13 +945,28 @@
         }
 
         .release-monitor-button-row {
-            display: flex;
+            display: grid;
+            grid-template-columns:
+                minmax(180px, 0.95fr)
+                minmax(160px, 0.85fr)
+                minmax(240px, 1.22fr)
+                minmax(190px, 1fr);
             gap: 0.35rem;
-            flex-wrap: wrap;
-            align-items: stretch;
+            align-items: start;
             justify-content: flex-end;
             align-self: start;
-            flex: 1 1 680px;
+            min-width: 0;
+            width: 100%;
+        }
+
+        .release-monitor-button-row.is-order-mode {
+            grid-template-columns:
+                minmax(180px, 1fr)
+                minmax(150px, 0.82fr)
+                minmax(170px, 0.95fr)
+                minmax(170px, 0.95fr)
+                minmax(220px, 1.2fr)
+                minmax(180px, 1fr);
         }
 
         .release-action-stack {
@@ -948,18 +974,21 @@
             flex-direction: column;
             align-items: stretch;
             gap: 0.22rem;
-            flex: 1 1 135px;
-            min-width: 132px;
+            min-width: 0;
         }
 
         .release-action-stack.compact {
             justify-content: flex-end;
         }
 
+        .release-action-stack.confluence-stack {
+            min-width: 220px;
+        }
+
         .release-order-actions {
-            display: flex;
-            flex-direction: row;
-            gap: 0.35rem;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.3rem;
         }
 
         .release-action-meta {
@@ -967,8 +996,11 @@
             line-height: 1.25;
             color: var(--text-secondary);
             text-align: center;
-            min-height: 1.75rem;
-            max-width: 190px;
+            min-height: 1.05rem;
+            max-width: none;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .release-action-meta strong {
@@ -981,7 +1013,7 @@
             background: var(--release-soft-bg);
             color: var(--text-primary);
             border-radius: 12px;
-            padding: 0.62rem 0.75rem;
+            padding: 0.52rem 0.7rem;
             font-size: 0.82rem;
             font-weight: 800;
             display: inline-flex;
@@ -990,7 +1022,9 @@
             gap: 0.45rem;
             cursor: pointer;
             transition: all 0.2s ease;
-            min-height: 42px;
+            min-height: 38px;
+            line-height: 1.15;
+            white-space: nowrap;
             box-shadow: inset 0 0 0 1px var(--release-soft-border);
         }
 
@@ -1032,6 +1066,14 @@
             color: var(--release-action-full);
         }
 
+        .release-monitor-btn.manual {
+            color: #0f766e;
+        }
+
+        [data-theme="dark"] .release-monitor-btn.manual {
+            color: #7ee4ca;
+        }
+
         .release-monitor-btn.active-order {
             border-color: rgba(13, 110, 253, 0.34);
             color: var(--primary);
@@ -1047,6 +1089,39 @@
         .release-monitor-btn.confluence:hover {
             color: var(--primary);
             border-color: rgba(88, 166, 255, 0.34);
+        }
+
+        @media (max-width: 1400px) {
+            .release-extra-controls {
+                grid-template-columns: 1fr;
+            }
+
+            .release-toggle-stack {
+                width: 100%;
+                flex-wrap: wrap;
+            }
+
+            .release-monitor-button-row {
+                grid-template-columns:
+                    minmax(180px, 1fr)
+                    minmax(150px, 0.85fr)
+                    minmax(230px, 1.15fr)
+                    minmax(180px, 1fr);
+            }
+
+            .release-monitor-button-row.is-order-mode {
+                grid-template-columns:
+                    minmax(180px, 1fr)
+                    minmax(150px, 0.85fr)
+                    minmax(170px, 0.95fr)
+                    minmax(170px, 0.95fr)
+                    minmax(220px, 1.15fr)
+                    minmax(180px, 1fr);
+            }
+
+            .release-action-stack.confluence-stack {
+                min-width: 210px;
+            }
         }
 
         .release-scroll-nav {
@@ -1801,12 +1876,233 @@
             border-color: var(--border-color);
             color: var(--text-primary);
             border-radius: 12px;
+            color-scheme: light;
         }
 
         .release-doc-modal .form-control:focus,
         .release-doc-modal .form-select:focus {
             border-color: rgba(13, 110, 253, 0.45);
             box-shadow: 0 0 0 0.18rem rgba(13, 110, 253, 0.12);
+        }
+
+        .release-doc-modal .form-control::placeholder {
+            color: var(--text-muted);
+            opacity: 0.78;
+        }
+
+        [data-theme="dark"] .release-doc-modal .form-control,
+        [data-theme="dark"] .release-doc-modal .form-select {
+            background: #111827;
+            border-color: rgba(148, 163, 184, 0.28);
+            color: #f8fafc;
+            color-scheme: dark;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+        }
+
+        [data-theme="dark"] .release-doc-modal .form-control:focus,
+        [data-theme="dark"] .release-doc-modal .form-select:focus {
+            background: #0f172a;
+            border-color: rgba(96, 165, 250, 0.72);
+            color: #ffffff;
+            box-shadow: 0 0 0 0.18rem rgba(59, 130, 246, 0.2);
+        }
+
+        [data-theme="dark"] .release-doc-modal .form-control::placeholder {
+            color: #9ca3af;
+            opacity: 1;
+        }
+
+        [data-theme="dark"] .release-doc-modal input[type="date"]::-webkit-calendar-picker-indicator {
+            filter: invert(1) opacity(0.72);
+        }
+
+        .release-manual-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.75rem;
+        }
+
+        .release-manual-create-shell {
+            display: block;
+        }
+
+        .release-manual-primary {
+            margin-bottom: 0.85rem;
+        }
+
+        .release-manual-primary .release-manual-field {
+            border-color: rgba(13, 110, 253, 0.34);
+            background: rgba(13, 110, 253, 0.06);
+        }
+
+        [data-theme="dark"] .release-manual-primary .release-manual-field {
+            border-color: rgba(96, 165, 250, 0.56);
+            background: rgba(37, 99, 235, 0.14);
+        }
+
+        .release-manual-details {
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            background: var(--bg-secondary);
+            overflow: hidden;
+        }
+
+        [data-theme="dark"] .release-manual-details {
+            border-color: rgba(148, 163, 184, 0.18);
+            background: rgba(15, 23, 42, 0.58);
+        }
+
+        .release-manual-details summary {
+            cursor: pointer;
+            list-style: none;
+            padding: 0.72rem 0.85rem;
+            font-size: 0.82rem;
+            font-weight: 800;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.65rem;
+        }
+
+        .release-manual-details summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .release-manual-details summary::after {
+            content: "⌄";
+            color: var(--text-muted);
+            transition: transform 0.18s ease;
+        }
+
+        .release-manual-details[open] summary::after {
+            transform: rotate(180deg);
+        }
+
+        .release-manual-details-body {
+            padding: 0 0.85rem 0.85rem;
+        }
+
+        .release-manual-field {
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            background: var(--bg-secondary);
+            padding: 0.75rem;
+        }
+
+        [data-theme="dark"] .release-manual-field {
+            border-color: rgba(148, 163, 184, 0.14);
+            background: rgba(15, 23, 42, 0.46);
+        }
+
+        .release-manual-lookup-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 0.5rem;
+            align-items: stretch;
+        }
+
+        .release-manual-lookup-btn {
+            border: 0;
+            border-radius: 12px;
+            padding: 0.5rem 0.78rem;
+            min-height: 38px;
+            background: rgba(13, 110, 253, 0.12);
+            color: var(--primary);
+            font-size: 0.82rem;
+            font-weight: 800;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.38rem;
+            box-shadow: inset 0 0 0 1px rgba(13, 110, 253, 0.2);
+            white-space: nowrap;
+        }
+
+        .release-manual-lookup-btn:hover:not(:disabled) {
+            background: rgba(13, 110, 253, 0.18);
+        }
+
+        .release-manual-lookup-btn:disabled {
+            opacity: 0.7;
+            cursor: wait;
+        }
+
+        .release-manual-lookup-btn .spinning {
+            animation: spin 1s linear infinite;
+        }
+
+        [data-theme="dark"] .release-manual-lookup-btn {
+            background: rgba(59, 130, 246, 0.18);
+            color: #93c5fd;
+            box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.24);
+        }
+
+        .release-manual-field.is-changed {
+            border-color: rgba(255, 193, 7, 0.45);
+            background: rgba(255, 193, 7, 0.08);
+        }
+
+        .release-manual-label {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+            margin-bottom: 0.45rem;
+            font-size: 0.78rem;
+            font-weight: 800;
+            color: var(--text-primary);
+        }
+
+        .release-manual-changed-pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.12rem 0.42rem;
+            border-radius: 999px;
+            background: rgba(255, 193, 7, 0.16);
+            color: #9a6a00;
+            font-size: 0.68rem;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+
+        [data-theme="dark"] .release-manual-changed-pill {
+            color: #f1c453;
+        }
+
+        .release-manual-base {
+            margin-top: 0.4rem;
+            color: var(--text-muted);
+            font-size: 0.74rem;
+            line-height: 1.35;
+        }
+
+        .release-manual-base code {
+            color: var(--text-secondary);
+            background: rgba(108, 117, 125, 0.12);
+            border-radius: 6px;
+            padding: 0.06rem 0.28rem;
+            white-space: normal;
+            word-break: break-word;
+        }
+
+        .release-manual-clear-zni {
+            grid-column: 1 / -1;
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+            border: 1px dashed rgba(255, 193, 7, 0.4);
+            border-radius: 14px;
+            padding: 0.7rem 0.8rem;
+            color: var(--text-secondary);
+            background: rgba(255, 193, 7, 0.06);
+            font-size: 0.86rem;
+        }
+
+        @media (max-width: 768px) {
+            .release-manual-grid {
+                grid-template-columns: 1fr;
+            }
         }
 
         .release-doc-playbooks {
@@ -1887,6 +2183,18 @@
                 justify-content: flex-start;
             }
 
+            .release-monitor-button-row {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .release-monitor-button-row.is-order-mode {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .release-action-stack.confluence-stack {
+                min-width: 0;
+            }
+
             .release-doc-summary {
                 grid-template-columns: 1fr;
             }
@@ -1940,8 +2248,16 @@
             }
 
             .release-monitor-button-row {
-                flex-direction: column;
                 align-items: stretch;
+                grid-template-columns: 1fr;
+            }
+
+            .release-monitor-button-row.is-order-mode {
+                grid-template-columns: 1fr;
+            }
+
+            .release-manual-lookup-row {
+                grid-template-columns: 1fr;
             }
 
             .release-action-stack {
@@ -2121,7 +2437,7 @@
                     </div>
                     </div>
                     <div class="release-monitor-button-row">
-                        <div class="release-action-stack compact">
+                        <div class="release-action-stack compact order-stack">
                             <button id="releaseMonitorOrderBtn" class="release-monitor-btn" onclick="toggleReleaseOrderMode()">
                                 <i class="bi bi-list-ol"></i>
                                 Настройки
@@ -2140,7 +2456,14 @@
                                 Обновлено: <strong id="releaseMonitorLastUpdated">{{ release_monitor_meta.last_updated or 'еще не загружалось' }}</strong>
                             </div>
                         </div>
-                        <div id="releaseMonitorQuickRefreshStack" class="release-action-stack" style="display: none;">
+                        <div class="release-action-stack compact manual-stack">
+                            <button id="releaseManualCreateBtn" class="release-monitor-btn manual" onclick="openReleaseManualCreateModal()">
+                                <i class="bi bi-plus-square"></i>
+                                Добавить вручную
+                            </button>
+                            <div class="release-action-meta">Ручная строка</div>
+                        </div>
+                        <div id="releaseMonitorQuickRefreshStack" class="release-action-stack quick-stack" style="display: none;">
                             <button id="releaseMonitorQuickRefreshBtn" class="release-monitor-btn quick" onclick="refreshReleaseMonitor('quick')">
                                 <i class="bi bi-lightning-charge"></i>
                                 <span class="btn-label">Быстрое обновление</span>
@@ -2149,7 +2472,7 @@
                                 Быстрое: <strong id="releaseMonitorLastQuickSync">{{ release_monitor_meta.last_quick_sync or 'еще не выполнялось' }}</strong>
                             </div>
                         </div>
-                        <div class="release-action-stack">
+                        <div id="releaseMonitorFullRefreshStack" class="release-action-stack full-refresh-stack" style="display: none;">
                             <button id="releaseMonitorRefreshBtn" class="release-monitor-btn full" style="display: none;" onclick="refreshReleaseMonitor('full')">
                                 <i class="bi bi-arrow-repeat"></i>
                                 <span class="btn-label">Полное обновление</span>
@@ -2159,7 +2482,7 @@
                                 Автопересборка: <strong>{% if release_monitor_meta.auto_full_refresh_enabled %}{{ '%02d:00'|format(release_monitor_meta.auto_full_refresh_hour or 6) }}{% else %}отключена{% endif %}</strong>
                             </div>
                         </div>
-                        <div class="release-action-stack">
+                        <div class="release-action-stack confluence-stack">
                             <button id="releaseMonitorConfluenceSyncBtn" class="release-monitor-btn confluence" onclick="syncReleaseMonitorFromConfluence()">
                                 <i class="bi bi-cloud-arrow-down"></i>
                                 Выгрузить в Confluence
@@ -2168,7 +2491,7 @@
                                 Confluence: <strong id="releaseMonitorLastConfluenceSync">{{ release_monitor_meta.last_confluence_sync or 'еще не выполнялось' }}</strong>
                             </div>
                         </div>
-                        <div class="release-action-stack">
+                        <div class="release-action-stack duty-stack">
                             <button id="releaseMonitorDutyUploadBtn" class="release-monitor-btn" onclick="openReleaseDutySchedulePicker()">
                                 <i class="bi bi-calendar-week"></i>
                                 Загрузить графики
@@ -2331,6 +2654,31 @@
         </div>
     </div>
 
+    <div class="modal fade release-doc-modal" id="releaseManualCreateModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title">Добавить релиз вручную</h5>
+                        <div class="release-doc-subtitle">Строка сохранится в ручном слое и не будет затираться обновлениями Jira.</div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="release-doc-field-help mb-3">
+                        Укажите ID релиза. Остальные поля можно заполнить вручную сейчас или оставить пустыми: строка сохранится в ручном слое и не будет затираться обновлениями Jira.
+                    </div>
+                    <div id="releaseManualCreateFields" class="release-manual-create-shell"></div>
+                    <div id="releaseManualCreateWarning" class="release-doc-inline-alert mt-3" style="display: none;"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-primary" id="releaseManualCreateSaveBtn" onclick="saveReleaseManualCreate()">Добавить строку</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="modal fade release-doc-modal" id="releaseManualOverrideModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered modal-lg">
             <div class="modal-content">
@@ -2345,26 +2693,7 @@
                     <div class="release-doc-field-help mb-3">
                         Ручные значения имеют приоритет над данными из Jira.
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">Название релиза</label>
-                        <input type="text" class="form-control" id="releaseManualSummaryInput" placeholder="Текст названия">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Сборка</label>
-                        <input type="text" class="form-control" id="releaseManualVersionInput" placeholder="Версия сборки">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Ссылка на дистрибутив</label>
-                        <input type="text" class="form-control" id="releaseManualUrlInput" placeholder="https://...">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">КЭ дистрибутива</label>
-                        <input type="text" class="form-control" id="releaseManualKeInput" placeholder="CI12345678">
-                    </div>
-                    <div class="mb-2">
-                        <label class="form-label">ЗНИ</label>
-                        <input type="text" class="form-control" id="releaseManualZniInput" placeholder="SMECLM-12345">
-                    </div>
+                    <div id="releaseManualOverrideFields" class="release-manual-grid"></div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" onclick="resetReleaseManualOverride()">Сбросить правки</button>
@@ -2404,11 +2733,54 @@
         let releaseDocumentWizardState = null;
         let releaseDocumentInitSequence = 0;
         let releaseDateOverrideModalInstance = null;
+        let releaseManualCreateModalInstance = null;
         let releaseDateOverrideState = null;
         let releaseManualOverrideModalInstance = null;
         let releaseManualOverrideState = null;
         let releaseWeekControlModalInstance = null;
         let pendingManualDutyFocusReleaseKey = '';
+        const RELEASE_MANUAL_OVERRIDE_FIELDS = [
+            { name: 'release_type', label: 'Тип релиза', type: 'select' },
+            { name: 'release_summary', label: 'Название релиза', type: 'textarea', id: 'releaseManualSummaryInput' },
+            { name: 'release_key', label: 'ID релиза' },
+            { name: 'rov_key', label: 'ID РОВ' },
+            { name: 'release_url', label: 'Ссылка на релиз' },
+            { name: 'rov_url', label: 'Ссылка на РОВ' },
+            { name: 'release_status', label: 'Статус релиза' },
+            { name: 'rov_status', label: 'Статус РОВ' },
+            { name: 'ke_id', label: 'КЭ релиза' },
+            { name: 'release_version', label: 'Сборка', id: 'releaseManualVersionInput' },
+            { name: 'ke', label: 'КЭ дистрибутива', id: 'releaseManualKeInput' },
+            { name: 'release_dist_url', label: 'Ссылка на дистрибутив', id: 'releaseManualUrlInput' },
+            { name: 'system_name', label: 'Система' },
+            { name: 'zni_key', label: 'ЗНИ', id: 'releaseManualZniInput' },
+            { name: 'zni_url', label: 'Ссылка на ЗНИ' },
+        ];
+        const RELEASE_MANUAL_TYPE_OPTIONS = [
+            ['', 'Использовать Jira'],
+            ['release', 'Релиз'],
+            ['hotfix', 'Хотфикс'],
+            ['reroll', 'Перераскатка'],
+            ['technical', 'Технический'],
+        ];
+
+        const RELEASE_MANUAL_CREATE_TYPE_OPTIONS = RELEASE_MANUAL_TYPE_OPTIONS.filter(([value]) => value);
+        const RELEASE_MANUAL_CREATE_FIELDS = [
+            { name: 'release_key', label: 'ID релиза', required: true, placeholder: 'EMRM-12345' },
+            { name: 'release_type', label: 'Тип релиза', type: 'select', defaultValue: 'release' },
+            { name: 'release_summary', label: 'Название релиза', type: 'textarea', placeholder: 'Можно оставить пустым' },
+            { name: 'deployment_start', label: 'Дата начала внедрения', type: 'date' },
+            { name: 'deployment_end', label: 'Дата окончания внедрения', type: 'date' },
+            { name: 'rov_key', label: 'ID РОВ', placeholder: 'EMRM-12346' },
+            { name: 'release_status', label: 'Статус релиза', placeholder: 'Создан' },
+            { name: 'rov_status', label: 'Статус РОВ', placeholder: 'Утвержден' },
+            { name: 'system_name', label: 'АС / система' },
+            { name: 'ke_id', label: 'КЭ релиза' },
+            { name: 'release_version', label: 'Сборка' },
+            { name: 'ke', label: 'КЭ дистрибутива' },
+            { name: 'release_dist_url', label: 'Ссылка на дистрибутив' },
+            { name: 'zni_key', label: 'ЗНИ' },
+        ];
 
         function escapeHtml(value) {
             return String(value || '')
@@ -2656,8 +3028,11 @@
             const releaseStatusBadge = item.release_status
                 ? `<span class="release-badge ${item.is_final ? 'state-planned' : item.is_cancelled ? 'state-overdue' : item.is_overdue ? 'state-overdue' : 'state-planned'}">${escapeHtml(item.release_status)}</span>`
                 : '';
-            const statusBadge = (releaseStatusBadge || item.is_pre_final || weekBadge)
-                ? `<div class="release-micro-meta">${releaseStatusBadge}${item.is_pre_final ? '<span class="release-badge pre-final">\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0430 \u043d\u0430 \u041f\u0420\u041e\u041c</span>' : ''}${weekBadge}</div>`
+            const manualReleaseBadge = item.manual_release
+                ? '<span class="release-badge manual-release">Ручной релиз</span>'
+                : '';
+            const statusBadge = (releaseStatusBadge || item.is_pre_final || weekBadge || manualReleaseBadge)
+                ? `<div class="release-micro-meta">${releaseStatusBadge}${item.is_pre_final ? '<span class="release-badge pre-final">\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0430 \u043d\u0430 \u041f\u0420\u041e\u041c</span>' : ''}${weekBadge}${manualReleaseBadge}</div>`
                 : '';
 
             if (!lines.length) {
@@ -2814,7 +3189,7 @@
                 : '';
             const manualButton = isReleaseOrderMode
                 ? `
-                    <button class="release-row-edit-btn release-row-manual-btn ${item.has_manual_release_override ? 'active-warning' : ''}" onclick="openReleaseManualOverrideModal('${escapeHtml(item.row_key || item.release_key)}')" title="Ручная правка названия, сборки, КЭ и ЗНИ">
+                    <button class="release-row-edit-btn release-row-manual-btn ${item.has_manual_release_override ? 'active-warning' : ''}" onclick="openReleaseManualOverrideModal('${escapeHtml(item.row_key || item.release_key)}')" title="Ручная правка полей строки поверх данных Jira">
                         <i class="bi bi-pencil-square"></i>
                         Ручная правка
                     </button>
@@ -3072,6 +3447,289 @@
             saveReleaseDateOverride(true);
         }
 
+        function ensureReleaseManualCreateModal() {
+            if (!releaseManualCreateModalInstance) {
+                releaseManualCreateModalInstance = new bootstrap.Modal(document.getElementById('releaseManualCreateModal'));
+            }
+            return releaseManualCreateModalInstance;
+        }
+
+        function getReleaseManualCreateInputId(fieldName) {
+            return `releaseManualCreate_${fieldName}`;
+        }
+
+        function renderReleaseManualCreateForm() {
+            const container = document.getElementById('releaseManualCreateFields');
+            if (!container) {
+                return;
+            }
+
+            const renderField = (field) => {
+                const inputId = getReleaseManualCreateInputId(field.name);
+                const requiredMark = field.required ? '<span class="text-danger">*</span>' : '';
+                let inputHtml = '';
+                const defaultValue = field.defaultValue || '';
+
+                if (field.type === 'select') {
+                    inputHtml = `<select class="form-select" id="${escapeHtml(inputId)}">
+                        ${RELEASE_MANUAL_CREATE_TYPE_OPTIONS.map(([value, label]) => `
+                            <option value="${escapeHtml(value)}" ${value === defaultValue ? 'selected' : ''}>${escapeHtml(label)}</option>
+                        `).join('')}
+                    </select>`;
+                } else if (field.type === 'textarea') {
+                    inputHtml = `<textarea class="form-control" id="${escapeHtml(inputId)}" rows="2" placeholder="${escapeHtml(field.placeholder || '')}"></textarea>`;
+                } else if (field.name === 'release_key') {
+                    inputHtml = `
+                        <div class="release-manual-lookup-row">
+                            <input type="text" class="form-control" id="${escapeHtml(inputId)}" value="${escapeHtml(defaultValue)}" placeholder="${escapeHtml(field.placeholder || '')}">
+                            <button type="button" id="releaseManualLookupBtn" class="release-manual-lookup-btn" onclick="lookupReleaseManualCreateJira()">
+                                <i class="bi bi-search"></i>
+                                Найти в Jira
+                            </button>
+                        </div>
+                    `;
+                } else {
+                    inputHtml = `<input type="${field.type === 'date' ? 'date' : 'text'}" class="form-control" id="${escapeHtml(inputId)}" value="${escapeHtml(defaultValue)}" placeholder="${escapeHtml(field.placeholder || '')}">`;
+                }
+
+                return `
+                    <div class="release-manual-field">
+                        <label class="release-manual-label" for="${escapeHtml(inputId)}">
+                            <span>${escapeHtml(field.label)} ${requiredMark}</span>
+                        </label>
+                        ${inputHtml}
+                    </div>
+                `;
+            };
+
+            const primaryField = RELEASE_MANUAL_CREATE_FIELDS.find(field => field.name === 'release_key');
+            const additionalFields = RELEASE_MANUAL_CREATE_FIELDS.filter(field => field.name !== 'release_key');
+            container.innerHTML = `
+                <div class="release-manual-primary">
+                    ${primaryField ? renderField(primaryField) : ''}
+                </div>
+                <details class="release-manual-details">
+                    <summary>Дополнительно</summary>
+                    <div class="release-manual-details-body">
+                        <div class="release-manual-grid">
+                            ${additionalFields.map(renderField).join('')}
+                        </div>
+                    </div>
+                </details>
+            `;
+        }
+
+        function openReleaseManualCreateModal() {
+            if (isReleaseOrderMode) {
+                alert('Сначала сохраните или отмените режим настроек, затем добавьте ручной релиз.');
+                return;
+            }
+            const warning = document.getElementById('releaseManualCreateWarning');
+            if (warning) {
+                warning.style.display = 'none';
+                warning.textContent = '';
+            }
+            renderReleaseManualCreateForm();
+            ensureReleaseManualCreateModal().show();
+        }
+
+        function setReleaseManualCreateFieldValue(fieldName, value, { overwrite = false } = {}) {
+            const input = document.getElementById(getReleaseManualCreateInputId(fieldName));
+            if (!input) {
+                return false;
+            }
+            if (!overwrite && String(input.value || '').trim()) {
+                return false;
+            }
+            const field = RELEASE_MANUAL_CREATE_FIELDS.find(item => item.name === fieldName) || {};
+            if (field.type === 'date') {
+                input.value = value ? dateToInputValue(String(value)) : '';
+            } else {
+                input.value = String(value || '');
+            }
+            return true;
+        }
+
+        function applyReleaseManualLookupFields(fields) {
+            if (!fields || typeof fields !== 'object') {
+                return 0;
+            }
+            let applied = 0;
+            RELEASE_MANUAL_CREATE_FIELDS.forEach(field => {
+                if (field.name === 'release_key' || !(field.name in fields)) {
+                    return;
+                }
+                if (setReleaseManualCreateFieldValue(field.name, fields[field.name])) {
+                    applied += 1;
+                }
+            });
+            return applied;
+        }
+
+        async function lookupReleaseManualCreateJira() {
+            const releaseKeyInput = document.getElementById(getReleaseManualCreateInputId('release_key'));
+            const lookupBtn = document.getElementById('releaseManualLookupBtn');
+            const warning = document.getElementById('releaseManualCreateWarning');
+            const releaseKey = String(releaseKeyInput?.value || '').trim();
+
+            if (!releaseKey) {
+                if (warning) {
+                    warning.style.display = '';
+                    warning.textContent = 'Укажите ID релиза для поиска в Jira.';
+                }
+                return;
+            }
+
+            if (warning) {
+                warning.style.display = 'none';
+                warning.textContent = '';
+            }
+            if (lookupBtn) {
+                lookupBtn.disabled = true;
+                lookupBtn.innerHTML = '<i class="bi bi-arrow-repeat spinning"></i> Ищу...';
+            }
+
+            try {
+                const response = await fetch(BASE_PATH + '/dashboard/release-monitor/manual-release/lookup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ release_key: releaseKey }),
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Не удалось найти релиз в Jira');
+                }
+
+                if (releaseKeyInput && data.release_key) {
+                    releaseKeyInput.value = data.release_key;
+                }
+                const applied = applyReleaseManualLookupFields(data.fields || {});
+                const warningsText = formatReleaseManualCreateWarnings(data.warnings || []);
+                const messages = [];
+                if (data.found) {
+                    messages.push(applied
+                        ? `Данные из Jira найдены и добавлены в пустые поля: ${applied}.`
+                        : 'Данные из Jira найдены. Поля уже были заполнены вручную, я их не затирал.');
+                    if ((data.records || []).length > 1) {
+                        messages.push(`У релиза найдено несколько РОВ: ${data.records.length}. Проверьте ID РОВ в дополнительных полях.`);
+                    }
+                } else {
+                    messages.push('В Jira релиз не найден. Можно сохранить строку по ID и заполнить остальные поля вручную.');
+                }
+                if (warningsText) {
+                    messages.push(warningsText);
+                }
+                if (warning) {
+                    warning.style.display = '';
+                    warning.textContent = messages.join('\n');
+                }
+            } catch (error) {
+                console.error('Manual release lookup error:', error);
+                if (warning) {
+                    warning.style.display = '';
+                    warning.textContent = 'Ошибка поиска в Jira: ' + error.message;
+                }
+            } finally {
+                if (lookupBtn) {
+                    lookupBtn.disabled = false;
+                    lookupBtn.innerHTML = '<i class="bi bi-search"></i> Найти в Jira';
+                }
+            }
+        }
+
+        function buildReleaseManualCreatePayload() {
+            const payload = {};
+            RELEASE_MANUAL_CREATE_FIELDS.forEach(field => {
+                const input = document.getElementById(getReleaseManualCreateInputId(field.name));
+                if (!input) {
+                    return;
+                }
+                if (field.type === 'date') {
+                    payload[field.name] = inputValueToDisplayDate(input.value || '');
+                    return;
+                }
+                payload[field.name] = String(input.value || '').trim();
+            });
+            if (!payload.deployment_end) {
+                payload.deployment_end = payload.deployment_start;
+            }
+            return payload;
+        }
+
+        function validateReleaseManualCreatePayload(payload) {
+            if (!payload.release_key) {
+                return 'Укажите ID релиза.';
+            }
+            return '';
+        }
+
+        function formatReleaseManualCreateWarnings(warnings) {
+            if (!Array.isArray(warnings) || !warnings.length) {
+                return '';
+            }
+            return warnings.map(warning => {
+                const keyText = warning.type === 'rov_key' ? 'РОВ' : 'релиз';
+                const target = warning.row_key ? ` (${warning.row_key})` : '';
+                return `Возможный дубль: ${keyText}${target}`;
+            }).join('\n');
+        }
+
+        async function saveReleaseManualCreate() {
+            const saveBtn = document.getElementById('releaseManualCreateSaveBtn');
+            const warning = document.getElementById('releaseManualCreateWarning');
+            const payload = buildReleaseManualCreatePayload();
+            const validationError = validateReleaseManualCreatePayload(payload);
+            if (validationError) {
+                if (warning) {
+                    warning.style.display = '';
+                    warning.textContent = validationError;
+                } else {
+                    alert(validationError);
+                }
+                return;
+            }
+
+            if (saveBtn) {
+                saveBtn.disabled = true;
+            }
+
+            try {
+                const response = await fetch(BASE_PATH + '/dashboard/release-monitor/manual-release', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Не удалось добавить ручной релиз');
+                }
+
+                const createdYear = (payload.deployment_start.match(/(\d{4})$/) || [])[1];
+                if (createdYear) {
+                    currentReleaseYearFilter = createdYear;
+                }
+                renderReleaseMonitor(data.release_monitor || [], data.release_monitor_meta || {});
+                ensureReleaseManualCreateModal().hide();
+
+                const warningsText = formatReleaseManualCreateWarnings(data.warnings || []);
+                if (warningsText) {
+                    alert(`Ручной релиз добавлен.\n\n${warningsText}`);
+                }
+            } catch (error) {
+                console.error('Manual release create error:', error);
+                if (warning) {
+                    warning.style.display = '';
+                    warning.textContent = 'Ошибка добавления ручного релиза: ' + error.message;
+                } else {
+                    alert('Ошибка добавления ручного релиза: ' + error.message);
+                }
+            } finally {
+                if (saveBtn) {
+                    saveBtn.disabled = false;
+                }
+            }
+        }
+
         function ensureReleaseManualOverrideModal() {
             if (!releaseManualOverrideModalInstance) {
                 releaseManualOverrideModalInstance = new bootstrap.Modal(document.getElementById('releaseManualOverrideModal'));
@@ -3096,13 +3754,89 @@
                 initialClearZni: Boolean(item.manual_clear_zni),
             };
 
-            document.getElementById('releaseManualOverrideSubtitle').textContent = item.release_key || '';
-            document.getElementById('releaseManualSummaryInput').value = item.release_summary || '';
-            document.getElementById('releaseManualVersionInput').value = item.release_version || '';
-            document.getElementById('releaseManualUrlInput').value = item.release_dist_url || '';
-            document.getElementById('releaseManualKeInput').value = item.ke || '';
-            document.getElementById('releaseManualZniInput').value = item.zni_key || '';
+            document.getElementById('releaseManualOverrideSubtitle').textContent = item.release_key || item.row_key || '';
+            renderReleaseManualOverrideForm(item);
             ensureReleaseManualOverrideModal().show();
+        }
+
+        function getReleaseManualOverrideRowKey(item) {
+            return String(item?.row_key || item?.release_key || '').trim();
+        }
+
+        function getReleaseManualOverrideInputId(fieldName) {
+            const field = RELEASE_MANUAL_OVERRIDE_FIELDS.find(item => item.name === fieldName);
+            return field?.id || `releaseManualOverride_${fieldName}`;
+        }
+
+        function getReleaseManualOverrideBaseValue(item, fieldName) {
+            const baseName = `base_${fieldName}`;
+            const baseValue = item?.[baseName];
+            if (baseValue !== undefined && baseValue !== null) {
+                return String(baseValue || '');
+            }
+            return String(item?.[fieldName] || '');
+        }
+
+        function getReleaseManualOverrideCurrentValue(item, fieldName) {
+            const rowKey = getReleaseManualOverrideRowKey(item);
+            const draft = releaseManualOverrideDraft[rowKey];
+            if (draft?.reset) {
+                return '';
+            }
+            if (draft?.fields && Object.prototype.hasOwnProperty.call(draft.fields, fieldName)) {
+                return String(draft.fields[fieldName] || '');
+            }
+            const manualName = `manual_${fieldName}`;
+            const manualValue = item?.[manualName];
+            return manualValue === undefined || manualValue === null ? '' : String(manualValue || '');
+        }
+
+        function renderReleaseManualOverrideForm(item) {
+            const container = document.getElementById('releaseManualOverrideFields');
+            if (!container) {
+                return;
+            }
+
+            const html = RELEASE_MANUAL_OVERRIDE_FIELDS.map(field => {
+                const baseValue = getReleaseManualOverrideBaseValue(item, field.name);
+                const manualValue = getReleaseManualOverrideCurrentValue(item, field.name);
+                const inputId = getReleaseManualOverrideInputId(field.name);
+                const changed = Boolean(manualValue);
+                const inputHtml = field.type === 'select'
+                    ? `<select class="form-select" id="${escapeHtml(inputId)}">
+                            ${RELEASE_MANUAL_TYPE_OPTIONS.map(([value, label]) => `
+                                <option value="${escapeHtml(value)}" ${manualValue === value ? 'selected' : ''}>${escapeHtml(label)}</option>
+                            `).join('')}
+                        </select>`
+                    : field.type === 'textarea'
+                        ? `<textarea class="form-control" id="${escapeHtml(inputId)}" rows="2" placeholder="${escapeHtml(baseValue || 'ручное значение')}">${escapeHtml(manualValue)}</textarea>`
+                        : `<input type="text" class="form-control" id="${escapeHtml(inputId)}" value="${escapeHtml(manualValue)}" placeholder="${escapeHtml(baseValue || 'ручное значение')}">`;
+
+                return `
+                    <div class="release-manual-field ${changed ? 'is-changed' : ''}">
+                        <label class="release-manual-label" for="${escapeHtml(inputId)}">
+                            <span>${escapeHtml(field.label)}</span>
+                            ${changed ? '<span class="release-manual-changed-pill">ручное</span>' : ''}
+                        </label>
+                        ${inputHtml}
+                        <div class="release-manual-base">Jira: <code>${escapeHtml(baseValue || 'не указано')}</code></div>
+                    </div>
+                `;
+            }).join('');
+
+            const rowKey = getReleaseManualOverrideRowKey(item);
+            const draft = releaseManualOverrideDraft[rowKey];
+            const clearZniChecked = draft?.fields?.clear_zni !== undefined
+                ? Boolean(draft.fields.clear_zni)
+                : Boolean(item.manual_clear_zni);
+
+            container.innerHTML = `
+                ${html}
+                <label class="release-manual-clear-zni">
+                    <input class="form-check-input m-0" type="checkbox" id="releaseManualClearZniInput" ${clearZniChecked ? 'checked' : ''}>
+                    <span>Очистить ЗНИ в итоговой строке, даже если она есть в Jira или state-файле.</span>
+                </label>
+            `;
         }
 
         function buildReleaseManualOverridePayload(reset = false) {
@@ -3110,73 +3844,88 @@
                 return null;
             }
 
-            const summaryInput = document.getElementById('releaseManualSummaryInput');
-            const versionInput = document.getElementById('releaseManualVersionInput');
-            const urlInput = document.getElementById('releaseManualUrlInput');
-            const keInput = document.getElementById('releaseManualKeInput');
-            const zniInput = document.getElementById('releaseManualZniInput');
-            const nextZniKey = zniInput?.value || '';
-            const clearZni = reset
-                ? false
-                : !nextZniKey && (Boolean(releaseManualOverrideState.initialZniKey) || Boolean(releaseManualOverrideState.initialClearZni));
+            const item = releaseManualOverrideState.item;
+            const rowKey = getReleaseManualOverrideRowKey(item);
+            const fields = {};
+            if (!reset) {
+                RELEASE_MANUAL_OVERRIDE_FIELDS.forEach(field => {
+                    const input = document.getElementById(getReleaseManualOverrideInputId(field.name));
+                    if (!input) {
+                        return;
+                    }
+                    fields[field.name] = String(input.value || '').trim();
+                });
+                fields.clear_zni = Boolean(document.getElementById('releaseManualClearZniInput')?.checked);
+            }
 
             return {
-                release_key: releaseManualOverrideState.item.row_key || releaseManualOverrideState.item.release_key,
-                release_summary: reset ? '' : (summaryInput?.value || ''),
-                release_version: reset ? '' : (versionInput?.value || ''),
-                release_dist_url: reset ? '' : (urlInput?.value || ''),
-                ke: reset ? '' : (keInput?.value || ''),
-                zni_key: reset ? '' : nextZniKey,
-                zni_url: '',
-                clear_zni: clearZni,
+                row_key: rowKey,
+                release_key: rowKey,
+                fields,
                 reset,
             };
         }
 
         function applyReleaseManualOverrideDraft(payload) {
-            if (!payload?.release_key) {
+            if (!payload?.row_key) {
                 return;
             }
 
-            const item = getReleaseMonitorItem(payload.release_key);
+            const item = getReleaseMonitorItem(payload.row_key);
             if (!item) {
                 return;
             }
 
             if (payload.reset) {
-                item.release_summary = item.base_release_summary || '';
-                item.release_version = item.base_release_version || '';
-                item.release_dist_url = item.base_release_dist_url || '';
-                item.ke = item.base_ke || '';
-                item.zni_key = item.base_zni_key || '';
-                item.zni_url = item.base_zni_url || '';
-                item.release_name_lines = Array.isArray(item.base_release_name_lines)
-                    ? [...item.base_release_name_lines]
-                    : [];
-                item.manual_release_summary = '';
-                item.manual_release_version = '';
-                item.manual_release_dist_url = '';
-                item.manual_ke = '';
-                item.manual_zni_key = '';
-                item.manual_zni_url = '';
+                RELEASE_MANUAL_OVERRIDE_FIELDS.forEach(field => {
+                    const baseValue = getReleaseManualOverrideBaseValue(item, field.name);
+                    item[field.name] = baseValue;
+                    item[`manual_${field.name}`] = '';
+                });
+                if (Array.isArray(item.base_release_name_lines)) {
+                    item.release_name_lines = [...item.base_release_name_lines];
+                }
                 item.has_manual_release_override = false;
+                item.manual_overridden_fields = [];
                 item.manual_clear_zni = false;
                 return;
             }
 
-            item.release_summary = payload.release_summary || item.release_summary || '';
-            item.release_version = payload.release_version || '';
-            item.release_dist_url = payload.release_dist_url || '';
-            item.ke = payload.ke || '';
-            if (payload.clear_zni) {
+            const changedFields = [];
+            const fields = payload.fields || {};
+            RELEASE_MANUAL_OVERRIDE_FIELDS.forEach(field => {
+                if (!Object.prototype.hasOwnProperty.call(fields, field.name)) {
+                    return;
+                }
+                const manualValue = String(fields[field.name] || '').trim();
+                const baseValue = getReleaseManualOverrideBaseValue(item, field.name);
+                item[`manual_${field.name}`] = manualValue;
+                item[field.name] = manualValue || baseValue;
+                if (manualValue) {
+                    changedFields.push(field.name);
+                }
+            });
+            if (fields.clear_zni) {
                 item.zni_key = '';
                 item.zni_url = '';
                 item.manual_clear_zni = true;
+                changedFields.push('clear_zni');
             } else {
-                item.zni_key = payload.zni_key || '';
                 item.manual_clear_zni = false;
             }
-            item.has_manual_release_override = true;
+            if (fields.release_summary) {
+                const baseLines = Array.isArray(item.base_release_name_lines)
+                    ? [...item.base_release_name_lines]
+                    : (Array.isArray(item.release_name_lines) ? [...item.release_name_lines] : []);
+                if (baseLines.length) {
+                    baseLines[0] = fields.release_summary;
+                    item.release_name_lines = baseLines;
+                }
+            } else if (Array.isArray(item.base_release_name_lines)) {
+                item.release_name_lines = [...item.base_release_name_lines];
+            }
+            item.manual_overridden_fields = [...new Set(changedFields)];
+            item.has_manual_release_override = item.manual_overridden_fields.length > 0;
         }
 
         async function saveReleaseManualOverride(reset = false) {
@@ -3192,10 +3941,10 @@
 
             try {
                 const payload = buildReleaseManualOverridePayload(reset);
-                if (!payload?.release_key) {
+                if (!payload?.row_key) {
                     return;
                 }
-                releaseManualOverrideDraft[payload.release_key] = payload;
+                releaseManualOverrideDraft[payload.row_key] = payload;
                 applyReleaseManualOverrideDraft(payload);
                 releaseOrderDirty = true;
                 refreshReleaseOrderModeUi();
@@ -3215,11 +3964,6 @@
             if (!releaseManualOverrideState?.item) {
                 return;
             }
-            document.getElementById('releaseManualSummaryInput').value = '';
-            document.getElementById('releaseManualVersionInput').value = '';
-            document.getElementById('releaseManualUrlInput').value = '';
-            document.getElementById('releaseManualKeInput').value = '';
-            document.getElementById('releaseManualZniInput').value = '';
             saveReleaseManualOverride(true);
         }
 
@@ -4596,10 +5340,15 @@
             const saveBtn = document.getElementById('releaseMonitorOrderSaveBtn');
             const cancelBtn = document.getElementById('releaseMonitorOrderCancelBtn');
             const quickRefreshStack = document.getElementById('releaseMonitorQuickRefreshStack');
+            const fullRefreshStack = document.getElementById('releaseMonitorFullRefreshStack');
             const fullRefreshBtn = document.getElementById('releaseMonitorRefreshBtn');
             const fullRefreshMeta = document.getElementById('releaseMonitorFullRefreshMeta');
             const hint = document.getElementById('releaseOrderModeHint');
+            const buttonRow = document.querySelector('.release-monitor-button-row');
 
+            if (buttonRow) {
+                buttonRow.classList.toggle('is-order-mode', isReleaseOrderMode);
+            }
             if (orderBtn) {
                 orderBtn.classList.toggle('active-order', isReleaseOrderMode);
                 orderBtn.innerHTML = isReleaseOrderMode
@@ -4615,6 +5364,9 @@
             }
             if (quickRefreshStack) {
                 quickRefreshStack.style.display = isReleaseOrderMode ? '' : 'none';
+            }
+            if (fullRefreshStack) {
+                fullRefreshStack.style.display = isReleaseOrderMode ? '' : 'none';
             }
             if (fullRefreshBtn) {
                 fullRefreshBtn.style.display = isReleaseOrderMode ? '' : 'none';
@@ -4721,10 +5473,16 @@
             try {
                 const manualPayloads = Object.values(releaseManualOverrideDraft || {});
                 for (const manualPayload of manualPayloads) {
-                    const manualResponse = await fetch(BASE_PATH + '/dashboard/release-monitor/manual-override', {
+                    const manualUrl = manualPayload.reset
+                        ? BASE_PATH + '/dashboard/release-monitor/manual-override/reset'
+                        : BASE_PATH + '/dashboard/release-monitor/manual-override/fields';
+                    const manualBody = manualPayload.reset
+                        ? { row_key: manualPayload.row_key }
+                        : { row_key: manualPayload.row_key, fields: manualPayload.fields || {} };
+                    const manualResponse = await fetch(manualUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(manualPayload),
+                        body: JSON.stringify(manualBody),
                     });
                     const manualData = await manualResponse.json();
                     if (!manualResponse.ok || !manualData.success) {
@@ -5158,7 +5916,7 @@
 
         function setReleaseRefreshButtonsLoading(isLoading) {
             const effectiveLoading = Boolean(isLoading || releaseMonitorGlobalRefreshing || releaseMonitorLocalRefreshing);
-            ['releaseMonitorQuickRefreshBtn', 'releaseMonitorRefreshBtn', 'releaseMonitorConfluenceSyncBtn', 'releaseMonitorDutyUploadBtn', 'releaseMonitorCurrentWeekReportBtn', 'releaseMonitorWeekControlBtn', 'releaseMonitorDocsBtn'].forEach(id => {
+            ['releaseMonitorQuickRefreshBtn', 'releaseMonitorRefreshBtn', 'releaseMonitorConfluenceSyncBtn', 'releaseMonitorDutyUploadBtn', 'releaseMonitorCurrentWeekReportBtn', 'releaseMonitorWeekControlBtn', 'releaseMonitorDocsBtn', 'releaseManualCreateBtn'].forEach(id => {
                 const btn = document.getElementById(id);
                 if (!btn) {
                     return;

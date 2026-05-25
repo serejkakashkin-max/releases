@@ -50,7 +50,7 @@ class ReleaseReportService:
         final_items = [item for item in filtered_items if self._is_week_effectively_installed(item)]
         hidden_by_default_items = [item for item in filtered_items if self._is_week_hidden_by_default(item)]
         upcoming_items = [item for item in filtered_items if not self._is_week_hidden_by_default(item)]
-        reroll_items = [item for item in filtered_items if bool(item.get("is_reroll"))]
+        reroll_items = [item for item in filtered_items if self._is_reroll(item)]
         hotfix_items = [item for item in filtered_items if self._is_hotfix(item)]
         system_counter = Counter()
         status_counter = Counter()
@@ -129,7 +129,7 @@ class ReleaseReportService:
 
         final_items = [item for item in filtered_items if bool(item.get("is_final"))]
         cancelled_items = [item for item in filtered_items if bool(item.get("is_cancelled"))]
-        reroll_items = [item for item in filtered_items if bool(item.get("is_reroll"))]
+        reroll_items = [item for item in filtered_items if self._is_reroll(item)]
         hotfix_items = [item for item in filtered_items if self._is_hotfix(item)]
 
         system_counter = Counter()
@@ -1496,7 +1496,7 @@ class ReleaseReportService:
                     data-unnumbered="{'1' if bool(item.get('is_unnumbered')) else '0'}"
                     data-final="{'1' if bool(item.get('is_final')) else '0'}"
                     data-cancelled="{'1' if bool(item.get('is_cancelled')) else '0'}"
-                    data-reroll="{'1' if bool(item.get('is_reroll')) else '0'}"
+                    data-reroll="{'1' if self._is_reroll(item) else '0'}"
                     data-hotfix="{'1' if self._is_hotfix(item) else '0'}">
                     <td>{html.escape(str(item.get('release_number') or EM_DASH))}</td>
                     <td>{html.escape(row_title)}</td>
@@ -1546,7 +1546,7 @@ class ReleaseReportService:
                     data-status="{html.escape(status_name.lower())}"
                     data-final="{'1' if is_hidden_by_default else '0'}"
                     data-installed="{'1' if is_effectively_installed else '0'}"
-                    data-reroll="{'1' if bool(item.get('is_reroll')) else '0'}"
+                    data-reroll="{'1' if self._is_reroll(item) else '0'}"
                     data-hotfix="{'1' if self._is_hotfix(item) else '0'}">
                     <td class="week-row-number">{index}</td>
                     <td>{html.escape(row_title)}</td>
@@ -1578,7 +1578,7 @@ class ReleaseReportService:
     def _is_week_effectively_installed(self, item: Dict[str, Any]) -> bool:
         if bool(item.get("is_final")):
             return True
-        if not bool(item.get("is_reroll")):
+        if not self._is_reroll(item):
             return False
 
         event_date = None
@@ -1738,16 +1738,35 @@ class ReleaseReportService:
         if report_kind == "cancelled":
             return bool(item.get("is_cancelled"))
         if report_kind == "reroll":
-            return bool(item.get("is_reroll"))
+            return self._is_reroll(item)
         if report_kind == "hotfix":
             return self._is_hotfix(item)
         return True
 
     def _is_hotfix(self, item: Dict[str, Any]) -> bool:
-        if item.get("is_reroll"):
+        release_type = self._get_release_type(item)
+        if release_type:
+            return release_type == "hotfix"
+        if self._is_reroll(item):
             return False
         version = str(item.get("release_version") or "").strip().upper()
         return version.startswith("P-")
+
+    def _is_reroll(self, item: Dict[str, Any]) -> bool:
+        release_type = self._get_release_type(item)
+        if release_type:
+            return release_type == "reroll"
+        return bool(item.get("is_reroll"))
+
+    def _get_release_type(self, item: Dict[str, Any]) -> str:
+        release_type = str((item or {}).get("release_type") or "").strip().lower()
+        if release_type in {"custom", "другой"}:
+            return "release"
+        if release_type in {"emergency", "аварийный", "аварийное"}:
+            return "technical"
+        if release_type in {"release", "hotfix", "reroll", "technical"}:
+            return release_type
+        return ""
 
     def _get_item_event_datetime(self, item: Dict[str, Any]) -> Optional[datetime]:
         for key in ("deployment_end_iso", "deployment_start_iso", "sort_date", "created_sort_date"):
@@ -1772,7 +1791,7 @@ class ReleaseReportService:
         return None
 
     def _get_item_kind_label(self, item: Dict[str, Any]) -> str:
-        if item.get("is_reroll"):
+        if self._is_reroll(item):
             return "Перераскатка"
         if self._is_hotfix(item):
             return "Хотфикс"

@@ -23,6 +23,11 @@ from services.release_monitor_service import (
     set_release_monitor_assignment,
     set_release_monitor_date_override,
     set_release_monitor_manual_override,
+    create_release_monitor_manual_release,
+    update_release_monitor_manual_release,
+    lookup_release_monitor_manual_release_jira,
+    update_release_monitor_manual_override_fields as update_release_monitor_manual_override_fields_service,
+    reset_release_monitor_manual_override as reset_release_monitor_manual_override_service,
     set_release_monitor_manual_distribution_override,
     set_release_monitor_reviewer,
     create_release_monitor_zni,
@@ -447,6 +452,110 @@ def update_release_monitor_manual_override():
         })
     except Exception as e:
         logging.error(f"РћС€РёР±РєР° СЃРѕС…СЂР°РЅРµРЅРёСЏ СЂСѓС‡РЅС‹С… РїСЂР°РІРѕРє СЂРµР»РёР·Р°: {e}")
+        return jsonify({"success": False, "error": str(e)}), 400
+
+
+@dashboard_bp.route('/dashboard/release-monitor/manual-release', methods=['POST'])
+def create_release_monitor_manual_release_row():
+    try:
+        ensure_release_monitor_not_refreshing()
+        data = request.get_json(silent=True) or {}
+        result = create_release_monitor_manual_release(data, updated_by=data.get("updated_by", ""))
+        payload = result.get("data", {})
+        return jsonify({
+            "success": True,
+            "row_key": result.get("row_key", ""),
+            "manual_release": result.get("manual_release", {}),
+            "warnings": result.get("warnings", []),
+            "release_monitor": payload.get("items", []),
+            "release_monitor_summary": payload.get("summary", {}),
+            "release_monitor_meta": payload.get("meta", {}),
+        })
+    except Exception as e:
+        logging.error(f"РћС€РёР±РєР° СЃРѕР·РґР°РЅРёСЏ СЂСѓС‡РЅРѕРіРѕ СЂРµР»РёР·Р°: {e}")
+        return jsonify({"success": False, "error": str(e)}), 400
+
+
+@dashboard_bp.route('/dashboard/release-monitor/manual-release/lookup', methods=['POST'])
+def lookup_release_monitor_manual_release_row():
+    try:
+        data = request.get_json(silent=True) or {}
+        release_key = data.get("release_key") or data.get("release_id") or ""
+        result = lookup_release_monitor_manual_release_jira(release_key)
+        return jsonify({
+            "success": True,
+            "found": result.get("found", False),
+            "release_key": result.get("release_key", ""),
+            "fields": result.get("fields", {}),
+            "records": result.get("records", []),
+            "warnings": result.get("warnings", []),
+        })
+    except Exception as e:
+        logging.error(f"Release monitor manual release Jira lookup failed: {e}")
+        return jsonify({"success": False, "error": str(e)}), 400
+
+
+@dashboard_bp.route('/dashboard/release-monitor/manual-release/<path:row_key>', methods=['PATCH'])
+def update_release_monitor_manual_release_row(row_key):
+    try:
+        ensure_release_monitor_not_refreshing()
+        data = request.get_json(silent=True) or {}
+        result = update_release_monitor_manual_release(row_key, data, updated_by=data.get("updated_by", ""))
+        payload = result.get("data", {})
+        return jsonify({
+            "success": True,
+            "row_key": result.get("row_key", ""),
+            "manual_release": result.get("manual_release", {}),
+            "warnings": result.get("warnings", []),
+            "release_monitor": payload.get("items", []),
+            "release_monitor_summary": payload.get("summary", {}),
+            "release_monitor_meta": payload.get("meta", {}),
+        })
+    except Exception as e:
+        logging.error(f"РћС€РёР±РєР° РѕР±РЅРѕРІР»РµРЅРёСЏ СЂСѓС‡РЅРѕРіРѕ СЂРµР»РёР·Р°: {e}")
+        return jsonify({"success": False, "error": str(e)}), 400
+
+
+@dashboard_bp.route('/dashboard/release-monitor/manual-override/fields', methods=['POST'])
+def update_release_monitor_manual_override_fields():
+    try:
+        ensure_release_monitor_not_refreshing()
+        data = request.get_json(silent=True) or {}
+        row_key = data.get("row_key") or data.get("release_key") or ""
+        fields = data.get("fields") if isinstance(data.get("fields"), dict) else data
+        payload = update_release_monitor_manual_override_fields_service(
+            row_key,
+            fields,
+            updated_by=data.get("updated_by", ""),
+        )
+        return jsonify({
+            "success": True,
+            "release_monitor": payload.get("items", []),
+            "release_monitor_summary": payload.get("summary", {}),
+            "release_monitor_meta": payload.get("meta", {}),
+            "manual_overrides": payload.get("manual_overrides", {}),
+        })
+    except Exception as e:
+        logging.error(f"РћС€РёР±РєР° СЃРѕС…СЂР°РЅРµРЅРёСЏ СЂСѓС‡РЅС‹С… override-РїРѕР»РµР№ СЂРµР»РёР·Р°: {e}")
+        return jsonify({"success": False, "error": str(e)}), 400
+
+
+@dashboard_bp.route('/dashboard/release-monitor/manual-override/reset', methods=['POST'])
+def reset_release_monitor_manual_override_row():
+    try:
+        ensure_release_monitor_not_refreshing()
+        data = request.get_json(silent=True) or {}
+        row_key = data.get("row_key") or data.get("release_key") or ""
+        payload = reset_release_monitor_manual_override_service(row_key)
+        return jsonify({
+            "success": True,
+            "release_monitor": payload.get("items", []),
+            "release_monitor_summary": payload.get("summary", {}),
+            "release_monitor_meta": payload.get("meta", {}),
+            "manual_overrides": payload.get("manual_overrides", {}),
+        })
+    except Exception as e:
+        logging.error(f"РћС€РёР±РєР° СЃР±СЂРѕСЃР° СЂСѓС‡РЅС‹С… override-РїРѕР»РµР№ СЂРµР»РёР·Р°: {e}")
         return jsonify({"success": False, "error": str(e)}), 400
 
 

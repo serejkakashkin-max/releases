@@ -18,7 +18,11 @@ from services.jira_service import (
     get_pob_from_release, extract_sm_id_and_summary, get_distributives_info,
     get_release_jira_snapshot,
 )
-from services.release_monitor_service import get_release_monitor_snapshot, sync_release_monitor_jira_fields
+from services.release_monitor_service import (
+    get_release_monitor_snapshot,
+    normalize_release_type,
+    sync_release_monitor_jira_fields,
+)
 from services.docx_service import replace_keys_in_doc, check_document
 from services.gigachat_service import GIGA_HELPER
 from services.counter_service import increment_counter  # НОВОЕ: импорт счетчика
@@ -221,7 +225,8 @@ def get_previous_version_from_monitor_items(items, row_key: str, release_id: str
     current_release_key = (current_item.get("release_key") or normalized_release_id or "").strip()
     current_ke_id = (current_item.get("ke_id") or "").strip()
     current_year = current_item.get("year")
-    current_is_reroll = bool(current_item.get("is_reroll"))
+    current_release_type = normalize_release_type(current_item.get("release_type"))
+    current_is_reroll = current_release_type == "reroll" if current_release_type else bool(current_item.get("is_reroll"))
     current_rollback_group = _get_constructor_rollback_group(current_item)
 
     def _candidate_version(item):

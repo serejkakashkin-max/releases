@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from html.parser import HTMLParser
 from io import BytesIO
 from pathlib import Path
+from uuid import uuid4
 
 import requests
 from openpyxl import load_workbook
@@ -49,6 +50,7 @@ AUTO_INCREMENTAL_REFRESH_LOOKBACK_MINUTES = 60
 AUTO_INCREMENTAL_REFRESH_CHECK_INTERVAL = 30
 SNAPSHOT_DIR = Path(__file__).resolve().parent.parent / "cache"
 SNAPSHOT_FILE = SNAPSHOT_DIR / "release_monitor_snapshot.json"
+MANUAL_RELEASES_FILE = SNAPSHOT_DIR / "release_monitor_manual_releases.json"
 MANUAL_OVERRIDES_FILE = SNAPSHOT_DIR / "release_monitor_manual_overrides.json"
 REVIEWERS_FILE = SNAPSHOT_DIR / "release_monitor_reviewers.json"
 ORDER_FILE = SNAPSHOT_DIR / "release_monitor_order.json"
@@ -59,6 +61,55 @@ ATTEMPTS_FILE = SNAPSHOT_DIR / "release_monitor_attempts.json"
 REVISION_FILE = SNAPSHOT_DIR / "release_monitor_revision.txt"
 CONFLUENCE_DELTA_BASE = "https://confluence.delta.sbrf.ru"
 JIRA_DELTA_BASE = "https://jira.delta.sbrf.ru"
+RELEASE_TYPE_VALUES = {"release", "hotfix", "reroll", "technical"}
+RELEASE_TYPE_ALIASES = {
+    "": "",
+    "release": "release",
+    "rel": "release",
+    "\u0440\u0435\u043b\u0438\u0437": "release",
+    "hotfix": "hotfix",
+    "fix": "hotfix",
+    "\u0445\u043e\u0442\u0444\u0438\u043a\u0441": "hotfix",
+    "reroll": "reroll",
+    "re-roll": "reroll",
+    "\u043f\u0435\u0440\u0435\u0440\u0430\u0441\u043a\u0430\u0442\u043a\u0430": "reroll",
+    "emergency": "technical",
+    "\u0430\u0432\u0430\u0440\u0438\u0439\u043d\u044b\u0439": "technical",
+    "\u0430\u0432\u0430\u0440\u0438\u0439\u043d\u043e\u0435": "technical",
+    "technical": "technical",
+    "tech": "technical",
+    "\u0442\u0435\u0445\u043d\u0438\u0447\u0435\u0441\u043a\u0438\u0439": "technical",
+    "custom": "release",
+    "\u0434\u0440\u0443\u0433\u043e\u0435": "release",
+}
+RELEASE_TYPE_ROW_LABELS = {
+    "release": "(\u0420\u0435\u043b\u0438\u0437)",
+    "hotfix": "(\u0425\u043e\u0442\u0444\u0438\u043a\u0441)",
+    "reroll": "(\u041f\u0435\u0440\u0435\u0440\u0430\u0441\u043a\u0430\u0442\u043a\u0430)",
+    "technical": "(\u0422\u0435\u0445\u043d\u0438\u0447\u0435\u0441\u043a\u0438\u0439)",
+}
+MANUAL_OVERRIDE_SCALAR_FIELDS = (
+    "release_type",
+    "release_summary",
+    "release_key",
+    "rov_key",
+    "release_url",
+    "rov_url",
+    "release_status",
+    "rov_status",
+    "ke_id",
+    "ke",
+    "release_version",
+    "release_dist_url",
+    "system_name",
+    "zni_key",
+    "zni_url",
+)
+MANUAL_OVERRIDE_DICT_FIELDS = ("display_fields", "doc_fields", "confluence_fields")
+MANUAL_OVERRIDE_FIELDS = MANUAL_OVERRIDE_SCALAR_FIELDS + MANUAL_OVERRIDE_DICT_FIELDS
+BASE_OVERRIDE_FIELDS = MANUAL_OVERRIDE_FIELDS
+MANUAL_RELEASE_SCALAR_FIELDS = MANUAL_OVERRIDE_SCALAR_FIELDS + ("deployment_start", "deployment_end", "year")
+MANUAL_RELEASE_FIELDS = MANUAL_RELEASE_SCALAR_FIELDS + MANUAL_OVERRIDE_DICT_FIELDS
 RELEASE_VERSION_PATTERN = re.compile(r"[DP]-\d+(?:\.\d+){2}(?:[.-][A-Za-z0-9_]+)+")
 ARTIFACT_URL_PATTERN = re.compile(r"(?:https?://)?[A-Za-z0-9.-]+\.[A-Za-z]{2,}/[^\s\"'<>)]+")
 DUTY_HARD_EXCLUDED_STATUSES = {"ДД", "ВД", "ВР", "ХД", "ХР"}
@@ -128,6 +179,7 @@ _cached_data = None
 _last_cache_update = None
 _manual_order_cache = None
 _manual_overrides_legacy_migration_checked = False
+_manual_override_unknown_fields_warned = set()
 _field_map_cache = {}
 _refresh_thread = None
 _auto_incremental_thread = None
@@ -335,32 +387,26 @@ def _strip_manual_release_overrides_for_snapshot(payload):
     for item in payload_to_save.get("items") or []:
         if not isinstance(item, dict):
             continue
+        row_key = str(item.get("row_key") or "").strip()
+        if item.get("manual_release") or item.get("source") == "manual" or row_key.startswith("manual::"):
+            continue
         clean_item = dict(item)
 
-        for target_field, base_field in (
-            ("release_summary", "base_release_summary"),
-            ("release_version", "base_release_version"),
-            ("release_dist_url", "base_release_dist_url"),
-            ("ke", "base_ke"),
-            ("zni_key", "base_zni_key"),
-            ("zni_url", "base_zni_url"),
-        ):
+        for target_field in BASE_OVERRIDE_FIELDS:
+            base_field = _base_field_name(target_field)
             if base_field in clean_item:
                 clean_item[target_field] = clean_item.get(base_field) or ""
 
         if isinstance(clean_item.get("base_release_name_lines"), list):
             clean_item["release_name_lines"] = list(clean_item.get("base_release_name_lines") or [])
 
-        for manual_field in (
+        manual_fields = {
             "has_manual_release_override",
-            "manual_release_summary",
-            "manual_release_version",
-            "manual_release_dist_url",
-            "manual_ke",
-            "manual_zni_key",
-            "manual_zni_url",
             "manual_clear_zni",
-        ):
+            "manual_overridden_fields",
+        }
+        manual_fields.update(_manual_field_name(field) for field in MANUAL_OVERRIDE_FIELDS)
+        for manual_field in manual_fields:
             clean_item.pop(manual_field, None)
 
         items_to_save.append(clean_item)
@@ -601,8 +647,6 @@ def _load_manual_overrides_payload():
     _manual_overrides_legacy_migration_checked = True
     legacy_payload = _load_snapshot_from_disk() or {}
     legacy_overrides = _normalize_manual_release_overrides(legacy_payload.get("manual_overrides") or {})
-    if legacy_overrides:
-        _save_manual_overrides_payload(legacy_overrides)
     return legacy_overrides
 
 
@@ -612,6 +656,458 @@ def _save_manual_overrides_payload(overrides):
     except Exception as exc:
         logging.warning("Release monitor: failed to save manual overrides payload: %s", exc)
         raise
+
+
+def normalize_release_type(value, default=""):
+    raw_value = str(value or "").strip().lower()
+    normalized = RELEASE_TYPE_ALIASES.get(raw_value, raw_value)
+    if normalized in RELEASE_TYPE_VALUES:
+        return normalized
+    return default
+
+
+def _release_row_label_from_type(release_type, fallback=""):
+    normalized_type = normalize_release_type(release_type, default="release")
+    return RELEASE_TYPE_ROW_LABELS.get(normalized_type) or fallback or RELEASE_TYPE_ROW_LABELS["release"]
+
+
+def _sync_release_type_fields(item):
+    if not isinstance(item, dict):
+        return item
+
+    release_type = normalize_release_type(
+        item.get("release_type"),
+        default=derive_release_type_from_jira(item),
+    ) or "release"
+    item["release_type"] = release_type
+    item["row_label"] = _release_row_label_from_type(release_type, item.get("row_label"))
+    item["is_reroll"] = release_type == "reroll"
+    item["is_hotfix"] = release_type == "hotfix"
+    item["release_name_lines"] = _build_release_name_lines(
+        item.get("release_summary"),
+        _get_release_name_ke_line(item),
+        row_label=str(item.get("row_label") or RELEASE_TYPE_ROW_LABELS["release"]),
+    )
+    return item
+
+
+def derive_release_type_from_jira(item):
+    if not isinstance(item, dict):
+        return "release"
+
+    existing_type = normalize_release_type(item.get("release_type"))
+    if existing_type:
+        return existing_type
+    if item.get("is_reroll"):
+        return "reroll"
+
+    row_label = _normalize_text(item.get("row_label"))
+    summary = _normalize_text(item.get("release_summary"))
+    release_version = str(item.get("release_version") or "").strip().upper()
+    if "перераскат" in row_label or "перераскат" in summary:
+        return "reroll"
+    if "хотфикс" in row_label or "hotfix" in summary or release_version.startswith("P-"):
+        return "hotfix"
+    if "авар" in row_label or "авар" in summary or "emergency" in summary:
+        return "technical"
+    if "техн" in row_label or "техн" in summary or "technical" in summary:
+        return "technical"
+    return "release"
+
+
+def _base_field_name(field_name):
+    return f"base_{field_name}"
+
+
+def _manual_field_name(field_name):
+    return f"manual_{field_name}"
+
+
+def _normalize_manual_dict_field(value):
+    if not isinstance(value, dict):
+        return {}
+    normalized = {}
+    for key, field_value in value.items():
+        field_key = str(key or "").strip()
+        if not field_key:
+            continue
+        if isinstance(field_value, (dict, list)):
+            normalized[field_key] = field_value
+        else:
+            normalized[field_key] = str(field_value or "").strip()
+    return normalized
+
+
+def _normalize_manual_scalar_field(field_name, value):
+    raw_value = str(value or "").strip()
+    if not raw_value:
+        return ""
+    if field_name == "release_type":
+        return normalize_release_type(raw_value)
+    if field_name in {"release_dist_url"}:
+        return _normalize_artifact_url(raw_value)
+    if field_name == "ke":
+        return _format_ke_id(raw_value) if re.fullmatch(r"(?:CI)?\d+", raw_value, re.IGNORECASE) else raw_value
+    return raw_value
+
+
+def _warn_unknown_manual_override_fields(fields):
+    unknown_fields = sorted(set(fields or []) - set(MANUAL_OVERRIDE_FIELDS) - {
+        "clear_zni",
+        "updated_at",
+        "updated_by",
+        *(_base_field_name(field) for field in BASE_OVERRIDE_FIELDS),
+    })
+    for field_name in unknown_fields:
+        if field_name in _manual_override_unknown_fields_warned:
+            continue
+        _manual_override_unknown_fields_warned.add(field_name)
+        logging.warning("Release monitor: ignored unknown manual override field: %s", field_name)
+
+
+def _validate_manual_release_payload(value):
+    if not isinstance(value, dict):
+        return ["manual release payload must be an object"]
+
+    errors = []
+    release_key = str(value.get("release_key") or "").strip()
+    release_summary = str(value.get("release_summary") or "").strip()
+    if not release_key and not release_summary:
+        errors.append("release_key is required")
+
+    start_dt = _parse_release_monitor_date(value.get("deployment_start") or value.get("deployment_start_iso"))
+    end_dt = _parse_release_monitor_date(value.get("deployment_end") or value.get("deployment_end_iso"))
+    if start_dt and end_dt and start_dt > end_dt:
+        errors.append("deployment_start must be before deployment_end")
+
+    if value.get("row_key") and not str(value.get("row_key")).startswith("manual::"):
+        errors.append("manual row_key must start with manual::")
+    if value.get("release_type") and not normalize_release_type(value.get("release_type")):
+        errors.append("release_type is invalid")
+
+    return errors
+
+
+def _normalize_manual_release(row_key, value):
+    if not isinstance(value, dict):
+        return {}
+
+    row_key = str(value.get("row_key") or row_key or "").strip()
+    if not row_key.startswith("manual::"):
+        return {}
+
+    validation_errors = _validate_manual_release_payload({**value, "row_key": row_key})
+    if validation_errors:
+        logging.warning(
+            "Release monitor: ignored invalid manual release %s: %s",
+            row_key,
+            "; ".join(validation_errors),
+        )
+        return {}
+
+    start_dt = _parse_release_monitor_date(value.get("deployment_start_iso") or value.get("deployment_start"))
+    end_dt = _parse_release_monitor_date(value.get("deployment_end_iso") or value.get("deployment_end")) or start_dt
+    sort_dt = start_dt or end_dt
+    year = int(value.get("year") or (sort_dt.year if sort_dt else datetime.now().year))
+    release_type = normalize_release_type(value.get("release_type"), default="release")
+    row_label = _release_row_label_from_type(release_type)
+    release_key = str(value.get("release_key") or "").strip()
+    release_summary = str(value.get("release_summary") or "").strip() or release_key
+    system_name = str(value.get("system_name") or "").strip()
+    ke_id = str(value.get("ke_id") or "").strip()
+    ke_line = f"{system_name}({ke_id})" if system_name and ke_id else (system_name or ke_id)
+    created_at = str(value.get("created_at") or "").strip()
+    updated_at = str(value.get("updated_at") or "").strip()
+
+    manual_item = {
+        "row_key": row_key,
+        "manual_release": True,
+        "source": "manual",
+        "year": year,
+        "release_number": "",
+        "release_type": release_type,
+        "base_release_type": release_type,
+        "release_key": release_key,
+        "release_url": str(value.get("release_url") or "").strip(),
+        "release_status": str(value.get("release_status") or "").strip(),
+        "release_summary": release_summary,
+        "release_name_lines": _build_release_name_lines(release_summary, ke_line, row_label=row_label),
+        "base_release_summary": release_summary,
+        "base_release_name_lines": _build_release_name_lines(release_summary, ke_line, row_label=row_label),
+        "row_label": row_label,
+        "rov_key": str(value.get("rov_key") or "").strip(),
+        "rov_url": str(value.get("rov_url") or "").strip(),
+        "rov_status": str(value.get("rov_status") or "").strip(),
+        "has_rov": bool(str(value.get("rov_key") or "").strip()),
+        "ke_id": ke_id,
+        "ke_name": system_name,
+        "ke": _normalize_manual_scalar_field("ke", value.get("ke")),
+        "release_version": str(value.get("release_version") or "").strip(),
+        "release_dist_url": _normalize_artifact_url(str(value.get("release_dist_url") or "").strip()),
+        "system_name": system_name,
+        "zni_key": str(value.get("zni_key") or "").strip(),
+        "zni_url": str(value.get("zni_url") or "").strip(),
+        "has_rollout_notes": False,
+        "rollout_notes_level": "",
+        "deployment_start": _format_release_monitor_date(start_dt) if start_dt else "",
+        "deployment_start_iso": start_dt.isoformat() if start_dt else "",
+        "deployment_end": _format_release_monitor_date(end_dt) if end_dt else "",
+        "deployment_end_iso": end_dt.isoformat() if end_dt else "",
+        "source_deployment_start": _format_release_monitor_date(start_dt) if start_dt else "",
+        "source_deployment_start_iso": start_dt.isoformat() if start_dt else "",
+        "source_deployment_end": _format_release_monitor_date(end_dt) if end_dt else "",
+        "source_deployment_end_iso": end_dt.isoformat() if end_dt else "",
+        "psi_owner": "",
+        "psi_responsibles": [],
+        "psi_checker": "",
+        "row_state": "planned",
+        "is_final": False,
+        "is_cancelled": False,
+        "is_non_final": True,
+        "is_pre_final": False,
+        "is_ready_for_prom": False,
+        "is_overdue": False,
+        "is_today": False,
+        "days_overdue": 0,
+        "waits_for_rov": False,
+        "is_unnumbered": False,
+        "is_natural_unnumbered": False,
+        "is_force_unnumbered": False,
+        "sort_date": sort_dt.isoformat() if sort_dt else "",
+        "created_sort_date": created_at,
+        "created": created_at,
+        "updated_at": updated_at,
+        "updated_by": str(value.get("updated_by") or "").strip(),
+    }
+
+    for field_name in MANUAL_OVERRIDE_DICT_FIELDS:
+        normalized_value = _normalize_manual_dict_field(value.get(field_name))
+        if normalized_value:
+            manual_item[field_name] = normalized_value
+
+    for field_name in BASE_OVERRIDE_FIELDS:
+        base_field = _base_field_name(field_name)
+        if base_field not in manual_item:
+            manual_item[base_field] = manual_item.get(field_name, {})
+
+    return manual_item
+
+
+def _normalize_manual_releases_payload(payload):
+    if payload is None or not isinstance(payload, dict):
+        return {"items": {}, "meta": {}}
+
+    raw_items = payload.get("items") if isinstance(payload.get("items"), dict) else payload
+    normalized_items = {}
+    for row_key, value in (raw_items or {}).items():
+        normalized_item = _normalize_manual_release(row_key, value)
+        if normalized_item:
+            normalized_items[normalized_item["row_key"]] = normalized_item
+
+    meta = dict(payload.get("meta") or {}) if isinstance(payload.get("meta"), dict) else {}
+    return {"items": normalized_items, "meta": meta}
+
+
+def _load_manual_releases_payload():
+    payload = _load_state_json(MANUAL_RELEASES_FILE, default=None)
+    return _normalize_manual_releases_payload(payload)
+
+
+def _save_manual_releases_payload(payload):
+    normalized_payload = _normalize_manual_releases_payload(payload)
+    _write_state_json(MANUAL_RELEASES_FILE, normalized_payload)
+    return normalized_payload
+
+
+def _normalize_duplicate_issue_key(value):
+    return str(value or "").strip().upper()
+
+
+def _is_exact_manual_release_duplicate(manual_release, item):
+    release_key = _normalize_duplicate_issue_key(manual_release.get("release_key"))
+    item_release_key = _normalize_duplicate_issue_key(item.get("release_key"))
+    if not release_key or release_key != item_release_key:
+        return False
+
+    rov_key = _normalize_duplicate_issue_key(manual_release.get("rov_key"))
+    item_rov_key = _normalize_duplicate_issue_key(item.get("rov_key"))
+    return rov_key == item_rov_key
+
+
+def _find_exact_manual_release_duplicate(manual_release, items=None, *, include_manual=False, ignore_row_key=""):
+    ignore_row_key = str(ignore_row_key or manual_release.get("row_key") or "").strip()
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        item_row_key = _get_assignment_key_for_item(item)
+        if ignore_row_key and item_row_key == ignore_row_key:
+            continue
+        if item.get("manual_release") and not include_manual:
+            continue
+        if _is_exact_manual_release_duplicate(manual_release, item):
+            return item
+    return None
+
+
+def _find_jira_release_candidates_for_manual_release(manual_release, jira_items=None):
+    if not isinstance(manual_release, dict):
+        return []
+
+    release_key = _normalize_duplicate_issue_key(manual_release.get("release_key"))
+    rov_key = _normalize_duplicate_issue_key(manual_release.get("rov_key"))
+    if not release_key:
+        return []
+
+    candidates = []
+    for item in jira_items or []:
+        if not isinstance(item, dict) or item.get("manual_release"):
+            continue
+        item_release_key = _normalize_duplicate_issue_key(item.get("release_key"))
+        if item_release_key != release_key:
+            continue
+        item_rov_key = _normalize_duplicate_issue_key(item.get("rov_key"))
+        match_type = "exact" if rov_key and item_rov_key == rov_key else "release_key"
+        if not rov_key and not item_rov_key:
+            match_type = "exact"
+        candidates.append({
+            "row_key": _get_assignment_key_for_item(item),
+            "release_key": str(item.get("release_key") or "").strip(),
+            "rov_key": str(item.get("rov_key") or "").strip(),
+            "release_status": str(item.get("release_status") or "").strip(),
+            "rov_status": str(item.get("rov_status") or "").strip(),
+            "deployment_start": str(item.get("deployment_start") or "").strip(),
+            "deployment_end": str(item.get("deployment_end") or "").strip(),
+            "release_summary": str(item.get("release_summary") or "").strip(),
+            "match_type": match_type,
+        })
+    return candidates
+
+
+def _manual_release_has_value(item, field_name):
+    value = item.get(field_name)
+    if isinstance(value, dict):
+        return bool(value)
+    return bool(str(value or "").strip())
+
+
+def _apply_manual_release_jira_reconciliation(item, candidates):
+    if not isinstance(item, dict):
+        return item
+
+    candidates = [candidate for candidate in candidates or [] if isinstance(candidate, dict)]
+    item["jira_reconcile_candidates"] = candidates
+    item["jira_reconcile_available"] = bool(candidates)
+    item["jira_reconcile_action_required"] = False
+    item["jira_reconcile_candidate_count"] = len(candidates)
+    item["jira_reconcile_suggested_fields"] = {}
+    item["jira_reconcile_matched_row_key"] = ""
+
+    if not candidates:
+        return item
+
+    exact_candidates = [candidate for candidate in candidates if candidate.get("match_type") == "exact"]
+    selected = exact_candidates[0] if exact_candidates else candidates[0]
+    item["jira_reconcile_matched_row_key"] = str(selected.get("row_key") or "")
+    item["jira_reconcile_action_required"] = True
+
+    suggested_fields = {}
+    for field_name in (
+        "release_summary",
+        "rov_key",
+        "release_status",
+        "rov_status",
+        "deployment_start",
+        "deployment_end",
+    ):
+        candidate_value = str(selected.get(field_name) or "").strip()
+        if candidate_value and not _manual_release_has_value(item, field_name):
+            suggested_fields[field_name] = candidate_value
+
+    item["jira_reconcile_suggested_fields"] = suggested_fields
+    return item
+
+
+def _find_manual_release_duplicate_warnings(manual_release, jira_items=None, *, include_manual=False, ignore_row_key=""):
+    if not isinstance(manual_release, dict):
+        return []
+
+    release_key = _normalize_duplicate_issue_key(manual_release.get("release_key"))
+    rov_key = _normalize_duplicate_issue_key(manual_release.get("rov_key"))
+    if not release_key and not rov_key:
+        return []
+
+    warnings = []
+    for item in jira_items or []:
+        if not isinstance(item, dict):
+            continue
+        item_row_key = _get_assignment_key_for_item(item)
+        if ignore_row_key and item_row_key == ignore_row_key:
+            continue
+        is_manual_item = bool(item.get("manual_release"))
+        if is_manual_item and not include_manual:
+            continue
+
+        item_release_key = _normalize_duplicate_issue_key(item.get("release_key"))
+        item_rov_key = _normalize_duplicate_issue_key(item.get("rov_key"))
+        if release_key and release_key == item_release_key:
+            exact_duplicate = rov_key == item_rov_key
+            warnings.append({
+                "type": "exact_duplicate" if exact_duplicate else "release_key",
+                "severity": "error" if exact_duplicate else "warning",
+                "blocking": bool(exact_duplicate),
+                "message": (
+                    f"Manual release duplicates existing row {release_key}"
+                    if exact_duplicate
+                    else f"Manual release has the same release key {release_key}"
+                ),
+                "row_key": item_row_key,
+                "release_key": item_release_key,
+                "rov_key": item_rov_key,
+                "source": "manual" if is_manual_item else "jira",
+            })
+        if rov_key and rov_key == item_rov_key:
+            warnings.append({
+                "type": "rov_key",
+                "severity": "warning",
+                "blocking": False,
+                "message": f"Manual release has the same ROV {rov_key}",
+                "row_key": item_row_key,
+                "release_key": item_release_key,
+                "rov_key": item_rov_key,
+                "source": "manual" if is_manual_item else "jira",
+            })
+    return warnings
+
+
+def _apply_manual_releases(items):
+    manual_releases = _load_manual_releases_payload().get("items", {})
+    if not manual_releases:
+        return items
+
+    jira_items = [item for item in items if isinstance(item, dict) and not item.get("manual_release")]
+    existing_keys = {_get_assignment_key_for_item(item) for item in items if isinstance(item, dict)}
+    for row_key, manual_item in manual_releases.items():
+        if row_key in existing_keys:
+            continue
+        item_to_append = dict(manual_item)
+        reconciliation_candidates = _find_jira_release_candidates_for_manual_release(item_to_append, jira_items)
+        _apply_manual_release_jira_reconciliation(item_to_append, reconciliation_candidates)
+        duplicate_item = _find_exact_manual_release_duplicate(item_to_append, jira_items)
+        if duplicate_item:
+            item_to_append["jira_duplicate_detected"] = True
+            item_to_append["jira_duplicate_row_key"] = _get_assignment_key_for_item(duplicate_item)
+            item_to_append["jira_duplicate_release_key"] = str(duplicate_item.get("release_key") or "").strip()
+            item_to_append["jira_duplicate_rov_key"] = str(duplicate_item.get("rov_key") or "").strip()
+            item_to_append["jira_duplicate_action_required"] = True
+        else:
+            item_to_append["jira_duplicate_detected"] = False
+            item_to_append["jira_duplicate_row_key"] = ""
+            item_to_append["jira_duplicate_release_key"] = ""
+            item_to_append["jira_duplicate_rov_key"] = ""
+            item_to_append["jira_duplicate_action_required"] = False
+        items.append(item_to_append)
+        existing_keys.add(row_key)
+    return items
 
 
 def _load_zni_assignments():
@@ -638,36 +1134,37 @@ def _normalize_manual_release_override(value):
     if not isinstance(value, dict):
         return {}
 
+    _warn_unknown_manual_override_fields(value.keys())
     normalized = {}
-    for key in (
-        "release_summary",
-        "release_version",
-        "release_dist_url",
-        "ke",
-        "base_release_summary",
-        "base_release_version",
-        "base_release_dist_url",
-        "base_ke",
-        "base_zni_key",
-        "base_zni_url",
-    ):
-        raw_value = str(value.get(key) or "").strip()
-        if raw_value:
-            normalized[key] = raw_value
+    for field_name in MANUAL_OVERRIDE_SCALAR_FIELDS:
+        normalized_value = _normalize_manual_scalar_field(field_name, value.get(field_name))
+        if normalized_value:
+            normalized[field_name] = normalized_value
 
-    zni_key = str(value.get("zni_key") or "").strip()
-    zni_url = str(value.get("zni_url") or "").strip()
+    for field_name in MANUAL_OVERRIDE_DICT_FIELDS:
+        normalized_value = _normalize_manual_dict_field(value.get(field_name))
+        if normalized_value:
+            normalized[field_name] = normalized_value
+
+    for field_name in BASE_OVERRIDE_FIELDS:
+        base_field = _base_field_name(field_name)
+        if field_name in MANUAL_OVERRIDE_DICT_FIELDS:
+            normalized_value = _normalize_manual_dict_field(value.get(base_field))
+        else:
+            normalized_value = _normalize_manual_scalar_field(field_name, value.get(base_field))
+        if normalized_value:
+            normalized[base_field] = normalized_value
+
     clear_zni = bool(value.get("clear_zni"))
-    if zni_key:
-        normalized["zni_key"] = zni_key
-    if zni_url:
-        normalized["zni_url"] = zni_url
     if clear_zni:
         normalized["clear_zni"] = True
 
     updated_at = str(value.get("updated_at") or "").strip()
     if updated_at:
         normalized["updated_at"] = updated_at
+    updated_by = str(value.get("updated_by") or "").strip()
+    if updated_by:
+        normalized["updated_by"] = updated_by
 
     return normalized
 
@@ -1982,6 +2479,19 @@ def _apply_zni_assignments(items):
 
 
 def _get_release_name_ke_line(item):
+    has_manual_ke_line = bool(
+        item.get("manual_release")
+        or item.get("manual_system_name")
+        or item.get("manual_ke_id")
+    )
+    if has_manual_ke_line:
+        system_name = str(item.get("system_name") or item.get("ke_name") or "").strip()
+        ke_id = str(item.get("ke_id") or "").strip()
+        if system_name and ke_id:
+            return f"{system_name}({ke_id})"
+        if system_name or ke_id:
+            return system_name or ke_id
+
     lines = item.get("base_release_name_lines") or item.get("release_name_lines") or []
     if isinstance(lines, list) and len(lines) > 1:
         line_value = str(lines[1] or "").strip()
@@ -2021,93 +2531,91 @@ def _apply_manual_release_overrides(items, overrides=None):
     for item in items:
         assignment_key = _get_assignment_key_for_item(item)
         override = overrides.get(assignment_key) or overrides.get(item.get("release_key"), {})
-        override_base_summary = str(override.get("base_release_summary") or "").strip() if isinstance(override, dict) else ""
-        override_base_version = str(override.get("base_release_version") or "").strip() if isinstance(override, dict) else ""
-        override_base_url = str(override.get("base_release_dist_url") or "").strip() if isinstance(override, dict) else ""
-        override_base_ke = str(override.get("base_ke") or "").strip() if isinstance(override, dict) else ""
-        override_base_zni_key = str(override.get("base_zni_key") or "").strip() if isinstance(override, dict) else ""
-        override_base_zni_url = str(override.get("base_zni_url") or "").strip() if isinstance(override, dict) else ""
-        if not str(item.get("base_release_summary") or "").strip():
-            item["base_release_summary"] = override_base_summary or str(item.get("release_summary") or "").strip()
-        if not str(item.get("base_release_version") or "").strip():
-            item["base_release_version"] = override_base_version or str(item.get("release_version") or "").strip()
-        if not str(item.get("base_release_dist_url") or "").strip():
-            item["base_release_dist_url"] = override_base_url or str(item.get("release_dist_url") or "").strip()
-        if not str(item.get("base_ke") or "").strip():
-            item["base_ke"] = override_base_ke or str(item.get("ke") or "").strip()
-        if not str(item.get("base_zni_key") or "").strip():
-            item["base_zni_key"] = override_base_zni_key or str(item.get("zni_key") or "").strip()
-        if not str(item.get("base_zni_url") or "").strip():
-            item["base_zni_url"] = override_base_zni_url or str(item.get("zni_url") or "").strip()
+        if not isinstance(override, dict):
+            override = {}
+
+        derived_release_type = derive_release_type_from_jira(item)
+        if not str(item.get("base_release_type") or "").strip():
+            item["base_release_type"] = override.get("base_release_type") or derived_release_type
+        if not str(item.get("release_type") or "").strip():
+            item["release_type"] = item.get("base_release_type") or derived_release_type
+
+        for field_name in BASE_OVERRIDE_FIELDS:
+            base_field = _base_field_name(field_name)
+            if field_name in MANUAL_OVERRIDE_DICT_FIELDS:
+                if not isinstance(item.get(base_field), dict):
+                    item[base_field] = (
+                        _normalize_manual_dict_field(override.get(base_field))
+                        or _normalize_manual_dict_field(item.get(field_name))
+                    )
+                continue
+
+            if str(item.get(base_field) or "").strip():
+                continue
+            base_value = _normalize_manual_scalar_field(field_name, override.get(base_field))
+            if not base_value:
+                base_value = _normalize_manual_scalar_field(field_name, item.get(field_name))
+            if field_name == "release_type" and not base_value:
+                base_value = derived_release_type
+            item[base_field] = base_value
+
         if not isinstance(item.get("base_release_name_lines"), list) or not item.get("base_release_name_lines"):
             item["base_release_name_lines"] = list(item.get("release_name_lines") or [])
 
-        base_summary = str(item.get("base_release_summary") or item.get("release_summary") or "").strip()
-        base_version = str(item.get("base_release_version") or item.get("release_version") or "").strip()
-        base_url = str(item.get("base_release_dist_url") or item.get("release_dist_url") or "").strip()
-        base_ke = str(item.get("base_ke") or item.get("ke") or "").strip()
-        base_zni_key = str(item.get("base_zni_key") or item.get("zni_key") or "").strip()
-        base_zni_url = str(item.get("base_zni_url") or item.get("zni_url") or "").strip()
-        base_name_lines = item.get("base_release_name_lines")
+        for field_name in BASE_OVERRIDE_FIELDS:
+            base_field = _base_field_name(field_name)
+            if field_name in MANUAL_OVERRIDE_DICT_FIELDS:
+                item[field_name] = dict(item.get(base_field) or {})
+            else:
+                item[field_name] = str(item.get(base_field) or "").strip()
 
-        item["release_summary"] = base_summary
-        item["release_version"] = base_version
-        item["release_dist_url"] = base_url
-        item["ke"] = base_ke
-        item["zni_key"] = base_zni_key
-        item["zni_url"] = base_zni_url
+        base_name_lines = item.get("base_release_name_lines")
         if isinstance(base_name_lines, list) and base_name_lines:
             item["release_name_lines"] = list(base_name_lines)
 
-        if not isinstance(override, dict) or not override:
+        for field_name in MANUAL_OVERRIDE_FIELDS:
+            item[_manual_field_name(field_name)] = "" if field_name in MANUAL_OVERRIDE_SCALAR_FIELDS else {}
+        item["manual_clear_zni"] = False
+        item["manual_overridden_fields"] = []
+
+        if not override:
             item["has_manual_release_override"] = False
-            item["manual_release_summary"] = ""
-            item["manual_release_version"] = ""
-            item["manual_release_dist_url"] = ""
-            item["manual_ke"] = ""
-            item["manual_zni_key"] = ""
-            item["manual_zni_url"] = ""
-            item["manual_clear_zni"] = False
+            item["has_rov"] = bool(str(item.get("rov_key") or "").strip())
+            _sync_release_type_fields(item)
             continue
 
-        manual_summary = str(override.get("release_summary") or "").strip()
-        manual_version = str(override.get("release_version") or "").strip()
-        manual_url = _normalize_artifact_url(str(override.get("release_dist_url") or "").strip())
-        manual_ke = str(override.get("ke") or "").strip()
-        manual_zni_key = str(override.get("zni_key") or "").strip()
-        manual_zni_url = str(override.get("zni_url") or "").strip()
-        clear_zni = bool(override.get("clear_zni"))
+        changed_fields = []
+        for field_name in MANUAL_OVERRIDE_SCALAR_FIELDS:
+            manual_value = _normalize_manual_scalar_field(field_name, override.get(field_name))
+            if not manual_value:
+                continue
+            if field_name == "zni_url" and not override.get("zni_key"):
+                continue
+            item[field_name] = manual_value
+            item[_manual_field_name(field_name)] = manual_value
+            changed_fields.append(field_name)
 
-        if manual_summary:
-            item["release_summary"] = manual_summary
-            item["release_name_lines"] = _build_release_name_lines(
-                manual_summary,
-                _get_release_name_ke_line(item),
-                row_label=str(item.get("row_label") or "(Релиз)"),
-            )
-        if manual_version:
-            item["release_version"] = manual_version
-        if manual_url:
-            item["release_dist_url"] = manual_url
-        if manual_ke:
-            item["ke"] = _format_ke_id(manual_ke) if re.fullmatch(r"\d+", manual_ke) else manual_ke
+        for field_name in MANUAL_OVERRIDE_DICT_FIELDS:
+            manual_value = _normalize_manual_dict_field(override.get(field_name))
+            if not manual_value:
+                continue
+            item[field_name] = manual_value
+            item[_manual_field_name(field_name)] = manual_value
+            changed_fields.append(field_name)
+
+        clear_zni = bool(override.get("clear_zni"))
         if clear_zni:
             item["zni_key"] = ""
             item["zni_url"] = ""
-        elif manual_zni_key:
-            item["zni_key"] = manual_zni_key
-            item["zni_url"] = _resolve_manual_zni_url(manual_zni_key, manual_zni_url)
+            changed_fields.append("clear_zni")
+        elif item.get("manual_zni_key"):
+            item["zni_url"] = _resolve_manual_zni_url(item.get("manual_zni_key"), item.get("manual_zni_url"))
 
-        item["manual_release_summary"] = manual_summary
-        item["manual_release_version"] = manual_version
-        item["manual_release_dist_url"] = manual_url
-        item["manual_ke"] = manual_ke
-        item["manual_zni_key"] = manual_zni_key
-        item["manual_zni_url"] = manual_zni_url
         item["manual_clear_zni"] = clear_zni
-        item["has_manual_release_override"] = bool(
-            manual_summary or manual_version or manual_url or manual_ke or manual_zni_key or manual_zni_url or clear_zni
-        )
+        item["has_rov"] = bool(str(item.get("rov_key") or "").strip())
+        item["manual_overridden_fields"] = sorted(set(changed_fields))
+        item["has_manual_release_override"] = bool(changed_fields)
+        _sync_release_type_fields(item)
     return items
 
 
@@ -2951,6 +3459,42 @@ def _execute_issue_keys_search(domain, token, issue_keys, fields_to_load):
     return issues
 
 
+def _release_monitor_release_fields_to_load(resolved_fields):
+    return {
+        "key",
+        "summary",
+        "status",
+        "resolution",
+        "assignee",
+        "reporter",
+        "created",
+        "updated",
+        "issuetype",
+        "priority",
+        "issuelinks",
+        resolved_fields["planned_prom_start"],
+        resolved_fields["planned_prom_end"],
+        resolved_fields["system_info"],
+        resolved_fields["ke_object"],
+        resolved_fields["release_distributive"],
+        resolved_fields["delta_release_distributive"],
+    }
+
+
+def _release_monitor_rov_fields_to_load(resolved_fields):
+    return {
+        "key",
+        "summary",
+        "status",
+        "created",
+        "updated",
+        "issuetype",
+        "issuelinks",
+        resolved_fields["rov_start"],
+        resolved_fields["rov_end"],
+    }
+
+
 def _extract_release_io_keys(issue):
     keys = []
     for link in issue.get("fields", {}).get("issuelinks", []):
@@ -3375,6 +3919,8 @@ def _derive_natural_unnumbered(item):
     if _is_cancelled_reroll_rov(item):
         return True
     is_cancelled = bool(item.get("is_cancelled"))
+    if item.get("manual_release"):
+        return bool(is_cancelled)
     has_ke = bool(str(item.get("ke") or "").strip())
     has_manual_start = bool(str(item.get("manual_deployment_start") or "").strip())
     can_number_without_rov = bool(
@@ -3540,28 +4086,13 @@ def save_release_monitor_manual_order(
         }
         _save_manual_order(manual_order)
 
-        if _cached_data is None:
-            disk_payload = _load_snapshot_from_disk()
-            if disk_payload:
-                _cached_data = _hydrate_release_monitor_payload(disk_payload)
-                _last_cache_update = _get_snapshot_mtime() or time.time()
-
-        if _cached_data is not None:
-            items = list(_cached_data.get("items", []))
-            _apply_reviewer_assignments(items)
-            _apply_date_overrides(items)
-            _apply_duty_schedule_assignments(items, persist=False)
-            _sort_and_number_records(items)
-            _cached_data["items"] = items
-            _mark_release_monitor_state_changed()
-
-        payload = _get_cached_payload_copy() or _build_empty_release_monitor_payload()
+        payload = _rebuild_cached_payload_after_state_change_locked()
         if not payload.get("items"):
             disk_payload = _load_snapshot_from_disk()
             if disk_payload and disk_payload.get("items"):
                 _cached_data = _hydrate_release_monitor_payload(disk_payload)
                 _last_cache_update = _get_snapshot_mtime() or time.time()
-                payload = _get_cached_payload_copy() or disk_payload
+                payload = _rebuild_cached_payload_after_state_change_locked()
         return {
             "year": year,
             "data": payload,
@@ -4132,119 +4663,6 @@ def _fetch_incremental_release_monitor_data(base_items=None, lookback_minutes=AU
     )
 
 
-def get_release_monitor_data(force_refresh=False):
-    global _cached_data, _last_cache_update
-
-    with _cache_lock:
-        now = time.time()
-        if (
-            not force_refresh
-            and _cached_data is not None
-            and _last_cache_update is not None
-            and (now - _last_cache_update) < DASHBOARD_CACHE_TTL
-        ):
-            return _cached_data
-
-        manual_overrides = _load_manual_release_overrides()
-        _cached_data = _finalize_release_monitor_payload(_fetch_release_monitor_data(), manual_overrides)
-        _last_cache_update = now
-        _save_snapshot_to_disk(_cached_data)
-        return _cached_data
-
-
-def _run_release_monitor_refresh():
-    global _cached_data, _last_cache_update
-
-    try:
-        logging.info("Release monitor: background refresh started")
-        manual_overrides = _load_manual_release_overrides()
-        data = _fetch_release_monitor_data()
-        with _cache_lock:
-            _cached_data = _finalize_release_monitor_payload(data, manual_overrides)
-            _last_cache_update = time.time()
-            _save_snapshot_to_disk(_cached_data)
-            _refresh_status.update(
-                {
-                    "state": "completed",
-                    "message": "Р”Р°РЅРЅС‹Рµ РїРѕ СЂРµР»РёР·Р°Рј РѕР±РЅРѕРІР»РµРЅС‹",
-                    "started_at": _refresh_status.get("started_at"),
-                    "finished_at": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
-                    "error": None,
-                }
-            )
-        logging.info("Release monitor: background refresh completed, items=%s", len(data.get("items", [])))
-    except Exception as exc:
-        logging.exception("Release monitor: background refresh failed")
-        with _cache_lock:
-            _refresh_status.update(
-                {
-                    "state": "failed",
-                    "message": "РћС€РёР±РєР° РѕР±РЅРѕРІР»РµРЅРёСЏ СЂРµР»РёР·РѕРІ",
-                    "finished_at": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
-                    "error": str(exc),
-                }
-            )
-
-
-def start_release_monitor_refresh():
-    global _refresh_thread
-
-    with _cache_lock:
-        if _refresh_thread and _refresh_thread.is_alive():
-            return {
-                "started": False,
-                "status": dict(_refresh_status),
-            }
-
-        _refresh_status.update(
-            {
-                "state": "refreshing",
-                "message": "РРґРµС‚ РѕР±РЅРѕРІР»РµРЅРёРµ СЂРµР»РёР·РѕРІ РёР· Jira",
-                "started_at": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
-                "finished_at": None,
-                "error": None,
-            }
-        )
-        _refresh_thread = threading.Thread(target=_run_release_monitor_refresh, daemon=True)
-        _refresh_thread.start()
-
-        return {
-            "started": True,
-            "status": dict(_refresh_status),
-        }
-
-
-def get_release_monitor_refresh_status():
-    with _cache_lock:
-        payload = {
-            "status": dict(_refresh_status),
-        }
-        if _cached_data is not None:
-            payload["data"] = {
-                "items": list(_cached_data.get("items", [])),
-                "summary": dict(_cached_data.get("summary", {})),
-                "meta": dict(_cached_data.get("meta", {})),
-            }
-        else:
-            payload["data"] = _build_empty_release_monitor_payload()
-        return payload
-
-
-def get_release_monitor_snapshot():
-    with _cache_lock:
-        if _cached_data is None:
-            return _build_empty_release_monitor_payload()
-
-        return {
-            "items": list(_cached_data.get("items", [])),
-            "summary": dict(_cached_data.get("summary", {})),
-            "meta": {
-                **dict(_cached_data.get("meta", {})),
-                "is_cached": True,
-            },
-        }
-
-
 def clear_release_monitor_cache():
     global _cached_data, _last_cache_update
     with _cache_lock:
@@ -4262,6 +4680,28 @@ def _get_cached_payload_copy():
         "summary": dict(_cached_data.get("summary", {})),
         "meta": dict(_cached_data.get("meta", {})),
     }
+
+
+def _ensure_cached_payload_loaded_locked():
+    global _cached_data, _last_cache_update
+
+    if _cached_data is not None:
+        return
+
+    disk_payload = _load_snapshot_from_disk()
+    if disk_payload is not None:
+        _cached_data = _hydrate_release_monitor_payload(disk_payload)
+        _last_cache_update = _get_snapshot_mtime() or time.time()
+
+
+def _rebuild_cached_payload_after_state_change_locked():
+    global _cached_data
+
+    _ensure_cached_payload_loaded_locked()
+    payload = _normalize_release_payload(_get_cached_payload_copy() or _build_empty_release_monitor_payload())
+    _cached_data = payload
+    _mark_release_monitor_state_changed()
+    return payload
 
 
 def _release_monitor_payload_fingerprint(payload):
@@ -4650,6 +5090,8 @@ def _normalize_release_payload(payload):
         return _build_empty_release_monitor_payload()
 
     normalized_items = [dict(item) for item in (payload.get("items") or []) if isinstance(item, dict)]
+    _apply_manual_releases(normalized_items)
+    _apply_manual_release_overrides(normalized_items, payload.get("manual_overrides") or {})
     _apply_reviewer_assignments(normalized_items)
     _apply_release_status_consistency(normalized_items)
     _apply_date_overrides(normalized_items)
@@ -5449,6 +5891,355 @@ def set_release_monitor_manual_override(
             _mark_release_monitor_state_changed()
 
         payload = _normalize_release_payload(_get_cached_payload_copy() or _build_empty_release_monitor_payload())
+        return payload
+
+
+def _normalize_manual_release_input_fields(data, *, partial=False):
+    if not isinstance(data, dict):
+        return {}
+
+    fields = {}
+    for field_name in MANUAL_RELEASE_SCALAR_FIELDS:
+        if field_name not in data:
+            continue
+        if field_name == "year":
+            raw_year = str(data.get(field_name) or "").strip()
+            if raw_year:
+                fields[field_name] = raw_year
+            elif not partial:
+                fields[field_name] = ""
+            continue
+        normalized_value = _normalize_manual_scalar_field(field_name, data.get(field_name))
+        if normalized_value or not partial:
+            fields[field_name] = normalized_value
+
+    for field_name in MANUAL_OVERRIDE_DICT_FIELDS:
+        if field_name not in data:
+            continue
+        normalized_value = _normalize_manual_dict_field(data.get(field_name))
+        if normalized_value or not partial:
+            fields[field_name] = normalized_value
+
+    return fields
+
+
+def _normalize_manual_override_input_fields(data):
+    if not isinstance(data, dict):
+        return {}
+
+    fields = {}
+    for field_name in MANUAL_OVERRIDE_SCALAR_FIELDS:
+        if field_name not in data:
+            continue
+        fields[field_name] = _normalize_manual_scalar_field(field_name, data.get(field_name))
+
+    for field_name in MANUAL_OVERRIDE_DICT_FIELDS:
+        if field_name not in data:
+            continue
+        fields[field_name] = _normalize_manual_dict_field(data.get(field_name))
+
+    if "clear_zni" in data:
+        fields["clear_zni"] = bool(data.get("clear_zni"))
+
+    return fields
+
+
+def _manual_release_form_fields_from_item(item):
+    if not isinstance(item, dict):
+        return {}
+
+    return {
+        "release_key": str(item.get("release_key") or "").strip(),
+        "release_type": normalize_release_type(item.get("release_type"), default="release"),
+        "release_summary": str(item.get("release_summary") or "").strip(),
+        "deployment_start": str(item.get("deployment_start") or "").strip(),
+        "deployment_end": str(item.get("deployment_end") or "").strip(),
+        "rov_key": str(item.get("rov_key") or "").strip(),
+        "release_url": str(item.get("release_url") or "").strip(),
+        "rov_url": str(item.get("rov_url") or "").strip(),
+        "release_status": str(item.get("release_status") or "").strip(),
+        "rov_status": str(item.get("rov_status") or "").strip(),
+        "ke_id": str(item.get("ke_id") or "").strip(),
+        "ke": str(item.get("ke") or "").strip(),
+        "release_version": str(item.get("release_version") or "").strip(),
+        "release_dist_url": str(item.get("release_dist_url") or "").strip(),
+        "system_name": str(item.get("system_name") or "").strip(),
+        "zni_key": str(item.get("zni_key") or "").strip(),
+        "zni_url": str(item.get("zni_url") or "").strip(),
+    }
+
+
+def _fetch_jira_release_records_for_manual_lookup(release_key):
+    normalized_key = str(release_key or "").strip().upper()
+    if not normalized_key:
+        raise ValueError("release_key is required")
+    if not re.fullmatch(r"[A-Z][A-Z0-9]+-\d+", normalized_key):
+        raise ValueError("release_key format is invalid")
+
+    prefix = normalized_key.split("-", 1)[0]
+    domain, token = get_jira_domain_and_token(normalized_key)
+    resolved_fields = _resolve_field_ids(domain, token)
+    release_fields_to_load = _release_monitor_release_fields_to_load(resolved_fields)
+    release_issues = _execute_issue_keys_search(domain, token, [normalized_key], release_fields_to_load)
+    release_issue = next(
+        (
+            issue
+            for issue in release_issues
+            if str(issue.get("key") or "").upper() == normalized_key
+            and _issue_type_name(issue) == RELEASE_ISSUE_TYPE
+        ),
+        None,
+    )
+    if not release_issue:
+        return []
+
+    rov_map = {}
+    rov_keys = sorted(key for key in _extract_release_io_keys(release_issue) if key)
+    if rov_keys:
+        rov_fields_to_load = _release_monitor_rov_fields_to_load(resolved_fields)
+        rov_issues = _execute_issue_keys_search(domain, token, rov_keys, rov_fields_to_load)
+        rov_map = {
+            issue.get("key"): _build_rov_record(issue, domain, resolved_fields)
+            for issue in rov_issues
+            if issue.get("key")
+        }
+
+    current_year = datetime.now().year
+    previous_year = current_year - 1
+    return _build_release_record(
+        release_issue,
+        domain,
+        prefix,
+        resolved_fields,
+        rov_map,
+        current_year,
+        previous_year,
+    )
+
+
+def lookup_release_monitor_manual_release_jira(release_key):
+    normalized_key = str(release_key or "").strip().upper()
+    if not normalized_key:
+        raise ValueError("release_key is required")
+
+    records = _fetch_jira_release_records_for_manual_lookup(normalized_key)
+    form_fields = _manual_release_form_fields_from_item(records[0]) if records else {"release_key": normalized_key}
+
+    with _cache_lock:
+        _ensure_cached_payload_loaded_locked()
+        current_payload = _normalize_release_payload(_get_cached_payload_copy() or _build_empty_release_monitor_payload())
+        warnings = _find_manual_release_duplicate_warnings(form_fields, current_payload.get("items") or [])
+
+    return {
+        "found": bool(records),
+        "release_key": normalized_key,
+        "fields": form_fields,
+        "records": [_manual_release_form_fields_from_item(item) for item in records],
+        "warnings": warnings,
+    }
+
+
+def create_release_monitor_manual_release(data, updated_by=""):
+    global _cached_data
+
+    if isinstance(data, dict) and data.get("release_type") and not normalize_release_type(data.get("release_type")):
+        raise ValueError("release_type is invalid")
+    fields = _normalize_manual_release_input_fields(data or {}, partial=False)
+    if not str(fields.get("release_key") or "").strip():
+        raise ValueError("release_key is required")
+    fields["release_type"] = normalize_release_type(fields.get("release_type"), default="release")
+    if fields.get("deployment_start") and not fields.get("deployment_end"):
+        fields["deployment_end"] = fields.get("deployment_start")
+
+    now_text = _format_timestamp()
+    row_key = f"manual::{uuid4().hex}"
+    manual_release = {
+        **fields,
+        "row_key": row_key,
+        "created_at": now_text,
+        "updated_at": now_text,
+        "updated_by": str(updated_by or (data or {}).get("updated_by") or "").strip(),
+    }
+
+    validation_errors = _validate_manual_release_payload(manual_release)
+    if validation_errors:
+        raise ValueError("; ".join(validation_errors))
+
+    with _cache_lock:
+        _ensure_cached_payload_loaded_locked()
+        current_payload = _normalize_release_payload(_get_cached_payload_copy() or _build_empty_release_monitor_payload())
+        duplicate_warnings = _find_manual_release_duplicate_warnings(
+            manual_release,
+            current_payload.get("items") or [],
+            include_manual=True,
+        )
+        blocking_duplicate = next((warning for warning in duplicate_warnings if warning.get("blocking")), None)
+        if blocking_duplicate:
+            duplicate_row = blocking_duplicate.get("row_key") or ""
+            raise ValueError(f"Manual release duplicates existing row {duplicate_row}".strip())
+
+        manual_payload = _load_manual_releases_payload()
+        manual_payload.setdefault("items", {})[row_key] = manual_release
+        manual_payload["meta"] = {
+            **(manual_payload.get("meta") or {}),
+            "updated_at": now_text,
+            "updated_by": manual_release.get("updated_by", ""),
+        }
+        _save_manual_releases_payload(manual_payload)
+
+        payload = _rebuild_cached_payload_after_state_change_locked()
+        return {
+            "row_key": row_key,
+            "manual_release": _normalize_manual_release(row_key, manual_release),
+            "warnings": duplicate_warnings,
+            "data": payload,
+        }
+
+
+def update_release_monitor_manual_release(row_key, data, updated_by=""):
+    row_key = str(row_key or "").strip()
+    if not row_key.startswith("manual::"):
+        raise ValueError("Manual release row_key must start with manual::")
+    if isinstance(data, dict) and data.get("row_key") and str(data.get("row_key")).strip() != row_key:
+        raise ValueError("row_key is immutable")
+
+    if isinstance(data, dict) and data.get("release_type") and not normalize_release_type(data.get("release_type")):
+        raise ValueError("release_type is invalid")
+    fields = _normalize_manual_release_input_fields(data or {}, partial=True)
+    if not fields and not updated_by:
+        raise ValueError("No manual release fields were provided")
+    if "release_type" in fields:
+        fields["release_type"] = normalize_release_type(fields.get("release_type"))
+        if not fields["release_type"]:
+            raise ValueError("release_type is invalid")
+
+    now_text = _format_timestamp()
+    with _cache_lock:
+        manual_payload = _load_manual_releases_payload()
+        current = dict((manual_payload.get("items") or {}).get(row_key) or {})
+        if not current:
+            raise ValueError("Manual release was not found")
+
+        date_changed = any(field_name in fields for field_name in ("deployment_start", "deployment_end"))
+        current.update(fields)
+        current["row_key"] = row_key
+        current["updated_at"] = now_text
+        current["updated_by"] = str(updated_by or (data or {}).get("updated_by") or current.get("updated_by") or "").strip()
+
+        if current.get("deployment_start") and not current.get("deployment_end"):
+            current["deployment_end"] = current.get("deployment_start")
+
+        validation_errors = _validate_manual_release_payload(current)
+        if validation_errors:
+            raise ValueError("; ".join(validation_errors))
+
+        current_payload = _normalize_release_payload(_get_cached_payload_copy() or _build_empty_release_monitor_payload())
+        duplicate_warnings = _find_manual_release_duplicate_warnings(
+            current,
+            current_payload.get("items") or [],
+            include_manual=True,
+            ignore_row_key=row_key,
+        )
+        blocking_duplicate = next((warning for warning in duplicate_warnings if warning.get("blocking")), None)
+        if blocking_duplicate:
+            duplicate_row = blocking_duplicate.get("row_key") or ""
+            raise ValueError(f"Manual release duplicates existing row {duplicate_row}".strip())
+
+        _remove_row_from_manual_order(row_key) if date_changed else None
+        manual_payload.setdefault("items", {})[row_key] = current
+        manual_payload["meta"] = {
+            **(manual_payload.get("meta") or {}),
+            "updated_at": now_text,
+            "updated_by": current.get("updated_by", ""),
+        }
+        _save_manual_releases_payload(manual_payload)
+
+        payload = _rebuild_cached_payload_after_state_change_locked()
+        return {
+            "row_key": row_key,
+            "manual_release": _normalize_manual_release(row_key, current),
+            "warnings": duplicate_warnings,
+            "data": payload,
+        }
+
+
+def update_release_monitor_manual_override_fields(row_key, fields, updated_by=""):
+    global _cached_data
+
+    row_key = str(row_key or "").strip()
+    if not row_key:
+        raise ValueError("Release row_key is required")
+
+    if isinstance(fields, dict) and fields.get("release_type") and not normalize_release_type(fields.get("release_type")):
+        raise ValueError("release_type is invalid")
+    normalized_fields = _normalize_manual_override_input_fields(fields or {})
+    if not normalized_fields:
+        raise ValueError("No manual override fields were provided")
+
+    with _cache_lock:
+        _ensure_cached_payload_loaded_locked()
+        current_payload = _normalize_release_payload(_get_cached_payload_copy() or _build_empty_release_monitor_payload())
+        target_item = next(
+            (item for item in current_payload.get("items") or [] if _get_assignment_key_for_item(item) == row_key),
+            None,
+        )
+        if not target_item:
+            raise ValueError("Release row was not found")
+
+        overrides = _load_manual_release_overrides()
+        current_override = dict(overrides.get(row_key) or {})
+
+        for field_name, value in normalized_fields.items():
+            if field_name == "clear_zni":
+                if value:
+                    current_override["clear_zni"] = True
+                    current_override.pop("zni_key", None)
+                    current_override.pop("zni_url", None)
+                else:
+                    current_override.pop("clear_zni", None)
+                continue
+
+            if field_name in MANUAL_OVERRIDE_DICT_FIELDS:
+                if value:
+                    current_override[field_name] = value
+                else:
+                    current_override.pop(field_name, None)
+                continue
+
+            if value:
+                current_override[field_name] = value
+            else:
+                current_override.pop(field_name, None)
+
+        current_override = _normalize_manual_release_override(current_override)
+        if current_override:
+            current_override["updated_at"] = _format_timestamp()
+            current_override["updated_by"] = str(updated_by or (fields or {}).get("updated_by") or current_override.get("updated_by") or "").strip()
+            overrides[row_key] = current_override
+        else:
+            overrides.pop(row_key, None)
+
+        _save_manual_release_overrides(overrides)
+        if _cached_data is not None:
+            _cached_data["manual_overrides"] = dict(overrides)
+        payload = _rebuild_cached_payload_after_state_change_locked()
+        return payload
+
+
+def reset_release_monitor_manual_override(row_key):
+    global _cached_data
+
+    row_key = str(row_key or "").strip()
+    if not row_key:
+        raise ValueError("Release row_key is required")
+
+    with _cache_lock:
+        overrides = _load_manual_release_overrides()
+        overrides.pop(row_key, None)
+        _save_manual_release_overrides(overrides)
+        if _cached_data is not None:
+            _cached_data["manual_overrides"] = dict(overrides)
+        payload = _rebuild_cached_payload_after_state_change_locked()
         return payload
 
 
