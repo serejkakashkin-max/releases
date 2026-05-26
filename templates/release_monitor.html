@@ -947,9 +947,8 @@
         .release-monitor-button-row {
             display: grid;
             grid-template-columns:
-                minmax(180px, 0.95fr)
-                minmax(160px, 0.85fr)
-                minmax(240px, 1.22fr)
+                minmax(180px, 0.85fr)
+                minmax(240px, 1.2fr)
                 minmax(190px, 1fr);
             gap: 0.35rem;
             align-items: start;
@@ -961,10 +960,9 @@
 
         .release-monitor-button-row.is-order-mode {
             grid-template-columns:
-                minmax(180px, 1fr)
-                minmax(150px, 0.82fr)
-                minmax(170px, 0.95fr)
-                minmax(170px, 0.95fr)
+                minmax(180px, 0.9fr)
+                minmax(170px, 0.9fr)
+                minmax(170px, 0.9fr)
                 minmax(220px, 1.2fr)
                 minmax(180px, 1fr);
         }
@@ -1103,18 +1101,16 @@
 
             .release-monitor-button-row {
                 grid-template-columns:
-                    minmax(180px, 1fr)
-                    minmax(150px, 0.85fr)
+                    minmax(180px, 0.95fr)
                     minmax(230px, 1.15fr)
                     minmax(180px, 1fr);
             }
 
             .release-monitor-button-row.is-order-mode {
                 grid-template-columns:
-                    minmax(180px, 1fr)
-                    minmax(150px, 0.85fr)
-                    minmax(170px, 0.95fr)
-                    minmax(170px, 0.95fr)
+                    minmax(180px, 0.95fr)
+                    minmax(170px, 0.9fr)
+                    minmax(170px, 0.9fr)
                     minmax(220px, 1.15fr)
                     minmax(180px, 1fr);
             }
@@ -1132,7 +1128,25 @@
             z-index: 1040;
             display: flex;
             flex-direction: column;
+            gap: 0;
+            align-items: center;
+        }
+
+        .release-scroll-group,
+        .release-side-settings-stack,
+        .release-side-settings-actions {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
             gap: 0.7rem;
+        }
+
+        .release-side-settings-stack {
+            margin-top: 104px;
+        }
+
+        .release-side-settings-actions {
+            gap: 0.45rem;
         }
 
         .release-scroll-btn {
@@ -1175,6 +1189,22 @@
             font-size: 1.15rem;
         }
 
+        .release-scroll-btn.release-settings-btn.active-order {
+            border-color: rgba(13, 110, 253, 0.6);
+            color: var(--primary);
+            box-shadow: 0 0 0 4px rgba(13, 110, 253, 0.12), 0 20px 40px rgba(13, 110, 253, 0.18);
+        }
+
+        .release-side-action-btn {
+            width: 46px;
+            height: 46px;
+            border-radius: 14px;
+        }
+
+        .release-side-action-btn.full {
+            color: var(--release-action-full);
+        }
+
         @media (max-width: 991px) {
             .release-scroll-nav {
                 left: auto;
@@ -1188,6 +1218,21 @@
                 width: 48px;
                 height: 48px;
                 border-radius: 14px;
+            }
+
+            .release-side-settings-stack {
+                margin-top: 0.55rem;
+            }
+
+            .release-side-settings-actions {
+                flex-direction: row;
+                gap: 0.4rem;
+            }
+
+            .release-side-action-btn {
+                width: 44px;
+                height: 44px;
+                border-radius: 13px;
             }
         }
 
@@ -1263,6 +1308,14 @@
 
         .reviewer-edit-row.responsibles {
             align-items: start;
+        }
+
+        .reviewer-edit-row.responsibles .reviewer-edit-label {
+            padding-top: 0.48rem;
+        }
+
+        .reviewer-edit-row.responsibles .reviewer-edit-control {
+            align-items: flex-start;
         }
 
         .reviewer-edit-label {
@@ -2286,26 +2339,64 @@
 
     <div class="page-shell">
         <div class="release-scroll-nav" aria-label="Быстрая навигация по таблице релизов">
-            <button
-                type="button"
-                class="release-scroll-btn"
-                id="releaseScrollTopBtn"
-                onclick="scrollReleasePageToTop()"
-                title="Наверх страницы"
-                aria-label="Наверх страницы"
-            >
-                <i class="bi bi-arrow-up"></i>
-            </button>
-            <button
-                type="button"
-                class="release-scroll-btn"
-                id="releaseScrollFinalBtn"
-                onclick="scrollToInstalledPromRelease()"
-                title="К первому релизу в статусе Установлен на ПРОМ"
-                aria-label="К первому релизу в статусе Установлен на ПРОМ"
-            >
-                <i class="bi bi-arrow-down"></i>
-            </button>
+            <div class="release-scroll-group">
+                <button
+                    type="button"
+                    class="release-scroll-btn"
+                    id="releaseScrollTopBtn"
+                    onclick="scrollReleasePageToTop()"
+                    title="Наверх страницы"
+                    aria-label="Наверх страницы"
+                >
+                    <i class="bi bi-arrow-up"></i>
+                </button>
+                <button
+                    type="button"
+                    class="release-scroll-btn"
+                    id="releaseScrollFinalBtn"
+                    onclick="scrollToInstalledPromRelease()"
+                    title="К первому релизу в статусе Установлен на ПРОМ"
+                    aria-label="К первому релизу в статусе Установлен на ПРОМ"
+                >
+                    <i class="bi bi-arrow-down"></i>
+                </button>
+            </div>
+            <div class="release-side-settings-stack">
+                <button
+                    type="button"
+                    id="releaseMonitorOrderBtn"
+                    class="release-scroll-btn release-settings-btn"
+                    onclick="toggleReleaseOrderMode()"
+                    title="Настройки таблицы"
+                    aria-label="Настройки таблицы"
+                >
+                    <i class="bi bi-sliders"></i>
+                </button>
+                <div class="release-side-settings-actions">
+                    <button
+                        type="button"
+                        id="releaseMonitorOrderSaveBtn"
+                        class="release-scroll-btn release-side-action-btn full"
+                        style="display: none;"
+                        onclick="saveReleaseOrder()"
+                        title="Сохранить настройки"
+                        aria-label="Сохранить настройки"
+                    >
+                        <i class="bi bi-check2"></i>
+                    </button>
+                    <button
+                        type="button"
+                        id="releaseMonitorOrderCancelBtn"
+                        class="release-scroll-btn release-side-action-btn"
+                        style="display: none;"
+                        onclick="cancelReleaseOrderMode()"
+                        title="Отменить настройки"
+                        aria-label="Отменить настройки"
+                    >
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+            </div>
         </div>
 
         <div class="page-hero">
@@ -2437,31 +2528,14 @@
                     </div>
                     </div>
                     <div class="release-monitor-button-row">
-                        <div class="release-action-stack compact order-stack">
-                            <button id="releaseMonitorOrderBtn" class="release-monitor-btn" onclick="toggleReleaseOrderMode()">
-                                <i class="bi bi-list-ol"></i>
-                                Настройки
-                            </button>
-                            <div class="release-order-actions">
-                                <button id="releaseMonitorOrderSaveBtn" class="release-monitor-btn full" style="display: none;" onclick="saveReleaseOrder()">
-                                    <i class="bi bi-check2-circle"></i>
-                                    Сохранить
-                                </button>
-                                <button id="releaseMonitorOrderCancelBtn" class="release-monitor-btn" style="display: none;" onclick="cancelReleaseOrderMode()">
-                                    <i class="bi bi-x-circle"></i>
-                                    Отменить
-                                </button>
-                            </div>
-                            <div class="release-action-meta">
-                                Обновлено: <strong id="releaseMonitorLastUpdated">{{ release_monitor_meta.last_updated or 'еще не загружалось' }}</strong>
-                            </div>
-                        </div>
                         <div class="release-action-stack compact manual-stack">
                             <button id="releaseManualCreateBtn" class="release-monitor-btn manual" onclick="openReleaseManualCreateModal()">
                                 <i class="bi bi-plus-square"></i>
                                 Добавить вручную
                             </button>
-                            <div class="release-action-meta">Ручная строка</div>
+                            <div class="release-action-meta">
+                                Обновлено: <strong id="releaseMonitorLastUpdated">{{ release_monitor_meta.last_updated or 'еще не загружалось' }}</strong>
+                            </div>
                         </div>
                         <div id="releaseMonitorQuickRefreshStack" class="release-action-stack quick-stack" style="display: none;">
                             <button id="releaseMonitorQuickRefreshBtn" class="release-monitor-btn quick" onclick="refreshReleaseMonitor('quick')">
@@ -5351,9 +5425,12 @@
             }
             if (orderBtn) {
                 orderBtn.classList.toggle('active-order', isReleaseOrderMode);
-                orderBtn.innerHTML = isReleaseOrderMode
-                    ? '<i class="bi bi-sliders"></i> Режим настроек'
-                    : '<i class="bi bi-sliders"></i> Настройки';
+                const orderTitle = isReleaseOrderMode ? 'Режим настроек включен' : 'Настройки таблицы';
+                orderBtn.title = orderTitle;
+                orderBtn.setAttribute('aria-label', orderTitle);
+                if (!orderBtn.querySelector('i')) {
+                    orderBtn.innerHTML = '<i class="bi bi-sliders"></i>';
+                }
             }
             if (saveBtn) {
                 saveBtn.style.display = isReleaseOrderMode ? '' : 'none';
@@ -6554,4 +6631,3 @@
     </script>
 </body>
 </html>
-
