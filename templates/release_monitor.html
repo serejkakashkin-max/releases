@@ -947,9 +947,10 @@
         .release-monitor-button-row {
             display: grid;
             grid-template-columns:
-                minmax(180px, 0.85fr)
-                minmax(240px, 1.2fr)
-                minmax(190px, 1fr);
+                minmax(180px, 0.9fr)
+                minmax(210px, 1fr)
+                minmax(220px, 1.15fr)
+                minmax(180px, 0.95fr);
             gap: 0.35rem;
             align-items: start;
             justify-content: flex-end;
@@ -961,10 +962,9 @@
         .release-monitor-button-row.is-order-mode {
             grid-template-columns:
                 minmax(180px, 0.9fr)
-                minmax(170px, 0.9fr)
-                minmax(170px, 0.9fr)
-                minmax(220px, 1.2fr)
-                minmax(180px, 1fr);
+                minmax(210px, 1fr)
+                minmax(220px, 1.15fr)
+                minmax(180px, 0.95fr);
         }
 
         .release-action-stack {
@@ -981,6 +981,116 @@
 
         .release-action-stack.confluence-stack {
             min-width: 220px;
+        }
+
+        .release-action-stack.manual-refresh-stack {
+            position: relative;
+            min-width: 210px;
+        }
+
+        .release-monitor-btn.refresh-menu {
+            color: var(--release-action-quick);
+        }
+
+        .release-monitor-btn.refresh-menu .menu-caret {
+            font-size: 0.78rem;
+            opacity: 0.72;
+            transition: transform 0.18s ease;
+        }
+
+        .release-monitor-btn.refresh-menu.menu-open .menu-caret {
+            transform: rotate(180deg);
+        }
+
+        .release-refresh-menu {
+            position: absolute;
+            top: calc(100% + 0.4rem);
+            left: 0;
+            right: 0;
+            z-index: 1200;
+            display: none;
+            padding: 0.42rem;
+            border: 1px solid rgba(88, 166, 255, 0.28);
+            border-radius: 14px;
+            background: #ffffff;
+            box-shadow: 0 24px 54px rgba(15, 23, 42, 0.26), 0 0 0 1px rgba(15, 23, 42, 0.04);
+        }
+
+        .release-refresh-menu.open {
+            display: grid;
+            gap: 0.36rem;
+        }
+
+        [data-theme="dark"] .release-refresh-menu {
+            background: #161b22;
+            border-color: rgba(88, 166, 255, 0.36);
+            box-shadow: 0 26px 58px rgba(0, 0, 0, 0.58), 0 0 0 1px rgba(255, 255, 255, 0.04);
+        }
+
+        .release-refresh-menu-action {
+            width: 100%;
+            border: 0;
+            border-radius: 11px;
+            background: #f6f8fa;
+            color: var(--text-primary);
+            box-shadow: inset 0 0 0 1px var(--release-soft-border);
+            padding: 0.52rem 0.58rem;
+            display: grid;
+            grid-template-columns: auto 1fr;
+            column-gap: 0.5rem;
+            align-items: center;
+            text-align: left;
+            cursor: pointer;
+            transition: all 0.18s ease;
+        }
+
+        .release-refresh-menu-action:hover:not(:disabled) {
+            background: #eef5ff;
+            box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.22);
+        }
+
+        [data-theme="dark"] .release-refresh-menu-action {
+            background: #21262d;
+        }
+
+        [data-theme="dark"] .release-refresh-menu-action:hover:not(:disabled) {
+            background: #263241;
+        }
+
+        .release-refresh-menu-action:disabled {
+            opacity: 0.65;
+            cursor: wait;
+        }
+
+        .release-refresh-menu-action i {
+            grid-row: span 2;
+            font-size: 1rem;
+        }
+
+        .release-refresh-menu-action.quick i,
+        .release-refresh-menu-action.quick .release-refresh-menu-title {
+            color: var(--release-action-quick);
+        }
+
+        .release-refresh-menu-action.full i,
+        .release-refresh-menu-action.full .release-refresh-menu-title {
+            color: var(--release-action-full);
+        }
+
+        .release-refresh-menu-title {
+            font-size: 0.78rem;
+            font-weight: 800;
+            line-height: 1.15;
+        }
+
+        .release-refresh-menu-note {
+            color: var(--text-secondary);
+            font-size: 0.68rem;
+            line-height: 1.2;
+        }
+
+        .release-refresh-menu-action.spinning i {
+            animation: spin 1s linear infinite;
         }
 
         .release-order-actions {
@@ -1102,17 +1212,17 @@
             .release-monitor-button-row {
                 grid-template-columns:
                     minmax(180px, 0.95fr)
-                    minmax(230px, 1.15fr)
-                    minmax(180px, 1fr);
+                    minmax(200px, 1fr)
+                    minmax(220px, 1.15fr)
+                    minmax(180px, 0.95fr);
             }
 
             .release-monitor-button-row.is-order-mode {
                 grid-template-columns:
                     minmax(180px, 0.95fr)
-                    minmax(170px, 0.9fr)
-                    minmax(170px, 0.9fr)
+                    minmax(200px, 1fr)
                     minmax(220px, 1.15fr)
-                    minmax(180px, 1fr);
+                    minmax(180px, 0.95fr);
             }
 
             .release-action-stack.confluence-stack {
@@ -1132,21 +1242,11 @@
             align-items: center;
         }
 
-        .release-scroll-group,
-        .release-side-settings-stack,
-        .release-side-settings-actions {
+        .release-scroll-group {
             display: flex;
             flex-direction: column;
             align-items: center;
             gap: 0.7rem;
-        }
-
-        .release-side-settings-stack {
-            margin-top: 104px;
-        }
-
-        .release-side-settings-actions {
-            gap: 0.45rem;
         }
 
         .release-scroll-btn {
@@ -1189,22 +1289,6 @@
             font-size: 1.15rem;
         }
 
-        .release-scroll-btn.release-settings-btn.active-order {
-            border-color: rgba(13, 110, 253, 0.6);
-            color: var(--primary);
-            box-shadow: 0 0 0 4px rgba(13, 110, 253, 0.12), 0 20px 40px rgba(13, 110, 253, 0.18);
-        }
-
-        .release-side-action-btn {
-            width: 46px;
-            height: 46px;
-            border-radius: 14px;
-        }
-
-        .release-side-action-btn.full {
-            color: var(--release-action-full);
-        }
-
         @media (max-width: 991px) {
             .release-scroll-nav {
                 left: auto;
@@ -1218,21 +1302,6 @@
                 width: 48px;
                 height: 48px;
                 border-radius: 14px;
-            }
-
-            .release-side-settings-stack {
-                margin-top: 0.55rem;
-            }
-
-            .release-side-settings-actions {
-                flex-direction: row;
-                gap: 0.4rem;
-            }
-
-            .release-side-action-btn {
-                width: 44px;
-                height: 44px;
-                border-radius: 13px;
             }
         }
 
@@ -1359,12 +1428,171 @@
 
         .release-number-cell {
             display: flex;
-            align-items: center;
+            align-items: flex-start;
+            justify-content: center;
             gap: 0.24rem;
+        }
+
+        .release-number-stack {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.18rem;
+            min-width: 28px;
         }
 
         .release-number-cell strong {
             font-size: 0.8rem;
+        }
+
+        .release-row-settings-toggle {
+            width: 24px;
+            height: 24px;
+            border: 1px solid rgba(74, 144, 226, 0.28);
+            background: rgba(74, 144, 226, 0.08);
+            color: var(--text-secondary);
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            cursor: pointer;
+            transition: all 0.18s ease;
+        }
+
+        .release-row-settings-toggle:hover,
+        .release-row-settings-toggle.active {
+            border-color: rgba(74, 144, 226, 0.62);
+            background: rgba(74, 144, 226, 0.18);
+            color: var(--primary);
+        }
+
+        .release-row-settings-toggle i {
+            font-size: 0.78rem;
+            line-height: 1;
+        }
+
+        .release-row.settings-open td {
+            border-bottom-color: transparent;
+        }
+
+        .release-row-settings-panel td {
+            padding: 0 0.44rem 0.55rem;
+            background: linear-gradient(180deg, rgba(74, 144, 226, 0.05), rgba(74, 144, 226, 0.015));
+        }
+
+        .release-row-settings-shell {
+            margin: 0.08rem 0 0.18rem;
+            padding: 0.44rem 0.62rem;
+            border: 1px solid rgba(74, 144, 226, 0.22);
+            border-radius: 10px;
+            background: rgba(74, 144, 226, 0.06);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.55rem;
+        }
+
+        .release-row-settings-title {
+            display: flex;
+            align-items: center;
+            gap: 0.42rem;
+            color: var(--text-primary);
+            font-size: 0.84rem;
+            font-weight: 800;
+        }
+
+        .release-row-settings-title i {
+            color: var(--primary);
+        }
+
+        .release-row-settings-tags {
+            display: inline-flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.35rem;
+            flex-wrap: wrap;
+        }
+
+        .release-row-settings-actions {
+            display: inline-flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.42rem;
+            flex-wrap: wrap;
+        }
+
+        .release-row-settings-action-btn {
+            border: 1px solid rgba(74, 144, 226, 0.28);
+            background: rgba(74, 144, 226, 0.10);
+            color: var(--primary);
+            border-radius: 9px;
+            padding: 0.34rem 0.58rem;
+            min-height: 30px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.32rem;
+            font-size: 0.76rem;
+            font-weight: 800;
+            white-space: nowrap;
+            cursor: pointer;
+            transition: all 0.18s ease;
+        }
+
+        .release-row-settings-action-btn:hover {
+            border-color: rgba(74, 144, 226, 0.6);
+            background: rgba(74, 144, 226, 0.16);
+            transform: translateY(-1px);
+        }
+
+        .release-row-settings-action-btn.active-warning {
+            border-color: rgba(255, 193, 7, 0.48);
+            background: rgba(255, 193, 7, 0.16);
+            color: #8a5a00;
+        }
+
+        .release-row-settings-action-btn.active-muted {
+            border-color: rgba(108, 117, 125, 0.58);
+            background: rgba(108, 117, 125, 0.14);
+            color: var(--text-secondary);
+        }
+
+        .release-row-settings-action-btn:disabled {
+            opacity: 0.62;
+            cursor: wait;
+            transform: none;
+        }
+
+        .release-row-settings-tag {
+            border: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            border-radius: 999px;
+            padding: 0.24rem 0.52rem;
+            font-size: 0.72rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .release-row-settings-tag.muted {
+            opacity: 0.72;
+        }
+
+        [data-theme="dark"] .release-row-settings-shell {
+            background: rgba(74, 144, 226, 0.08);
+            border-color: rgba(74, 144, 226, 0.24);
+        }
+
+        @media (max-width: 991px) {
+            .release-row-settings-shell {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .release-row-settings-tags {
+                justify-content: flex-start;
+            }
         }
 
         .release-order-controls {
@@ -2361,42 +2589,6 @@
                     <i class="bi bi-arrow-down"></i>
                 </button>
             </div>
-            <div class="release-side-settings-stack">
-                <button
-                    type="button"
-                    id="releaseMonitorOrderBtn"
-                    class="release-scroll-btn release-settings-btn"
-                    onclick="toggleReleaseOrderMode()"
-                    title="Настройки таблицы"
-                    aria-label="Настройки таблицы"
-                >
-                    <i class="bi bi-sliders"></i>
-                </button>
-                <div class="release-side-settings-actions">
-                    <button
-                        type="button"
-                        id="releaseMonitorOrderSaveBtn"
-                        class="release-scroll-btn release-side-action-btn full"
-                        style="display: none;"
-                        onclick="saveReleaseOrder()"
-                        title="Сохранить настройки"
-                        aria-label="Сохранить настройки"
-                    >
-                        <i class="bi bi-check2"></i>
-                    </button>
-                    <button
-                        type="button"
-                        id="releaseMonitorOrderCancelBtn"
-                        class="release-scroll-btn release-side-action-btn"
-                        style="display: none;"
-                        onclick="cancelReleaseOrderMode()"
-                        title="Отменить настройки"
-                        aria-label="Отменить настройки"
-                    >
-                        <i class="bi bi-x-lg"></i>
-                    </button>
-                </div>
-            </div>
         </div>
 
         <div class="page-hero">
@@ -2537,23 +2729,34 @@
                                 Обновлено: <strong id="releaseMonitorLastUpdated">{{ release_monitor_meta.last_updated or 'еще не загружалось' }}</strong>
                             </div>
                         </div>
-                        <div id="releaseMonitorQuickRefreshStack" class="release-action-stack quick-stack" style="display: none;">
-                            <button id="releaseMonitorQuickRefreshBtn" class="release-monitor-btn quick" onclick="refreshReleaseMonitor('quick')">
-                                <i class="bi bi-lightning-charge"></i>
-                                <span class="btn-label">Быстрое обновление</span>
+                        <div id="releaseManualRefreshStack" class="release-action-stack manual-refresh-stack">
+                            <button
+                                id="releaseManualRefreshMenuBtn"
+                                class="release-monitor-btn refresh-menu"
+                                type="button"
+                                onclick="toggleReleaseManualRefreshMenu(event)"
+                                aria-haspopup="true"
+                                aria-expanded="false"
+                            >
+                                <i class="bi bi-arrow-clockwise"></i>
+                                <span class="btn-label">Ручное обновление</span>
+                                <i class="bi bi-chevron-down menu-caret"></i>
                             </button>
-                            <div class="release-action-meta">
+                            <div class="release-action-meta" id="releaseMonitorFullRefreshMeta">
                                 Быстрое: <strong id="releaseMonitorLastQuickSync">{{ release_monitor_meta.last_quick_sync or 'еще не выполнялось' }}</strong>
+                                · Полное: <strong id="releaseMonitorLastFullSync">{{ release_monitor_meta.last_full_sync or 'еще не выполнялось' }}</strong>
                             </div>
-                        </div>
-                        <div id="releaseMonitorFullRefreshStack" class="release-action-stack full-refresh-stack" style="display: none;">
-                            <button id="releaseMonitorRefreshBtn" class="release-monitor-btn full" style="display: none;" onclick="refreshReleaseMonitor('full')">
-                                <i class="bi bi-arrow-repeat"></i>
-                                <span class="btn-label">Полное обновление</span>
-                            </button>
-                            <div id="releaseMonitorFullRefreshMeta" class="release-action-meta" style="display: none;">
-                                Полное: <strong id="releaseMonitorLastFullSync">{{ release_monitor_meta.last_full_sync or 'еще не выполнялось' }}</strong><br>
-                                Автопересборка: <strong>{% if release_monitor_meta.auto_full_refresh_enabled %}{{ '%02d:00'|format(release_monitor_meta.auto_full_refresh_hour or 6) }}{% else %}отключена{% endif %}</strong>
+                            <div id="releaseManualRefreshMenu" class="release-refresh-menu" role="menu" aria-label="Ручное обновление">
+                                <button id="releaseMonitorQuickRefreshBtn" class="release-refresh-menu-action quick" type="button" onclick="refreshReleaseMonitor('quick')" role="menuitem">
+                                    <i class="bi bi-lightning-charge"></i>
+                                    <span class="release-refresh-menu-title">Быстрое обновление</span>
+                                    <span class="release-refresh-menu-note">Инкрементально, для оперативной сверки.</span>
+                                </button>
+                                <button id="releaseMonitorRefreshBtn" class="release-refresh-menu-action full" type="button" onclick="refreshReleaseMonitor('full')" role="menuitem">
+                                    <i class="bi bi-arrow-repeat"></i>
+                                    <span class="release-refresh-menu-title">Полное обновление</span>
+                                    <span class="release-refresh-menu-note">Полный пересбор таблицы из Jira.</span>
+                                </button>
                             </div>
                         </div>
                         <div class="release-action-stack confluence-stack">
@@ -2613,7 +2816,7 @@
                     Видимых релизов: <strong id="releaseVisibleCount">{{ release_monitor|length }}</strong>
                 </div>
                 <div id="releaseOrderModeHint" class="release-visible-counter" style="display: none; margin-top: -0.35rem;">
-                    Используйте кнопки вверх и вниз, ручные правки и ненумерованный отсек. Изменения сохраняются только после нажатия «Сохранить».
+                    Режим порядка строк: используйте стрелки вверх и вниз в колонке №. Построчные действия доступны через шестеренку под номером релиза.
                 </div>
 
                 <div id="releaseMonitorEmptyState" class="empty-state-small" {% if release_monitor %}style="display: none;"{% endif %}>
@@ -2788,6 +2991,9 @@
         let isReleaseOrderMode = false;
         let releaseOrderDraft = null;
         let releaseOrderDirty = false;
+        let activeReleaseSettingsRowKey = '';
+        let releaseRowNumberingSavingKey = '';
+        let releaseRowOrderSavingKey = '';
         let releaseManualOverrideDraft = {};
         let releaseMonitorItems = [];
         let releaseMonitorMeta = {};
@@ -2828,7 +3034,6 @@
             { name: 'release_dist_url', label: 'Ссылка на дистрибутив', id: 'releaseManualUrlInput' },
             { name: 'system_name', label: 'Система' },
             { name: 'zni_key', label: 'ЗНИ', id: 'releaseManualZniInput' },
-            { name: 'zni_url', label: 'Ссылка на ЗНИ' },
         ];
         const RELEASE_MANUAL_TYPE_OPTIONS = [
             ['', 'Использовать Jira'],
@@ -3237,38 +3442,6 @@
                     aria-label="${escapeHtml(title)}"
                 ></button>
             `;
-            const forceUnnumberedTitle = item.is_force_unnumbered
-                ? 'Вернуть релиз в нумерацию'
-                : 'Отправить релиз в ненумерной отсек';
-            const forceUnnumberedText = item.is_force_unnumbered ? 'Вернуть номер' : 'Не нумеровать';
-            const forceUnnumberedButton = (isReleaseOrderMode && !item.is_force_numbered && (!item.is_natural_unnumbered || item.is_force_unnumbered))
-                ? `
-                    <button class="release-row-edit-btn ${item.is_force_unnumbered ? 'active-muted' : ''}" onclick="toggleReleaseForceUnnumbered('${escapeHtml(item.row_key || item.release_key)}')" title="${escapeHtml(forceUnnumberedTitle)}">
-                        <i class="bi bi-eye-slash"></i>
-                        ${escapeHtml(forceUnnumberedText)}
-                    </button>
-                `
-                : '';
-            const forceNumberedTitle = item.is_force_numbered
-                ? 'Снять ручной возврат строки в нумерацию'
-                : 'Вернуть отмененный РОВ перераскатки в нумерацию';
-            const forceNumberedText = item.is_force_numbered ? 'Снять возврат' : 'Вернуть номер';
-            const forceNumberedButton = (isReleaseOrderMode && (item.is_cancelled_reroll_rov || item.is_force_numbered))
-                ? `
-                    <button class="release-row-edit-btn ${item.is_force_numbered ? 'active-muted' : ''}" onclick="toggleReleaseForceNumbered('${escapeHtml(item.row_key || item.release_key)}')" title="${escapeHtml(forceNumberedTitle)}">
-                        <i class="bi bi-hash"></i>
-                        ${escapeHtml(forceNumberedText)}
-                    </button>
-                `
-                : '';
-            const manualButton = isReleaseOrderMode
-                ? `
-                    <button class="release-row-edit-btn release-row-manual-btn ${item.has_manual_release_override ? 'active-warning' : ''}" onclick="openReleaseManualOverrideModal('${escapeHtml(item.row_key || item.release_key)}')" title="Ручная правка полей строки поверх данных Jira">
-                        <i class="bi bi-pencil-square"></i>
-                        Ручная правка
-                    </button>
-                `
-                : '';
             return `
                 <div>
                     <button class="release-doc-btn" onclick="openReleaseDocumentWizard('${escapeHtml(item.row_key || item.release_key)}')">
@@ -3279,14 +3452,11 @@
                         <i class="bi bi-calendar2-range"></i>
                         Скорректировать дату
                     </button>
-                    ${manualButton}
                     <div class="release-color-palette" title="Ручная подсветка строки">
                         ${buildColorSwatch('success', 'Ручная зеленая подсветка')}
                         ${buildColorSwatch('warning', 'Ручная желтая подсветка')}
                         ${buildColorSwatch('danger', 'Ручная красная подсветка')}
                     </div>
-                    ${forceNumberedButton}
-                    ${forceUnnumberedButton}
                 </div>
             `;
         }
@@ -3373,7 +3543,129 @@
             `;
         }
 
+        function buildReleaseRowSettingsPanel(item) {
+            const rowKey = item.row_key || item.release_key || '';
+            const releaseLabel = item.release_key || item.row_key || '';
+            const numberingAction = getReleaseRowNumberingAction(item);
+            const numberingSaving = releaseRowNumberingSavingKey === rowKey;
+            const moveState = getReleaseRowMoveState(item);
+            const orderSaving = releaseRowOrderSavingKey === rowKey;
+            return `
+                <tr class="release-row-settings-panel" data-settings-for="${escapeHtml(rowKey)}">
+                    <td colspan="10">
+                        <div class="release-row-settings-shell">
+                            <div>
+                                <div class="release-row-settings-title">
+                                    <i class="bi bi-gear"></i>
+                                    <span>Настройки строки${releaseLabel ? `: ${escapeHtml(releaseLabel)}` : ''}</span>
+                                </div>
+                            </div>
+                            <div class="release-row-settings-actions" aria-label="Действия строки">
+                                <button
+                                    type="button"
+                                    class="release-row-settings-action-btn ${item.has_manual_release_override ? 'active-warning' : ''}"
+                                    onclick="openReleaseManualOverrideModal('${escapeHtml(rowKey)}', { standalone: true })"
+                                    title="Ручная правка полей строки"
+                                >
+                                    <i class="bi bi-pencil-square"></i>
+                                    Ручная правка
+                                </button>
+                                <button
+                                    type="button"
+                                    class="release-row-settings-action-btn"
+                                    onclick="moveReleaseRowFromSettings('${escapeHtml(rowKey)}', 'up')"
+                                    title="${escapeHtml(moveState.boundaryTitle)}"
+                                    ${(!moveState.canMoveUp || orderSaving) ? 'disabled' : ''}
+                                >
+                                    <i class="bi bi-chevron-up"></i>
+                                    ${orderSaving ? 'Сохраняю...' : 'Выше'}
+                                </button>
+                                <button
+                                    type="button"
+                                    class="release-row-settings-action-btn"
+                                    onclick="moveReleaseRowFromSettings('${escapeHtml(rowKey)}', 'down')"
+                                    title="${escapeHtml(moveState.boundaryTitle)}"
+                                    ${(!moveState.canMoveDown || orderSaving) ? 'disabled' : ''}
+                                >
+                                    <i class="bi bi-chevron-down"></i>
+                                    ${orderSaving ? 'Сохраняю...' : 'Ниже'}
+                                </button>
+                                ${numberingAction ? `
+                                    <button
+                                        type="button"
+                                        class="release-row-settings-action-btn ${numberingAction.active ? 'active-muted' : ''}"
+                                        onclick="toggleReleaseRowNumbering('${escapeHtml(rowKey)}', '${escapeHtml(numberingAction.action)}')"
+                                        title="${escapeHtml(numberingAction.title)}"
+                                        ${numberingSaving ? 'disabled' : ''}
+                                    >
+                                        <i class="bi ${escapeHtml(numberingAction.icon)}"></i>
+                                        ${numberingSaving ? 'Сохраняю...' : escapeHtml(numberingAction.text)}
+                                    </button>
+                                ` : '<span class="release-row-settings-tag muted">Нумерация недоступна</span>'}
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
+
+        function getReleaseRowNumberingAction(item) {
+            if (!item) {
+                return null;
+            }
+            if (item.is_force_numbered || item.is_cancelled_reroll_rov) {
+                return {
+                    action: 'force_numbered',
+                    active: Boolean(item.is_force_numbered),
+                    icon: 'bi-hash',
+                    text: item.is_force_numbered ? 'Снять возврат' : 'Вернуть номер',
+                    title: item.is_force_numbered
+                        ? 'Снять ручной возврат строки в нумерацию'
+                        : 'Вернуть отмененный РОВ перераскатки в нумерацию',
+                };
+            }
+            if (!item.is_force_numbered && (!item.is_natural_unnumbered || item.is_force_unnumbered)) {
+                return {
+                    action: 'force_unnumbered',
+                    active: Boolean(item.is_force_unnumbered),
+                    icon: 'bi-eye-slash',
+                    text: item.is_force_unnumbered ? 'Вернуть номер' : 'Не нумеровать',
+                    title: item.is_force_unnumbered
+                        ? 'Вернуть релиз в нумерацию'
+                        : 'Отправить релиз в ненумерованный список',
+                };
+            }
+            return null;
+        }
+
+        function getReleaseRowMoveState(item) {
+            const rowKey = item?.row_key || item?.release_key || '';
+            const boundaryTitle = 'Порядок меняется только внутри одной даты';
+            if (!rowKey || !item) {
+                return {
+                    canMoveUp: false,
+                    canMoveDown: false,
+                    boundaryTitle,
+                };
+            }
+
+            const draft = isReleaseOrderMode && releaseOrderDraft && String(releaseOrderDraft.year) === String(getSelectedReleaseYear())
+                ? releaseOrderDraft
+                : buildReleaseOrderDraft(getYearFilteredReleaseItems(releaseMonitorItems));
+            const groupName = item.is_unnumbered ? 'waiting' : 'numbered';
+            const bucket = getReleaseOrderBucket(item);
+            const groupItems = Array.isArray(draft?.[groupName]?.[bucket]) ? draft[groupName][bucket] : [];
+            const rowIndex = groupItems.indexOf(rowKey);
+            return {
+                canMoveUp: rowIndex > 0,
+                canMoveDown: rowIndex !== -1 && rowIndex < groupItems.length - 1,
+                boundaryTitle,
+            };
+        }
+
         function buildReleaseRow(item) {
+            const rowKey = item.row_key || item.release_key || '';
+            const isSettingsOpen = rowKey && activeReleaseSettingsRowKey === rowKey;
             const rolloutLevel = item.rollout_notes_level || (item.has_rollout_notes ? 'warning' : '');
             const rolloutClass = rolloutLevel === 'success'
                 ? 'rollout-notes-success'
@@ -3387,7 +3679,7 @@
             const weekClass = ['next', 'future'].includes(item.week_bucket) ? `week-${item.week_bucket}` : '';
             return `
                 <tr
-                    class="release-row state-${escapeHtml(item.row_state || 'planned')} ${rolloutClass} ${weekClass}"
+                    class="release-row state-${escapeHtml(item.row_state || 'planned')} ${rolloutClass} ${weekClass} ${isSettingsOpen ? 'settings-open' : ''}"
                     data-year="${escapeHtml(item.year)}"
                     data-status="${escapeHtml(item.release_status || '')}"
                     data-final-installed="${item.is_final && !item.is_cancelled ? 'true' : 'false'}"
@@ -3395,7 +3687,19 @@
                     <td>
                         <div class="release-number-cell">
                             ${buildReleaseOrderControls(item)}
-                            <strong>${escapeHtml(item.release_number || '')}</strong>
+                            <div class="release-number-stack">
+                                <strong>${escapeHtml(item.release_number || '')}</strong>
+                                <button
+                                    type="button"
+                                    class="release-row-settings-toggle ${isSettingsOpen ? 'active' : ''}"
+                                    onclick="toggleReleaseRowSettings('${escapeHtml(rowKey)}')"
+                                    title="Настройки строки"
+                                    aria-label="Настройки строки"
+                                    aria-expanded="${isSettingsOpen ? 'true' : 'false'}"
+                                >
+                                    <i class="bi bi-gear"></i>
+                                </button>
+                            </div>
                         </div>
                     </td>
                     <td>${getReleaseNameHtml(item)}</td>
@@ -3408,11 +3712,21 @@
                     <td>${buildReviewerCell(item)}</td>
                     <td>${buildGeneratorActionCell(item)}</td>
                 </tr>
+                ${isSettingsOpen ? buildReleaseRowSettingsPanel(item) : ''}
             `;
         }
 
         function getReleaseMonitorItem(releaseKey) {
             return (releaseMonitorItems || []).find(item => (item.row_key || item.release_key) === releaseKey) || null;
+        }
+
+        function toggleReleaseRowSettings(rowKey) {
+            const normalizedRowKey = String(rowKey || '').trim();
+            if (!normalizedRowKey) {
+                return;
+            }
+            activeReleaseSettingsRowKey = activeReleaseSettingsRowKey === normalizedRowKey ? '' : normalizedRowKey;
+            applyReleaseFilters();
         }
 
         function releaseUsesPlaybooks(releaseName) {
@@ -3595,7 +3909,7 @@
 
         function openReleaseManualCreateModal() {
             if (isReleaseOrderMode) {
-                alert('Сначала сохраните или отмените режим настроек, затем добавьте ручной релиз.');
+                alert('Сначала сохраните или отмените режим порядка строк, затем добавьте ручной релиз.');
                 return;
             }
             const warning = document.getElementById('releaseManualCreateWarning');
@@ -3811,8 +4125,9 @@
             return releaseManualOverrideModalInstance;
         }
 
-        function openReleaseManualOverrideModal(releaseKey) {
-            if (!isReleaseOrderMode) {
+        function openReleaseManualOverrideModal(releaseKey, options = {}) {
+            const standalone = Boolean(options?.standalone);
+            if (!isReleaseOrderMode && !standalone) {
                 return;
             }
 
@@ -3826,6 +4141,7 @@
                 item,
                 initialZniKey: item.zni_key || '',
                 initialClearZni: Boolean(item.manual_clear_zni),
+                mode: standalone ? 'standalone' : 'draft',
             };
 
             document.getElementById('releaseManualOverrideSubtitle').textContent = item.release_key || item.row_key || '';
@@ -3851,18 +4167,40 @@
             return String(item?.[fieldName] || '');
         }
 
+        function normalizeReleaseManualOverrideValue(value) {
+            return String(value || '').trim();
+        }
+
         function getReleaseManualOverrideCurrentValue(item, fieldName) {
             const rowKey = getReleaseManualOverrideRowKey(item);
             const draft = releaseManualOverrideDraft[rowKey];
             if (draft?.reset) {
-                return '';
+                return getReleaseManualOverrideBaseValue(item, fieldName);
             }
             if (draft?.fields && Object.prototype.hasOwnProperty.call(draft.fields, fieldName)) {
-                return String(draft.fields[fieldName] || '');
+                return String(draft.fields[fieldName] || '') || getReleaseManualOverrideBaseValue(item, fieldName);
             }
             const manualName = `manual_${fieldName}`;
             const manualValue = item?.[manualName];
-            return manualValue === undefined || manualValue === null ? '' : String(manualValue || '');
+            if (manualValue !== undefined && manualValue !== null && String(manualValue || '').trim()) {
+                return String(manualValue || '');
+            }
+            const currentValue = item?.[fieldName];
+            if (currentValue !== undefined && currentValue !== null && String(currentValue || '').trim()) {
+                return String(currentValue || '');
+            }
+            return getReleaseManualOverrideBaseValue(item, fieldName);
+        }
+
+        function isReleaseManualOverrideFieldChanged(item, fieldName, currentValue) {
+            const rowKey = getReleaseManualOverrideRowKey(item);
+            const draft = releaseManualOverrideDraft[rowKey];
+            if (draft?.fields && Object.prototype.hasOwnProperty.call(draft.fields, fieldName)) {
+                return normalizeReleaseManualOverrideValue(draft.fields[fieldName]) !== normalizeReleaseManualOverrideValue(getReleaseManualOverrideBaseValue(item, fieldName));
+            }
+            const manualName = `manual_${fieldName}`;
+            return Boolean(String(item?.[manualName] || '').trim()) &&
+                normalizeReleaseManualOverrideValue(currentValue) !== normalizeReleaseManualOverrideValue(getReleaseManualOverrideBaseValue(item, fieldName));
         }
 
         function renderReleaseManualOverrideForm(item) {
@@ -3875,7 +4213,7 @@
                 const baseValue = getReleaseManualOverrideBaseValue(item, field.name);
                 const manualValue = getReleaseManualOverrideCurrentValue(item, field.name);
                 const inputId = getReleaseManualOverrideInputId(field.name);
-                const changed = Boolean(manualValue);
+                const changed = isReleaseManualOverrideFieldChanged(item, field.name, manualValue);
                 const inputHtml = field.type === 'select'
                     ? `<select class="form-select" id="${escapeHtml(inputId)}">
                             ${RELEASE_MANUAL_TYPE_OPTIONS.map(([value, label]) => `
@@ -3927,9 +4265,20 @@
                     if (!input) {
                         return;
                     }
-                    fields[field.name] = String(input.value || '').trim();
+                    const inputValue = String(input.value || '').trim();
+                    const baseValue = getReleaseManualOverrideBaseValue(item, field.name);
+                    const manualName = `manual_${field.name}`;
+                    const hadManualValue = Boolean(String(item?.[manualName] || '').trim());
+                    if (normalizeReleaseManualOverrideValue(inputValue) !== normalizeReleaseManualOverrideValue(baseValue)) {
+                        fields[field.name] = inputValue;
+                    } else if (hadManualValue) {
+                        fields[field.name] = '';
+                    }
                 });
-                fields.clear_zni = Boolean(document.getElementById('releaseManualClearZniInput')?.checked);
+                const clearZni = Boolean(document.getElementById('releaseManualClearZniInput')?.checked);
+                if (clearZni || Boolean(item.manual_clear_zni)) {
+                    fields.clear_zni = clearZni;
+                }
             }
 
             return {
@@ -4002,6 +4351,25 @@
             item.has_manual_release_override = item.manual_overridden_fields.length > 0;
         }
 
+        async function persistReleaseManualOverride(payload) {
+            const manualUrl = payload.reset
+                ? BASE_PATH + '/dashboard/release-monitor/manual-override/reset'
+                : BASE_PATH + '/dashboard/release-monitor/manual-override/fields';
+            const manualBody = payload.reset
+                ? { row_key: payload.row_key }
+                : { row_key: payload.row_key, fields: payload.fields || {} };
+            const response = await fetch(manualUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(manualBody),
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(data.error || 'Не удалось сохранить ручные правки');
+            }
+            return data;
+        }
+
         async function saveReleaseManualOverride(reset = false) {
             if (!releaseManualOverrideState?.item) {
                 return;
@@ -4016,6 +4384,18 @@
             try {
                 const payload = buildReleaseManualOverridePayload(reset);
                 if (!payload?.row_key) {
+                    return;
+                }
+                if (!payload.reset && !Object.keys(payload.fields || {}).length) {
+                    delete releaseManualOverrideDraft[payload.row_key];
+                    ensureReleaseManualOverrideModal().hide();
+                    return;
+                }
+                if (releaseManualOverrideState.mode === 'standalone') {
+                    const data = await persistReleaseManualOverride(payload);
+                    delete releaseManualOverrideDraft[payload.row_key];
+                    renderReleaseMonitor(data.release_monitor || [], data.release_monitor_meta || {});
+                    ensureReleaseManualOverrideModal().hide();
                     return;
                 }
                 releaseManualOverrideDraft[payload.row_key] = payload;
@@ -5283,6 +5663,79 @@
             }
         }
 
+        function applyReleaseNumberingActionToDraft(draft, item, rowKey, action) {
+            if (!draft || !item || !rowKey) {
+                return false;
+            }
+
+            draft.force_unnumbered = Array.isArray(draft.force_unnumbered) ? draft.force_unnumbered : [];
+            draft.force_numbered = Array.isArray(draft.force_numbered) ? draft.force_numbered : [];
+            draft.waiting = normalizeReleaseOrderBuckets(draft.waiting);
+            draft.numbered = normalizeReleaseOrderBuckets(draft.numbered);
+            removeReleaseRowFromOrderBuckets(draft.waiting, rowKey);
+            removeReleaseRowFromOrderBuckets(draft.numbered, rowKey);
+
+            if (action === 'force_numbered') {
+                const forceNumberedIndex = draft.force_numbered.indexOf(rowKey);
+                const enabled = forceNumberedIndex === -1;
+                if (enabled) {
+                    const forceUnnumberedIndex = draft.force_unnumbered.indexOf(rowKey);
+                    if (forceUnnumberedIndex !== -1) {
+                        draft.force_unnumbered.splice(forceUnnumberedIndex, 1);
+                    }
+                    draft.force_numbered.push(rowKey);
+                    addReleaseRowToOrderBucket(draft.numbered, item, rowKey, 'start');
+                } else {
+                    draft.force_numbered.splice(forceNumberedIndex, 1);
+                }
+                return true;
+            }
+
+            if (action === 'force_unnumbered') {
+                const forceIndex = draft.force_unnumbered.indexOf(rowKey);
+                const enabled = forceIndex === -1;
+                if (enabled) {
+                    const forceNumberedIndex = draft.force_numbered.indexOf(rowKey);
+                    if (forceNumberedIndex !== -1) {
+                        draft.force_numbered.splice(forceNumberedIndex, 1);
+                    }
+                    draft.force_unnumbered.push(rowKey);
+                    addReleaseRowToOrderBucket(draft.waiting, item, rowKey, 'start');
+                } else {
+                    draft.force_unnumbered.splice(forceIndex, 1);
+                }
+                return true;
+            }
+
+            return false;
+        }
+
+        async function persistReleaseOrderDraft(draft) {
+            const response = await fetch(BASE_PATH + '/dashboard/release-monitor/order', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    year: draft.year || getSelectedReleaseYear(),
+                    waiting_row_keys: draft.waiting || [],
+                    numbered_row_keys: draft.numbered || [],
+                    force_unnumbered_row_keys: draft.force_unnumbered || [],
+                    force_numbered_row_keys: draft.force_numbered || [],
+                })
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(data.error || 'Не удалось сохранить порядок релизов');
+            }
+
+            const statusResponse = await fetch(BASE_PATH + '/dashboard/release-monitor/status');
+            const statusData = await statusResponse.json();
+            if (!statusResponse.ok || !statusData.success) {
+                throw new Error(statusData.error || 'Не удалось перечитать таблицу релизов после сохранения порядка');
+            }
+
+            return statusData;
+        }
+
         function ensureResponsibleHeaderFilter() {
             const tableHead = document.querySelector('.release-monitor-table thead tr');
             if (!tableHead) {
@@ -5413,10 +5866,6 @@
             const orderBtn = document.getElementById('releaseMonitorOrderBtn');
             const saveBtn = document.getElementById('releaseMonitorOrderSaveBtn');
             const cancelBtn = document.getElementById('releaseMonitorOrderCancelBtn');
-            const quickRefreshStack = document.getElementById('releaseMonitorQuickRefreshStack');
-            const fullRefreshStack = document.getElementById('releaseMonitorFullRefreshStack');
-            const fullRefreshBtn = document.getElementById('releaseMonitorRefreshBtn');
-            const fullRefreshMeta = document.getElementById('releaseMonitorFullRefreshMeta');
             const hint = document.getElementById('releaseOrderModeHint');
             const buttonRow = document.querySelector('.release-monitor-button-row');
 
@@ -5425,7 +5874,7 @@
             }
             if (orderBtn) {
                 orderBtn.classList.toggle('active-order', isReleaseOrderMode);
-                const orderTitle = isReleaseOrderMode ? 'Режим настроек включен' : 'Настройки таблицы';
+                const orderTitle = isReleaseOrderMode ? 'Режим порядка строк включен' : 'Порядок строк';
                 orderBtn.title = orderTitle;
                 orderBtn.setAttribute('aria-label', orderTitle);
                 if (!orderBtn.querySelector('i')) {
@@ -5439,18 +5888,6 @@
             if (cancelBtn) {
                 cancelBtn.style.display = isReleaseOrderMode ? '' : 'none';
             }
-            if (quickRefreshStack) {
-                quickRefreshStack.style.display = isReleaseOrderMode ? '' : 'none';
-            }
-            if (fullRefreshStack) {
-                fullRefreshStack.style.display = isReleaseOrderMode ? '' : 'none';
-            }
-            if (fullRefreshBtn) {
-                fullRefreshBtn.style.display = isReleaseOrderMode ? '' : 'none';
-            }
-            if (fullRefreshMeta) {
-                fullRefreshMeta.style.display = isReleaseOrderMode ? '' : 'none';
-            }
             if (hint) {
                 hint.style.display = isReleaseOrderMode ? '' : 'none';
             }
@@ -5463,7 +5900,7 @@
 
             if (!isReleaseOrderMode) {
                 if (searchValue || statusValue !== 'all' || viewValue !== 'all') {
-                    alert('Режим настроек доступен только без поиска и дополнительных фильтров.');
+                    alert('Режим порядка строк доступен только без поиска и дополнительных фильтров.');
                     return;
                 }
                 releaseOrderDraft = buildReleaseOrderDraft(getYearFilteredReleaseItems(releaseMonitorItems));
@@ -5498,18 +5935,18 @@
             applyReleaseFilters();
         }
 
-        function moveReleaseRow(rowKey, direction) {
-            if (!isReleaseOrderMode || !releaseOrderDraft) {
-                return;
+        function applyReleaseRowMoveToDraft(draft, rowKey, direction) {
+            if (!draft || !rowKey) {
+                return false;
             }
 
-            ['waiting', 'numbered'].some(groupName => {
+            return ['waiting', 'numbered'].some(groupName => {
                 const item = getReleaseMonitorItem(rowKey);
                 if (!item) {
                     return false;
                 }
                 const bucket = getReleaseOrderBucket(item);
-                const groupItems = releaseOrderDraft[groupName]?.[bucket];
+                const groupItems = draft[groupName]?.[bucket];
                 if (!Array.isArray(groupItems)) {
                     return false;
                 }
@@ -5526,11 +5963,22 @@
                 const swapValue = groupItems[targetIndex];
                 groupItems[targetIndex] = groupItems[currentIndex];
                 groupItems[currentIndex] = swapValue;
-                releaseOrderDirty = true;
-                refreshReleaseOrderModeUi();
-                applyReleaseFilters();
                 return true;
             });
+        }
+
+        function moveReleaseRow(rowKey, direction) {
+            if (!isReleaseOrderMode || !releaseOrderDraft) {
+                return;
+            }
+
+            if (!applyReleaseRowMoveToDraft(releaseOrderDraft, rowKey, direction)) {
+                return;
+            }
+
+            releaseOrderDirty = true;
+            refreshReleaseOrderModeUi();
+            applyReleaseFilters();
         }
 
         async function saveReleaseOrder() {
@@ -5595,10 +6043,10 @@
                 releaseManualOverrideDraft = {};
                 renderReleaseMonitor(statusData.release_monitor || [], statusData.release_monitor_meta || {});
                 refreshReleaseOrderModeUi();
-                alert('Настройки сохранены');
+                alert('Порядок строк сохранен');
             } catch (error) {
                 console.error('Release settings save error:', error);
-                alert('Ошибка сохранения настроек: ' + error.message);
+                alert('Ошибка сохранения порядка строк: ' + error.message);
             } finally {
                 [saveBtn, cancelBtn, orderBtn].forEach(btn => {
                     if (btn) {
@@ -5805,6 +6253,82 @@
             }
         }
 
+        async function moveReleaseRowFromSettings(releaseKey, direction) {
+            const rowKey = String(releaseKey || '').trim();
+            if (!rowKey) {
+                return;
+            }
+
+            if (isReleaseOrderMode) {
+                moveReleaseRow(rowKey, direction);
+                return;
+            }
+
+            const item = getReleaseMonitorItem(rowKey);
+            if (!item) {
+                alert('Не удалось найти строку релиза.');
+                return;
+            }
+
+            const draft = buildReleaseOrderDraft(getYearFilteredReleaseItems(releaseMonitorItems));
+            if (!applyReleaseRowMoveToDraft(draft, rowKey, direction)) {
+                return;
+            }
+
+            releaseRowOrderSavingKey = rowKey;
+            applyReleaseFilters();
+            try {
+                const statusData = await persistReleaseOrderDraft(draft);
+                releaseRowOrderSavingKey = '';
+                renderReleaseMonitor(statusData.release_monitor || [], statusData.release_monitor_meta || {});
+            } catch (error) {
+                console.error('Release row order save error:', error);
+                releaseRowOrderSavingKey = '';
+                applyReleaseFilters();
+                alert('Ошибка сохранения порядка строки: ' + error.message);
+            }
+        }
+
+        async function toggleReleaseRowNumbering(releaseKey, action) {
+            const rowKey = String(releaseKey || '').trim();
+            if (!rowKey) {
+                return;
+            }
+
+            if (isReleaseOrderMode) {
+                if (action === 'force_numbered') {
+                    toggleReleaseForceNumbered(rowKey);
+                } else if (action === 'force_unnumbered') {
+                    toggleReleaseForceUnnumbered(rowKey);
+                }
+                return;
+            }
+
+            const item = getReleaseMonitorItem(rowKey);
+            if (!item) {
+                alert('Не удалось найти строку релиза.');
+                return;
+            }
+
+            const draft = buildReleaseOrderDraft(getYearFilteredReleaseItems(releaseMonitorItems));
+            if (!applyReleaseNumberingActionToDraft(draft, item, rowKey, action)) {
+                return;
+            }
+
+            releaseRowNumberingSavingKey = rowKey;
+            applyReleaseFilters();
+            try {
+                const statusData = await persistReleaseOrderDraft(draft);
+                releaseRowNumberingSavingKey = '';
+                renderReleaseMonitor(statusData.release_monitor || [], statusData.release_monitor_meta || {});
+            } catch (error) {
+                console.error('Release row numbering save error:', error);
+                releaseRowNumberingSavingKey = '';
+                applyReleaseFilters();
+                alert('Ошибка сохранения нумерации строки: ' + error.message);
+            }
+        }
+
         function toggleReleaseForceUnnumbered(releaseKey) {
             if (!isReleaseOrderMode || !releaseOrderDraft) {
                 return;
@@ -5816,29 +6340,8 @@
                 return;
             }
 
-            releaseOrderDraft.force_unnumbered = Array.isArray(releaseOrderDraft.force_unnumbered)
-                ? releaseOrderDraft.force_unnumbered
-                : [];
-            releaseOrderDraft.force_numbered = Array.isArray(releaseOrderDraft.force_numbered)
-                ? releaseOrderDraft.force_numbered
-                : [];
-
-            const forceIndex = releaseOrderDraft.force_unnumbered.indexOf(releaseKey);
-            const enabled = forceIndex === -1;
-            releaseOrderDraft.waiting = normalizeReleaseOrderBuckets(releaseOrderDraft.waiting);
-            releaseOrderDraft.numbered = normalizeReleaseOrderBuckets(releaseOrderDraft.numbered);
-            removeReleaseRowFromOrderBuckets(releaseOrderDraft.waiting, releaseKey);
-            removeReleaseRowFromOrderBuckets(releaseOrderDraft.numbered, releaseKey);
-
-            if (enabled) {
-                const forceNumberedIndex = releaseOrderDraft.force_numbered.indexOf(releaseKey);
-                if (forceNumberedIndex !== -1) {
-                    releaseOrderDraft.force_numbered.splice(forceNumberedIndex, 1);
-                }
-                releaseOrderDraft.force_unnumbered.push(releaseKey);
-                addReleaseRowToOrderBucket(releaseOrderDraft.waiting, item, releaseKey, 'start');
-            } else {
-                releaseOrderDraft.force_unnumbered.splice(forceIndex, 1);
+            if (!applyReleaseNumberingActionToDraft(releaseOrderDraft, item, releaseKey, 'force_unnumbered')) {
+                return;
             }
 
             releaseOrderDirty = true;
@@ -5857,29 +6360,8 @@
                 return;
             }
 
-            releaseOrderDraft.force_numbered = Array.isArray(releaseOrderDraft.force_numbered)
-                ? releaseOrderDraft.force_numbered
-                : [];
-            releaseOrderDraft.force_unnumbered = Array.isArray(releaseOrderDraft.force_unnumbered)
-                ? releaseOrderDraft.force_unnumbered
-                : [];
-
-            const forceNumberedIndex = releaseOrderDraft.force_numbered.indexOf(releaseKey);
-            const enabled = forceNumberedIndex === -1;
-            releaseOrderDraft.waiting = normalizeReleaseOrderBuckets(releaseOrderDraft.waiting);
-            releaseOrderDraft.numbered = normalizeReleaseOrderBuckets(releaseOrderDraft.numbered);
-            removeReleaseRowFromOrderBuckets(releaseOrderDraft.waiting, releaseKey);
-            removeReleaseRowFromOrderBuckets(releaseOrderDraft.numbered, releaseKey);
-
-            if (enabled) {
-                const forceUnnumberedIndex = releaseOrderDraft.force_unnumbered.indexOf(releaseKey);
-                if (forceUnnumberedIndex !== -1) {
-                    releaseOrderDraft.force_unnumbered.splice(forceUnnumberedIndex, 1);
-                }
-                releaseOrderDraft.force_numbered.push(releaseKey);
-                addReleaseRowToOrderBucket(releaseOrderDraft.numbered, item, releaseKey, 'start');
-            } else {
-                releaseOrderDraft.force_numbered.splice(forceNumberedIndex, 1);
+            if (!applyReleaseNumberingActionToDraft(releaseOrderDraft, item, releaseKey, 'force_numbered')) {
+                return;
             }
 
             releaseOrderDirty = true;
@@ -5991,9 +6473,52 @@
             }
         }
 
+        function closeReleaseManualRefreshMenu() {
+            const menu = document.getElementById('releaseManualRefreshMenu');
+            const button = document.getElementById('releaseManualRefreshMenuBtn');
+            if (menu) {
+                menu.classList.remove('open');
+            }
+            if (button) {
+                button.classList.remove('menu-open');
+                button.setAttribute('aria-expanded', 'false');
+            }
+        }
+
+        function toggleReleaseManualRefreshMenu(event) {
+            if (event) {
+                event.stopPropagation();
+            }
+            const menu = document.getElementById('releaseManualRefreshMenu');
+            const button = document.getElementById('releaseManualRefreshMenuBtn');
+            if (!menu || !button || button.disabled) {
+                return;
+            }
+            const nextOpen = !menu.classList.contains('open');
+            menu.classList.toggle('open', nextOpen);
+            button.classList.toggle('menu-open', nextOpen);
+            button.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
+        }
+
+        document.addEventListener('click', event => {
+            const stack = document.getElementById('releaseManualRefreshStack');
+            if (stack && !stack.contains(event.target)) {
+                closeReleaseManualRefreshMenu();
+            }
+        });
+
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape') {
+                closeReleaseManualRefreshMenu();
+            }
+        });
+
         function setReleaseRefreshButtonsLoading(isLoading) {
             const effectiveLoading = Boolean(isLoading || releaseMonitorGlobalRefreshing || releaseMonitorLocalRefreshing);
-            ['releaseMonitorQuickRefreshBtn', 'releaseMonitorRefreshBtn', 'releaseMonitorConfluenceSyncBtn', 'releaseMonitorDutyUploadBtn', 'releaseMonitorCurrentWeekReportBtn', 'releaseMonitorWeekControlBtn', 'releaseMonitorDocsBtn', 'releaseManualCreateBtn'].forEach(id => {
+            if (effectiveLoading) {
+                closeReleaseManualRefreshMenu();
+            }
+            ['releaseManualRefreshMenuBtn', 'releaseMonitorQuickRefreshBtn', 'releaseMonitorRefreshBtn', 'releaseMonitorConfluenceSyncBtn', 'releaseMonitorDutyUploadBtn', 'releaseMonitorCurrentWeekReportBtn', 'releaseMonitorWeekControlBtn', 'releaseMonitorDocsBtn', 'releaseManualCreateBtn'].forEach(id => {
                 const btn = document.getElementById(id);
                 if (!btn) {
                     return;
@@ -6338,6 +6863,7 @@
         }
 
         async function refreshReleaseMonitor(mode = 'full') {
+            closeReleaseManualRefreshMenu();
             releaseMonitorLocalRefreshing = true;
             releaseMonitorActiveRefreshMode = mode === 'quick' ? 'quick' : 'full';
             setReleaseRefreshButtonsLoading(true);

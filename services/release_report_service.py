@@ -56,7 +56,7 @@ class ReleaseReportService:
         status_counter = Counter()
 
         for item in filtered_items:
-            system_name = self._normalize_system_name(item.get("system_name"), item.get("source_prefix"))
+            system_name = self._get_item_system_name(item)
             system_counter[system_name] += 1
             status_name = str(item.get("release_status") or "Не указан").strip() or "Не указан"
             status_counter[status_name] += 1
@@ -137,7 +137,7 @@ class ReleaseReportService:
         responsible_counter = Counter()
 
         for item in filtered_items:
-            system_name = self._normalize_system_name(item.get("system_name"), item.get("source_prefix"))
+            system_name = self._get_item_system_name(item)
             system_counter[system_name] += 1
 
             duty_owner = str(item.get("psi_owner") or "").strip()
@@ -1479,7 +1479,7 @@ class ReleaseReportService:
             row_title = " / ".join(
                 [part for part in (item.get("release_name_lines") or [])[:2] if str(part or "").strip()]
             ) or str(item.get("release_summary") or "")
-            system_name = self._normalize_system_name(item.get("system_name"), item.get("source_prefix"))
+            system_name = self._get_item_system_name(item)
             release_key_html = self._render_key_link(item.get("release_url"), item.get("release_key"))
             rov_key_html = self._render_key_link(item.get("rov_url"), item.get("rov_key"))
             responsibles_attr = "|".join(
@@ -1534,7 +1534,7 @@ class ReleaseReportService:
             row_title = " / ".join(
                 [part for part in (item.get("release_name_lines") or [])[:2] if str(part or "").strip()]
             ) or str(item.get("release_summary") or "")
-            system_name = self._normalize_system_name(item.get("system_name"), item.get("source_prefix"))
+            system_name = self._get_item_system_name(item)
             status_name = str(item.get("release_status") or "Не указан").strip() or "Не указан"
             release_key_html = self._render_key_link(item.get("release_url"), item.get("release_key"))
             rov_key_html = self._render_key_link(item.get("rov_url"), item.get("rov_key"))
@@ -1724,7 +1724,7 @@ class ReleaseReportService:
         return None
 
     def _matches_system(self, item: Dict[str, Any], system_filter: str) -> bool:
-        system_name = self._normalize_system_name(item.get("system_name"), item.get("source_prefix")).lower()
+        system_name = self._get_item_system_name(item).lower()
         prefix = str(item.get("source_prefix") or "").strip().lower()
         release_key = str(item.get("release_key") or "").strip().lower()
         target = self._normalize_system_name(system_filter, "").lower()
@@ -1807,6 +1807,15 @@ class ReleaseReportService:
             "reroll": "Перераскатки",
             "hotfix": "Хотфиксы",
         }.get(kind, "Все релизы периода")
+
+    def _get_item_system_name(self, item: Dict[str, Any]) -> str:
+        manual_system_name = str((item or {}).get("manual_system_name") or "").strip()
+        if manual_system_name:
+            return self._normalize_system_name(manual_system_name, "")
+        return self._normalize_system_name(
+            (item or {}).get("system_name"),
+            (item or {}).get("source_prefix"),
+        )
 
     def _normalize_system_name(self, raw_value: Any, prefix_value: Any) -> str:
         raw = str(raw_value or "").strip()

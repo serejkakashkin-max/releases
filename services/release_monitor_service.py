@@ -6298,6 +6298,8 @@ def update_release_monitor_manual_override_fields(row_key, fields, updated_by=""
     normalized_fields = _normalize_manual_override_input_fields(fields or {})
     if not normalized_fields:
         raise ValueError("No manual override fields were provided")
+    zni_key_was_provided = "zni_key" in normalized_fields
+    zni_url_was_provided = "zni_url" in normalized_fields
 
     with _cache_lock:
         _ensure_cached_payload_loaded_locked()
@@ -6333,6 +6335,9 @@ def update_release_monitor_manual_override_fields(row_key, fields, updated_by=""
                 current_override[field_name] = value
             else:
                 current_override.pop(field_name, None)
+
+        if zni_key_was_provided and not zni_url_was_provided:
+            current_override.pop("zni_url", None)
 
         current_override = _normalize_manual_release_override(current_override)
         if current_override:
