@@ -37,7 +37,7 @@ APPROVED_ROV_STATUSES = (
     "\u0423\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u043e",
     "\u0423\u0442\u0432\u0435\u0440\u0436\u0434\u0451\u043d\u043e",
 )
-RELEASE_PREFIXES = ("EMRM", "SMECLM", "SMECSC", "HELPERAI", "AIGAS")
+RELEASE_PREFIXES = ("EMRM", "SMECLM", "SMECSC", "HELPERAI", "AIGAS", "DRMMMB")
 RELEASE_ISSUE_TYPE = "Release 2.0"
 ROV_ISSUE_TYPE = "Introduction Order"
 QUICK_REFRESH_DAYS = 9
@@ -3686,6 +3686,8 @@ def _detect_system(prefix, summary, ke_name, system_info_text):
     aist_markers = ("\u0430\u0438\u0441\u0442", "aist", "Р°РёСЃС‚".lower(), "РђРРЎРў".lower())
     if any(marker in raw_searchable or marker in searchable for marker in aist_markers):
         return "\u0410\u0418\u0421\u0422"
+    if prefix in {"AIGAS", "HELPERAI", "DRMMMB"} or "ai-" in searchable or "ai " in searchable:
+        return "AI-\u0410\u0433\u0435\u043d\u0442\u044b"
     if "clm" in searchable or prefix in {"SMECLM", "SMECSC"}:
         return "CLM"
     return "\u0424\u043e\u043a\u0443\u0441"

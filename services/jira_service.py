@@ -156,7 +156,7 @@ def _extract_pob_from_fields(fields):
         if link.get("type", {}).get("id") == "11500" and "inwardIssue" in link:
             key = link["inwardIssue"].get("key")
             if key:
-                match = re.search(r'(?:EMRM|SMECLM)-(\d+)', key)
+                match = re.search(r'(?:EMRM|SMECLM|DRMMMB)-(\d+)', key)
                 if match:
                     pobs.append((int(match.group(1)), key))
     if pobs:

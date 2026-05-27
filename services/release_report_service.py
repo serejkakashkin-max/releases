@@ -1708,6 +1708,7 @@ class ReleaseReportService:
             "\u0430\u0438\u0441\u0442": "\u0410\u0418\u0421\u0422",
             "aigas": "AIGAS",
             "helperai": "HELPERAI",
+            "drmmmb": "DRMMMB",
             "emrm": "EMRM",
             "smecsc": "SMECSC",
             "smeclm": "SMECLM",
@@ -1832,7 +1833,7 @@ class ReleaseReportService:
 
         if prefix == "SMECSC":
             return "АИСТ"
-        if prefix in {"AIGAS", "HELPERAI"}:
+        if prefix in {"AIGAS", "HELPERAI", "DRMMMB"}:
             return "AI-Агенты"
         if prefix == "EMRM":
             return "EMRM"
