@@ -1135,6 +1135,14 @@ class ReleaseReportService:
         tr.state-overdue {{ background: rgba(248, 81, 73, 0.12); }}
         tr.state-notes {{ background: rgba(245, 158, 11, 0.14); }}
         tr.state-final {{ background: rgba(22, 163, 74, 0.09); }}
+        tr.rollout-notes-success,
+        tr.rollout-notes-success td {{ background: rgba(63, 185, 80, 0.10); }}
+        tr.rollout-notes-warning,
+        tr.rollout-notes-warning td {{ background: rgba(255, 193, 7, 0.16); }}
+        tr.rollout-notes-danger,
+        tr.rollout-notes-danger td {{ background: rgba(248, 81, 73, 0.12); }}
+        tr.rollout-notes-none,
+        tr.rollout-notes-none td {{ background: transparent; }}
         .footer {{
             color: var(--cw-muted);
             text-align: center;
@@ -1521,16 +1529,18 @@ class ReleaseReportService:
             row_kind = self._get_item_kind_label(item)
             is_effectively_installed = self._is_week_effectively_installed(item)
             is_hidden_by_default = self._is_week_hidden_by_default(item)
+            rollout_notes_level = self._get_rollout_notes_level(item)
             if item.get("is_cancelled"):
                 row_state = "cancelled"
             elif item.get("is_overdue") and not is_effectively_installed:
                 row_state = "overdue"
-            elif item.get("has_rollout_notes"):
+            elif rollout_notes_level and rollout_notes_level != "none":
                 row_state = "notes"
             elif is_effectively_installed:
                 row_state = "final"
             else:
                 row_state = "active"
+            rollout_class = f" rollout-notes-{rollout_notes_level}" if rollout_notes_level else ""
             row_title = " / ".join(
                 [part for part in (item.get("release_name_lines") or [])[:2] if str(part or "").strip()]
             ) or str(item.get("release_summary") or "")
@@ -1541,7 +1551,7 @@ class ReleaseReportService:
             zni_key_html = self._render_key_link(item.get("zni_url"), item.get("zni_key"))
             rows.append(
                 f"""
-                <tr class="state-{row_state}"
+                <tr class="state-{row_state}{rollout_class}"
                     data-system="{html.escape(system_name.lower())}"
                     data-status="{html.escape(status_name.lower())}"
                     data-final="{'1' if is_hidden_by_default else '0'}"
@@ -1562,6 +1572,15 @@ class ReleaseReportService:
                 """
             )
         return "".join(rows)
+
+    @staticmethod
+    def _get_rollout_notes_level(item: Dict[str, Any]) -> str:
+        level = str(item.get("rollout_notes_level") or "").strip().lower()
+        if level in {"success", "warning", "danger", "none"}:
+            return level
+        if bool(item.get("has_rollout_notes")):
+            return "warning"
+        return ""
 
     def _render_key_link(self, url_value: Any, key_value: Any) -> str:
         key = str(key_value or "").strip()
