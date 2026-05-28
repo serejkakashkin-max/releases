@@ -18,6 +18,14 @@ from openpyxl import load_workbook
 from config import DASHBOARD_CACHE_TTL, OPLOT_VALUES, TOKENS
 from services.jira_service import get_jira_domain_and_token
 from services.jira_oplot_issue_service import create_oplot_release_issue
+from services.release_artifact_service import (
+    classify_artifact_entry,
+    extract_artifact_ke_id,
+    extract_artifact_url,
+    extract_distribution_version,
+    flatten_artifact_candidates,
+    select_distribution_artifact,
+)
 
 
 FINAL_RELEASE_STATUS = "\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u043b\u0435\u043d \u043d\u0430 \u041f\u0420\u041e\u041c"
@@ -3287,6 +3295,10 @@ def _iter_nested_values(value):
 
 
 def _extract_nested_version(dist_item):
+    version = extract_distribution_version(dist_item)
+    if version:
+        return version
+
     for value in _iter_nested_values(dist_item):
         if isinstance(value, dict):
             for key in ("version", "buildVersion"):
@@ -3333,6 +3345,10 @@ def _normalize_artifact_url(url_value):
 
 
 def _extract_nested_dist_url(dist_item):
+    artifact_url = extract_artifact_url(dist_item)
+    if artifact_url:
+        return _normalize_artifact_url(artifact_url)
+
     for value in _iter_nested_values(dist_item):
         if isinstance(value, dict):
             for key in ("url", "downloadUrl", "artifactUrl", "link", "value"):
@@ -3372,19 +3388,6 @@ def _extract_ke_object(fields, resolved_fields):
     return {"id": "", "name": ""}
 
 
-def _dist_item_score(item):
-    if not item:
-        return 0
-    score = 0
-    if _extract_nested_version(item):
-        score += 4
-    if _extract_nested_dist_url(item):
-        score += 3
-    if isinstance(item, dict) and (item.get("id") or item.get("PARENT_CI") or item.get("smId")):
-        score += 2
-    return score
-
-
 def _extract_release_dist(fields, resolved_fields):
     candidates = []
     for logical_name in ("release_distributive", "delta_release_distributive"):
@@ -3394,7 +3397,15 @@ def _extract_release_dist(fields, resolved_fields):
         elif raw_dist:
             candidates.append(raw_dist)
     if candidates:
-        return max(candidates, key=_dist_item_score)
+        selected = select_distribution_artifact(candidates)
+        if selected:
+            return selected
+
+        flat_candidates = flatten_artifact_candidates(candidates)
+        if any(classify_artifact_entry(item) == "image" for item in flat_candidates):
+            logging.warning(
+                "Release monitor distribution artifact not found: only image/unknown artifacts were provided"
+            )
     return None
 
 
@@ -3752,9 +3763,7 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
     dist_item = _extract_release_dist(fields, resolved_fields)
     release_version = _extract_nested_version(dist_item)
     release_dist_url = _extract_nested_dist_url(dist_item)
-    dist_ke_raw = ""
-    if isinstance(dist_item, dict):
-        dist_ke_raw = dist_item.get("id") or dist_item.get("smId") or dist_item.get("PARENT_CI") or ""
+    dist_ke_raw = extract_artifact_ke_id(dist_item)
     ke_distributive = _format_ke_id(dist_ke_raw)
 
     normalized_status = _normalize_text(status_name)

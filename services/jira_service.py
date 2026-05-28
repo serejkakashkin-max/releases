@@ -5,6 +5,11 @@ import time
 import threading
 from datetime import datetime, timedelta
 from config import TOKENS
+from services.release_artifact_service import (
+    extract_artifact_ke_id,
+    extract_distribution_version,
+    select_distribution_artifact,
+)
 
 
 VERSION_PATTERN = re.compile(r"[DP]-\d+(?:\.\d+){2}(?:-[A-Za-z0-9_]+)+")
@@ -50,34 +55,17 @@ def _format_ke_id(raw_ke_id):
 
 
 def _extract_ke_from_distributive_field(raw_value):
-    for value in _iter_nested_values(raw_value):
-        if not isinstance(value, dict):
-            continue
-
-        for key in ("id", "smId", "PARENT_CI"):
-            ke = _format_ke_id(value.get(key))
-            if ke:
-                return ke
-    return ""
+    artifact = select_distribution_artifact(raw_value)
+    if not artifact:
+        return ""
+    return _format_ke_id(extract_artifact_ke_id(artifact))
 
 
 def _extract_version_from_distributive_field(raw_value):
-    for value in _iter_nested_values(raw_value):
-        if isinstance(value, dict):
-            for key in ("version", "buildVersion", "release_version", "releases_version", "value", "url"):
-                raw_version = value.get(key)
-                if not raw_version:
-                    continue
-
-                match = VERSION_PATTERN.search(str(raw_version))
-                if match:
-                    return match.group(0)
-        else:
-            match = VERSION_PATTERN.search(str(value))
-            if match:
-                return match.group(0)
-
-    return ""
+    artifact = select_distribution_artifact(raw_value)
+    if not artifact:
+        return ""
+    return extract_distribution_version(artifact)
 
 
 def get_jira_domain_and_token(release_id):
@@ -96,9 +84,9 @@ def _extract_release_version_from_fields(fields):
 
     customfield_21713 = fields.get("customfield_21713", "")
     if customfield_21713:
-        match = VERSION_PATTERN.search(str(customfield_21713))
-        if match:
-            return match.group(0)
+        version = _extract_version_from_distributive_field(customfield_21713)
+        if version:
+            return version
     return ""
 
 
