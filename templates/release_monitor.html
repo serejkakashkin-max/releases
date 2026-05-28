@@ -1977,6 +1977,10 @@
             box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.22), inset 0 0 0 2px rgba(255, 255, 255, 0.72);
         }
 
+        .release-row.color-save-pending .release-color-swatch.active {
+            box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.22), inset 0 0 0 2px rgba(255, 255, 255, 0.72), 0 0 0 4px rgba(13, 110, 253, 0.08);
+        }
+
         .release-date-cell {
             min-width: 0;
             font-size: 0.79rem;
@@ -2996,6 +3000,7 @@
         let releaseRowOrderSavingKey = '';
         let releaseManualOverrideDraft = {};
         let releaseMonitorItems = [];
+        const releaseColorSaveSeqByKey = new Map();
         let releaseMonitorMeta = {};
         let releaseMonitorRefreshPoll = null;
         let releaseMonitorGlobalStatusPoll = null;
@@ -3437,6 +3442,7 @@
                 <button
                     type="button"
                     class="release-color-swatch ${level} ${rolloutLevel === level ? 'active' : ''}"
+                    data-color-level="${escapeHtml(level)}"
                     onclick="setReleaseManualColor('${escapeHtml(item.row_key || item.release_key)}', '${level}')"
                     title="${escapeHtml(title)}"
                     aria-label="${escapeHtml(title)}"
@@ -3680,6 +3686,7 @@
             return `
                 <tr
                     class="release-row state-${escapeHtml(item.row_state || 'planned')} ${rolloutClass} ${weekClass} ${isSettingsOpen ? 'settings-open' : ''}"
+                    data-row-key="${escapeHtml(rowKey)}"
                     data-year="${escapeHtml(item.year)}"
                     data-status="${escapeHtml(item.release_status || '')}"
                     data-final-installed="${item.is_final && !item.is_cancelled ? 'true' : 'false'}"
@@ -6221,6 +6228,64 @@
             }
         }
 
+        function getReleaseManualColorLevel(item) {
+            const level = String(item?.rollout_notes_level || '').trim().toLowerCase();
+            if (['success', 'warning', 'danger', 'none'].includes(level)) {
+                return level;
+            }
+            return item?.has_rollout_notes ? 'warning' : '';
+        }
+
+        function applyReleaseManualColorToItem(item, level) {
+            if (!item) {
+                return;
+            }
+            const normalizedLevel = ['success', 'warning', 'danger', 'none'].includes(level) ? level : '';
+            item.rollout_notes_level = normalizedLevel;
+            item.has_rollout_notes = Boolean(normalizedLevel && normalizedLevel !== 'none');
+        }
+
+        function getReleaseRowElement(rowKey) {
+            const normalizedRowKey = String(rowKey || '').trim();
+            const body = document.getElementById('releaseMonitorBody');
+            if (!normalizedRowKey || !body) {
+                return null;
+            }
+            return Array.from(body.querySelectorAll('tr.release-row')).find(
+                row => row.dataset.rowKey === normalizedRowKey
+            ) || null;
+        }
+
+        function patchReleaseManualColorDom(rowKey, level, pending = false) {
+            const row = getReleaseRowElement(rowKey);
+            if (!row) {
+                return;
+            }
+
+            const normalizedLevel = ['success', 'warning', 'danger', 'none'].includes(level) ? level : '';
+            row.classList.remove(
+                'rollout-notes-success',
+                'rollout-notes-warning',
+                'rollout-notes-danger',
+                'rollout-notes-none'
+            );
+            if (normalizedLevel) {
+                row.classList.add(`rollout-notes-${normalizedLevel}`);
+            }
+            row.classList.toggle('color-save-pending', Boolean(pending));
+
+            row.querySelectorAll('.release-color-swatch').forEach(swatch => {
+                swatch.classList.toggle('active', Boolean(normalizedLevel && swatch.dataset.colorLevel === normalizedLevel));
+            });
+        }
+
+        function setReleaseManualColorPending(rowKey, pending) {
+            const row = getReleaseRowElement(rowKey);
+            if (row) {
+                row.classList.toggle('color-save-pending', Boolean(pending));
+            }
+        }
+
         async function setReleaseManualColor(releaseKey, level) {
             const item = getReleaseMonitorItem(releaseKey);
             if (!item) {
@@ -6229,9 +6294,14 @@
             }
 
             const normalizedLevel = ['success', 'warning', 'danger'].includes(level) ? level : '';
-            const currentLevel = item.rollout_notes_level || (item.has_rollout_notes ? 'warning' : '');
+            const currentLevel = getReleaseManualColorLevel(item);
             const nextLevel = currentLevel === normalizedLevel ? '' : normalizedLevel;
             const enabled = Boolean(nextLevel);
+            const previousLevel = currentLevel;
+            const saveSeq = (releaseColorSaveSeqByKey.get(releaseKey) || 0) + 1;
+            releaseColorSaveSeqByKey.set(releaseKey, saveSeq);
+            applyReleaseManualColorToItem(item, nextLevel);
+            patchReleaseManualColorDom(releaseKey, nextLevel, true);
             try {
                 const response = await fetch(BASE_PATH + '/dashboard/release-monitor/rollout-notes', {
                     method: 'POST',
@@ -6246,9 +6316,22 @@
                 if (!response.ok || !data.success) {
                     throw new Error(data.error || 'Не удалось сохранить подсветку релиза');
                 }
-                renderReleaseMonitor(data.release_monitor || [], data.release_monitor_meta || {});
+                if (releaseColorSaveSeqByKey.get(releaseKey) === saveSeq) {
+                    setReleaseManualColorPending(releaseKey, false);
+                    releaseMonitorMeta = data.release_monitor_meta || releaseMonitorMeta;
+                    releaseMonitorKnownRevision = getReleaseMonitorRevision(releaseMonitorMeta) || releaseMonitorKnownRevision;
+                    updateReleaseAutoRefreshBadge(releaseMonitorMeta);
+                    hideReleaseUpdateBanner();
+                }
             } catch (error) {
                 console.error('Release rollout notes save error:', error);
+                if (releaseColorSaveSeqByKey.get(releaseKey) !== saveSeq) {
+                    return;
+                }
+                if (releaseColorSaveSeqByKey.get(releaseKey) === saveSeq) {
+                    applyReleaseManualColorToItem(item, previousLevel);
+                    patchReleaseManualColorDom(releaseKey, previousLevel, false);
+                }
                 alert('Ошибка сохранения подсветки релиза: ' + error.message);
             }
         }
