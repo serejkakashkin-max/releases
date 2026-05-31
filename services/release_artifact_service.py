@@ -4,6 +4,46 @@ import re
 ARTIFACT_URL_PATTERN = re.compile(r"(?:https?://)?[A-Za-z0-9.-]+\.[A-Za-z]{2,}/[^\s\"'<()>;]+")
 BASE_DISTRIBUTION_VERSION_PATTERN = re.compile(r"[DP]-\d+(?:\.\d+){2}-\d+")
 FULL_RELEASE_VERSION_PATTERN = re.compile(r"[DP]-\d+(?:\.\d+){2}(?:[.-][A-Za-z0-9_]+)+")
+AI_AGENT_STRONG_CONTEXT_TERMS = (
+    "ai-агент",
+    "ai агент",
+    "ai-агенты",
+    "ai агенты",
+    "ai-цифровой",
+    "ai цифровой",
+    "aef containers ai",
+    "aigw",
+    "цифровой клиентский менеджер",
+)
+AI_AGENT_WEAK_CONTEXT_TERMS = (
+    "агент",
+)
+AI_AGENT_CONTEXT_MARKERS = (
+    " ai",
+    "ai-",
+    "aef containers",
+    "aigw",
+)
+AI_AGENT_IMAGE_POSITIVE_TERMS = (
+    "agent",
+    "ai",
+    "orchestrator",
+    "focus",
+    "drm",
+    "client-manager",
+    "цифровой",
+    "менеджер",
+)
+AI_AGENT_IMAGE_NEGATIVE_TERMS = (
+    "dropapp",
+    "sidecar",
+    "adapter",
+    "logger",
+    "import",
+    "dataspace",
+    "core",
+    "module",
+)
 
 
 def iter_nested_values(value):
@@ -45,6 +85,24 @@ def _artifact_text(value):
     return str(value or "")
 
 
+def _normalize_context_text(value):
+    text = _artifact_text(value).lower().replace("ё", "е")
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def is_ai_agent_release_context(*values):
+    text = _normalize_context_text(" ".join(_artifact_text(value) for value in values if value is not None))
+    if not text:
+        return False
+    if any(term in text for term in AI_AGENT_STRONG_CONTEXT_TERMS):
+        return True
+    return (
+        any(term in text for term in AI_AGENT_WEAK_CONTEXT_TERMS)
+        and any(marker in f" {text}" for marker in AI_AGENT_CONTEXT_MARKERS)
+    )
+
+
 def is_image_artifact(value):
     text = _artifact_text(value).lower()
     if not text:
@@ -69,6 +127,8 @@ def extract_artifact_url(value):
     if not candidates:
         return ""
 
+    artifact_is_image = is_image_artifact(value)
+
     def _url_score(url):
         lowered = str(url or "").lower()
         score = 0
@@ -76,8 +136,12 @@ def extract_artifact_url(value):
             score += 20
         if "distrib.zip" in lowered:
             score += 20
-        if "registry.ca.sbrf.ru" in lowered or "@sha256" in lowered:
+        if artifact_is_image and ("registry.ca.sbrf.ru" in lowered or "@sha256" in lowered):
+            score += 30
+        elif "registry.ca.sbrf.ru" in lowered or "@sha256" in lowered:
             score -= 40
+        if "/browse/" in lowered and "jira." in lowered:
+            score -= 60
         return score
 
     return max(candidates, key=_url_score)
@@ -98,8 +162,21 @@ def extract_distribution_version(value):
         for key in ("version", "buildVersion", "release_version", "releases_version"):
             raw_value = value.get(key)
             if raw_value:
-                preferred_values.append(str(raw_value))
+                raw_text = str(raw_value)
+                match = FULL_RELEASE_VERSION_PATTERN.search(raw_text)
+                if match:
+                    return match.group(0)
+                match = BASE_DISTRIBUTION_VERSION_PATTERN.search(raw_text)
+                if match:
+                    return match.group(0)
+                preferred_values.append(raw_text)
     preferred_values.extend(str(item) for item in iter_nested_values(value) if not isinstance(item, dict))
+
+    if is_image_artifact(value):
+        for raw_value in preferred_values:
+            match = FULL_RELEASE_VERSION_PATTERN.search(str(raw_value))
+            if match:
+                return match.group(0)
 
     for raw_value in preferred_values:
         match = BASE_DISTRIBUTION_VERSION_PATTERN.search(str(raw_value))
@@ -164,7 +241,42 @@ def artifact_score(value, index=0):
     return score - (index / 1000)
 
 
-def select_distribution_artifact(values, allow_image_artifact=False):
+def _context_digits(value):
+    return set(re.findall(r"\d{6,}", _artifact_text(value)))
+
+
+def _image_artifact_score(value, index=0, release_context=None):
+    text = _normalize_context_text(value)
+    context_text = _normalize_context_text(release_context)
+    score = 0
+
+    if extract_artifact_url(value):
+        score += 10
+    if extract_distribution_version(value):
+        score += 10
+
+    parent_ci = ""
+    if isinstance(value, dict):
+        parent_ci = str(value.get("PARENT_CI") or "").strip()
+    if parent_ci:
+        parent_digits = _context_digits(parent_ci)
+        if parent_digits and parent_digits.intersection(_context_digits(release_context)):
+            score += 40
+
+    for term in AI_AGENT_IMAGE_POSITIVE_TERMS:
+        if term in text:
+            score += 4
+            if term in context_text:
+                score += 12
+
+    for term in AI_AGENT_IMAGE_NEGATIVE_TERMS:
+        if term in text and term not in context_text:
+            score -= 18
+
+    return score - (index / 1000)
+
+
+def select_distribution_artifact(values, allow_image_artifact=False, release_context=None):
     candidates = flatten_artifact_candidates(values)
     if not candidates:
         return None
@@ -184,6 +296,9 @@ def select_distribution_artifact(values, allow_image_artifact=False):
             if classify_artifact_entry(candidate) == "image"
         ]
         if image_candidates:
-            return max(image_candidates, key=lambda pair: artifact_score(pair[1], pair[0]))[1]
+            return max(
+                image_candidates,
+                key=lambda pair: _image_artifact_score(pair[1], pair[0], release_context),
+            )[1]
 
     return None

@@ -24,6 +24,7 @@ from services.release_artifact_service import (
     extract_artifact_url,
     extract_distribution_version,
     flatten_artifact_candidates,
+    is_ai_agent_release_context,
     select_distribution_artifact,
 )
 
@@ -3388,7 +3389,29 @@ def _extract_ke_object(fields, resolved_fields):
     return {"id": "", "name": ""}
 
 
-def _extract_release_dist(fields, resolved_fields):
+def _build_ai_agent_release_context(fields, resolved_fields, summary="", system_info_text="", ke_object=None):
+    context = [summary, system_info_text, ke_object or {}]
+    raw_ke_object = fields.get(resolved_fields["ke_object"])
+    if raw_ke_object:
+        context.append(raw_ke_object)
+
+    for link in fields.get("issuelinks") or []:
+        linked_issue = link.get("inwardIssue") or link.get("outwardIssue") or {}
+        linked_fields = linked_issue.get("fields") or {}
+        linked_summary = linked_fields.get("summary")
+        if linked_summary:
+            context.append(linked_summary)
+
+    for subtask in fields.get("subtasks") or []:
+        subtask_fields = subtask.get("fields") or {}
+        subtask_summary = subtask_fields.get("summary")
+        if subtask_summary:
+            context.append(subtask_summary)
+
+    return context
+
+
+def _extract_release_dist(fields, resolved_fields, release_context=None):
     candidates = []
     for logical_name in ("release_distributive", "delta_release_distributive"):
         raw_dist = fields.get(resolved_fields[logical_name])
@@ -3397,7 +3420,14 @@ def _extract_release_dist(fields, resolved_fields):
         elif raw_dist:
             candidates.append(raw_dist)
     if candidates:
-        selected = select_distribution_artifact(candidates)
+        if is_ai_agent_release_context(release_context):
+            selected = select_distribution_artifact(
+                candidates,
+                allow_image_artifact=True,
+                release_context=release_context,
+            )
+        else:
+            selected = select_distribution_artifact(candidates, release_context=release_context)
         if selected:
             return selected
 
@@ -3760,7 +3790,18 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
     system_info_text = _extract_field_value(fields.get(resolved_fields["system_info"])) or ""
 
     ke_object = _extract_ke_object(fields, resolved_fields)
-    dist_item = _extract_release_dist(fields, resolved_fields)
+    ai_agent_release_context = _build_ai_agent_release_context(
+        fields,
+        resolved_fields,
+        summary=summary,
+        system_info_text=system_info_text,
+        ke_object=ke_object,
+    )
+    dist_item = _extract_release_dist(
+        fields,
+        resolved_fields,
+        release_context=ai_agent_release_context,
+    )
     release_version = _extract_nested_version(dist_item)
     release_dist_url = _extract_nested_dist_url(dist_item)
     dist_ke_raw = extract_artifact_ke_id(dist_item)

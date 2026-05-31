@@ -8,6 +8,7 @@ from config import TOKENS
 from services.release_artifact_service import (
     extract_artifact_ke_id,
     extract_distribution_version,
+    is_ai_agent_release_context,
     select_distribution_artifact,
 )
 
@@ -54,15 +55,48 @@ def _format_ke_id(raw_ke_id):
     return f"CI{digits.zfill(8)}"
 
 
-def _extract_ke_from_distributive_field(raw_value):
-    artifact = select_distribution_artifact(raw_value)
+def _build_ai_agent_release_context(fields, summary=""):
+    context = [summary]
+    for field_id in ("customfield_18300", "customfield_22200"):
+        value = fields.get(field_id)
+        if value:
+            context.append(value)
+
+    for link in fields.get("issuelinks") or []:
+        linked_issue = link.get("inwardIssue") or link.get("outwardIssue") or {}
+        linked_fields = linked_issue.get("fields") or {}
+        linked_summary = linked_fields.get("summary")
+        if linked_summary:
+            context.append(linked_summary)
+
+    for subtask in fields.get("subtasks") or []:
+        subtask_fields = subtask.get("fields") or {}
+        subtask_summary = subtask_fields.get("summary")
+        if subtask_summary:
+            context.append(subtask_summary)
+
+    return context
+
+
+def _select_release_artifact(raw_value, release_context=None):
+    if is_ai_agent_release_context(release_context):
+        return select_distribution_artifact(
+            raw_value,
+            allow_image_artifact=True,
+            release_context=release_context,
+        )
+    return select_distribution_artifact(raw_value, release_context=release_context)
+
+
+def _extract_ke_from_distributive_field(raw_value, release_context=None):
+    artifact = _select_release_artifact(raw_value, release_context=release_context)
     if not artifact:
         return ""
     return _format_ke_id(extract_artifact_ke_id(artifact))
 
 
-def _extract_version_from_distributive_field(raw_value):
-    artifact = select_distribution_artifact(raw_value)
+def _extract_version_from_distributive_field(raw_value, release_context=None):
+    artifact = _select_release_artifact(raw_value, release_context=release_context)
     if not artifact:
         return ""
     return extract_distribution_version(artifact)
@@ -76,23 +110,32 @@ def get_jira_domain_and_token(release_id):
     return "https://jira.sberbank.ru", TOKENS["sberbank_token"]
 
 
-def _extract_release_version_from_fields(fields):
+def _extract_release_version_from_fields(fields, release_context=None):
     for field_id in ("customfield_21710", "customfield_27011"):
-        version = _extract_version_from_distributive_field(fields.get(field_id, []))
+        version = _extract_version_from_distributive_field(
+            fields.get(field_id, []),
+            release_context=release_context,
+        )
         if version:
             return version
 
     customfield_21713 = fields.get("customfield_21713", "")
     if customfield_21713:
-        version = _extract_version_from_distributive_field(customfield_21713)
+        version = _extract_version_from_distributive_field(
+            customfield_21713,
+            release_context=release_context,
+        )
         if version:
             return version
     return ""
 
 
-def _extract_distribution_ke_from_fields(fields):
+def _extract_distribution_ke_from_fields(fields, release_context=None):
     for field_id in ("customfield_21710", "customfield_27011"):
-        ke = _extract_ke_from_distributive_field(fields.get(field_id, []))
+        ke = _extract_ke_from_distributive_field(
+            fields.get(field_id, []),
+            release_context=release_context,
+        )
         if ke:
             return ke
     return ""
@@ -168,13 +211,20 @@ def _extract_pob_from_fields(fields):
 def _build_release_snapshot(release_id, domain, issue_data):
     fields = issue_data.get("fields", {}) if isinstance(issue_data, dict) else {}
     summary = fields.get("summary", "")
+    ai_agent_release_context = _build_ai_agent_release_context(fields, summary=summary)
     return {
         "release_id": release_id,
         "domain": domain,
         "summary": summary,
         "template_sm_id": _extract_template_sm_id_from_fields(fields),
-        "release_version": _extract_release_version_from_fields(fields),
-        "ke": _extract_distribution_ke_from_fields(fields),
+        "release_version": _extract_release_version_from_fields(
+            fields,
+            release_context=ai_agent_release_context,
+        ),
+        "ke": _extract_distribution_ke_from_fields(
+            fields,
+            release_context=ai_agent_release_context,
+        ),
         "pob": _extract_pob_from_fields(fields),
         "issues": _extract_related_issues_from_fields(fields),
         "fields": fields,
