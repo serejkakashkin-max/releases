@@ -8,6 +8,7 @@
     <link href="/static/css/bootstrap-icons.css" rel="stylesheet">
     <script src="/static/js/bootstrap.bundle.min.js"></script>
     {% include 'base_styles.html' %}
+    <link href="/static/css/dashboard.css" rel="stylesheet">
     <style>
         :root {
             --stale-task-glow: rgba(248, 81, 73, 0.4);
@@ -1568,7 +1569,7 @@
         </div>
     </nav>
 
-    <div class="container mt-3 mb-5">
+    <div class="container mt-3 mb-5 dashboard-page-shell">
         <!-- Шапка -->
         <div class="dashboard-header">
             <h1>
@@ -1579,6 +1580,30 @@
                 <i class="bi bi-clock me-1"></i> Обновлено: {{ last_update }} | 
                 Автообновление: {{ cache_ttl_minutes }} мин | 
                 <i class="bi bi-people me-1"></i> {{ active_assignees }} дежурных
+            </div>
+        </div>
+
+        <div class="dashboard-kpi-strip" aria-label="Сводка рабочего стола дежурного">
+            <div class="dashboard-kpi-card kpi-sup">
+                <div class="dashboard-kpi-icon"><i class="bi bi-exclamation-diamond-fill"></i></div>
+                <div>
+                    <div class="dashboard-kpi-label">СУП</div>
+                    <div class="dashboard-kpi-value">{{ total_sup }}</div>
+                </div>
+            </div>
+            <div class="dashboard-kpi-card kpi-logi">
+                <div class="dashboard-kpi-icon"><i class="bi bi-journal-text"></i></div>
+                <div>
+                    <div class="dashboard-kpi-label">Логи и операции</div>
+                    <div class="dashboard-kpi-value">{{ total_logi }}</div>
+                </div>
+            </div>
+            <div class="dashboard-kpi-card kpi-vnedrenie">
+                <div class="dashboard-kpi-icon"><i class="bi bi-rocket-takeoff-fill"></i></div>
+                <div>
+                    <div class="dashboard-kpi-label">Внедрение</div>
+                    <div class="dashboard-kpi-value">{{ total_vnedrenie }}</div>
+                </div>
             </div>
         </div>
         

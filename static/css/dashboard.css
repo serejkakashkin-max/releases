@@ -1,0 +1,294 @@
+/*
+ * Dashboard layout foundation.
+ * This file intentionally keeps behavior untouched: IDs, handlers and
+ * inline dashboard scripts continue to work with the existing DOM.
+ */
+
+:root {
+    --dashboard-page-gap: 1.5rem;
+    --dashboard-column-min-width: 0;
+    --dashboard-kpi-surface: var(--dashboard-surface-bg, var(--bg-card));
+    --dashboard-kpi-border: var(--dashboard-soft-border, var(--border-color));
+}
+
+.dashboard-page-shell .dashboard-header {
+    margin: 1rem auto 1rem;
+    padding: 0.92rem 1.1rem 1rem;
+}
+
+.dashboard-page-shell .dashboard-header h1 {
+    font-size: clamp(1.45rem, 2.4vw, 1.9rem);
+}
+
+.dashboard-page-shell .header-meta {
+    margin-top: 0.7rem;
+    padding: 0.58rem 0.85rem;
+}
+
+.dashboard-kpi-strip {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.7rem;
+    margin-bottom: 1rem;
+}
+
+.dashboard-kpi-card {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.78rem 0.9rem;
+    border: 1px solid var(--dashboard-kpi-border);
+    border-radius: 14px;
+    background: var(--dashboard-kpi-surface);
+    box-shadow: 0 10px 28px var(--dashboard-shadow, var(--shadow));
+}
+
+.dashboard-kpi-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    background: var(--dashboard-soft-bg, var(--bg-secondary));
+    color: var(--primary);
+    box-shadow: inset 0 0 0 1px var(--dashboard-kpi-border);
+}
+
+.dashboard-kpi-label {
+    color: var(--text-secondary);
+    font-size: 0.74rem;
+    font-weight: 750;
+    line-height: 1.15;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.dashboard-kpi-value {
+    margin-top: 0.12rem;
+    color: var(--text-primary);
+    font-size: 1.38rem;
+    font-weight: 850;
+    line-height: 1;
+}
+
+.dashboard-kpi-card.kpi-sup .dashboard-kpi-icon {
+    color: var(--danger);
+    background: rgba(248, 81, 73, 0.12);
+}
+
+.dashboard-kpi-card.kpi-logi .dashboard-kpi-icon {
+    color: var(--success);
+    background: rgba(63, 185, 80, 0.12);
+}
+
+.dashboard-kpi-card.kpi-vnedrenie .dashboard-kpi-icon {
+    color: var(--info);
+    background: rgba(88, 166, 255, 0.12);
+}
+
+.tags-grid {
+    align-items: start;
+}
+
+.dashboard-page-shell .tags-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: stretch;
+    gap: 0.85rem;
+    margin-bottom: 1.5rem;
+}
+
+.tag-column {
+    min-height: 0;
+    min-width: var(--dashboard-column-min-width);
+}
+
+.dashboard-page-shell .tag-column {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.dashboard-page-shell .tag-header {
+    padding: 0.78rem 0.92rem;
+    font-size: 0.95rem;
+}
+
+.dashboard-page-shell .tag-header-left {
+    min-width: 0;
+}
+
+.dashboard-page-shell .tag-header-left small {
+    white-space: nowrap;
+}
+
+.dashboard-page-shell .tag-count {
+    padding: 0.2rem 0.58rem;
+    font-size: 0.82rem;
+}
+
+.dashboard-page-shell .column-filters {
+    gap: 0.4rem;
+    padding: 0.55rem 0.72rem;
+}
+
+.dashboard-page-shell .filter-btn {
+    min-height: 30px;
+    padding: 0.28rem 0.58rem;
+    font-size: 0.76rem;
+}
+
+.tag-content {
+    max-height: none !important;
+    overflow-y: visible !important;
+}
+
+.dashboard-page-shell .tag-content {
+    flex: 1 1 auto;
+    padding: 0.72rem;
+}
+
+.dashboard-page-shell .task-card {
+    padding: 0.72rem 0.78rem;
+    margin-bottom: 0.48rem;
+    border-radius: 10px;
+}
+
+.dashboard-page-shell .task-type-badges {
+    gap: 0.28rem;
+    margin-bottom: 0.38rem;
+}
+
+.dashboard-page-shell .badge-type {
+    padding: 0.16rem 0.42rem;
+    font-size: 0.68rem;
+    line-height: 1.2;
+}
+
+.dashboard-page-shell .task-header-row {
+    align-items: center;
+    gap: 0.35rem;
+    margin-bottom: 0.35rem;
+}
+
+.dashboard-page-shell .task-key {
+    gap: 0.28rem;
+    font-size: 0.84rem;
+}
+
+.dashboard-page-shell .source-badge {
+    margin-left: 0.28rem;
+    padding: 0.12rem 0.34rem;
+    font-size: 0.66rem;
+}
+
+.dashboard-page-shell .badge-mini {
+    padding: 0.16rem 0.45rem;
+    font-size: 0.68rem;
+}
+
+.dashboard-page-shell .stale-badge {
+    margin-left: 0.28rem;
+    padding: 0.16rem 0.42rem;
+    font-size: 0.68rem;
+}
+
+.dashboard-page-shell .task-summary {
+    margin-bottom: 0.38rem;
+    font-size: 0.84rem;
+    line-height: 1.32;
+}
+
+.dashboard-page-shell .task-meta-compact {
+    gap: 0.38rem 0.62rem;
+    font-size: 0.72rem;
+    line-height: 1.25;
+}
+
+.dashboard-page-shell .hide-task-btn {
+    top: 0.42rem;
+    right: 0.42rem;
+    width: 22px;
+    height: 22px;
+}
+
+@media (max-width: 1200px) {
+    .dashboard-page-shell .tags-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .dashboard-page-shell #col-vnedrenie {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 991px) {
+    .dashboard-page-shell .tags-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .dashboard-page-shell #col-vnedrenie {
+        grid-column: auto;
+    }
+
+    .dashboard-page-shell .dashboard-controls {
+        grid-template-columns: 1fr;
+    }
+
+    .dashboard-page-shell .sort-control {
+        width: 100%;
+    }
+
+    .dashboard-page-shell .assignee-header {
+        gap: 0.75rem;
+    }
+
+    .dashboard-page-shell .assignee-stats-preview {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+}
+
+@media (max-width: 768px) {
+    .dashboard-kpi-strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.55rem;
+    }
+
+    .dashboard-kpi-card {
+        padding: 0.68rem 0.72rem;
+    }
+
+    .dashboard-kpi-icon {
+        width: 32px;
+        height: 32px;
+    }
+
+    .dashboard-page-shell .tag-header {
+        padding: 0.72rem 0.78rem;
+    }
+
+    .dashboard-page-shell .tag-header-left {
+        flex-wrap: wrap;
+    }
+
+    .dashboard-page-shell .tag-header-left small {
+        white-space: normal;
+    }
+
+    .dashboard-page-shell .assignee-header {
+        align-items: flex-start;
+    }
+
+    .dashboard-page-shell .assignee-info {
+        min-width: 0;
+    }
+}
+
+@media (max-width: 520px) {
+    .dashboard-kpi-strip {
+        grid-template-columns: 1fr;
+    }
+}

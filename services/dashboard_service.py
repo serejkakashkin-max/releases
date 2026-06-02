@@ -928,6 +928,36 @@ def get_hidden_task_keys():
     """Возвращает только список ключей скрытых задач"""
     return list(get_hidden_tasks().keys())
 
+def prune_hidden_tasks(active_task_keys):
+    """
+    Удаляет из корзины задачи, которых больше нет среди активных задач дашборда.
+    Основные JQL дашборда уже исключают Done/Closed/Resolved, поэтому отсутствие
+    ключа в active_task_keys означает, что задача больше не актуальна для рабочего стола.
+    """
+    try:
+        active_keys = {str(key or "").strip() for key in (active_task_keys or []) if str(key or "").strip()}
+        _ensure_hidden_tasks_file()
+        with _hidden_tasks_lock:
+            hidden = _read_hidden_tasks_file()
+            if not hidden:
+                return []
+
+            stale_keys = [key for key in hidden.keys() if key not in active_keys]
+            if not stale_keys:
+                return []
+
+            for key in stale_keys:
+                hidden.pop(key, None)
+
+            with open(HIDDEN_TASKS_FILE, 'w', encoding='utf-8') as f:
+                json.dump(hidden, f, ensure_ascii=False, indent=2)
+
+            logging.info("Pruned %s hidden tasks no longer active on dashboard: %s", len(stale_keys), ", ".join(stale_keys))
+            return stale_keys
+    except Exception as e:
+        logging.error(f"Error pruning hidden tasks: {e}")
+        return []
+
 def hide_task(task_key, task_data=None):
     """
     Скрывает задачу (добавляет в корзину).

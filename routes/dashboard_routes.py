@@ -6,7 +6,8 @@ from flask import Blueprint, render_template, jsonify, request, make_response
 from services.dashboard_service import (
     get_dashboard_data, force_refresh_cache, 
     check_multiple_approvals, get_task_type_badges,
-    get_hidden_tasks, get_hidden_task_keys, hide_task, show_task, restore_all_tasks
+    get_hidden_tasks, get_hidden_task_keys, hide_task, show_task, restore_all_tasks,
+    prune_hidden_tasks
 )
 from services.release_monitor_service import (
     get_release_monitor_data,
@@ -80,7 +81,25 @@ def dashboard():
         data = get_dashboard_data()
         last_update = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
         
-        # Получаем скрытые задачи
+        # Получаем скрытые задачи и убираем из корзины те, которых уже нет среди активных данных Jira
+        def collect_active_task_keys():
+            keys = set()
+            for task in (
+                data.get('sup_tasks', [])
+                + data.get('logi_tasks', [])
+                + data.get('vnedrenie_prom_tasks', [])
+                + data.get('vnedrenie_psi_tasks', [])
+            ):
+                if task.get('key'):
+                    keys.add(task['key'])
+
+            for stats in (data.get('assignee_stats', {}) or {}).values():
+                for task in (stats.get('todo', []) + stats.get('in_progress', [])):
+                    if task.get('key'):
+                        keys.add(task['key'])
+            return keys
+
+        prune_hidden_tasks(collect_active_task_keys())
         hidden_tasks = get_hidden_tasks()
         hidden_task_keys = list(hidden_tasks.keys())
         
