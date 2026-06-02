@@ -357,7 +357,10 @@ class DashboardChatBot {
             const decodedUrl = url.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
             
             // Специальная обработка для ссылок на скачивание отчётов
-            if (decodedUrl.includes('/dashboard/api/chat/report/download')) {
+            if (
+                decodedUrl.includes('/dashboard/api/chat/report/download') ||
+                decodedUrl.includes('/dashboard/api/chat/rov-statistics/download')
+            ) {
                 const reportUrl = this.buildUrl(decodedUrl);
                 return `<a href="${reportUrl}" target="_blank" class="report-download-link" data-url="${reportUrl}">📥 ${text}</a>`;
             }

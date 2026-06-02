@@ -33,6 +33,7 @@ from services.release_monitor_service import (
     set_release_monitor_manual_distribution_override,
 )
 from services.release_report_service import get_release_report_service
+from services.rov_statistics_service import generate_rov_statistics_excel
 from services.psi_jenkins_service import find_psi_jenkins_instructions_by_ke
 from config import OPLOT_VALUES
 
@@ -215,6 +216,17 @@ class DashboardChatBot:
                     'metadata': clarification_response.get('metadata', {})
                 }
 
+            rov_statistics_response = self._handle_rov_statistics_command(message, session=session)
+            if rov_statistics_response:
+                session.add_message('user', message, rov_statistics_response.get('intent', 'rov_statistics'))
+                session.add_message('assistant', rov_statistics_response['text'], metadata=rov_statistics_response.get('metadata', {}))
+                return {
+                    'text': rov_statistics_response['text'],
+                    'intent': rov_statistics_response.get('intent', 'rov_statistics'),
+                    'suggestions': rov_statistics_response.get('suggestions', []),
+                    'metadata': rov_statistics_response.get('metadata', {})
+                }
+
             shift_response = self._handle_shift_handover_shortcut(message, dashboard_context)
             if shift_response:
                 session.add_message('user', message, shift_response.get('intent', 'generate_report'))
@@ -326,6 +338,86 @@ class DashboardChatBot:
                 'intent': 'error',
                 'suggestions': ['Показать что я умею?', 'Сгенерировать статистику'],
                 'metadata': {'error': str(e)}
+            }
+
+    def _is_rov_statistics_request(self, message: str) -> bool:
+        normalized = self._normalize_command_text(message)
+        if not normalized:
+            return False
+        has_statistics = any(marker in normalized for marker in ("статист", "отчет", "отчёт", "выгруз"))
+        has_rov = bool(re.search(r"(^|[^a-zа-я0-9])(ров|pob)([^a-zа-я0-9]|$)", normalized, flags=re.IGNORECASE))
+        return has_statistics and has_rov
+
+    def _handle_rov_statistics_command(self, message: str, session: Optional[ChatContext] = None) -> Optional[Dict]:
+        if not self._is_rov_statistics_request(message):
+            return None
+
+        if not self._rov_statistics_message_has_period(message):
+            if session is not None:
+                session.active_release_flow = {
+                    "type": "statistics_flow",
+                    "state": "need_period",
+                    "kind": "rov",
+                    "created_at": datetime.now().isoformat(),
+                }
+            return {
+                "text": (
+                    "За какой период сформировать статистику по РОВ?\n"
+                    "Можно выбрать кнопку ниже или написать свой период, например: `с 01.06.2026 по 02.06.2026`."
+                ),
+                "intent": "statistics_clarification",
+                "suggestions": self._statistics_period_suggestions("rov"),
+                "metadata": {"type": "statistics_flow", "state": "need_period", "kind": "rov"},
+            }
+
+        try:
+            result = generate_rov_statistics_excel(message)
+            period = result.get("period") or {}
+            download_url = f"/dashboard/api/chat/rov-statistics/download/{result['report_id']}"
+            total = int(result.get("total") or 0)
+
+            text = (
+                "📊 *Статистика по РОВ готова*\n"
+                f"Период: {period.get('label') or 'текущая неделя'}\n"
+                f"Всего РОВ: {total}\n\n"
+                f"[Скачать Excel]({download_url})"
+            )
+            if total == 0:
+                text = (
+                    "📊 *Статистика по РОВ сформирована*\n"
+                    f"Период: {period.get('label') or 'текущая неделя'}\n"
+                    "За период РОВ не найдено, Excel содержит пустой лист и сводную.\n\n"
+                    f"[Скачать Excel]({download_url})"
+                )
+
+            return {
+                "text": text,
+                "intent": "rov_statistics",
+                "suggestions": [
+                    "Статистика по РОВ за сегодня",
+                    "Статистика по РОВ за неделю",
+                    "Статистика по РОВ за год",
+                ],
+                "metadata": {
+                    "type": "rov_statistics",
+                    "report_generated": True,
+                    "report_id": result.get("report_id"),
+                    "download_url": download_url,
+                    "total": total,
+                    "period": period,
+                },
+            }
+        except Exception as exc:
+            logging.error("Ошибка генерации статистики по РОВ: %s", exc, exc_info=True)
+            return {
+                "text": f"❌ Не удалось сформировать статистику по РОВ: {exc}",
+                "intent": "rov_statistics",
+                "suggestions": [
+                    "Статистика по РОВ за сегодня",
+                    "Статистика по РОВ за неделю",
+                    "Статистика по РОВ за год",
+                ],
+                "metadata": {"type": "rov_statistics", "error": str(exc)},
             }
 
     def _resolve_intent_and_message(
@@ -898,7 +990,9 @@ Oplot умеет работать с рабочим столом дежурно�
         return len(normalized.split()) <= 8
 
     def _detect_statistics_kind(self, normalized: str) -> str:
-        if any(marker in normalized for marker in ("релиз", "ров", "перераскат", "хотфикс", "hotfix")):
+        if re.search(r"(^|[^a-zа-я0-9])(ров|pob)([^a-zа-я0-9]|$)", normalized, flags=re.IGNORECASE):
+            return "rov"
+        if any(marker in normalized for marker in ("релиз", "перераскат", "хотфикс", "hotfix")):
             return "release"
         if any(marker in normalized for marker in ("сотрудник", "исполнител", "jira", "жира", "задач", "закрыт")):
             return "assignee"
@@ -908,9 +1002,16 @@ Oplot умеет работать с рабочим столом дежурно�
         return [
             "Статистика по релизам",
             "Статистика по сотрудникам Jira",
+            "Статистика по РОВ",
         ]
 
-    def _statistics_period_suggestions(self) -> List[str]:
+    def _statistics_period_suggestions(self, kind: str = "") -> List[str]:
+        if kind == "rov":
+            return [
+                "За сегодня",
+                "За текущую неделю",
+                "За текущий год",
+            ]
         now = datetime.now()
         quarter = (now.month - 1) // 3 + 1
         return [
@@ -937,6 +1038,13 @@ Oplot умеет работать с рабочим столом дежурно�
                 params["days"] = 1
         return params
 
+    def _rov_statistics_message_has_period(self, message: str) -> bool:
+        normalized = self._normalize_command_text(message)
+        return bool(
+            re.search(r"\d{4}-\d{2}-\d{2}|\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4}", str(message or ""))
+            or any(marker in normalized for marker in ("сегодня", "день", "недел", "год"))
+        )
+
     def _ask_statistics_type(self, session: Optional[ChatContext] = None, original_message: str = "") -> Dict:
         if session is not None:
             session.active_release_flow = {
@@ -947,7 +1055,7 @@ Oplot умеет работать с рабочим столом дежурно�
             }
         return {
             "text": (
-                "Какую статистику сформировать: по релизам или по сотрудникам из Jira?"
+                "Какую статистику сформировать: по РОВ, по релизам или по сотрудникам из Jira?"
             ),
             "intent": "statistics_clarification",
             "suggestions": self._statistics_type_suggestions(),
@@ -961,11 +1069,18 @@ Oplot умеет работать с рабочим столом дежурно�
             "kind": kind,
             "created_at": datetime.now().isoformat(),
         }
-        label = "релизам" if kind == "release" else "сотрудникам Jira"
+        label = {
+            "rov": "РОВ",
+            "release": "релизам",
+            "assignee": "сотрудникам Jira",
+        }.get(kind, "статистике")
+        text = f"За какой период сформировать статистику по {label}?"
+        if kind == "rov":
+            text += "\nМожно выбрать кнопку ниже или написать свой период, например: `с 01.06.2026 по 02.06.2026`."
         return {
-            "text": f"За какой период сформировать статистику по {label}?",
+            "text": text,
             "intent": "statistics_clarification",
-            "suggestions": self._statistics_period_suggestions(),
+            "suggestions": self._statistics_period_suggestions(kind),
             "metadata": {"type": "statistics_flow", "state": "need_period", "kind": kind},
         }
 
@@ -987,7 +1102,7 @@ Oplot умеет работать с рабочим столом дежурно�
             kind = self._detect_statistics_kind(normalized)
             if not kind:
                 return {
-                    "text": "Уточни тип статистики: по релизам или по сотрудникам из Jira?",
+                    "text": "Уточни тип статистики: по РОВ, по релизам или по сотрудникам из Jira?",
                     "intent": "statistics_clarification",
                     "suggestions": self._statistics_type_suggestions(),
                     "metadata": {"type": "statistics_flow", "state": "need_type"},
@@ -997,6 +1112,11 @@ Oplot умеет работать с рабочим столом дежурно�
             if not (params.get("days") or params.get("quarter")):
                 params.update(flow.get("initial_period_params") or {})
             has_period = bool(params.get("days") or params.get("quarter"))
+            if kind == "rov":
+                if self._rov_statistics_message_has_period(message):
+                    session.active_release_flow = None
+                    return self._handle_rov_statistics_command(f"статистика по РОВ {message}", session=session)
+                return self._ask_statistics_period(session, kind)
             if has_period:
                 session.active_release_flow = None
                 command_text = f"статистика по {'релизам' if kind == 'release' else 'сотрудникам Jira'} {message}"
@@ -1014,6 +1134,8 @@ Oplot умеет работать с рабочим столом дежурно�
 
             params = self._statistics_params_from_period_text(message)
             session.active_release_flow = None
+            if kind == "rov":
+                return self._handle_rov_statistics_command(f"статистика по РОВ {message}", session=session)
             command_text = f"статистика по {'релизам' if kind == 'release' else 'сотрудникам Jira'} {message}"
             if kind == "release":
                 return self._handle_release_statistics(params, dashboard_context, command_text)

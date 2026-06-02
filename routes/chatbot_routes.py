@@ -14,6 +14,10 @@ from services.chatbot_service import (
     get_release_document_path,
     cleanup_old_release_documents,
 )
+from services.rov_statistics_service import (
+    cleanup_old_rov_statistics_reports,
+    get_rov_statistics_report_path,
+)
 from services.dashboard_service import get_dashboard_data
 
 chatbot_bp = Blueprint('chatbot', __name__)
@@ -301,10 +305,12 @@ def quick_action():
             'search_logi_tag': 'Найди задачи с тегом логи',
             'search_summary': 'Найди задачу со словом "логи" в заголовке',
             'assignee_stats': 'Сгенерируй статистику',
+            'statistics': 'Сформируй статистику',
             'handover_day': 'Сводка для передачи дневной смены',
             'handover_evening': 'Сводка для передачи вечерней смены',
             'release_documents': 'Сформировать документы по релизу',
             'release_psi_instruction': 'Дай инструкцию ПСИ по релизу',
+            'rov_statistics': 'Статистика по РОВ',
         }
 
         message = action_messages.get(action, 'Показать что я умею?')
@@ -459,6 +465,39 @@ def download_release_documents(document_id):
         )
     except Exception as e:
         logging.error(f"Ошибка скачивания релизных документов из чата: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@chatbot_bp.route('/dashboard/api/chat/rov-statistics/download/<report_id>', methods=['GET'])
+def download_rov_statistics(report_id):
+    """Скачивает Excel-выгрузку статистики по РОВ, сформированную через чат."""
+    try:
+        import re
+        if not re.match(r'^[\w\-]+$', report_id):
+            return jsonify({
+                "success": False,
+                "error": "Некорректный ID отчёта"
+            }), 400
+
+        cleanup_old_rov_statistics_reports()
+        path = get_rov_statistics_report_path(report_id)
+        if not path or not os.path.exists(path):
+            return jsonify({
+                "success": False,
+                "error": "Excel-файл статистики не найден или устарел"
+            }), 404
+
+        return send_file(
+            path,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            as_attachment=True,
+            download_name=os.path.basename(path),
+        )
+    except Exception as e:
+        logging.error(f"Ошибка скачивания статистики по РОВ: {e}")
         return jsonify({
             "success": False,
             "error": str(e)
