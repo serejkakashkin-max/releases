@@ -224,6 +224,18 @@
     }
 }
 
+@media (max-width: 1750px) and (max-height: 1075px) and (min-width: 992px) {
+    body .refresh-btn {
+        top: 5.2rem;
+        right: 1.35rem;
+        bottom: auto;
+        width: 50px;
+        height: 50px;
+        border-radius: 16px;
+        box-shadow: 0 16px 38px rgba(13, 110, 253, 0.24);
+    }
+}
+
 @media (max-width: 991px) {
     .dashboard-page-shell .tags-grid {
         grid-template-columns: 1fr;
