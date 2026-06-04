@@ -86,6 +86,11 @@ _CATALOG_CACHE = {}
 _RUNTIME_CATALOG_TTL_SECONDS = 300
 
 
+def is_ai_agents_template_category(category: str = "") -> bool:
+    normalized = re.sub(r"[^A-Z0-9]+", "_", str(category or "").upper()).strip("_")
+    return normalized in {"AI_AGENTS", "AI_AGENT", "AI_AGENTS_TEMPLATES"}
+
+
 def _safe_filename(filename: str) -> str:
     name = str(filename or "").replace("\\", "/")
     name = PurePosixPath(name).name.strip()
@@ -302,7 +307,9 @@ def build_template_catalog(root: Path = DOC_TEMPLATES_ROOT, deep: bool = True) -
             normalized_text = _normalize_placeholder_text(text)
         aliases = manifest.get("aliases") if isinstance(manifest.get("aliases"), list) else []
         aliases = [str(alias).strip() for alias in aliases if str(alias or "").strip()]
-        if "requires_playbooks" in manifest:
+        if is_ai_agents_template_category(base_category) or is_ai_agents_template_category(category):
+            requires_playbooks = False
+        elif "requires_playbooks" in manifest:
             requires_playbooks = bool(manifest.get("requires_playbooks"))
         elif deep:
             requires_playbooks = "PLAYBOOKS" in normalized_text
@@ -374,6 +381,8 @@ def find_template_entries_by_ke(ke: str) -> List[Dict]:
 def template_requires_playbooks(release_full: str = "", category: str = "") -> Optional[bool]:
     release_full = str(release_full or "").strip()
     category = str(category or "").strip()
+    if is_ai_agents_template_category(category):
+        return False
     for entry in build_runtime_template_catalog():
         if release_full and entry.get("release_full") != release_full:
             continue

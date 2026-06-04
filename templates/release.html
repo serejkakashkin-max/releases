@@ -92,7 +92,15 @@
         const pathname = '{{basepath}}';
         let releasePlaybookRequirements = {};
 
-        function releaseUsesPlaybooks(releaseName) {
+        function isAiAgentsTemplateCategory(category) {
+            var normalizedCategory = String(category || '').toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+            return ['AI_AGENTS', 'AI_AGENT', 'AI_AGENTS_TEMPLATES'].indexOf(normalizedCategory) !== -1;
+        }
+
+        function releaseUsesPlaybooks(releaseName, category) {
+            if (isAiAgentsTemplateCategory(category)) {
+                return false;
+            }
             if (Object.prototype.hasOwnProperty.call(releasePlaybookRequirements, releaseName)) {
                 return releasePlaybookRequirements[releaseName];
             }
@@ -134,7 +142,11 @@
             var playbooksContainer = document.getElementById('playbooksContainer');
             var playbooksHint = document.getElementById('playbooksHint');
             var playbookCheckboxes = document.querySelectorAll('input[name="playbooks"]');
-            var shouldDisable = !releaseUsesPlaybooks(releaseSelect ? releaseSelect.value : '');
+            var categorySelect = document.getElementById('category');
+            var shouldDisable = !releaseUsesPlaybooks(
+                releaseSelect ? releaseSelect.value : '',
+                categorySelect ? categorySelect.value : ''
+            );
 
             if (playbooksContainer) {
                 playbooksContainer.classList.toggle('is-disabled', shouldDisable);

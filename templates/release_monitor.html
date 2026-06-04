@@ -4109,7 +4109,15 @@
             applyReleaseFilters();
         }
 
-        function releaseUsesPlaybooks(releaseName) {
+        function isAiAgentsTemplateCategory(category) {
+            const normalizedCategory = String(category || '').toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+            return ['AI_AGENTS', 'AI_AGENT', 'AI_AGENTS_TEMPLATES'].includes(normalizedCategory);
+        }
+
+        function releaseUsesPlaybooks(releaseName, category = '') {
+            if (isAiAgentsTemplateCategory(category)) {
+                return false;
+            }
             const normalizedReleaseName = String(releaseName || '').toUpperCase();
             const blockedMarkers = ['SOWA', 'ЕФС.AUTHENTICATION_USER', 'AUTH', 'RESSTORE(2889318)'];
             return !blockedMarkers.some(marker => normalizedReleaseName.includes(marker));
@@ -4831,7 +4839,7 @@
                 playbooks_required: typeof templateSource?.requires_playbooks === 'boolean'
                     ? templateSource.requires_playbooks
                     : templateSource?.release_full
-                        ? releaseUsesPlaybooks(templateSource.release_full)
+                        ? releaseUsesPlaybooks(templateSource.release_full, templateSource.category)
                         : null,
                 playbooks: RELEASE_DOCUMENT_PLAYBOOKS,
                 prev_version: detection?.prev_version || '',
@@ -4923,7 +4931,7 @@
             const templateSource = state.templateChoice || (detection.found ? detection : null);
             const templateRequiresPlaybooks = typeof templateSource?.requires_playbooks === 'boolean'
                 ? templateSource.requires_playbooks
-                : (templateSource?.release_full ? releaseUsesPlaybooks(templateSource.release_full) : state.initData?.playbooks_required === true);
+                : (templateSource?.release_full ? releaseUsesPlaybooks(templateSource.release_full, templateSource.category) : state.initData?.playbooks_required === true);
             if (templateRequiresPlaybooks) {
                 steps.push({ type: 'playbooks' });
             }

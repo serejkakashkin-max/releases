@@ -31,6 +31,7 @@ from services.template_constructor_service import (
     analyze_template_package,
     find_template_entries_by_ke,
     get_catalog_release_structure,
+    is_ai_agents_template_category,
     select_template_by_summary,
     template_requires_playbooks,
 )
@@ -44,6 +45,9 @@ release_bp = Blueprint('release', __name__)
 
 def release_uses_playbooks(release_name: str, category: str = "") -> bool:
     """Определяет необходимость плейбуков по каталогу или старому fallback-правилу."""
+    if is_ai_agents_template_category(category):
+        return False
+
     catalog_value = template_requires_playbooks(release_full=release_name, category=category)
     if catalog_value is not None:
         return catalog_value
@@ -532,7 +536,7 @@ def release_monitor_init():
     playbooks_required = (
         detection.get("requires_playbooks")
         if isinstance(detection.get("requires_playbooks"), bool)
-        else release_uses_playbooks(release_full)
+        else release_uses_playbooks(release_full, detection.get("category", ""))
         if detection.get("found")
         else None
     )
@@ -621,7 +625,7 @@ def release_monitor_generate():
         category = detection.get("category", "")
         release_full = detection.get("release_full", "")
 
-    if not release_uses_playbooks(release_full):
+    if not release_uses_playbooks(release_full, category):
         selected_playbooks = []
 
     try:
@@ -679,7 +683,7 @@ def release():
         date_str = request.form['date']
         ke = request.form['ke']
         selected_playbooks = request.form.getlist('playbooks')
-        if not release_uses_playbooks(release_full):
+        if not release_uses_playbooks(release_full, category):
             selected_playbooks = []
         playbooks_text = "\n".join(selected_playbooks)
         
