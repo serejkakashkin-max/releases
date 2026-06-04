@@ -77,6 +77,86 @@
             height: 40px;
         }
 
+        .release-maintenance-active body {
+            overflow: hidden;
+        }
+
+        .release-maintenance-active .navbar,
+        .release-maintenance-active .page-shell {
+            pointer-events: none;
+            filter: blur(3px) saturate(0.9);
+            opacity: 0.38;
+        }
+
+        .release-maintenance-gate {
+            position: fixed;
+            inset: 0;
+            z-index: 99999;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 1.25rem;
+            background:
+                radial-gradient(circle at 50% 18%, rgba(59, 130, 246, 0.18), transparent 38%),
+                rgba(15, 23, 42, 0.64);
+            backdrop-filter: blur(10px);
+        }
+
+        .release-maintenance-active .release-maintenance-gate {
+            display: flex;
+        }
+
+        .release-maintenance-card {
+            width: min(520px, 100%);
+            border: 1px solid rgba(96, 165, 250, 0.32);
+            border-radius: 20px;
+            padding: 1.35rem 1.45rem;
+            background:
+                linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(239, 246, 255, 0.97));
+            color: #0f172a;
+            box-shadow: 0 24px 72px rgba(15, 23, 42, 0.28);
+            text-align: center;
+        }
+
+        [data-theme="dark"] .release-maintenance-card {
+            background:
+                linear-gradient(145deg, rgba(30, 41, 59, 0.98), rgba(15, 23, 42, 0.98));
+            color: #e5e7eb;
+            box-shadow: 0 24px 72px rgba(0, 0, 0, 0.42);
+        }
+
+        .release-maintenance-icon {
+            width: 52px;
+            height: 52px;
+            margin: 0 auto 0.85rem;
+            border-radius: 16px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            background: linear-gradient(135deg, #2563eb, #22c55e);
+            box-shadow: 0 16px 38px rgba(37, 99, 235, 0.28);
+            font-size: 1.3rem;
+        }
+
+        .release-maintenance-title {
+            margin: 0 0 0.45rem;
+            font-size: 1.35rem;
+            font-weight: 850;
+            letter-spacing: 0;
+        }
+
+        .release-maintenance-text {
+            margin: 0;
+            color: rgba(15, 23, 42, 0.72);
+            line-height: 1.45;
+            font-weight: 650;
+        }
+
+        [data-theme="dark"] .release-maintenance-text {
+            color: rgba(229, 231, 235, 0.72);
+        }
+
         .page-hero {
             background: var(--release-panel-bg);
             border: 1px solid var(--border-color);
@@ -2671,7 +2751,52 @@
 <body>
     <script>
         const BASE_PATH = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '' : '/releases';
+        const RELEASE_MONITOR_MAINTENANCE_ENABLED = false;
+        const RELEASE_MONITOR_MAINTENANCE_BYPASS_KEY = 'releaseMonitorMaintenanceBypass';
+        const RELEASE_MONITOR_MAINTENANCE_BYPASS_PARAM = 'release_maintenance_bypass';
+
+        (function applyReleaseMaintenanceGate() {
+            if (!RELEASE_MONITOR_MAINTENANCE_ENABLED) {
+                return;
+            }
+
+            const params = new URLSearchParams(window.location.search);
+            const bypassValue = params.get(RELEASE_MONITOR_MAINTENANCE_BYPASS_PARAM);
+            if (bypassValue === '1') {
+                localStorage.setItem(RELEASE_MONITOR_MAINTENANCE_BYPASS_KEY, '1');
+                params.delete(RELEASE_MONITOR_MAINTENANCE_BYPASS_PARAM);
+                const cleanQuery = params.toString();
+                const cleanUrl = window.location.pathname
+                    + (cleanQuery ? `?${cleanQuery}` : '')
+                    + window.location.hash;
+                window.history.replaceState(null, document.title, cleanUrl);
+            } else if (bypassValue === '0') {
+                localStorage.removeItem(RELEASE_MONITOR_MAINTENANCE_BYPASS_KEY);
+                params.delete(RELEASE_MONITOR_MAINTENANCE_BYPASS_PARAM);
+                const cleanQuery = params.toString();
+                const cleanUrl = window.location.pathname
+                    + (cleanQuery ? `?${cleanQuery}` : '')
+                    + window.location.hash;
+                window.history.replaceState(null, document.title, cleanUrl);
+            }
+
+            if (localStorage.getItem(RELEASE_MONITOR_MAINTENANCE_BYPASS_KEY) !== '1') {
+                document.documentElement.classList.add('release-maintenance-active');
+            }
+        })();
     </script>
+
+    <div id="releaseMaintenanceGate" class="release-maintenance-gate" role="status" aria-live="polite">
+        <div class="release-maintenance-card">
+            <div class="release-maintenance-icon">
+                <i class="bi bi-tools"></i>
+            </div>
+            <h2 class="release-maintenance-title">&#1041;&#1083;&#1086;&#1082; &#1088;&#1077;&#1083;&#1080;&#1079;&#1086;&#1074; &#1085;&#1072; &#1086;&#1073;&#1089;&#1083;&#1091;&#1078;&#1080;&#1074;&#1072;&#1085;&#1080;&#1080;</h2>
+            <p class="release-maintenance-text">
+                &#1052;&#1099; &#1087;&#1088;&#1086;&#1074;&#1086;&#1076;&#1080;&#1084; &#1082;&#1086;&#1088;&#1086;&#1090;&#1082;&#1080;&#1081; &#1088;&#1077;&#1084;&#1086;&#1085;&#1090;. &#1054;&#1088;&#1080;&#1077;&#1085;&#1090;&#1080;&#1088;&#1086;&#1074;&#1086;&#1095;&#1085;&#1086; &#1074;&#1077;&#1088;&#1085;&#1077;&#1084;&#1089;&#1103; &#1095;&#1077;&#1088;&#1077;&#1079; 10 &#1084;&#1080;&#1085;&#1091;&#1090;.
+            </p>
+        </div>
+    </div>
 
     <nav class="navbar navbar-expand-lg navbar-dark mb-4">
         <div class="container-fluid">

@@ -61,6 +61,8 @@ RELIABLE_FULL_REFRESH_MODE = "reliable_full"
 RELIABLE_SEARCH_RETRY_STATUS_CODES = {500, 502, 503, 504}
 RELIABLE_SEARCH_MAX_ATTEMPTS = int(os.getenv("RELEASE_MONITOR_RELIABLE_SEARCH_MAX_ATTEMPTS", "120"))
 RELIABLE_SEARCH_RETRY_DELAY_SECONDS = float(os.getenv("RELEASE_MONITOR_RELIABLE_SEARCH_RETRY_DELAY_SECONDS", "3"))
+AUTO_INCREMENTAL_SEARCH_MAX_ATTEMPTS = int(os.getenv("RELEASE_MONITOR_AUTO_INCREMENTAL_SEARCH_MAX_ATTEMPTS", "3"))
+AUTO_INCREMENTAL_SEARCH_RETRY_DELAY_SECONDS = float(os.getenv("RELEASE_MONITOR_AUTO_INCREMENTAL_SEARCH_RETRY_DELAY_SECONDS", "2"))
 SNAPSHOT_DIR = Path(__file__).resolve().parent.parent / "cache"
 SNAPSHOT_FILE = SNAPSHOT_DIR / "release_monitor_snapshot.json"
 MANUAL_RELEASES_FILE = SNAPSHOT_DIR / "release_monitor_manual_releases.json"
@@ -3509,12 +3511,26 @@ def _execute_search(
     *,
     retry_server_errors=False,
     retry_label="",
+    retry_max_attempts=None,
+    retry_delay_seconds=None,
 ):
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
     url = f"{domain}/rest/api/2/search"
     start_at = 0
     issues = []
-    max_attempts = max(1, RELIABLE_SEARCH_MAX_ATTEMPTS if retry_server_errors else 1)
+    max_attempts = max(
+        1,
+        int(
+            retry_max_attempts
+            if retry_max_attempts is not None
+            else (RELIABLE_SEARCH_MAX_ATTEMPTS if retry_server_errors else 1)
+        ),
+    )
+    retry_delay = float(
+        retry_delay_seconds
+        if retry_delay_seconds is not None
+        else RELIABLE_SEARCH_RETRY_DELAY_SECONDS
+    )
 
     while True:
         params = {
@@ -3539,7 +3555,7 @@ def _execute_search(
                         attempt + 1,
                         max_attempts,
                     )
-                    time.sleep(RELIABLE_SEARCH_RETRY_DELAY_SECONDS)
+                    time.sleep(retry_delay)
                     attempt += 1
                     continue
                 response.raise_for_status()
@@ -3553,7 +3569,7 @@ def _execute_search(
                         attempt + 1,
                         max_attempts,
                     )
-                    time.sleep(RELIABLE_SEARCH_RETRY_DELAY_SECONDS)
+                    time.sleep(retry_delay)
                     attempt += 1
                     continue
                 raise
@@ -3608,7 +3624,17 @@ def _execute_quick_release_search(domain, token, prefix, updated_since, fields_t
     return _execute_search(domain, token, jql, fields_to_load)
 
 
-def _execute_incremental_release_search(domain, token, prefix, lookback_minutes, fields_to_load):
+def _execute_incremental_release_search(
+    domain,
+    token,
+    prefix,
+    lookback_minutes,
+    fields_to_load,
+    *,
+    retry_server_errors=False,
+    retry_max_attempts=None,
+    retry_delay_seconds=None,
+):
     current_year = datetime.now().year
     previous_year = current_year - 1
     lookback_minutes = max(1, int(lookback_minutes or AUTO_INCREMENTAL_REFRESH_LOOKBACK_MINUTES))
@@ -3620,10 +3646,29 @@ def _execute_incremental_release_search(domain, token, prefix, lookback_minutes,
         f'created < "{current_year + 1}-01-01" '
         f'ORDER BY updated DESC, key ASC'
     )
-    return _execute_search(domain, token, jql, fields_to_load)
+    return _execute_search(
+        domain,
+        token,
+        jql,
+        fields_to_load,
+        retry_server_errors=retry_server_errors,
+        retry_label=f"{domain} {prefix} incremental releases",
+        retry_max_attempts=retry_max_attempts,
+        retry_delay_seconds=retry_delay_seconds,
+    )
 
 
-def _execute_incremental_rov_search(domain, token, prefix, lookback_minutes, fields_to_load):
+def _execute_incremental_rov_search(
+    domain,
+    token,
+    prefix,
+    lookback_minutes,
+    fields_to_load,
+    *,
+    retry_server_errors=False,
+    retry_max_attempts=None,
+    retry_delay_seconds=None,
+):
     current_year = datetime.now().year
     previous_year = current_year - 1
     lookback_minutes = max(1, int(lookback_minutes or AUTO_INCREMENTAL_REFRESH_LOOKBACK_MINUTES))
@@ -3635,10 +3680,28 @@ def _execute_incremental_rov_search(domain, token, prefix, lookback_minutes, fie
         f'created < "{current_year + 1}-01-01" '
         f'ORDER BY updated DESC, key ASC'
     )
-    return _execute_search(domain, token, jql, fields_to_load)
+    return _execute_search(
+        domain,
+        token,
+        jql,
+        fields_to_load,
+        retry_server_errors=retry_server_errors,
+        retry_label=f"{domain} {prefix} incremental ROV",
+        retry_max_attempts=retry_max_attempts,
+        retry_delay_seconds=retry_delay_seconds,
+    )
 
 
-def _execute_issue_keys_search(domain, token, issue_keys, fields_to_load, *, retry_server_errors=False):
+def _execute_issue_keys_search(
+    domain,
+    token,
+    issue_keys,
+    fields_to_load,
+    *,
+    retry_server_errors=False,
+    retry_max_attempts=None,
+    retry_delay_seconds=None,
+):
     issues = []
     for offset in range(0, len(issue_keys), 50):
         batch_keys = issue_keys[offset: offset + 50]
@@ -3652,6 +3715,8 @@ def _execute_issue_keys_search(domain, token, issue_keys, fields_to_load, *, ret
                 fields_to_load,
                 retry_server_errors=retry_server_errors,
                 retry_label=f"{domain} issue batch {offset // 50 + 1}",
+                retry_max_attempts=retry_max_attempts,
+                retry_delay_seconds=retry_delay_seconds,
             )
         )
     return issues
@@ -4706,6 +4771,11 @@ def _fetch_incremental_release_monitor_data(base_items=None, lookback_minutes=AU
     previous_year = current_year - 1
     updated_records = []
     jira_diagnostics = _build_auto_incremental_jira_diagnostics()
+    auto_retry_kwargs = {
+        "retry_server_errors": True,
+        "retry_max_attempts": AUTO_INCREMENTAL_SEARCH_MAX_ATTEMPTS,
+        "retry_delay_seconds": AUTO_INCREMENTAL_SEARCH_RETRY_DELAY_SECONDS,
+    }
 
     for (domain, token), prefixes in _get_domain_groups().items():
         resolved_fields = _resolve_field_ids(domain, token)
@@ -4752,6 +4822,7 @@ def _fetch_incremental_release_monitor_data(base_items=None, lookback_minutes=AU
                     prefix,
                     lookback_minutes,
                     release_fields_to_load,
+                    **auto_retry_kwargs,
                 )
                 logging.info(
                     "Release monitor: auto incremental loaded %s updated releases for prefix %s",
@@ -4781,6 +4852,7 @@ def _fetch_incremental_release_monitor_data(base_items=None, lookback_minutes=AU
                     prefix,
                     lookback_minutes,
                     rov_fields_to_load,
+                    **auto_retry_kwargs,
                 )
                 logging.info(
                     "Release monitor: auto incremental loaded %s updated ROV issues for prefix %s",
@@ -4809,7 +4881,13 @@ def _fetch_incremental_release_monitor_data(base_items=None, lookback_minutes=AU
         )
         if missing_release_keys:
             try:
-                parent_issues = _execute_issue_keys_search(domain, token, missing_release_keys, release_fields_to_load)
+                parent_issues = _execute_issue_keys_search(
+                    domain,
+                    token,
+                    missing_release_keys,
+                    release_fields_to_load,
+                    **auto_retry_kwargs,
+                )
                 for issue in parent_issues:
                     if _issue_type_name(issue) != RELEASE_ISSUE_TYPE or not issue.get("key"):
                         continue
@@ -4847,7 +4925,13 @@ def _fetch_incremental_release_monitor_data(base_items=None, lookback_minutes=AU
         rov_map = {}
         if rov_keys:
             try:
-                rov_issues = _execute_issue_keys_search(domain, token, rov_keys, rov_fields_to_load)
+                rov_issues = _execute_issue_keys_search(
+                    domain,
+                    token,
+                    rov_keys,
+                    rov_fields_to_load,
+                    **auto_retry_kwargs,
+                )
                 rov_map = {
                     issue.get("key"): _build_rov_record(issue, domain, resolved_fields)
                     for issue in rov_issues
