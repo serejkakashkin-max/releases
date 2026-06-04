@@ -57,6 +57,10 @@ AUTO_INCREMENTAL_REFRESH_ENABLED = True
 AUTO_INCREMENTAL_REFRESH_INTERVAL_SECONDS = 180
 AUTO_INCREMENTAL_REFRESH_LOOKBACK_MINUTES = 60
 AUTO_INCREMENTAL_REFRESH_CHECK_INTERVAL = 30
+RELIABLE_FULL_REFRESH_MODE = "reliable_full"
+RELIABLE_SEARCH_RETRY_STATUS_CODES = {500, 502, 503, 504}
+RELIABLE_SEARCH_MAX_ATTEMPTS = int(os.getenv("RELEASE_MONITOR_RELIABLE_SEARCH_MAX_ATTEMPTS", "120"))
+RELIABLE_SEARCH_RETRY_DELAY_SECONDS = float(os.getenv("RELEASE_MONITOR_RELIABLE_SEARCH_RETRY_DELAY_SECONDS", "3"))
 SNAPSHOT_DIR = Path(__file__).resolve().parent.parent / "cache"
 SNAPSHOT_FILE = SNAPSHOT_DIR / "release_monitor_snapshot.json"
 MANUAL_RELEASES_FILE = SNAPSHOT_DIR / "release_monitor_manual_releases.json"
@@ -3497,11 +3501,20 @@ def _resolve_field_ids(domain, token):
     return resolved
 
 
-def _execute_search(domain, token, jql, fields_to_load):
+def _execute_search(
+    domain,
+    token,
+    jql,
+    fields_to_load,
+    *,
+    retry_server_errors=False,
+    retry_label="",
+):
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
     url = f"{domain}/rest/api/2/search"
     start_at = 0
     issues = []
+    max_attempts = max(1, RELIABLE_SEARCH_MAX_ATTEMPTS if retry_server_errors else 1)
 
     while True:
         params = {
@@ -3510,8 +3523,40 @@ def _execute_search(domain, token, jql, fields_to_load):
             "maxResults": 100,
             "fields": ",".join(sorted(field for field in fields_to_load if field)),
         }
-        response = requests.get(url, headers=headers, params=params, verify=False, timeout=60)
-        response.raise_for_status()
+        attempt = 1
+        while True:
+            try:
+                response = requests.get(url, headers=headers, params=params, verify=False, timeout=60)
+                if (
+                    retry_server_errors
+                    and response.status_code in RELIABLE_SEARCH_RETRY_STATUS_CODES
+                    and attempt < max_attempts
+                ):
+                    logging.warning(
+                        "Release monitor reliable refresh: Jira search failed with %s for %s, retry %s/%s",
+                        response.status_code,
+                        retry_label or jql,
+                        attempt + 1,
+                        max_attempts,
+                    )
+                    time.sleep(RELIABLE_SEARCH_RETRY_DELAY_SECONDS)
+                    attempt += 1
+                    continue
+                response.raise_for_status()
+                break
+            except (requests.ConnectionError, requests.Timeout) as exc:
+                if retry_server_errors and attempt < max_attempts:
+                    logging.warning(
+                        "Release monitor reliable refresh: Jira search transient error for %s: %s, retry %s/%s",
+                        retry_label or jql,
+                        exc,
+                        attempt + 1,
+                        max_attempts,
+                    )
+                    time.sleep(RELIABLE_SEARCH_RETRY_DELAY_SECONDS)
+                    attempt += 1
+                    continue
+                raise
         data = response.json()
         batch = data.get("issues", [])
         issues.extend(batch)
@@ -3523,7 +3568,15 @@ def _execute_search(domain, token, jql, fields_to_load):
     return issues
 
 
-def _execute_release_search(domain, token, prefix, year_from, fields_to_load):
+def _execute_release_search(
+    domain,
+    token,
+    prefix,
+    year_from,
+    fields_to_load,
+    *,
+    retry_server_errors=False,
+):
     current_year = datetime.now().year
     jql = (
         f'project = {prefix} AND '
@@ -3532,7 +3585,14 @@ def _execute_release_search(domain, token, prefix, year_from, fields_to_load):
         f'created < "{current_year + 1}-01-01" '
         f'ORDER BY created ASC, key ASC'
     )
-    return _execute_search(domain, token, jql, fields_to_load)
+    return _execute_search(
+        domain,
+        token,
+        jql,
+        fields_to_load,
+        retry_server_errors=retry_server_errors,
+        retry_label=f"{domain} {prefix} releases",
+    )
 
 
 def _execute_quick_release_search(domain, token, prefix, updated_since, fields_to_load):
@@ -3578,13 +3638,22 @@ def _execute_incremental_rov_search(domain, token, prefix, lookback_minutes, fie
     return _execute_search(domain, token, jql, fields_to_load)
 
 
-def _execute_issue_keys_search(domain, token, issue_keys, fields_to_load):
+def _execute_issue_keys_search(domain, token, issue_keys, fields_to_load, *, retry_server_errors=False):
     issues = []
     for offset in range(0, len(issue_keys), 50):
         batch_keys = issue_keys[offset: offset + 50]
         quoted = ", ".join(f'"{key}"' for key in batch_keys)
         jql = f"key in ({quoted})"
-        issues.extend(_execute_search(domain, token, jql, fields_to_load))
+        issues.extend(
+            _execute_search(
+                domain,
+                token,
+                jql,
+                fields_to_load,
+                retry_server_errors=retry_server_errors,
+                retry_label=f"{domain} issue batch {offset // 50 + 1}",
+            )
+        )
     return issues
 
 
@@ -4351,7 +4420,7 @@ def _compose_release_payload(all_records, mode):
     return payload
 
 
-def _fetch_release_monitor_data():
+def _fetch_release_monitor_data(*, reliable=False):
     current_year = datetime.now().year
     previous_year = current_year - 1
     all_records = []
@@ -4387,6 +4456,7 @@ def _fetch_release_monitor_data():
                     prefix,
                     previous_year,
                     release_fields_to_load,
+                    retry_server_errors=reliable,
                 )
                 logging.info(
                     "Release monitor: loaded %s releases for prefix %s",
@@ -4400,6 +4470,8 @@ def _fetch_release_monitor_data():
                     prefix,
                     exc,
                 )
+                if reliable:
+                    raise
 
         rov_keys = sorted(
             {
@@ -4420,13 +4492,21 @@ def _fetch_release_monitor_data():
                 resolved_fields["rov_end"],
             }
             try:
-                rov_issues = _execute_issue_keys_search(domain, token, rov_keys, rov_fields_to_load)
+                rov_issues = _execute_issue_keys_search(
+                    domain,
+                    token,
+                    rov_keys,
+                    rov_fields_to_load,
+                    retry_server_errors=reliable,
+                )
                 rov_map = {
                     issue.get("key"): _build_rov_record(issue, domain, resolved_fields)
                     for issue in rov_issues
                 }
             except Exception as exc:
                 logging.error("Release monitor: failed to load linked ROV issues from %s: %s", domain, exc)
+                if reliable:
+                    raise
 
         for prefix, issue in domain_release_issues:
             records = _build_release_record(
@@ -4441,7 +4521,7 @@ def _fetch_release_monitor_data():
             if records:
                 all_records.extend(records)
 
-    return _compose_release_payload(all_records, "full")
+    return _compose_release_payload(all_records, RELIABLE_FULL_REFRESH_MODE if reliable else "full")
 
 
 def _merge_release_records(existing_items, updated_items):
@@ -5137,10 +5217,11 @@ def _run_release_monitor_refresh(mode="full", trigger="manual"):
                     base_items = list(disk_payload.get("items", []))
                     current_meta = dict(disk_payload.get("meta", {}))
 
+        reliable = mode == RELIABLE_FULL_REFRESH_MODE
         if mode == "quick" and base_items:
             data = _fetch_quick_release_monitor_data(base_items)
         else:
-            data = _fetch_release_monitor_data()
+            data = _fetch_release_monitor_data(reliable=reliable)
             if mode == "quick":
                 mode = "full"
 
@@ -5154,7 +5235,7 @@ def _run_release_monitor_refresh(mode="full", trigger="manual"):
         meta["auto_incremental_refresh_enabled"] = AUTO_INCREMENTAL_REFRESH_ENABLED
         meta["auto_incremental_refresh_interval_seconds"] = AUTO_INCREMENTAL_REFRESH_INTERVAL_SECONDS
         meta["auto_incremental_refresh_lookback_minutes"] = AUTO_INCREMENTAL_REFRESH_LOOKBACK_MINUTES
-        meta["last_full_sync"] = now_str if mode == "full" else current_meta.get("last_full_sync")
+        meta["last_full_sync"] = now_str if mode in {"full", RELIABLE_FULL_REFRESH_MODE} else current_meta.get("last_full_sync")
         meta["last_quick_sync"] = now_str if mode == "quick" else current_meta.get("last_quick_sync")
         meta["last_auto_incremental_sync"] = current_meta.get("last_auto_incremental_sync")
         meta["last_confluence_sync"] = current_meta.get("last_confluence_sync")

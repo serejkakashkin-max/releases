@@ -77,6 +77,86 @@
             height: 40px;
         }
 
+        .release-maintenance-active body {
+            overflow: hidden;
+        }
+
+        .release-maintenance-active .navbar,
+        .release-maintenance-active .page-shell {
+            pointer-events: none;
+            filter: blur(3px) saturate(0.9);
+            opacity: 0.38;
+        }
+
+        .release-maintenance-gate {
+            position: fixed;
+            inset: 0;
+            z-index: 99999;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 1.25rem;
+            background:
+                radial-gradient(circle at 50% 18%, rgba(59, 130, 246, 0.18), transparent 38%),
+                rgba(15, 23, 42, 0.64);
+            backdrop-filter: blur(10px);
+        }
+
+        .release-maintenance-active .release-maintenance-gate {
+            display: flex;
+        }
+
+        .release-maintenance-card {
+            width: min(520px, 100%);
+            border: 1px solid rgba(96, 165, 250, 0.32);
+            border-radius: 20px;
+            padding: 1.35rem 1.45rem;
+            background:
+                linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(239, 246, 255, 0.97));
+            color: #0f172a;
+            box-shadow: 0 24px 72px rgba(15, 23, 42, 0.28);
+            text-align: center;
+        }
+
+        [data-theme="dark"] .release-maintenance-card {
+            background:
+                linear-gradient(145deg, rgba(30, 41, 59, 0.98), rgba(15, 23, 42, 0.98));
+            color: #e5e7eb;
+            box-shadow: 0 24px 72px rgba(0, 0, 0, 0.42);
+        }
+
+        .release-maintenance-icon {
+            width: 52px;
+            height: 52px;
+            margin: 0 auto 0.85rem;
+            border-radius: 16px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            background: linear-gradient(135deg, #2563eb, #22c55e);
+            box-shadow: 0 16px 38px rgba(37, 99, 235, 0.28);
+            font-size: 1.3rem;
+        }
+
+        .release-maintenance-title {
+            margin: 0 0 0.45rem;
+            font-size: 1.35rem;
+            font-weight: 850;
+            letter-spacing: 0;
+        }
+
+        .release-maintenance-text {
+            margin: 0;
+            color: rgba(15, 23, 42, 0.72);
+            line-height: 1.45;
+            font-weight: 650;
+        }
+
+        [data-theme="dark"] .release-maintenance-text {
+            color: rgba(229, 231, 235, 0.72);
+        }
+
         .page-hero {
             background: var(--release-panel-bg);
             border: 1px solid var(--border-color);
@@ -938,6 +1018,108 @@
             cursor: pointer;
         }
 
+        .release-update-toast {
+            position: fixed;
+            right: 1.25rem;
+            bottom: 1.25rem;
+            z-index: 1200;
+            display: none;
+            width: min(370px, calc(100vw - 2rem));
+            padding: 0.66rem 0.72rem;
+            border: 1px solid rgba(217, 119, 6, 0.36);
+            border-left: 4px solid rgba(245, 158, 11, 0.92);
+            border-radius: 14px;
+            background: #fffdf7;
+            color: var(--text-primary);
+            box-shadow: 0 18px 46px rgba(15, 23, 42, 0.18), 0 0 0 1px rgba(255, 255, 255, 0.82) inset;
+            opacity: 0;
+            transform: translateY(8px) scale(0.985);
+            transition: opacity 0.18s ease, transform 0.18s ease;
+        }
+
+        .release-update-toast.show {
+            display: block;
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }
+
+        .release-update-toast-title {
+            display: flex;
+            align-items: center;
+            gap: 0.42rem;
+            margin-bottom: 0.22rem;
+            color: var(--warning);
+            font-weight: 800;
+            font-size: 0.86rem;
+            line-height: 1.15;
+        }
+
+        .release-update-toast-text {
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            line-height: 1.3;
+        }
+
+        .release-update-toast-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.4rem;
+            margin-top: 0.54rem;
+        }
+
+        .release-update-toast button {
+            border: 1px solid transparent;
+            background: transparent;
+            color: var(--text-secondary);
+            border-radius: 9px;
+            padding: 0.34rem 0.55rem;
+            font-size: 0.78rem;
+            font-weight: 800;
+            cursor: pointer;
+        }
+
+        .release-update-toast button:hover {
+            background: rgba(148, 163, 184, 0.12);
+            color: var(--text-primary);
+        }
+
+        .release-update-toast button.primary {
+            background: var(--primary);
+            border-color: rgba(59, 130, 246, 0.72);
+            color: #fff;
+            padding-inline: 0.68rem;
+            box-shadow: 0 9px 22px rgba(59, 130, 246, 0.22);
+        }
+
+        .release-update-toast button.primary:hover {
+            background: var(--primary-hover);
+            color: #fff;
+        }
+
+        [data-theme="dark"] .release-update-toast {
+            border: 1px solid rgba(255, 193, 7, 0.34);
+            border-left: 4px solid rgba(255, 193, 7, 0.78);
+            background: color-mix(in srgb, var(--bg-secondary) 94%, rgba(255, 193, 7, 0.1));
+            box-shadow: 0 20px 56px rgba(0, 0, 0, 0.32);
+        }
+
+        @media (max-width: 640px) {
+            .release-update-toast {
+                right: 0.75rem;
+                bottom: 0.75rem;
+                left: 0.75rem;
+                width: auto;
+            }
+
+            .release-update-toast-actions {
+                justify-content: stretch;
+            }
+
+            .release-update-toast button {
+                flex: 1 1 0;
+            }
+        }
+
         .release-monitor-actions {
             display: flex;
             justify-content: flex-end;
@@ -1075,6 +1257,11 @@
         .release-refresh-menu-action.full i,
         .release-refresh-menu-action.full .release-refresh-menu-title {
             color: var(--release-action-full);
+        }
+
+        .release-refresh-menu-action.reliable i,
+        .release-refresh-menu-action.reliable .release-refresh-menu-title {
+            color: #f59e0b;
         }
 
         .release-refresh-menu-title {
@@ -1330,6 +1517,16 @@
         .reviewer-select.saving {
             opacity: 0.7;
             cursor: wait;
+        }
+
+        .reviewer-select.assignment-save-pending,
+        .checker-input.assignment-save-pending {
+            border-color: rgba(88, 166, 255, 0.56);
+            box-shadow: 0 0 0 0.18rem rgba(88, 166, 255, 0.12);
+        }
+
+        .responsible-icon-btn.assignment-save-pending {
+            opacity: 0.72;
         }
 
         .reviewer-cell {
@@ -2554,7 +2751,52 @@
 <body>
     <script>
         const BASE_PATH = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '' : '/releases';
+        const RELEASE_MONITOR_MAINTENANCE_ENABLED = true;
+        const RELEASE_MONITOR_MAINTENANCE_BYPASS_KEY = 'releaseMonitorMaintenanceBypass';
+        const RELEASE_MONITOR_MAINTENANCE_BYPASS_PARAM = 'release_maintenance_bypass';
+
+        (function applyReleaseMaintenanceGate() {
+            if (!RELEASE_MONITOR_MAINTENANCE_ENABLED) {
+                return;
+            }
+
+            const params = new URLSearchParams(window.location.search);
+            const bypassValue = params.get(RELEASE_MONITOR_MAINTENANCE_BYPASS_PARAM);
+            if (bypassValue === '1') {
+                localStorage.setItem(RELEASE_MONITOR_MAINTENANCE_BYPASS_KEY, '1');
+                params.delete(RELEASE_MONITOR_MAINTENANCE_BYPASS_PARAM);
+                const cleanQuery = params.toString();
+                const cleanUrl = window.location.pathname
+                    + (cleanQuery ? `?${cleanQuery}` : '')
+                    + window.location.hash;
+                window.history.replaceState(null, document.title, cleanUrl);
+            } else if (bypassValue === '0') {
+                localStorage.removeItem(RELEASE_MONITOR_MAINTENANCE_BYPASS_KEY);
+                params.delete(RELEASE_MONITOR_MAINTENANCE_BYPASS_PARAM);
+                const cleanQuery = params.toString();
+                const cleanUrl = window.location.pathname
+                    + (cleanQuery ? `?${cleanQuery}` : '')
+                    + window.location.hash;
+                window.history.replaceState(null, document.title, cleanUrl);
+            }
+
+            if (localStorage.getItem(RELEASE_MONITOR_MAINTENANCE_BYPASS_KEY) !== '1') {
+                document.documentElement.classList.add('release-maintenance-active');
+            }
+        })();
     </script>
+
+    <div id="releaseMaintenanceGate" class="release-maintenance-gate" role="status" aria-live="polite">
+        <div class="release-maintenance-card">
+            <div class="release-maintenance-icon">
+                <i class="bi bi-tools"></i>
+            </div>
+            <h2 class="release-maintenance-title">&#1041;&#1083;&#1086;&#1082; &#1088;&#1077;&#1083;&#1080;&#1079;&#1086;&#1074; &#1085;&#1072; &#1086;&#1073;&#1089;&#1083;&#1091;&#1078;&#1080;&#1074;&#1072;&#1085;&#1080;&#1080;</h2>
+            <p class="release-maintenance-text">
+                &#1052;&#1099; &#1087;&#1088;&#1086;&#1074;&#1086;&#1076;&#1080;&#1084; &#1082;&#1086;&#1088;&#1086;&#1090;&#1082;&#1080;&#1081; &#1088;&#1077;&#1084;&#1086;&#1085;&#1090;. &#1054;&#1088;&#1080;&#1077;&#1085;&#1090;&#1080;&#1088;&#1086;&#1074;&#1086;&#1095;&#1085;&#1086; &#1074;&#1077;&#1088;&#1085;&#1077;&#1084;&#1089;&#1103; &#1095;&#1077;&#1088;&#1077;&#1079; 10 &#1084;&#1080;&#1085;&#1091;&#1090;.
+            </p>
+        </div>
+    </div>
 
     <nav class="navbar navbar-expand-lg navbar-dark mb-4">
         <div class="container-fluid">
@@ -2761,6 +3003,11 @@
                                     <span class="release-refresh-menu-title">Полное обновление</span>
                                     <span class="release-refresh-menu-note">Полный пересбор таблицы из Jira.</span>
                                 </button>
+                                <button id="releaseMonitorReliableRefreshBtn" class="release-refresh-menu-action reliable" type="button" onclick="refreshReleaseMonitor('reliable_full')" role="menuitem">
+                                    <i class="bi bi-shield-check"></i>
+                                    <span class="release-refresh-menu-title">&#1053;&#1072;&#1076;&#1077;&#1078;&#1085;&#1086;&#1077; &#1087;&#1086;&#1083;&#1085;&#1086;&#1077;</span>
+                                    <span class="release-refresh-menu-note">&#1055;&#1086;&#1074;&#1090;&#1086;&#1088;&#1103;&#1077;&#1090; Jira-&#1079;&#1072;&#1087;&#1088;&#1086;&#1089;&#1099; &#1087;&#1088;&#1080; 500/503 &#1080; &#1085;&#1077; &#1089;&#1086;&#1093;&#1088;&#1072;&#1085;&#1103;&#1077;&#1090; &#1095;&#1072;&#1089;&#1090;&#1080;&#1095;&#1085;&#1099;&#1081; &#1089;&#1085;&#1080;&#1084;&#1086;&#1082;.</span>
+                                </button>
                             </div>
                         </div>
                         <div class="release-action-stack confluence-stack">
@@ -2811,8 +3058,20 @@
                 <div id="releaseUpdateBanner" class="release-update-banner" role="status" aria-live="polite">
                     <div id="releaseUpdateBannerText">&#1044;&#1072;&#1085;&#1085;&#1099;&#1077; &#1088;&#1077;&#1083;&#1080;&#1079;&#1086;&#1074; &#1086;&#1073;&#1085;&#1086;&#1074;&#1080;&#1083;&#1080;&#1089;&#1100;. &#1054;&#1073;&#1085;&#1086;&#1074;&#1080;&#1090;&#1077; &#1089;&#1090;&#1088;&#1072;&#1085;&#1080;&#1094;&#1091;.</div>
                     <div class="release-update-banner-actions">
-                        <button type="button" onclick="location.reload()">&#1054;&#1073;&#1085;&#1086;&#1074;&#1080;&#1090;&#1100;</button>
+                        <button type="button" onclick="reloadReleaseMonitorWithScrollRestore()">&#1054;&#1073;&#1085;&#1086;&#1074;&#1080;&#1090;&#1100;</button>
                         <button type="button" onclick="dismissReleaseUpdateBanner()">&#1055;&#1086;&#1079;&#1078;&#1077;</button>
+                    </div>
+                </div>
+
+                <div id="releaseUpdateToast" class="release-update-toast" role="status" aria-live="polite">
+                    <div class="release-update-toast-title">
+                        <i class="bi bi-arrow-repeat"></i>
+                        <span>Обновление данных</span>
+                    </div>
+                    <div id="releaseUpdateToastText" class="release-update-toast-text">Данные релизов обновились. Обновите страницу.</div>
+                    <div class="release-update-toast-actions">
+                        <button type="button" class="primary" onclick="reloadReleaseMonitorWithScrollRestore()">Обновить</button>
+                        <button type="button" onclick="dismissReleaseUpdateBanner()">Позже</button>
                     </div>
                 </div>
 
@@ -2998,9 +3257,14 @@
         let activeReleaseSettingsRowKey = '';
         let releaseRowNumberingSavingKey = '';
         let releaseRowOrderSavingKey = '';
+        let releaseRowOrderSaveSeq = 0;
+        let releaseRowOrderMoveSaveInFlight = false;
+        let releaseRowOrderMoveQueuedDraft = null;
+        let releaseRowOrderMoveRollbackDraft = null;
         let releaseManualOverrideDraft = {};
         let releaseMonitorItems = [];
         const releaseColorSaveSeqByKey = new Map();
+        const releaseAssignmentSaveSeqByKey = new Map();
         let releaseMonitorMeta = {};
         let releaseMonitorRefreshPoll = null;
         let releaseMonitorGlobalStatusPoll = null;
@@ -3011,6 +3275,8 @@
         let releaseMonitorActiveRefreshMode = '';
         let releaseUpdateBannerMeta = null;
         let releaseUpdateBannerTimer = null;
+        const RELEASE_SCROLL_RESTORE_KEY = 'releaseMonitorScrollRestore';
+        let releaseScrollRestoreAttempted = false;
         const RELEASE_REVIEWER_OPTIONS = {{ reviewer_options | tojson | safe }};
         const RELEASE_TEMPLATE_HINTS = {{ release_monitor_template_hints | default({}) | tojson | safe }};
         const RELEASE_DOCUMENT_PLAYBOOKS = {{ release_document_playbooks | default([]) | tojson | safe }};
@@ -3242,29 +3508,130 @@
         }
 
         function updateReleaseUpdateBannerText() {
-            const text = document.getElementById('releaseUpdateBannerText');
-            if (!text || !releaseUpdateBannerMeta) {
+            if (!releaseUpdateBannerMeta) {
                 return;
             }
             const timeText = getReleaseMonitorUpdateTime(releaseUpdateBannerMeta);
             const ageText = formatReleaseUpdateAge(parseReleaseMonitorUpdatedAt(releaseUpdateBannerMeta));
-            if (timeText && ageText) {
-                text.textContent = `Данные релизов обновились в ${timeText} (${ageText}). Обновите страницу.`;
-                return;
-            }
-            text.textContent = timeText
-                ? `Данные релизов обновились в ${timeText}. Обновите страницу.`
-                : 'Данные релизов обновились. Обновите страницу.';
+            const message = timeText && ageText
+                ? `Данные релизов обновились в ${timeText} (${ageText}). Обновите страницу.`
+                : (timeText
+                    ? `Данные релизов обновились в ${timeText}. Обновите страницу.`
+                    : 'Данные релизов обновились. Обновите страницу.');
+            ['releaseUpdateBannerText', 'releaseUpdateToastText'].forEach(id => {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.textContent = message;
+                }
+            });
         }
 
-        function showReleaseUpdateBanner(meta = releaseMonitorMeta) {
-            const banner = document.getElementById('releaseUpdateBanner');
-            if (!banner) {
+        function showReleaseUpdateToast(meta = releaseUpdateBannerMeta) {
+            const toast = document.getElementById('releaseUpdateToast');
+            if (!toast) {
                 return;
             }
             releaseUpdateBannerMeta = meta || {};
             updateReleaseUpdateBannerText();
-            banner.classList.add('show');
+            toast.classList.add('show');
+        }
+
+        function hideReleaseUpdateToast() {
+            const toast = document.getElementById('releaseUpdateToast');
+            if (toast) {
+                toast.classList.remove('show');
+            }
+        }
+
+        function getNearestVisibleReleaseRow() {
+            const rows = Array.from(document.querySelectorAll('#releaseMonitorBody tr.release-row[data-row-key]'));
+            const visibleRows = rows
+                .map(row => ({ row, rect: row.getBoundingClientRect() }))
+                .filter(entry => entry.rect.height > 0 && entry.rect.bottom > 0 && entry.rect.top < window.innerHeight);
+            if (!visibleRows.length) {
+                return null;
+            }
+            const anchor = Math.min(Math.max(window.innerHeight * 0.28, 130), window.innerHeight - 90);
+            return visibleRows.reduce((best, entry) => {
+                const distance = Math.abs(entry.rect.top - anchor);
+                if (!best || distance < best.distance) {
+                    return { row: entry.row, rect: entry.rect, distance };
+                }
+                return best;
+            }, null);
+        }
+
+        function saveReleaseScrollRestoreState() {
+            try {
+                const nearest = getNearestVisibleReleaseRow();
+                const payload = {
+                    pathname: window.location.pathname,
+                    scrollY: Math.max(0, Math.round(window.scrollY || 0)),
+                    rowKey: nearest?.row?.dataset?.rowKey || '',
+                    rowTop: nearest ? Math.round(nearest.rect.top) : null,
+                    timestamp: Date.now()
+                };
+                sessionStorage.setItem(RELEASE_SCROLL_RESTORE_KEY, JSON.stringify(payload));
+            } catch (error) {
+                console.warn('Release monitor scroll restore save failed:', error);
+            }
+        }
+
+        function restoreReleaseScrollPosition() {
+            if (releaseScrollRestoreAttempted) {
+                return;
+            }
+            releaseScrollRestoreAttempted = true;
+            let payload = null;
+            try {
+                const raw = sessionStorage.getItem(RELEASE_SCROLL_RESTORE_KEY);
+                if (!raw) {
+                    return;
+                }
+                payload = JSON.parse(raw);
+                sessionStorage.removeItem(RELEASE_SCROLL_RESTORE_KEY);
+            } catch (error) {
+                console.warn('Release monitor scroll restore read failed:', error);
+                try {
+                    sessionStorage.removeItem(RELEASE_SCROLL_RESTORE_KEY);
+                } catch (_) {}
+                return;
+            }
+            if (!payload || payload.pathname !== window.location.pathname) {
+                return;
+            }
+            if (Date.now() - Number(payload.timestamp || 0) > 10 * 60 * 1000) {
+                return;
+            }
+            const rowKey = String(payload.rowKey || '').trim();
+            if (rowKey) {
+                const targetRow = Array.from(document.querySelectorAll('#releaseMonitorBody tr.release-row[data-row-key]')).find(
+                    row => row.dataset.rowKey === rowKey
+                );
+                if (targetRow) {
+                    const rowRect = targetRow.getBoundingClientRect();
+                    const preferredTop = Number.isFinite(Number(payload.rowTop)) ? Number(payload.rowTop) : 160;
+                    const targetTop = rowRect.top + window.scrollY - Math.max(80, preferredTop);
+                    window.scrollTo({ top: Math.max(0, Math.round(targetTop)), behavior: 'auto' });
+                    return;
+                }
+            }
+            window.scrollTo({ top: Math.max(0, Number(payload.scrollY || 0)), behavior: 'auto' });
+        }
+
+        function reloadReleaseMonitorWithScrollRestore() {
+            saveReleaseScrollRestoreState();
+            location.reload();
+        }
+
+        function showReleaseUpdateBanner(meta = releaseMonitorMeta) {
+            const banner = document.getElementById('releaseUpdateBanner');
+            releaseUpdateBannerMeta = meta || {};
+            updateReleaseUpdateBannerText();
+            if (banner) {
+                banner.classList.add('show');
+            }
+            showReleaseUpdateToast(releaseUpdateBannerMeta);
             if (!releaseUpdateBannerTimer) {
                 releaseUpdateBannerTimer = setInterval(updateReleaseUpdateBannerText, 60000);
             }
@@ -3275,6 +3642,7 @@
             if (banner) {
                 banner.classList.remove('show');
             }
+            hideReleaseUpdateToast();
             releaseUpdateBannerMeta = null;
             if (releaseUpdateBannerTimer) {
                 clearInterval(releaseUpdateBannerTimer);
@@ -3504,7 +3872,12 @@
             const zniReviewer = nextSource === 'manual_text' && RELEASE_REVIEWER_OPTIONS.includes(currentReviewer)
                 ? currentReviewer
                 : '';
-            await saveReleaseAssignment(releaseKey, reviewer, currentChecker, null, nextSource, zniReviewer);
+            await saveReleaseAssignmentOptimistic(releaseKey, {
+                psi_owner: reviewer,
+                psi_checker: currentChecker,
+                psi_owner_source: nextSource,
+                psi_zni_reviewer: zniReviewer
+            }, 'duty');
         }
 
         function buildReleaseOrderControls(item) {
@@ -3581,20 +3954,20 @@
                                     class="release-row-settings-action-btn"
                                     onclick="moveReleaseRowFromSettings('${escapeHtml(rowKey)}', 'up')"
                                     title="${escapeHtml(moveState.boundaryTitle)}"
-                                    ${(!moveState.canMoveUp || orderSaving) ? 'disabled' : ''}
+                                    ${!moveState.canMoveUp ? 'disabled' : ''}
                                 >
                                     <i class="bi bi-chevron-up"></i>
-                                    ${orderSaving ? 'Сохраняю...' : 'Выше'}
+                                    Выше
                                 </button>
                                 <button
                                     type="button"
                                     class="release-row-settings-action-btn"
                                     onclick="moveReleaseRowFromSettings('${escapeHtml(rowKey)}', 'down')"
                                     title="${escapeHtml(moveState.boundaryTitle)}"
-                                    ${(!moveState.canMoveDown || orderSaving) ? 'disabled' : ''}
+                                    ${!moveState.canMoveDown ? 'disabled' : ''}
                                 >
                                     <i class="bi bi-chevron-down"></i>
-                                    ${orderSaving ? 'Сохраняю...' : 'Ниже'}
+                                    Ниже
                                 </button>
                                 ${numberingAction ? `
                                     <button
@@ -3655,7 +4028,7 @@
                 };
             }
 
-            const draft = isReleaseOrderMode && releaseOrderDraft && String(releaseOrderDraft.year) === String(getSelectedReleaseYear())
+            const draft = releaseOrderDraft && String(releaseOrderDraft.year) === String(getSelectedReleaseYear())
                 ? releaseOrderDraft
                 : buildReleaseOrderDraft(getYearFilteredReleaseItems(releaseMonitorItems));
             const groupName = item.is_unnumbered ? 'waiting' : 'numbered';
@@ -5622,6 +5995,77 @@
             };
         }
 
+        function cloneReleaseOrderDraft(draft) {
+            if (!draft) {
+                return null;
+            }
+            try {
+                return JSON.parse(JSON.stringify(draft));
+            } catch (error) {
+                console.warn('Release order draft clone failed:', error);
+                return null;
+            }
+        }
+
+        function getActiveReleaseOrderDraft() {
+            return releaseOrderDraft && String(releaseOrderDraft.year) === String(getSelectedReleaseYear())
+                ? cloneReleaseOrderDraft(releaseOrderDraft)
+                : buildReleaseOrderDraft(getYearFilteredReleaseItems(releaseMonitorItems));
+        }
+
+        function updateReleaseMonitorMetaFromStatusData(statusData) {
+            if (!statusData || !statusData.release_monitor_meta) {
+                return;
+            }
+            releaseMonitorMeta = statusData.release_monitor_meta || releaseMonitorMeta;
+            releaseMonitorKnownRevision = getReleaseMonitorRevision(releaseMonitorMeta) || releaseMonitorKnownRevision;
+            updateReleaseAutoRefreshBadge(releaseMonitorMeta);
+            window.dashboardData = window.dashboardData || {};
+            window.dashboardData.release_monitor_meta = releaseMonitorMeta;
+        }
+
+        function queueReleaseRowOrderDraftSave(draft, rollbackDraft = null) {
+            const draftSnapshot = cloneReleaseOrderDraft(draft);
+            if (!draftSnapshot) {
+                return;
+            }
+            if (!releaseRowOrderMoveSaveInFlight && !releaseRowOrderMoveQueuedDraft) {
+                releaseRowOrderMoveRollbackDraft = cloneReleaseOrderDraft(rollbackDraft);
+            }
+            releaseRowOrderMoveQueuedDraft = draftSnapshot;
+            void flushReleaseRowOrderDraftSave();
+        }
+
+        async function flushReleaseRowOrderDraftSave() {
+            if (releaseRowOrderMoveSaveInFlight || !releaseRowOrderMoveQueuedDraft) {
+                return;
+            }
+            const draftToSave = releaseRowOrderMoveQueuedDraft;
+            releaseRowOrderMoveQueuedDraft = null;
+            releaseRowOrderMoveSaveInFlight = true;
+            try {
+                const statusData = await persistReleaseOrderDraft(draftToSave);
+                updateReleaseMonitorMetaFromStatusData(statusData);
+                releaseRowOrderMoveRollbackDraft = cloneReleaseOrderDraft(draftToSave);
+                if (!releaseRowOrderMoveQueuedDraft) {
+                    releaseRowOrderMoveRollbackDraft = null;
+                }
+            } catch (error) {
+                console.error('Release row order background save error:', error);
+                if (!releaseRowOrderMoveQueuedDraft) {
+                    releaseOrderDraft = releaseRowOrderMoveRollbackDraft;
+                    releaseRowOrderMoveRollbackDraft = null;
+                    applyReleaseFilters();
+                    alert('Ошибка сохранения порядка строки: ' + error.message);
+                }
+            } finally {
+                releaseRowOrderMoveSaveInFlight = false;
+                if (releaseRowOrderMoveQueuedDraft) {
+                    void flushReleaseRowOrderDraftSave();
+                }
+            }
+        }
+
         function getReleaseOrderBucket(item) {
             const rawValue = String(
                 item?.deployment_start_iso ||
@@ -5802,6 +6246,22 @@
             applyReleaseFilters();
         }
 
+        function withReleaseDisplayNumbers(orderedItems) {
+            const numberedItems = (orderedItems || []).filter(item => !item.is_unnumbered);
+            const totalNumbered = numberedItems.length;
+            const numberByKey = new Map(numberedItems.map((item, index) => [
+                item.row_key || item.release_key,
+                totalNumbered - index
+            ]));
+            return (orderedItems || []).map(item => {
+                const rowKey = item.row_key || item.release_key;
+                return {
+                    ...item,
+                    release_number: item.is_unnumbered ? '' : (numberByKey.get(rowKey) || '')
+                };
+            });
+        }
+
         function applyReleaseOrderDraft(yearItems) {
             if (!releaseOrderDraft || String(releaseOrderDraft.year) !== String(getSelectedReleaseYear())) {
                 return yearItems;
@@ -5829,7 +6289,7 @@
                 numbered: effectiveItems.filter(item => !item.is_unnumbered),
             };
 
-            return ['waiting', 'numbered'].flatMap(groupName => {
+            const orderedItems = ['waiting', 'numbered'].flatMap(groupName => {
                 const groupItems = splitItems[groupName];
                 const groupedItems = groupItems.reduce((acc, item) => {
                     const bucket = getReleaseOrderBucket(item);
@@ -5867,6 +6327,7 @@
                     return orderedItems;
                 });
             });
+            return withReleaseDisplayNumbers(orderedItems);
         }
 
         function refreshReleaseOrderModeUi() {
@@ -6116,15 +6577,9 @@
         }
 
         function addResponsibleAssignment(releaseKey) {
-            releaseMonitorItems = releaseMonitorItems.map(item => (
-                (item.row_key || item.release_key) === releaseKey
-                    ? {
-                        ...item,
-                        psi_responsibles: ['', ...(Array.isArray(item.psi_responsibles) ? item.psi_responsibles : [])]
-                    }
-                    : item
-            ));
-            applyReleaseFilters();
+            const responsibles = ['', ...getReleaseItemResponsibles(releaseKey)];
+            replaceReleaseAssignmentItem(releaseKey, { psi_responsibles: responsibles });
+            patchReleaseAssignmentDom(releaseKey, { psi_responsibles: responsibles }, false, 'responsibles');
         }
 
         function removeResponsibleAssignment(releaseKey, index) {
@@ -6133,7 +6588,7 @@
                 return;
             }
             responsibles.splice(index, 1);
-            saveReleaseAssignment(releaseKey, null, null, responsibles);
+            saveReleaseAssignmentOptimistic(releaseKey, { psi_responsibles: responsibles }, 'responsibles');
         }
 
         function updateResponsibleAssignment(releaseKey, index, value) {
@@ -6142,7 +6597,7 @@
                 responsibles.push('');
             }
             responsibles[index] = value || '';
-            saveReleaseAssignment(releaseKey, null, null, responsibles);
+            saveReleaseAssignmentOptimistic(releaseKey, { psi_responsibles: responsibles }, 'responsibles');
         }
 
         function chooseReleaseZniReporter(item) {
@@ -6256,6 +6711,255 @@
             ) || null;
         }
 
+        function normalizeReleaseAssignmentResponsibles(values, keepEmpty = false) {
+            if (!Array.isArray(values)) {
+                return [];
+            }
+            return values
+                .map(value => String(value || '').trim())
+                .filter(value => keepEmpty || Boolean(value));
+        }
+
+        function getReleaseAssignmentSnapshot(item) {
+            return {
+                psi_owner: item?.psi_owner || '',
+                psi_owner_source: item?.psi_owner_source || '',
+                psi_owner_date: item?.psi_owner_date || '',
+                psi_zni_reviewer: item?.psi_zni_reviewer || '',
+                psi_checker: item?.psi_checker || '',
+                psi_responsibles: Array.isArray(item?.psi_responsibles) ? [...item.psi_responsibles] : [],
+                is_missing_week_responsible: Boolean(item?.is_missing_week_responsible)
+            };
+        }
+
+        function applyReleaseAssignmentToItem(item, patch) {
+            if (!item) {
+                return item;
+            }
+            const nextItem = { ...item };
+            if (Object.prototype.hasOwnProperty.call(patch, 'psi_owner')) {
+                nextItem.psi_owner = patch.psi_owner || '';
+            }
+            if (Object.prototype.hasOwnProperty.call(patch, 'psi_owner_source')) {
+                nextItem.psi_owner_source = patch.psi_owner_source || '';
+            }
+            if (Object.prototype.hasOwnProperty.call(patch, 'psi_owner_date')) {
+                nextItem.psi_owner_date = patch.psi_owner_date || '';
+            }
+            if (Object.prototype.hasOwnProperty.call(patch, 'psi_zni_reviewer')) {
+                nextItem.psi_zni_reviewer = patch.psi_zni_reviewer || '';
+            }
+            if (Object.prototype.hasOwnProperty.call(patch, 'psi_checker')) {
+                nextItem.psi_checker = patch.psi_checker || '';
+            }
+            if (Object.prototype.hasOwnProperty.call(patch, 'psi_responsibles')) {
+                nextItem.psi_responsibles = Array.isArray(patch.psi_responsibles) ? [...patch.psi_responsibles] : [];
+            }
+            return withUpdatedWeekAssignmentFlags(nextItem);
+        }
+
+        function replaceReleaseAssignmentItem(rowKey, patch) {
+            let updatedItem = null;
+            releaseMonitorItems = releaseMonitorItems.map(item => {
+                if ((item.row_key || item.release_key) !== rowKey) {
+                    return item;
+                }
+                updatedItem = applyReleaseAssignmentToItem(item, patch);
+                return updatedItem;
+            });
+            return updatedItem;
+        }
+
+        function shouldRefreshReleaseAssignmentFilters(beforeSnapshot, afterItem, fieldGroup) {
+            if (fieldGroup !== 'responsibles') {
+                return false;
+            }
+            if ((currentReleaseResponsibleFilter || 'all') !== 'all') {
+                return true;
+            }
+            return Boolean(beforeSnapshot?.is_missing_week_responsible) !== Boolean(afterItem?.is_missing_week_responsible);
+        }
+
+        function getReleaseReviewerCell(rowKey) {
+            const row = getReleaseRowElement(rowKey);
+            if (!row) {
+                return null;
+            }
+            return row.querySelector('.reviewer-cell')?.closest('td') || row.children[8] || null;
+        }
+
+        function focusPendingManualDutyInput(rowKey) {
+            if (!pendingManualDutyFocusReleaseKey || pendingManualDutyFocusReleaseKey !== rowKey) {
+                return;
+            }
+            const manualInput = Array.from(document.querySelectorAll('.duty-manual-input')).find(
+                element => element.dataset.releaseKey === rowKey
+            );
+            if (manualInput) {
+                manualInput.focus();
+                if (typeof manualInput.select === 'function') {
+                    manualInput.select();
+                }
+                pendingManualDutyFocusReleaseKey = '';
+            }
+        }
+
+        function patchReleaseAssignmentDom(rowKey, patch = {}, pending = false, fieldGroup = 'assignment') {
+            const item = getReleaseMonitorItem(rowKey);
+            const cell = getReleaseReviewerCell(rowKey);
+            if (!item || !cell) {
+                return;
+            }
+
+            const hasManualDutyInput = Boolean(cell.querySelector('.duty-manual-input'));
+            const nextReviewer = item.psi_owner || '';
+            const nextReviewerSource = item.psi_owner_source || '';
+            const nextManualDutyMode = nextReviewerSource === 'manual_text' || (nextReviewer && isCustomDutyText(nextReviewer));
+            const shouldRebuildCell =
+                Object.prototype.hasOwnProperty.call(patch, 'psi_responsibles') ||
+                (
+                    Object.prototype.hasOwnProperty.call(patch, 'psi_owner_source') &&
+                    hasManualDutyInput !== nextManualDutyMode
+                );
+
+            if (shouldRebuildCell) {
+                cell.innerHTML = buildReviewerCell(item);
+                focusPendingManualDutyInput(rowKey);
+                setReleaseAssignmentPending(rowKey, fieldGroup, pending);
+                return;
+            }
+
+            if (Object.prototype.hasOwnProperty.call(patch, 'psi_owner')) {
+                const dutyField = cell.querySelector('.duty-select, .duty-manual-input');
+                if (dutyField && document.activeElement !== dutyField) {
+                    dutyField.value = item.psi_owner || '';
+                }
+            }
+            if (Object.prototype.hasOwnProperty.call(patch, 'psi_checker')) {
+                const checkerInput = cell.querySelector('.checker-input');
+                if (checkerInput && document.activeElement !== checkerInput) {
+                    checkerInput.value = item.psi_checker || '';
+                }
+            }
+            setReleaseAssignmentPending(rowKey, fieldGroup, pending);
+        }
+
+        function setReleaseAssignmentPending(rowKey, fieldGroup, pending) {
+            const row = getReleaseRowElement(rowKey);
+            if (!row) {
+                return;
+            }
+            const selectors = {
+                responsibles: '.responsible-select, .responsible-icon-btn',
+                duty: '.duty-select, .duty-manual-input',
+                checker: '.checker-input',
+                assignment: '.reviewer-select, .checker-input, .responsible-icon-btn'
+            };
+            const selector = selectors[fieldGroup] || selectors.assignment;
+            row.querySelectorAll(selector).forEach(element => {
+                element.classList.toggle('assignment-save-pending', Boolean(pending));
+                if (pending) {
+                    element.setAttribute('aria-busy', 'true');
+                } else {
+                    element.removeAttribute('aria-busy');
+                }
+            });
+        }
+
+        function buildReleaseAssignmentPayload(item) {
+            return {
+                release_key: item.row_key || item.release_key,
+                reviewer: item.psi_owner || '',
+                reviewer_source: item.psi_owner_source || '',
+                zni_reviewer: item.psi_zni_reviewer || '',
+                checker: item.psi_checker || '',
+                responsibles: normalizeReleaseAssignmentResponsibles(item.psi_responsibles || [])
+            };
+        }
+
+        function buildReleaseAssignmentSuccessPatch(data) {
+            return {
+                psi_owner: data.reviewer || '',
+                psi_owner_source: data.reviewer_source || '',
+                psi_owner_date: data.reviewer_date || '',
+                psi_zni_reviewer: data.zni_reviewer || '',
+                psi_checker: data.checker || '',
+                psi_responsibles: Array.isArray(data.responsibles) ? data.responsibles : []
+            };
+        }
+
+        async function saveReleaseAssignmentOptimistic(releaseKey, patch, fieldGroup = 'assignment') {
+            const rowKey = String(releaseKey || '').trim();
+            const currentItem = getReleaseMonitorItem(rowKey);
+            if (!rowKey || !currentItem) {
+                return null;
+            }
+
+            const beforeSnapshot = getReleaseAssignmentSnapshot(currentItem);
+            const saveKey = `${rowKey}:${fieldGroup || 'assignment'}`;
+            const saveSeq = (releaseAssignmentSaveSeqByKey.get(saveKey) || 0) + 1;
+            releaseAssignmentSaveSeqByKey.set(saveKey, saveSeq);
+
+            const optimisticItem = replaceReleaseAssignmentItem(rowKey, patch);
+            const shouldRefreshFilters = shouldRefreshReleaseAssignmentFilters(beforeSnapshot, optimisticItem, fieldGroup);
+            if (shouldRefreshFilters) {
+                applyReleaseFilters();
+                setReleaseAssignmentPending(rowKey, fieldGroup, true);
+            } else {
+                patchReleaseAssignmentDom(rowKey, patch, true, fieldGroup);
+            }
+
+            try {
+                const response = await fetch(BASE_PATH + '/dashboard/release-monitor/reviewer', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(buildReleaseAssignmentPayload(optimisticItem))
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Не удалось сохранить назначение');
+                }
+                if (releaseAssignmentSaveSeqByKey.get(saveKey) !== saveSeq) {
+                    return data;
+                }
+                if (data.data_revision) {
+                    releaseMonitorKnownRevision = String(data.data_revision);
+                    releaseMonitorDismissedRevision = '';
+                }
+                const successPatch = buildReleaseAssignmentSuccessPatch(data);
+                const successItem = replaceReleaseAssignmentItem(rowKey, successPatch);
+                if (shouldRefreshReleaseAssignmentFilters(optimisticItem, successItem, fieldGroup)) {
+                    applyReleaseFilters();
+                } else {
+                    patchReleaseAssignmentDom(rowKey, successPatch, false, fieldGroup);
+                }
+                setReleaseAssignmentPending(rowKey, fieldGroup, false);
+                return data;
+            } catch (error) {
+                console.error('Release assignment save error:', error);
+                if (releaseAssignmentSaveSeqByKey.get(saveKey) !== saveSeq) {
+                    return null;
+                }
+                const rollbackPatch = {
+                    psi_owner: beforeSnapshot.psi_owner,
+                    psi_owner_source: beforeSnapshot.psi_owner_source,
+                    psi_owner_date: beforeSnapshot.psi_owner_date,
+                    psi_zni_reviewer: beforeSnapshot.psi_zni_reviewer,
+                    psi_checker: beforeSnapshot.psi_checker,
+                    psi_responsibles: beforeSnapshot.psi_responsibles
+                };
+                const rollbackItem = replaceReleaseAssignmentItem(rowKey, rollbackPatch);
+                if (shouldRefreshReleaseAssignmentFilters(optimisticItem, rollbackItem, fieldGroup)) {
+                    applyReleaseFilters();
+                } else {
+                    patchReleaseAssignmentDom(rowKey, rollbackPatch, false, fieldGroup);
+                }
+                setReleaseAssignmentPending(rowKey, fieldGroup, false);
+                alert('Ошибка сохранения назначения: ' + error.message);
+                return null;
+            }
+        }
+
         function patchReleaseManualColorDom(rowKey, level, pending = false) {
             const row = getReleaseRowElement(rowKey);
             if (!row) {
@@ -6353,23 +7057,17 @@
                 return;
             }
 
-            const draft = buildReleaseOrderDraft(getYearFilteredReleaseItems(releaseMonitorItems));
+            const previousDraft = cloneReleaseOrderDraft(releaseOrderDraft);
+            const draft = getActiveReleaseOrderDraft();
             if (!applyReleaseRowMoveToDraft(draft, rowKey, direction)) {
                 return;
             }
 
-            releaseRowOrderSavingKey = rowKey;
+            releaseOrderDraft = draft;
+            releaseRowOrderSavingKey = '';
+            releaseRowNumberingSavingKey = '';
             applyReleaseFilters();
-            try {
-                const statusData = await persistReleaseOrderDraft(draft);
-                releaseRowOrderSavingKey = '';
-                renderReleaseMonitor(statusData.release_monitor || [], statusData.release_monitor_meta || {});
-            } catch (error) {
-                console.error('Release row order save error:', error);
-                releaseRowOrderSavingKey = '';
-                applyReleaseFilters();
-                alert('Ошибка сохранения порядка строки: ' + error.message);
-            }
+            queueReleaseRowOrderDraftSave(draft, previousDraft);
         }
 
         async function toggleReleaseRowNumbering(releaseKey, action) {
@@ -6393,20 +7091,32 @@
                 return;
             }
 
-            const draft = buildReleaseOrderDraft(getYearFilteredReleaseItems(releaseMonitorItems));
+            const previousDraft = cloneReleaseOrderDraft(releaseOrderDraft);
+            const draft = getActiveReleaseOrderDraft();
             if (!applyReleaseNumberingActionToDraft(draft, item, rowKey, action)) {
                 return;
             }
 
+            const saveSeq = ++releaseRowOrderSaveSeq;
+            releaseOrderDraft = draft;
             releaseRowNumberingSavingKey = rowKey;
+            releaseRowOrderSavingKey = '';
             applyReleaseFilters();
             try {
                 const statusData = await persistReleaseOrderDraft(draft);
+                if (releaseRowOrderSaveSeq !== saveSeq) {
+                    return;
+                }
                 releaseRowNumberingSavingKey = '';
-                renderReleaseMonitor(statusData.release_monitor || [], statusData.release_monitor_meta || {});
+                updateReleaseMonitorMetaFromStatusData(statusData);
+                applyReleaseFilters();
             } catch (error) {
                 console.error('Release row numbering save error:', error);
+                if (releaseRowOrderSaveSeq !== saveSeq) {
+                    return;
+                }
                 releaseRowNumberingSavingKey = '';
+                releaseOrderDraft = previousDraft;
                 applyReleaseFilters();
                 alert('Ошибка сохранения нумерации строки: ' + error.message);
             }
@@ -6453,64 +7163,29 @@
         }
 
         async function saveReleaseAssignment(releaseKey, reviewerOverride = null, checkerOverride = null, responsiblesOverride = null, reviewerSourceOverride = null, zniReviewerOverride = null) {
-            if (!releaseKey) {
-                return;
+            const patch = {};
+            if (reviewerOverride !== null) {
+                patch.psi_owner = reviewerOverride;
+            }
+            if (checkerOverride !== null) {
+                patch.psi_checker = checkerOverride;
+            }
+            if (responsiblesOverride !== null) {
+                patch.psi_responsibles = responsiblesOverride;
+            }
+            if (reviewerSourceOverride !== null) {
+                patch.psi_owner_source = reviewerSourceOverride;
+            }
+            if (zniReviewerOverride !== null) {
+                patch.psi_zni_reviewer = zniReviewerOverride;
             }
 
-            const item = getReleaseMonitorItem(releaseKey);
-            const reviewer = reviewerOverride !== null ? reviewerOverride : (item?.psi_owner || '');
-            const reviewerSource = reviewerSourceOverride !== null ? reviewerSourceOverride : (item?.psi_owner_source || '');
-            const zniReviewer = zniReviewerOverride !== null ? zniReviewerOverride : (item?.psi_zni_reviewer || '');
-            const checker = checkerOverride !== null ? checkerOverride : (item?.psi_checker || '');
-            const responsibles = responsiblesOverride !== null
-                ? responsiblesOverride
-                : (Array.isArray(item?.psi_responsibles) ? item.psi_responsibles : []);
-
-            const filteredResponsibles = responsibles
-                .map(value => String(value || '').trim())
-                .filter(Boolean);
-
-            try {
-                const response = await fetch(BASE_PATH + '/dashboard/release-monitor/reviewer', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        release_key: releaseKey,
-                        reviewer: reviewer,
-                        reviewer_source: reviewerSource,
-                        zni_reviewer: zniReviewer,
-                        checker: checker,
-                        responsibles: filteredResponsibles
-                    })
-                });
-                const data = await response.json();
-                if (!data.success) {
-                    throw new Error(data.error || 'Не удалось сохранить назначение');
-                }
-
-                if (data.data_revision) {
-                    releaseMonitorKnownRevision = String(data.data_revision);
-                    releaseMonitorDismissedRevision = '';
-                }
-
-                releaseMonitorItems = releaseMonitorItems.map(item => (
-                    (item.row_key || item.release_key) === releaseKey
-                        ? withUpdatedWeekAssignmentFlags({
-                            ...item,
-                            psi_owner: data.reviewer || '',
-                            psi_owner_source: data.reviewer_source || '',
-                            psi_owner_date: data.reviewer_date || '',
-                            psi_zni_reviewer: data.zni_reviewer || '',
-                            psi_checker: data.checker || '',
-                            psi_responsibles: Array.isArray(data.responsibles) ? data.responsibles : []
-                        })
-                        : item
-                ));
-                applyReleaseFilters();
-            } catch (error) {
-                console.error('Release assignment save error:', error);
-                alert('Ошибка сохранения назначения: ' + error.message);
-            }
+            const fieldGroup = responsiblesOverride !== null
+                ? 'responsibles'
+                : (checkerOverride !== null && reviewerOverride === null && reviewerSourceOverride === null && zniReviewerOverride === null)
+                    ? 'checker'
+                    : 'duty';
+            return saveReleaseAssignmentOptimistic(releaseKey, patch, fieldGroup);
         }
 
         async function updateReleaseAssignment(releaseKey, changedElement) {
@@ -6521,39 +7196,27 @@
             const cell = changedElement.closest('.reviewer-cell');
             const reviewerField = cell?.querySelector('.duty-select, .duty-manual-input');
             const checkerInput = cell?.querySelector('.checker-input');
+            if (changedElement.classList.contains('checker-input')) {
+                await saveReleaseAssignmentOptimistic(releaseKey, {
+                    psi_checker: changedElement.value || ''
+                }, 'checker');
+                return;
+            }
+
             const reviewer = changedElement.classList.contains('duty-manual-input')
                 ? changedElement.value || ''
                 : (reviewerField?.value || '');
-            const checker = checkerInput?.value || '';
             const currentItem = getReleaseMonitorItem(releaseKey);
             const reviewerSource = changedElement.classList.contains('duty-manual-input')
                 ? 'manual_text'
                 : (changedElement.classList.contains('duty-select')
                     ? 'manual'
                     : (currentItem?.psi_owner_source || ''));
-
-            [reviewerField, checkerInput].forEach(element => {
-                if (!element) {
-                    return;
-                }
-                element.disabled = true;
-                element.classList.add('saving');
-            });
-
-            try {
-                await saveReleaseAssignment(releaseKey, reviewer, checker, null, reviewerSource);
-            } catch (error) {
-                console.error('Release assignment update error:', error);
-                alert('Ошибка сохранения назначения: ' + error.message);
-            } finally {
-                [reviewerField, checkerInput].forEach(element => {
-                    if (!element) {
-                        return;
-                    }
-                    element.disabled = false;
-                    element.classList.remove('saving');
-                });
-            }
+            await saveReleaseAssignmentOptimistic(releaseKey, {
+                psi_owner: reviewer,
+                psi_owner_source: reviewerSource,
+                psi_checker: checkerInput?.value || ''
+            }, 'duty');
         }
 
         function closeReleaseManualRefreshMenu() {
@@ -6601,7 +7264,7 @@
             if (effectiveLoading) {
                 closeReleaseManualRefreshMenu();
             }
-            ['releaseManualRefreshMenuBtn', 'releaseMonitorQuickRefreshBtn', 'releaseMonitorRefreshBtn', 'releaseMonitorConfluenceSyncBtn', 'releaseMonitorDutyUploadBtn', 'releaseMonitorCurrentWeekReportBtn', 'releaseMonitorWeekControlBtn', 'releaseMonitorDocsBtn', 'releaseManualCreateBtn'].forEach(id => {
+            ['releaseManualRefreshMenuBtn', 'releaseMonitorQuickRefreshBtn', 'releaseMonitorRefreshBtn', 'releaseMonitorReliableRefreshBtn', 'releaseMonitorConfluenceSyncBtn', 'releaseMonitorDutyUploadBtn', 'releaseMonitorCurrentWeekReportBtn', 'releaseMonitorWeekControlBtn', 'releaseMonitorDocsBtn', 'releaseManualCreateBtn'].forEach(id => {
                 const btn = document.getElementById(id);
                 if (!btn) {
                     return;
@@ -6609,8 +7272,9 @@
                 btn.disabled = effectiveLoading;
                 const isActiveQuick = releaseMonitorActiveRefreshMode === 'quick' && id === 'releaseMonitorQuickRefreshBtn';
                 const isActiveFull = releaseMonitorActiveRefreshMode === 'full' && id === 'releaseMonitorRefreshBtn';
+                const isActiveReliable = releaseMonitorActiveRefreshMode === 'reliable_full' && id === 'releaseMonitorReliableRefreshBtn';
                 const isGlobalRefresh = !releaseMonitorActiveRefreshMode && releaseMonitorGlobalRefreshing && id === 'releaseMonitorRefreshBtn';
-                const isLoadingButton = effectiveLoading && (isActiveQuick || isActiveFull || isGlobalRefresh);
+                const isLoadingButton = effectiveLoading && (isActiveQuick || isActiveFull || isActiveReliable || isGlobalRefresh);
                 btn.classList.toggle('spinning', isLoadingButton);
                 btn.classList.toggle('loading', isLoadingButton);
             });
@@ -6905,13 +7569,20 @@
                 const nextResponsibles = currentResponsibles.includes(responsible)
                     ? currentResponsibles
                     : [responsible, ...currentResponsibles];
-                await saveReleaseAssignment(
+                const savedAssignment = await saveReleaseAssignment(
                     rowKey,
                     item.psi_owner || '',
                     item.psi_checker || '',
                     nextResponsibles,
                     item.psi_owner_source || ''
                 );
+                if (!savedAssignment) {
+                    if (button) {
+                        button.disabled = false;
+                        button.textContent = 'Применить';
+                    }
+                    return;
+                }
                 if (button) {
                     button.textContent = 'Применено';
                     button.classList.add('applied');
@@ -6948,7 +7619,7 @@
         async function refreshReleaseMonitor(mode = 'full') {
             closeReleaseManualRefreshMenu();
             releaseMonitorLocalRefreshing = true;
-            releaseMonitorActiveRefreshMode = mode === 'quick' ? 'quick' : 'full';
+            releaseMonitorActiveRefreshMode = ['quick', 'full', 'reliable_full'].includes(mode) ? mode : 'full';
             setReleaseRefreshButtonsLoading(true);
 
             try {
@@ -7217,6 +7888,7 @@
             updateReleaseScrollButtons();
             refreshReleaseOrderModeUi();
             setReleaseMonitorGlobalRefreshing(releaseMonitorGlobalRefreshing);
+            restoreReleaseScrollPosition();
         }
 
         window.CHATBOT_BASE_PATH = {{ basepath | tojson | safe }};

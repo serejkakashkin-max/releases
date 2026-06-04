@@ -326,7 +326,7 @@ def refresh_release_monitor():
     try:
         request_data = request.get_json(silent=True) or {}
         mode = (request_data.get("mode") or "full").strip().lower()
-        if mode not in {"full", "quick"}:
+        if mode not in {"full", "quick", "reliable_full"}:
             mode = "full"
         refresh_info = start_release_monitor_refresh(mode=mode, trigger="manual")
         return jsonify({
