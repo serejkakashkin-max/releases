@@ -4908,7 +4908,7 @@
             const steps = [];
             const detection = state.initData?.detection || {};
 
-            if (!detection.found && Array.isArray(detection.candidates) && detection.candidates.length > 0) {
+            if (!state.templateChoice && !detection.found && Array.isArray(detection.candidates) && detection.candidates.length > 0) {
                 steps.push({ type: 'template' });
             }
 
