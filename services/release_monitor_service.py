@@ -1223,6 +1223,55 @@ def _save_zni_assignments(assignments):
     _save_zni_payload(payload)
 
 
+def _remove_zni_assignment_for_keys(*keys):
+    normalized_keys = [
+        str(key or "").strip()
+        for key in keys
+        if str(key or "").strip()
+    ]
+    if not normalized_keys:
+        return False
+
+    assignments = _load_zni_assignments()
+    changed = False
+    for key in normalized_keys:
+        if key in assignments:
+            assignments.pop(key, None)
+            changed = True
+    if changed:
+        _save_zni_assignments(assignments)
+    return changed
+
+
+def _clear_cached_zni_fields_for_keys(*keys):
+    if _cached_data is None:
+        return
+
+    normalized_keys = {
+        str(key or "").strip()
+        for key in keys
+        if str(key or "").strip()
+    }
+    if not normalized_keys:
+        return
+
+    for item in _cached_data.get("items") or []:
+        assignment_key = _get_assignment_key_for_item(item)
+        release_key = str(item.get("release_key") or "").strip()
+        if assignment_key not in normalized_keys and release_key not in normalized_keys:
+            continue
+        for field_name in (
+            "zni_key",
+            "zni_url",
+            "base_zni_key",
+            "base_zni_url",
+            "manual_zni_key",
+            "manual_zni_url",
+        ):
+            item[field_name] = ""
+        item["manual_clear_zni"] = False
+
+
 def _load_rollout_note_flags():
     return _load_zni_payload().get("flags", {})
 
@@ -5889,12 +5938,33 @@ def create_release_monitor_zni(release_key, reporter=""):
         }
         _save_zni_assignments(assignments)
 
+        overrides = _load_manual_release_overrides()
+        current_override = dict(overrides.get(release_key) or {})
+        for field_name in (
+            "clear_zni",
+            "zni_key",
+            "zni_url",
+            "base_zni_key",
+            "base_zni_url",
+        ):
+            current_override.pop(field_name, None)
+        current_override = _normalize_manual_release_override(current_override)
+        if current_override:
+            overrides[release_key] = current_override
+        else:
+            overrides.pop(release_key, None)
+        _save_manual_release_overrides(overrides)
+
         if _cached_data is not None:
+            _cached_data["manual_overrides"] = dict(overrides)
             items = _cached_data.get("items") or []
             for item in items:
                 if _get_assignment_key_for_item(item) == release_key:
                     item["zni_key"] = issue.get("key", "")
                     item["zni_url"] = issue.get("url", "")
+                    item["base_zni_key"] = issue.get("key", "")
+                    item["base_zni_url"] = issue.get("url", "")
+                    item["manual_clear_zni"] = False
                     break
             _mark_release_monitor_state_changed()
 
@@ -6120,9 +6190,22 @@ def set_release_monitor_manual_override(
         normalized_zni_key = str(zni_key or "").strip()
         normalized_zni_url = str(zni_url or "").strip()
         normalized_clear_zni = bool(clear_zni)
+        zni_cache_removed = False
+        if normalized_clear_zni:
+            zni_cache_removed = _remove_zni_assignment_for_keys(
+                release_key,
+                target_item.get("release_key"),
+            )
+            if zni_cache_removed:
+                _clear_cached_zni_fields_for_keys(release_key, target_item.get("release_key"))
+                base_zni_key = ""
+                base_zni_url = ""
 
         overrides = _load_manual_release_overrides()
         current_override = dict(overrides.get(release_key) or {})
+        if zni_cache_removed:
+            current_override.pop("base_zni_key", None)
+            current_override.pop("base_zni_url", None)
         if base_summary and not str(current_override.get("base_release_summary") or "").strip():
             current_override["base_release_summary"] = base_summary
         if base_version and not str(current_override.get("base_release_version") or "").strip():
@@ -6156,7 +6239,11 @@ def set_release_monitor_manual_override(
         else:
             current_override.pop("ke", None)
 
-        if normalized_clear_zni and base_zni_key:
+        if normalized_clear_zni and zni_cache_removed:
+            current_override.pop("clear_zni", None)
+            current_override.pop("zni_key", None)
+            current_override.pop("zni_url", None)
+        elif normalized_clear_zni and base_zni_key:
             current_override["clear_zni"] = True
             current_override.pop("zni_key", None)
             current_override.pop("zni_url", None)
@@ -6534,9 +6621,13 @@ def update_release_monitor_manual_override_fields(row_key, fields, updated_by=""
         for field_name, value in normalized_fields.items():
             if field_name == "clear_zni":
                 if value:
-                    current_override["clear_zni"] = True
+                    _remove_zni_assignment_for_keys(row_key, target_item.get("release_key"))
+                    _clear_cached_zni_fields_for_keys(row_key, target_item.get("release_key"))
+                    current_override.pop("clear_zni", None)
                     current_override.pop("zni_key", None)
                     current_override.pop("zni_url", None)
+                    current_override.pop("base_zni_key", None)
+                    current_override.pop("base_zni_url", None)
                 else:
                     current_override.pop("clear_zni", None)
                 continue

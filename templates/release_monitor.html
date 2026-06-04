@@ -2600,6 +2600,73 @@
             margin-top: 0.45rem;
         }
 
+        .release-doc-playbook-mode {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.25rem;
+            margin-bottom: 0.75rem;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            background: rgba(13, 110, 253, 0.06);
+        }
+
+        .release-doc-playbook-mode-btn {
+            border: 0;
+            border-radius: 9px;
+            padding: 0.36rem 0.7rem;
+            background: transparent;
+            color: var(--text-secondary);
+            font-weight: 700;
+            font-size: 0.82rem;
+            line-height: 1.2;
+            transition: background 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+        }
+
+        .release-doc-playbook-mode-btn.active {
+            background: var(--accent-primary);
+            color: #fff;
+            box-shadow: 0 8px 20px rgba(13, 110, 253, 0.22);
+        }
+
+        .release-doc-playbook-textarea {
+            min-height: 145px;
+            resize: vertical;
+            font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+            line-height: 1.45;
+        }
+
+        .release-doc-playbook-preview {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+            margin-top: 0.65rem;
+            min-height: 1.6rem;
+        }
+
+        .release-doc-playbook-chip {
+            display: inline-flex;
+            align-items: center;
+            max-width: 100%;
+            padding: 0.18rem 0.48rem;
+            border-radius: 999px;
+            background: rgba(13, 110, 253, 0.11);
+            color: var(--accent-primary);
+            font-size: 0.76rem;
+            font-weight: 800;
+            word-break: break-word;
+        }
+
+        .release-doc-playbook-empty {
+            color: var(--text-muted);
+            font-size: 0.82rem;
+        }
+
+        .release-doc-playbook-list {
+            max-height: 260px;
+            overflow-y: auto;
+        }
+
         .release-doc-loader {
             display: flex;
             align-items: center;
@@ -4634,7 +4701,7 @@
                 ${html}
                 <label class="release-manual-clear-zni">
                     <input class="form-check-input m-0" type="checkbox" id="releaseManualClearZniInput" ${clearZniChecked ? 'checked' : ''}>
-                    <span>Очистить ЗНИ в итоговой строке, даже если она есть в Jira или state-файле.</span>
+                    <span>&#1059;&#1076;&#1072;&#1083;&#1080;&#1090;&#1100; &#1089;&#1086;&#1093;&#1088;&#1072;&#1085;&#1077;&#1085;&#1085;&#1091;&#1102; &#1047;&#1053;&#1048; &#1080;&#1079; &#1089;&#1090;&#1088;&#1086;&#1082;&#1080; &#1080; &#1082;&#1101;&#1096;&#1072;. &#1055;&#1086;&#1089;&#1083;&#1077; &#1089;&#1086;&#1093;&#1088;&#1072;&#1085;&#1077;&#1085;&#1080;&#1103; &#1089;&#1085;&#1086;&#1074;&#1072; &#1087;&#1086;&#1103;&#1074;&#1080;&#1090;&#1089;&#1103; &#1082;&#1085;&#1086;&#1087;&#1082;&#1072; &laquo;&#1057;&#1086;&#1079;&#1076;&#1072;&#1090;&#1100;&raquo;.</span>
                 </label>
             `;
         }
@@ -4939,6 +5006,85 @@
             return steps;
         }
 
+        function normalizeReleaseDocumentPlaybooks(values) {
+            const result = [];
+            const seen = new Set();
+            (Array.isArray(values) ? values : []).forEach(value => {
+                const normalized = String(value || '').trim();
+                if (!normalized || seen.has(normalized)) {
+                    return;
+                }
+                seen.add(normalized);
+                result.push(normalized);
+            });
+            return result;
+        }
+
+        function parseReleaseDocumentPlaybooksText(text) {
+            return normalizeReleaseDocumentPlaybooks(String(text || '').split(/[\s,;]+/));
+        }
+
+        function formatReleaseDocumentPlaybooksText(playbooks) {
+            return normalizeReleaseDocumentPlaybooks(playbooks).join('\n');
+        }
+
+        function renderReleaseDocumentPlaybookPreview(playbooks) {
+            const normalized = normalizeReleaseDocumentPlaybooks(playbooks);
+            if (!normalized.length) {
+                return '<span class="release-doc-playbook-empty">&#1055;&#1083;&#1077;&#1081;&#1073;&#1091;&#1082;&#1080; &#1085;&#1077; &#1074;&#1099;&#1073;&#1088;&#1072;&#1085;&#1099;</span>';
+            }
+            return normalized
+                .map(playbook => `<span class="release-doc-playbook-chip">${escapeHtml(playbook)}</span>`)
+                .join('');
+        }
+
+        function updateReleaseDocumentPlaybookPastePreview() {
+            const textarea = document.getElementById('releaseDocumentPlaybooksText');
+            const preview = document.getElementById('releaseDocumentPlaybooksPreview');
+            if (!textarea || !preview) {
+                return;
+            }
+            preview.innerHTML = renderReleaseDocumentPlaybookPreview(parseReleaseDocumentPlaybooksText(textarea.value));
+        }
+
+        function syncReleaseDocumentPlaybooksForm(state) {
+            if (!state?.form) {
+                return [];
+            }
+
+            const textarea = document.getElementById('releaseDocumentPlaybooksText');
+            const playbookInputs = Array.from(document.querySelectorAll('input[name="releaseDocumentPlaybooks"]'));
+            let selected = null;
+
+            if (textarea) {
+                selected = parseReleaseDocumentPlaybooksText(textarea.value);
+            } else if (playbookInputs.length) {
+                selected = playbookInputs.filter(input => input.checked).map(input => input.value);
+            }
+
+            if (!selected) {
+                return state.form.playbooks || [];
+            }
+
+            selected = normalizeReleaseDocumentPlaybooks(selected);
+            if (selected.join('\n') !== (state.form.playbooks || []).join('\n')) {
+                state.dirty = state.dirty || {};
+                state.dirty.playbooks = true;
+                state.form.playbooks = selected;
+            }
+            return selected;
+        }
+
+        function setReleaseDocumentPlaybookMode(mode) {
+            const state = releaseDocumentWizardState;
+            if (!state) {
+                return;
+            }
+            syncReleaseDocumentPlaybooksForm(state);
+            state.form.playbook_mode = mode === 'manual' ? 'manual' : 'paste';
+            renderReleaseDocumentWizardStep();
+        }
+
         function syncReleaseDocumentVisibleForm(state) {
             if (!state?.form) {
                 return;
@@ -4967,14 +5113,7 @@
             const dateInput = document.getElementById('releaseDocumentDate');
             if (dateInput) updateField('date', dateInput.value || '');
 
-            const playbookInputs = Array.from(document.querySelectorAll('input[name="releaseDocumentPlaybooks"]'));
-            if (playbookInputs.length) {
-                const selected = playbookInputs.filter(input => input.checked).map(input => input.value);
-                if (selected.join('\n') !== (state.form.playbooks || []).join('\n')) {
-                    state.dirty.playbooks = true;
-                    state.form.playbooks = selected;
-                }
-            }
+            syncReleaseDocumentPlaybooksForm(state);
 
             const createZniInput = document.getElementById('releaseDocumentCreateZni');
             if (createZniInput && createZniInput.checked !== state.form.create_zni) {
@@ -5301,6 +5440,7 @@
                     date: dateToInputValue(item.deployment_start || ''),
                     ke: item.ke || '',
                     playbooks: [],
+                    playbook_mode: 'paste',
                     create_zni: false,
                     zni_reporter: ''
                 }
@@ -5349,6 +5489,61 @@
                 return false;
             }
             return true;
+        }
+
+        function buildReleaseDocumentPlaybooksStepContent(state, playbooks) {
+            const availablePlaybooks = Array.isArray(playbooks) ? playbooks : [];
+            const playbookMode = state.form.playbook_mode || 'paste';
+            const playbookText = formatReleaseDocumentPlaybooksText(state.form.playbooks || []);
+            const modeSwitch = `
+                <div class="release-doc-playbook-mode" role="group" aria-label="Playbook input mode">
+                    <button type="button" class="release-doc-playbook-mode-btn ${playbookMode !== 'manual' ? 'active' : ''}" onclick="setReleaseDocumentPlaybookMode('paste')">
+                        <i class="bi bi-input-cursor-text me-1"></i>&#1042;&#1089;&#1090;&#1072;&#1074;&#1080;&#1090;&#1100; &#1089;&#1087;&#1080;&#1089;&#1082;&#1086;&#1084;
+                    </button>
+                    <button type="button" class="release-doc-playbook-mode-btn ${playbookMode === 'manual' ? 'active' : ''}" onclick="setReleaseDocumentPlaybookMode('manual')">
+                        <i class="bi bi-ui-checks-grid me-1"></i>&#1042;&#1099;&#1073;&#1088;&#1072;&#1090;&#1100; &#1074;&#1088;&#1091;&#1095;&#1085;&#1091;&#1102;
+                    </button>
+                </div>
+            `;
+
+            return `
+                <div class="release-doc-step-title">&#1055;&#1083;&#1077;&#1081;&#1073;&#1091;&#1082;&#1080;</div>
+                <div class="release-doc-step-description">
+                    &#1042;&#1089;&#1090;&#1072;&#1074;&#1100;&#1090;&#1077; &#1085;&#1091;&#1078;&#1085;&#1099;&#1077; &#1087;&#1083;&#1077;&#1081;&#1073;&#1091;&#1082;&#1080; &#1089;&#1090;&#1086;&#1083;&#1073;&#1080;&#1082;&#1086;&#1084; &#1080;&#1083;&#1080; &#1074; &#1086;&#1076;&#1085;&#1091; &#1089;&#1090;&#1088;&#1086;&#1082;&#1091;. &#1045;&#1089;&#1083;&#1080; &#1091;&#1076;&#1086;&#1073;&#1085;&#1077;&#1077;, &#1084;&#1086;&#1078;&#1085;&#1086; &#1087;&#1077;&#1088;&#1077;&#1082;&#1083;&#1102;&#1095;&#1080;&#1090;&#1100;&#1089;&#1103; &#1085;&#1072; &#1088;&#1091;&#1095;&#1085;&#1086;&#1081; &#1074;&#1099;&#1073;&#1086;&#1088;.
+                </div>
+                ${modeSwitch}
+                <div class="release-doc-playbooks">
+                    ${playbookMode === 'manual' ? `
+                        <div class="release-doc-playbook-list">
+                            ${availablePlaybooks.map((playbook, index) => `
+                                <div class="form-check">
+                                    <input
+                                        class="form-check-input"
+                                        type="checkbox"
+                                        name="releaseDocumentPlaybooks"
+                                        id="releaseDocumentPlaybook${index}"
+                                        value="${escapeHtml(playbook)}"
+                                        ${state.form.playbooks.includes(playbook) ? 'checked' : ''}
+                                    >
+                                    <label class="form-check-label" for="releaseDocumentPlaybook${index}">${escapeHtml(playbook)}</label>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : `
+                        <label class="release-doc-field-label" for="releaseDocumentPlaybooksText">&#1057;&#1087;&#1080;&#1089;&#1086;&#1082; &#1087;&#1083;&#1077;&#1081;&#1073;&#1091;&#1082;&#1086;&#1074;</label>
+                        <textarea
+                            id="releaseDocumentPlaybooksText"
+                            class="form-control release-doc-playbook-textarea"
+                            placeholder="DB_UPDATE&#10;OPENSHIFT_DEPLOY&#10;DRY_RUN"
+                            oninput="updateReleaseDocumentPlaybookPastePreview()"
+                        >${escapeHtml(playbookText)}</textarea>
+                        <div class="release-doc-field-help">&#1056;&#1072;&#1079;&#1076;&#1077;&#1083;&#1103;&#1081;&#1090;&#1077; &#1087;&#1083;&#1077;&#1081;&#1073;&#1091;&#1082;&#1080; &#1087;&#1077;&#1088;&#1077;&#1085;&#1086;&#1089;&#1086;&#1084; &#1089;&#1090;&#1088;&#1086;&#1082;&#1080;, &#1087;&#1088;&#1086;&#1073;&#1077;&#1083;&#1086;&#1084;, &#1079;&#1072;&#1087;&#1103;&#1090;&#1086;&#1081; &#1080;&#1083;&#1080; &#1090;&#1086;&#1095;&#1082;&#1086;&#1081; &#1089; &#1079;&#1072;&#1087;&#1103;&#1090;&#1086;&#1081;.</div>
+                        <div id="releaseDocumentPlaybooksPreview" class="release-doc-playbook-preview">
+                            ${renderReleaseDocumentPlaybookPreview(state.form.playbooks || [])}
+                        </div>
+                    `}
+                </div>
+            `;
         }
 
         async function saveReleaseDocumentManualDistribution(state) {
@@ -5472,9 +5667,7 @@
             }
 
             if (step.type === 'playbooks') {
-                state.form.playbooks = Array.from(document.querySelectorAll('input[name="releaseDocumentPlaybooks"]:checked'))
-                    .map(input => input.value);
-                state.dirty.playbooks = true;
+                syncReleaseDocumentPlaybooksForm(state);
                 markReleaseDocumentStepCompleted(state, step.type);
             }
             return syncReleaseDocumentZniForm(state);
@@ -5573,6 +5766,7 @@
                 `;
             } else if (step.type === 'playbooks') {
                 const playbooks = Array.isArray(state.initData?.playbooks) ? state.initData.playbooks : RELEASE_DOCUMENT_PLAYBOOKS;
+                const playbookContentBefore = content;
                 content += `
                     <div class="release-doc-step-title">Выбор плейбуков</div>
                     <div class="release-doc-step-description">
@@ -5594,6 +5788,7 @@
                         `).join('')}
                     </div>
                 `;
+                content = playbookContentBefore + buildReleaseDocumentPlaybooksStepContent(state, playbooks);
             }
 
             if (stepNumber === totalSteps) {
