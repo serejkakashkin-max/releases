@@ -1,4 +1,5 @@
 import logging
+import copy
 import json
 import html
 import os
@@ -3771,6 +3772,76 @@ def _execute_issue_keys_search(
     return issues
 
 
+def _execute_issue_get(
+    domain,
+    token,
+    issue_key,
+    fields_to_load,
+    *,
+    retry_server_errors=False,
+    retry_max_attempts=None,
+    retry_delay_seconds=None,
+    retry_label="",
+):
+    issue_key = str(issue_key or "").strip()
+    if not issue_key:
+        return None
+
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+    url = f"{domain}/rest/api/2/issue/{issue_key}"
+    params = {
+        "fields": ",".join(sorted(field for field in fields_to_load if field)),
+    }
+    max_attempts = max(
+        1,
+        int(
+            retry_max_attempts
+            if retry_max_attempts is not None
+            else (RELIABLE_SEARCH_MAX_ATTEMPTS if retry_server_errors else 1)
+        ),
+    )
+    retry_delay = float(
+        retry_delay_seconds
+        if retry_delay_seconds is not None
+        else RELIABLE_SEARCH_RETRY_DELAY_SECONDS
+    )
+
+    attempt = 1
+    while True:
+        try:
+            response = requests.get(url, headers=headers, params=params, verify=False, timeout=60)
+            if (
+                retry_server_errors
+                and response.status_code in RELIABLE_SEARCH_RETRY_STATUS_CODES
+                and attempt < max_attempts
+            ):
+                logging.warning(
+                    "Release monitor: direct issue check failed with %s for %s, retry %s/%s",
+                    response.status_code,
+                    retry_label or issue_key,
+                    attempt + 1,
+                    max_attempts,
+                )
+                time.sleep(retry_delay)
+                attempt += 1
+                continue
+            response.raise_for_status()
+            return response.json()
+        except (requests.ConnectionError, requests.Timeout) as exc:
+            if retry_server_errors and attempt < max_attempts:
+                logging.warning(
+                    "Release monitor: direct issue check transient error for %s: %s, retry %s/%s",
+                    retry_label or issue_key,
+                    exc,
+                    attempt + 1,
+                    max_attempts,
+                )
+                time.sleep(retry_delay)
+                attempt += 1
+                continue
+            raise
+
+
 def _release_monitor_release_fields_to_load(resolved_fields):
     return {
         "key",
@@ -3880,6 +3951,316 @@ def _extract_linked_release_keys_from_rov(issue):
             release_keys.append(key)
 
     return sorted(dict.fromkeys(release_keys))
+
+
+def _split_release_monitor_row_key(row_key):
+    raw_key = str(row_key or "").strip()
+    if "::" not in raw_key:
+        return "", ""
+    release_key, rov_key = raw_key.split("::", 1)
+    release_key = release_key.strip()
+    rov_key = rov_key.strip()
+    if not release_key or not rov_key or rov_key == "no-rov":
+        return release_key, ""
+    return release_key, rov_key
+
+
+def _is_real_rov_key(value):
+    raw_value = str(value or "").strip()
+    return bool(raw_value and raw_value != "no-rov" and re.match(r"^[A-Z][A-Z0-9]*-\d+$", raw_value))
+
+
+def _issue_key_sort_key(issue_key):
+    match = re.search(r"-(\d+)$", str(issue_key or ""))
+    return int(match.group(1)) if match else -1
+
+
+def _collect_known_rov_links(base_items=None):
+    links = defaultdict(dict)
+
+    def _add_link(release_key, rov_key, *, source="", item=None):
+        release_key = str(release_key or "").strip()
+        rov_key = str(rov_key or "").strip()
+        if not release_key or not _is_real_rov_key(rov_key):
+            return
+        entry = links[release_key].setdefault(
+            rov_key,
+            {
+                "sources": set(),
+                "item": None,
+            },
+        )
+        if source:
+            entry["sources"].add(source)
+        if item is not None and entry.get("item") is None:
+            entry["item"] = item
+
+    for item in base_items or []:
+        if not isinstance(item, dict):
+            continue
+        _add_link(item.get("release_key"), item.get("rov_key"), source="snapshot", item=dict(item))
+
+    for row_key in (_load_reviewer_assignments() or {}).keys():
+        release_key, rov_key = _split_release_monitor_row_key(row_key)
+        _add_link(release_key, rov_key, source="reviewers")
+
+    zni_payload = _load_zni_payload()
+    for section_name in ("issues", "flags"):
+        for row_key in (zni_payload.get(section_name) or {}).keys():
+            release_key, rov_key = _split_release_monitor_row_key(row_key)
+            _add_link(release_key, rov_key, source=f"zni.{section_name}")
+
+    for row_key in (_load_release_attempt_outcomes() or {}).keys():
+        release_key, rov_key = _split_release_monitor_row_key(row_key)
+        _add_link(release_key, rov_key, source="attempts")
+
+    return {
+        release_key: {
+            rov_key: {
+                "sources": sorted(entry.get("sources") or []),
+                "item": entry.get("item"),
+            }
+            for rov_key, entry in sorted(
+                rov_entries.items(),
+                key=lambda pair: _issue_key_sort_key(pair[0]),
+            )
+        }
+        for release_key, rov_entries in links.items()
+    }
+
+
+def _build_cached_rov_record_from_item(item):
+    if not isinstance(item, dict):
+        return None
+    rov_key = str(item.get("rov_key") or "").strip()
+    if not _is_real_rov_key(rov_key):
+        return None
+
+    start_dt = _parse_jira_date(
+        item.get("deployment_start_iso")
+        or item.get("source_deployment_start_iso")
+        or item.get("deployment_start")
+        or item.get("source_deployment_start")
+    )
+    end_dt = _parse_jira_date(
+        item.get("deployment_end_iso")
+        or item.get("source_deployment_end_iso")
+        or item.get("deployment_end")
+        or item.get("source_deployment_end")
+    )
+    return {
+        "key": rov_key,
+        "summary": str(item.get("rov_summary") or ""),
+        "status": str(item.get("rov_status") or ""),
+        "issue_type": ROV_ISSUE_TYPE,
+        "start_dt": start_dt,
+        "end_dt": end_dt,
+        "start": start_dt.strftime("%d.%m.%Y") if start_dt else str(item.get("deployment_start") or ""),
+        "end": end_dt.strftime("%d.%m.%Y") if end_dt else str(item.get("deployment_end") or ""),
+        "start_iso": start_dt.isoformat() if start_dt else str(item.get("deployment_start_iso") or ""),
+        "end_iso": end_dt.isoformat() if end_dt else str(item.get("deployment_end_iso") or ""),
+        "url": str(item.get("rov_url") or _build_jira_issue_url_from_key(rov_key)),
+    }
+
+
+def _inject_release_io_links(issue, rov_keys):
+    cloned_issue = copy.deepcopy(issue or {})
+    fields = cloned_issue.setdefault("fields", {})
+    links = list(fields.get("issuelinks") or [])
+    existing_keys = set(_extract_release_io_keys(cloned_issue))
+    for rov_key in rov_keys:
+        rov_key = str(rov_key or "").strip()
+        if not _is_real_rov_key(rov_key) or rov_key in existing_keys:
+            continue
+        links.append(
+            {
+                "type": {
+                    "name": "ReleaseIO",
+                    "inward": "Introduction Order",
+                    "outward": "Release",
+                },
+                "inwardIssue": {
+                    "key": rov_key,
+                    "fields": {
+                        "issuetype": {"name": ROV_ISSUE_TYPE},
+                    },
+                },
+            }
+        )
+        existing_keys.add(rov_key)
+    fields["issuelinks"] = links
+    return cloned_issue
+
+
+def _restore_missing_rov_links_from_known_state(
+    domain,
+    token,
+    release_issues_by_key,
+    base_items,
+    resolved_fields,
+    release_fields_to_load,
+    rov_fields_to_load,
+    *,
+    retry_kwargs=None,
+    context_label="refresh",
+):
+    known_links = _collect_known_rov_links(base_items)
+    if not known_links:
+        return {}
+
+    retry_kwargs = dict(retry_kwargs or {})
+    restored_rov_records = {}
+    for release_key, pair in list((release_issues_by_key or {}).items()):
+        release_key = str(release_key or "").strip()
+        if not release_key:
+            continue
+
+        prefix, search_issue = pair
+        if _extract_release_io_keys(search_issue):
+            continue
+
+        known_rov_entries = known_links.get(release_key) or {}
+        if not known_rov_entries:
+            continue
+
+        known_rov_keys = sorted(known_rov_entries.keys(), key=_issue_key_sort_key)
+        logging.warning(
+            "Release monitor: suspicious ROV link loss during %s for %s; known ROV keys=%s",
+            context_label,
+            release_key,
+            ", ".join(known_rov_keys),
+        )
+
+        direct_release_issue = None
+        direct_release_failed = False
+        try:
+            direct_release_issue = _execute_issue_get(
+                domain,
+                token,
+                release_key,
+                release_fields_to_load,
+                retry_label=f"{domain} direct release {release_key}",
+                **retry_kwargs,
+            )
+        except Exception as exc:
+            direct_release_failed = True
+            logging.warning(
+                "Release monitor: direct release ROV recheck failed for %s during %s: %s",
+                release_key,
+                context_label,
+                exc,
+            )
+
+        direct_rov_keys = _extract_release_io_keys(direct_release_issue or {})
+        if direct_rov_keys:
+            release_issues_by_key[release_key] = (prefix, direct_release_issue)
+            for rov_key in direct_rov_keys:
+                try:
+                    rov_issue = _execute_issue_get(
+                        domain,
+                        token,
+                        rov_key,
+                        rov_fields_to_load,
+                        retry_label=f"{domain} direct ROV {rov_key}",
+                        **retry_kwargs,
+                    )
+                    restored_rov_records[rov_key] = _build_rov_record(rov_issue, domain, resolved_fields)
+                except Exception as exc:
+                    cached_record = _build_cached_rov_record_from_item(
+                        (known_rov_entries.get(rov_key) or {}).get("item")
+                    )
+                    if cached_record:
+                        restored_rov_records[rov_key] = cached_record
+                    logging.warning(
+                        "Release monitor: direct ROV load failed after release recheck for %s -> %s during %s: %s",
+                        release_key,
+                        rov_key,
+                        context_label,
+                        exc,
+                    )
+            logging.warning(
+                "Release monitor: restored ROV links for %s from direct release issue API: %s",
+                release_key,
+                ", ".join(direct_rov_keys),
+            )
+            continue
+
+        reverse_restored_keys = []
+        reverse_check_failed = False
+        for rov_key in known_rov_keys:
+            try:
+                rov_issue = _execute_issue_get(
+                    domain,
+                    token,
+                    rov_key,
+                    rov_fields_to_load,
+                    retry_label=f"{domain} direct ROV {rov_key}",
+                    **retry_kwargs,
+                )
+            except Exception as exc:
+                reverse_check_failed = True
+                logging.warning(
+                    "Release monitor: direct ROV reverse recheck failed for %s -> %s during %s: %s",
+                    release_key,
+                    rov_key,
+                    context_label,
+                    exc,
+                )
+                continue
+
+            linked_release_keys = _extract_linked_release_keys_from_rov(rov_issue or {})
+            if release_key not in linked_release_keys:
+                continue
+
+            reverse_restored_keys.append(rov_key)
+            restored_rov_records[rov_key] = _build_rov_record(rov_issue, domain, resolved_fields)
+
+        if reverse_restored_keys:
+            release_issues_by_key[release_key] = (
+                prefix,
+                _inject_release_io_links(direct_release_issue or search_issue, reverse_restored_keys),
+            )
+            logging.warning(
+                "Release monitor: restored ROV links for %s from reverse ROV issue API: %s",
+                release_key,
+                ", ".join(reverse_restored_keys),
+            )
+            continue
+
+        if direct_release_failed or reverse_check_failed:
+            cached_restored_keys = []
+            for rov_key in known_rov_keys:
+                cached_record = _build_cached_rov_record_from_item(
+                    (known_rov_entries.get(rov_key) or {}).get("item")
+                )
+                if not cached_record:
+                    continue
+                cached_restored_keys.append(rov_key)
+                restored_rov_records[rov_key] = cached_record
+
+            if cached_restored_keys:
+                release_issues_by_key[release_key] = (
+                    prefix,
+                    _inject_release_io_links(direct_release_issue or search_issue, cached_restored_keys),
+                )
+                logging.warning(
+                    "Release monitor: preserved cached ROV links for %s after technical recheck failure: %s",
+                    release_key,
+                    ", ".join(cached_restored_keys),
+                )
+                continue
+
+        logging.warning(
+            "Release monitor: confirmed missing ROV links for %s during %s after direct checks; known ROV keys=%s",
+            release_key,
+            context_label,
+            ", ".join(known_rov_keys),
+        )
+        confirmed_issue = copy.deepcopy(direct_release_issue or search_issue or {})
+        confirmed_issue["_release_monitor_confirmed_missing_rov"] = True
+        release_issues_by_key[release_key] = (prefix, confirmed_issue)
+
+    return restored_rov_records
 
 
 def _sort_rov_records_for_release(rov_records):
@@ -4144,6 +4525,7 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
             "is_today": is_today,
             "days_overdue": days_overdue,
             "waits_for_rov": not rov_key and not is_cancelled,
+            "rov_unlink_confirmed": bool(issue.get("_release_monitor_confirmed_missing_rov")),
             "is_unnumbered": is_unnumbered,
             "is_natural_unnumbered": is_unnumbered,
             "is_force_unnumbered": False,
@@ -4534,7 +4916,7 @@ def _compose_release_payload(all_records, mode):
     return payload
 
 
-def _fetch_release_monitor_data(*, reliable=False):
+def _fetch_release_monitor_data(*, reliable=False, base_items=None):
     current_year = datetime.now().year
     previous_year = current_year - 1
     all_records = []
@@ -4587,6 +4969,26 @@ def _fetch_release_monitor_data(*, reliable=False):
                 if reliable:
                     raise
 
+        release_issues_by_key = {
+            issue.get("key"): (prefix, issue)
+            for prefix, issue in domain_release_issues
+            if issue.get("key")
+        }
+        restored_rov_records = _restore_missing_rov_links_from_known_state(
+            domain,
+            token,
+            release_issues_by_key,
+            base_items or [],
+            resolved_fields,
+            release_fields_to_load,
+            _release_monitor_rov_fields_to_load(resolved_fields),
+            retry_kwargs={
+                "retry_server_errors": reliable,
+            },
+            context_label=RELIABLE_FULL_REFRESH_MODE if reliable else "full",
+        )
+        domain_release_issues = list(release_issues_by_key.values())
+
         rov_keys = sorted(
             {
                 rov_key
@@ -4617,10 +5019,14 @@ def _fetch_release_monitor_data(*, reliable=False):
                     issue.get("key"): _build_rov_record(issue, domain, resolved_fields)
                     for issue in rov_issues
                 }
+                rov_map.update(restored_rov_records)
             except Exception as exc:
                 logging.error("Release monitor: failed to load linked ROV issues from %s: %s", domain, exc)
                 if reliable:
                     raise
+                rov_map.update(restored_rov_records)
+        else:
+            rov_map.update(restored_rov_records)
 
         for prefix, issue in domain_release_issues:
             records = _build_release_record(
@@ -4638,23 +5044,130 @@ def _fetch_release_monitor_data(*, reliable=False):
     return _compose_release_payload(all_records, RELIABLE_FULL_REFRESH_MODE if reliable else "full")
 
 
+def _merge_release_level_updates_into_known_rov_item(existing_item, update_item):
+    merged = dict(existing_item or {})
+    update_item = dict(update_item or {})
+    release_level_fields = (
+        "release_key",
+        "release_url",
+        "release_status",
+        "release_status_normalized",
+        "release_summary",
+        "base_release_summary",
+        "ke",
+        "base_ke",
+        "ke_name",
+        "ke_id",
+        "release_version",
+        "release_dist_url",
+        "base_release_version",
+        "base_release_dist_url",
+        "system_name",
+        "base_system_name",
+        "release_type",
+        "base_release_type",
+        "is_hotfix",
+        "source_prefix",
+        "created",
+        "created_sort_date",
+    )
+    for field_name in release_level_fields:
+        if field_name in update_item:
+            merged[field_name] = update_item.get(field_name)
+
+    update_lines = list(update_item.get("release_name_lines") or [])
+    if update_lines:
+        row_label = str(merged.get("row_label") or "").strip()
+        if row_label:
+            update_lines[-1] = row_label
+        merged["release_name_lines"] = update_lines
+
+    base_update_lines = list(update_item.get("base_release_name_lines") or [])
+    if base_update_lines:
+        row_label = str(merged.get("row_label") or "").strip()
+        if row_label:
+            base_update_lines[-1] = row_label
+        merged["base_release_name_lines"] = base_update_lines
+
+    merged["has_rov"] = True
+    merged["rov_unlink_confirmed"] = False
+    return merged
+
+
 def _merge_release_records(existing_items, updated_items):
     current_year = datetime.now().year
     previous_year = current_year - 1
+    existing_items = list(existing_items or [])
+    updated_items = [dict(item) for item in (updated_items or []) if isinstance(item, dict)]
+
+    existing_by_release = defaultdict(list)
+    for item in existing_items:
+        release_key = str(item.get("release_key") or "").strip()
+        if release_key:
+            existing_by_release[release_key].append(item)
+
+    updated_by_release = defaultdict(list)
+    for item in updated_items:
+        release_key = str(item.get("release_key") or "").strip()
+        if release_key:
+            updated_by_release[release_key].append(item)
+
+    protected_release_updates = {}
+    for release_key, release_updated_items in updated_by_release.items():
+        updated_real_rov_items = [
+            item for item in release_updated_items if _is_real_rov_key(item.get("rov_key"))
+        ]
+        updated_no_rov_items = [
+            item for item in release_updated_items if not _is_real_rov_key(item.get("rov_key"))
+        ]
+        existing_real_rov_items = [
+            item
+            for item in existing_by_release.get(release_key, [])
+            if item.get("year") in {current_year, previous_year}
+            and _is_real_rov_key(item.get("rov_key"))
+        ]
+        unlink_confirmed = any(bool(item.get("rov_unlink_confirmed")) for item in updated_no_rov_items)
+        if updated_real_rov_items or not updated_no_rov_items or not existing_real_rov_items or unlink_confirmed:
+            continue
+
+        update_item = updated_no_rov_items[0]
+        protected_release_updates[release_key] = {
+            str(item.get("row_key") or item.get("release_key") or ""): _merge_release_level_updates_into_known_rov_item(
+                item,
+                update_item,
+            )
+            for item in existing_real_rov_items
+            if str(item.get("row_key") or item.get("release_key") or "")
+        }
+        logging.warning(
+            "Release monitor: preserved known ROV rows for %s because refresh returned only no-rov row",
+            release_key,
+        )
+
     updated_release_keys = {
         item.get("release_key")
-        for item in (updated_items or [])
+        for item in updated_items
         if item.get("release_key")
     }
-    records_by_key = {
-        item.get("row_key") or item.get("release_key"): dict(item)
-        for item in (existing_items or [])
-        if (item.get("row_key") or item.get("release_key"))
-        and item.get("year") in {current_year, previous_year}
-        and item.get("release_key") not in updated_release_keys
-    }
+
+    records_by_key = {}
+    for item in existing_items:
+        item_key = item.get("row_key") or item.get("release_key")
+        if not item_key or item.get("year") not in {current_year, previous_year}:
+            continue
+        release_key = item.get("release_key")
+        if release_key in protected_release_updates:
+            protected_item = protected_release_updates[release_key].get(str(item_key))
+            if protected_item:
+                records_by_key[item_key] = protected_item
+            continue
+        if release_key not in updated_release_keys:
+            records_by_key[item_key] = dict(item)
 
     for item in updated_items:
+        release_key = item.get("release_key")
+        if release_key in protected_release_updates and not _is_real_rov_key(item.get("rov_key")):
+            continue
         item_key = item.get("row_key") or item.get("release_key")
         if item and item_key:
             records_by_key[item_key] = item
@@ -4772,6 +5285,23 @@ def _fetch_quick_release_monitor_data(base_items=None):
                     exc,
                 )
 
+        release_issues_by_key = {
+            issue.get("key"): (prefix, issue)
+            for prefix, issue in domain_release_issues
+            if issue.get("key")
+        }
+        restored_rov_records = _restore_missing_rov_links_from_known_state(
+            domain,
+            token,
+            release_issues_by_key,
+            base_items or [],
+            resolved_fields,
+            release_fields_to_load,
+            _release_monitor_rov_fields_to_load(resolved_fields),
+            context_label="quick",
+        )
+        domain_release_issues = list(release_issues_by_key.values())
+
         rov_keys = sorted(
             {
                 rov_key
@@ -4796,8 +5326,12 @@ def _fetch_quick_release_monitor_data(base_items=None):
                     issue.get("key"): _build_rov_record(issue, domain, resolved_fields)
                     for issue in rov_issues
                 }
+                rov_map.update(restored_rov_records)
             except Exception as exc:
                 logging.error("Release monitor: quick refresh failed to load linked ROV issues from %s: %s", domain, exc)
+                rov_map.update(restored_rov_records)
+        else:
+            rov_map.update(restored_rov_records)
 
         for prefix, issue in domain_release_issues:
             records = _build_release_record(
@@ -4961,6 +5495,18 @@ def _fetch_incremental_release_monitor_data(base_items=None, lookback_minutes=AU
                     error=exc,
                 )
 
+        restored_rov_records = _restore_missing_rov_links_from_known_state(
+            domain,
+            token,
+            release_issues_by_key,
+            base_items or [],
+            resolved_fields,
+            release_fields_to_load,
+            rov_fields_to_load,
+            retry_kwargs=auto_retry_kwargs,
+            context_label="auto_incremental",
+        )
+
         release_issues = list(release_issues_by_key.values())
         rov_keys = sorted(
             {
@@ -4986,6 +5532,7 @@ def _fetch_incremental_release_monitor_data(base_items=None, lookback_minutes=AU
                     for issue in rov_issues
                     if issue.get("key")
                 }
+                rov_map.update(restored_rov_records)
                 _record_auto_incremental_jira_check(jira_diagnostics, label=f"{domain} linked ROV")
             except Exception as exc:
                 logging.error("Release monitor: auto incremental failed to load linked ROV issues from %s: %s", domain, exc)
@@ -4998,6 +5545,9 @@ def _fetch_incremental_release_monitor_data(base_items=None, lookback_minutes=AU
                     key: _build_rov_record(issue, domain, resolved_fields)
                     for key, issue in updated_rov_issues_by_key.items()
                 }
+                rov_map.update(restored_rov_records)
+        else:
+            rov_map.update(restored_rov_records)
 
         for prefix, issue in release_issues:
             records = _build_release_record(
@@ -5316,7 +5866,9 @@ def get_release_monitor_data(force_refresh=False):
             return _cached_data
 
     manual_overrides = _load_manual_release_overrides()
-    data = _fetch_release_monitor_data()
+    with _cache_lock:
+        base_items = list((_cached_data or {}).get("items", []))
+    data = _fetch_release_monitor_data(base_items=base_items)
     current_meta = (_cached_data or {}).get("meta", {})
     data["meta"]["last_full_sync"] = data["meta"].get("last_updated")
     data["meta"]["last_quick_sync"] = current_meta.get("last_quick_sync")
@@ -5354,7 +5906,7 @@ def _run_release_monitor_refresh(mode="full", trigger="manual"):
         if mode == "quick" and base_items:
             data = _fetch_quick_release_monitor_data(base_items)
         else:
-            data = _fetch_release_monitor_data(reliable=reliable)
+            data = _fetch_release_monitor_data(reliable=reliable, base_items=base_items)
             if mode == "quick":
                 mode = "full"
 
