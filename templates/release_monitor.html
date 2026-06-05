@@ -463,13 +463,274 @@
 
         .release-monitor-controls {
             display: grid;
-            grid-template-columns: 1.4fr 1fr 1fr 1fr;
+            grid-template-columns: minmax(220px, 1.4fr) repeat(3, minmax(150px, 1fr)) minmax(116px, auto);
             gap: 0.4rem;
             margin-bottom: 0.48rem;
             padding: 0.28rem;
             border: 1px solid var(--release-soft-border);
             border-radius: 13px;
             background: var(--release-strip-bg);
+        }
+
+        .release-work-mark-picker {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.32rem;
+            min-width: 0;
+        }
+
+        .release-work-mark-picker select {
+            min-width: 170px;
+        }
+
+        .release-work-mark-chip-row {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.32rem;
+            overflow: visible;
+            min-width: 0;
+        }
+
+        .release-work-mark-chip {
+            border: 1px solid rgba(74, 144, 226, 0.28);
+            background: rgba(74, 144, 226, 0.08);
+            color: var(--text-secondary);
+            border-radius: 999px;
+            padding: 0.24rem 0.48rem;
+            min-height: 30px;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.28rem;
+            font-size: 0.75rem;
+            font-weight: 800;
+            white-space: nowrap;
+            cursor: pointer;
+            transition: all 0.16s ease;
+        }
+
+        .release-work-mark-chip:hover,
+        .release-work-mark-chip.active {
+            border-color: rgba(74, 144, 226, 0.62);
+            background: rgba(74, 144, 226, 0.18);
+            color: var(--primary);
+        }
+
+        .release-work-mark-chip.empty {
+            border-style: dashed;
+            cursor: default;
+            color: var(--text-muted);
+        }
+
+        .release-work-mark-chip.empty.active,
+        .release-work-mark-chip.empty[role="button"] {
+            cursor: pointer;
+        }
+
+        .release-work-mark-chip.empty.active {
+            color: var(--primary);
+            border-style: solid;
+        }
+
+        .release-work-mark-chip.clear-mark {
+            border-color: rgba(248, 81, 73, 0.28);
+            background: rgba(248, 81, 73, 0.08);
+            color: #b42318;
+        }
+
+        .release-work-mark-chip.clear-mark:hover,
+        .release-work-mark-chip.clear-mark.active {
+            border-color: rgba(248, 81, 73, 0.54);
+            background: rgba(248, 81, 73, 0.14);
+            color: #b42318;
+        }
+
+        [data-theme="dark"] .release-work-mark-chip.clear-mark {
+            color: #ff9b9b;
+        }
+
+        .release-work-mark-chip-remove {
+            border: 0;
+            background: transparent;
+            color: inherit;
+            opacity: 0.7;
+            padding: 0;
+            line-height: 1;
+            cursor: pointer;
+        }
+
+        .release-work-mark-chip-remove:hover {
+            opacity: 1;
+        }
+
+        .release-work-mark-toggle {
+            border: 1px solid rgba(32, 201, 151, 0.34);
+            background: rgba(32, 201, 151, 0.12);
+            color: #0f766e;
+            border-radius: 10px;
+            padding: 0.36rem 0.68rem;
+            min-height: 32px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.34rem;
+            font-size: 0.78rem;
+            font-weight: 850;
+            white-space: nowrap;
+            cursor: pointer;
+        }
+
+        .release-work-mark-toggle.active {
+            border-color: rgba(255, 193, 7, 0.54);
+            background: rgba(255, 193, 7, 0.18);
+            color: #8a5a00;
+        }
+
+        [data-theme="dark"] .release-work-mark-toggle {
+            color: #7ee4ca;
+        }
+
+        [data-theme="dark"] .release-work-mark-toggle.active {
+            color: #ffd666;
+        }
+
+        .release-work-mark-floating {
+            display: none;
+            position: fixed;
+            right: 1.25rem;
+            top: 5.25rem;
+            z-index: 1190;
+            width: min(460px, calc(100vw - 2rem));
+            border: 1px solid rgba(32, 201, 151, 0.34);
+            border-left: 4px solid rgba(32, 201, 151, 0.78);
+            border-radius: 16px;
+            background: color-mix(in srgb, var(--bg-secondary) 94%, rgba(32, 201, 151, 0.10));
+            color: var(--text-primary);
+            box-shadow: 0 22px 58px rgba(15, 23, 42, 0.18);
+            overflow: hidden;
+            opacity: 0;
+            transform: translateY(-6px) scale(0.985);
+            transition: opacity 0.18s ease, transform 0.18s ease;
+        }
+
+        .release-work-mark-floating.show {
+            display: block;
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }
+
+        .release-work-mark-floating.is-collapsed {
+            width: min(410px, calc(100vw - 2rem));
+            cursor: pointer;
+        }
+
+        .release-work-mark-floating-expanded {
+            display: grid;
+            gap: 0.52rem;
+            padding: 0.68rem;
+        }
+
+        .release-work-mark-floating.is-collapsed .release-work-mark-floating-expanded {
+            display: none;
+        }
+
+        .release-work-mark-floating-collapsed {
+            display: none;
+            padding: 0.58rem 0.66rem;
+        }
+
+        .release-work-mark-floating.is-collapsed .release-work-mark-floating-collapsed {
+            display: grid;
+            gap: 0.18rem;
+        }
+
+        .release-work-mark-floating-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.55rem;
+        }
+
+        .release-work-mark-active-text {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            color: var(--text-primary);
+            font-size: 0.84rem;
+            font-weight: 850;
+            min-width: 0;
+        }
+
+        .release-work-mark-active-text strong {
+            color: #0f766e;
+        }
+
+        [data-theme="dark"] .release-work-mark-active-text strong {
+            color: #7ee4ca;
+        }
+
+        .release-work-mark-floating-actions {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.32rem;
+            flex: 0 0 auto;
+        }
+
+        .release-work-mark-stop-btn {
+            border: 1px solid rgba(108, 117, 125, 0.28);
+            background: rgba(108, 117, 125, 0.10);
+            color: var(--text-secondary);
+            border-radius: 9px;
+            padding: 0.28rem 0.55rem;
+            font-size: 0.76rem;
+            font-weight: 800;
+            cursor: pointer;
+        }
+
+        .release-work-mark-icon-btn {
+            width: 30px;
+            height: 30px;
+            border: 1px solid rgba(108, 117, 125, 0.24);
+            background: rgba(108, 117, 125, 0.08);
+            color: var(--text-secondary);
+            border-radius: 9px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+
+        .release-work-mark-icon-btn:hover,
+        .release-work-mark-stop-btn:hover {
+            color: var(--text-primary);
+            background: rgba(108, 117, 125, 0.16);
+        }
+
+        .release-work-mark-collapsed-title {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.38rem;
+            font-size: 0.84rem;
+            font-weight: 900;
+            color: var(--text-primary);
+        }
+
+        .release-work-mark-collapsed-title strong {
+            color: #0f766e;
+        }
+
+        [data-theme="dark"] .release-work-mark-collapsed-title strong {
+            color: #7ee4ca;
+        }
+
+        .release-work-mark-balance {
+            color: var(--text-secondary);
+            font-size: 0.74rem;
+            font-weight: 750;
+            line-height: 1.28;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .release-extra-controls {
@@ -875,6 +1136,20 @@
             background: transparent;
         }
 
+        .release-monitor-table.work-marking-active .release-row {
+            cursor: copy;
+        }
+
+        .release-monitor-table.work-marking-active .release-row:hover td {
+            background-image:
+                linear-gradient(rgba(32, 201, 151, 0.08), rgba(32, 201, 151, 0.08)),
+                linear-gradient(var(--release-row-hover-layer), var(--release-row-hover-layer));
+        }
+
+        .release-row.work-mark-pending td:first-child {
+            box-shadow: inset 3px 0 0 rgba(255, 193, 7, 0.62);
+        }
+
         .release-row.week-next:not(.rollout-notes-success):not(.rollout-notes-warning):not(.rollout-notes-danger) td:first-child {
             box-shadow: inset 3px 0 0 rgba(45, 212, 191, 0.34);
         }
@@ -973,6 +1248,16 @@
             border-color: rgba(32, 201, 151, 0.28);
             background: rgba(32, 201, 151, 0.1);
             color: #7ee4ca;
+        }
+
+        .release-badge.work-mark {
+            border: 1px solid rgba(74, 144, 226, 0.28);
+            background: rgba(74, 144, 226, 0.10);
+            color: var(--primary);
+        }
+
+        .release-badge.work-mark i {
+            font-size: 0.72rem;
         }
 
         .release-visible-counter {
@@ -1104,6 +1389,28 @@
         }
 
         @media (max-width: 640px) {
+            .release-work-mark-floating,
+            .release-work-mark-floating.is-collapsed {
+                left: 0.75rem;
+                right: 0.75rem;
+                top: 4.75rem;
+                width: auto;
+            }
+
+            .release-work-mark-floating-head,
+            .release-work-mark-picker {
+                align-items: stretch;
+                flex-direction: column;
+            }
+
+            .release-work-mark-floating-actions {
+                justify-content: stretch;
+            }
+
+            .release-work-mark-floating-actions > * {
+                flex: 1 1 0;
+            }
+
             .release-update-toast {
                 right: 0.75rem;
                 bottom: 0.75rem;
@@ -1717,6 +2024,18 @@
             justify-content: flex-end;
             gap: 0.42rem;
             flex-wrap: wrap;
+        }
+
+        .release-row-settings-work-mark {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.32rem;
+            min-width: 220px;
+        }
+
+        .release-row-settings-work-mark select {
+            min-width: 160px;
+            max-width: 220px;
         }
 
         .release-row-settings-action-btn {
@@ -3117,9 +3436,46 @@
                         <option value="final">Установлен на ПРОМ</option>
                         <option value="cancelled">Отменено</option>
                     </select>
-                    <select id="releaseStatusFilter" class="release-filter-select" onchange="applyReleaseFilters()">
-                        <option value="all">Все статусы</option>
+                    <select id="releaseWorkMarkFilter" class="release-filter-select" onchange="handleReleaseWorkMarkFilter()">
+                        <option value="all">Все релизы</option>
                     </select>
+                    <button type="button" id="releaseWorkMarkModeBtn" class="release-work-mark-toggle" onclick="toggleReleaseWorkMarkMode()">
+                        <i class="bi bi-tags"></i>
+                        Разметка
+                    </button>
+                </div>
+
+                <div id="releaseWorkMarkActiveBanner" class="release-work-mark-floating" role="status" aria-live="polite">
+                    <div class="release-work-mark-floating-collapsed" onclick="setReleaseWorkMarkPanelCollapsed(false)" role="button" tabindex="0" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setReleaseWorkMarkPanelCollapsed(false); }">
+                        <div class="release-work-mark-collapsed-title">
+                            <i class="bi bi-tags-fill"></i>
+                            <span>Разметка: <strong id="releaseWorkMarkCollapsedName"></strong> (<span id="releaseWorkMarkCollapsedCount">0</span>)</span>
+                        </div>
+                        <div id="releaseWorkMarkCollapsedBalance" class="release-work-mark-balance"></div>
+                    </div>
+                    <div class="release-work-mark-floating-expanded">
+                        <div class="release-work-mark-floating-head">
+                            <div class="release-work-mark-active-text">
+                                <i class="bi bi-cursor-fill"></i>
+                                <span>Разметка активна: <strong id="releaseWorkMarkActiveName"></strong></span>
+                            </div>
+                            <div class="release-work-mark-floating-actions">
+                                <button type="button" class="release-work-mark-icon-btn" onclick="setReleaseWorkMarkPanelCollapsed(true)" title="Свернуть панель">
+                                    <i class="bi bi-chevron-down"></i>
+                                </button>
+                                <button type="button" class="release-work-mark-stop-btn" onclick="setReleaseWorkMarkMode(false)">Выключить</button>
+                            </div>
+                        </div>
+                        <div class="release-work-mark-picker">
+                            <select id="releaseWorkMarkParticipantPicker" class="release-filter-select" title="Добавить участника окна">
+                                <option value="">Участник окна</option>
+                            </select>
+                            <button type="button" class="release-row-settings-action-btn" onclick="addReleaseWorkMarkParticipantFromPicker()" title="Добавить участника окна">
+                                <i class="bi bi-plus-lg"></i>
+                            </button>
+                        </div>
+                        <div class="release-work-mark-chip-row" id="releaseWorkMarkChips" aria-label="Участники окна"></div>
+                    </div>
                 </div>
 
                 <div id="releaseUpdateBanner" class="release-update-banner" role="status" aria-live="polite">
@@ -3332,6 +3688,7 @@
         let releaseMonitorItems = [];
         const releaseColorSaveSeqByKey = new Map();
         const releaseAssignmentSaveSeqByKey = new Map();
+        const releaseWorkMarkSaveSeqByKey = new Map();
         let releaseMonitorMeta = {};
         let releaseMonitorRefreshPoll = null;
         let releaseMonitorGlobalStatusPoll = null;
@@ -3343,8 +3700,17 @@
         let releaseUpdateBannerMeta = null;
         let releaseUpdateBannerTimer = null;
         const RELEASE_SCROLL_RESTORE_KEY = 'releaseMonitorScrollRestore';
+        const RELEASE_WORK_MARK_PARTICIPANTS_KEY = 'releaseMonitorWorkMarkParticipants';
+        const RELEASE_WORK_MARK_ACTIVE_KEY = 'releaseMonitorWorkMarkActive';
+        const RELEASE_WORK_MARK_AUTO_COLLAPSE_MS = 30000;
         let releaseScrollRestoreAttempted = false;
         const RELEASE_REVIEWER_OPTIONS = {{ reviewer_options | tojson | safe }};
+        let releaseWorkMarkParticipants = [];
+        let activeReleaseWorkMark = '';
+        let isReleaseWorkMarkingMode = false;
+        let releaseWorkMarkPanelCollapsed = false;
+        let releaseWorkMarkAutoCollapseTimer = null;
+        let releaseWorkMarkCounts = { __none__: 0 };
         const RELEASE_TEMPLATE_HINTS = {{ release_monitor_template_hints | default({}) | tojson | safe }};
         const RELEASE_DOCUMENT_PLAYBOOKS = {{ release_document_playbooks | default([]) | tojson | safe }};
         let releaseDocumentModalInstance = null;
@@ -3408,6 +3774,14 @@
                 .replace(/'/g, '&#39;');
         }
 
+        function escapeCssValue(value) {
+            const text = String(value || '');
+            if (window.CSS && typeof window.CSS.escape === 'function') {
+                return window.CSS.escape(text);
+            }
+            return text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        }
+
         function getReleaseMonitorRevision(meta = releaseMonitorMeta) {
             return String(meta?.data_revision || meta?.last_updated || '').trim();
         }
@@ -3415,6 +3789,473 @@
         function isCustomDutyText(value) {
             const text = String(value || '').trim();
             return Boolean(text) && !RELEASE_REVIEWER_OPTIONS.includes(text);
+        }
+
+        function normalizeReleaseWorkMark(value) {
+            return String(value || '').trim();
+        }
+
+        function getReleaseWorkMarkRowKey(itemOrKey) {
+            if (typeof itemOrKey === 'string') {
+                return itemOrKey.trim();
+            }
+            return String(itemOrKey?.row_key || itemOrKey?.release_key || '').trim();
+        }
+
+        function getReleaseWorkMarkDirectory() {
+            return Array.from(new Set((RELEASE_REVIEWER_OPTIONS || []).map(normalizeReleaseWorkMark).filter(Boolean)));
+        }
+
+        function getReleaseWorkMarkMeta() {
+            return releaseMonitorMeta || window.dashboardData?.release_monitor_meta || {};
+        }
+
+        function getReleaseWorkMarkSuggestedParticipants() {
+            const meta = getReleaseWorkMarkMeta();
+            return Array.from(new Set(
+                (meta.work_mark_suggested_participants || [])
+                    .map(normalizeReleaseWorkMark)
+                    .filter(Boolean)
+                    .filter(name => getReleaseWorkMarkDirectory().includes(name))
+            ));
+        }
+
+        function loadReleaseWorkMarkPreferences() {
+            try {
+                const rawParticipants = localStorage.getItem(RELEASE_WORK_MARK_PARTICIPANTS_KEY);
+                const parsed = rawParticipants ? JSON.parse(rawParticipants) : [];
+                releaseWorkMarkParticipants = Array.isArray(parsed)
+                    ? Array.from(new Set(parsed.map(normalizeReleaseWorkMark).filter(Boolean)))
+                    : [];
+            } catch (error) {
+                releaseWorkMarkParticipants = [];
+            }
+
+            if (!releaseWorkMarkParticipants.length) {
+                releaseWorkMarkParticipants = getReleaseWorkMarkSuggestedParticipants();
+            }
+
+            try {
+                activeReleaseWorkMark = normalizeReleaseWorkMark(localStorage.getItem(RELEASE_WORK_MARK_ACTIVE_KEY));
+            } catch (error) {
+                activeReleaseWorkMark = '';
+            }
+
+            const available = getReleaseWorkMarkAvailableParticipants();
+            if (activeReleaseWorkMark && !available.includes(activeReleaseWorkMark)) {
+                activeReleaseWorkMark = available[0] || '';
+                saveReleaseWorkMarkActive();
+            }
+        }
+
+        function saveReleaseWorkMarkParticipants() {
+            try {
+                localStorage.setItem(RELEASE_WORK_MARK_PARTICIPANTS_KEY, JSON.stringify(releaseWorkMarkParticipants));
+            } catch (error) {
+                // localStorage can be unavailable in restricted browser modes.
+            }
+        }
+
+        function saveReleaseWorkMarkActive() {
+            try {
+                localStorage.setItem(RELEASE_WORK_MARK_ACTIVE_KEY, activeReleaseWorkMark || '');
+            } catch (error) {
+                // localStorage can be unavailable in restricted browser modes.
+            }
+        }
+
+        function getReleaseWorkMarkAvailableParticipants() {
+            const directory = getReleaseWorkMarkDirectory();
+            const selected = releaseWorkMarkParticipants.filter(name => directory.includes(name));
+            return selected.length ? selected : getReleaseWorkMarkSuggestedParticipants();
+        }
+
+        function ensureExplicitReleaseWorkMarkParticipants() {
+            if (!releaseWorkMarkParticipants.length) {
+                releaseWorkMarkParticipants = getReleaseWorkMarkAvailableParticipants();
+            }
+        }
+
+        function setActiveReleaseWorkMark(mark) {
+            const normalized = normalizeReleaseWorkMark(mark);
+            const available = getReleaseWorkMarkAvailableParticipants();
+            if (normalized === '__none__' || !normalized) {
+                activeReleaseWorkMark = '';
+            } else if (!available.includes(normalized)) {
+                activeReleaseWorkMark = available[0] || '';
+            } else {
+                activeReleaseWorkMark = normalized;
+            }
+            saveReleaseWorkMarkActive();
+            resetReleaseWorkMarkAutoCollapseTimer();
+            renderReleaseWorkMarkChips(releaseWorkMarkCounts);
+            refreshReleaseWorkMarkUi();
+        }
+
+        function addReleaseWorkMarkParticipantFromPicker() {
+            const picker = document.getElementById('releaseWorkMarkParticipantPicker');
+            const mark = normalizeReleaseWorkMark(picker?.value);
+            if (!mark) {
+                return;
+            }
+            ensureExplicitReleaseWorkMarkParticipants();
+            if (!releaseWorkMarkParticipants.includes(mark)) {
+                releaseWorkMarkParticipants.push(mark);
+                saveReleaseWorkMarkParticipants();
+            }
+            activeReleaseWorkMark = mark;
+            saveReleaseWorkMarkActive();
+            resetReleaseWorkMarkAutoCollapseTimer();
+            if (picker) {
+                picker.value = '';
+            }
+            refreshReleaseWorkMarkUi();
+        }
+
+        function removeReleaseWorkMarkParticipant(mark, event) {
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            const normalized = normalizeReleaseWorkMark(mark);
+            ensureExplicitReleaseWorkMarkParticipants();
+            releaseWorkMarkParticipants = releaseWorkMarkParticipants.filter(name => name !== normalized);
+            saveReleaseWorkMarkParticipants();
+            const available = getReleaseWorkMarkAvailableParticipants();
+            if (activeReleaseWorkMark && !available.includes(activeReleaseWorkMark)) {
+                activeReleaseWorkMark = available[0] || '';
+                saveReleaseWorkMarkActive();
+            }
+            resetReleaseWorkMarkAutoCollapseTimer();
+            refreshReleaseWorkMarkUi();
+            applyReleaseFilters();
+        }
+
+        function updateReleaseWorkMarkParticipantPicker() {
+            const picker = document.getElementById('releaseWorkMarkParticipantPicker');
+            if (!picker) {
+                return;
+            }
+            const selected = new Set(getReleaseWorkMarkAvailableParticipants());
+            const options = getReleaseWorkMarkDirectory()
+                .filter(name => !selected.has(name))
+                .map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
+                .join('');
+            picker.innerHTML = `<option value="">Участник окна</option>${options}`;
+        }
+
+        function renderReleaseWorkMarkChips(counts = {}) {
+            const container = document.getElementById('releaseWorkMarkChips');
+            if (!container) {
+                return;
+            }
+            const participants = getReleaseWorkMarkAvailableParticipants();
+            if (!participants.length) {
+                container.innerHTML = '<span class="release-work-mark-chip empty">Выберите участников окна</span>';
+                return;
+            }
+            const chips = participants.map(mark => {
+                const count = Number(counts[mark] || 0);
+                const isActive = mark === activeReleaseWorkMark;
+                const removeButton = participants.length > 1
+                    ? `<button type="button" class="release-work-mark-chip-remove" onclick="removeReleaseWorkMarkParticipant('${escapeHtml(mark)}', event)" title="Убрать участника из окна"><i class="bi bi-x"></i></button>`
+                    : '';
+                return `
+                    <span role="button" tabindex="0" class="release-work-mark-chip ${isActive ? 'active' : ''}" onclick="setActiveReleaseWorkMark('${escapeHtml(mark)}')" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setActiveReleaseWorkMark('${escapeHtml(mark)}'); }">
+                        <span>${escapeHtml(mark)}</span>
+                        <strong>${count}</strong>
+                        ${removeButton}
+                    </span>
+                `;
+            });
+            chips.push(`
+                <span role="button" tabindex="0" class="release-work-mark-chip clear-mark ${activeReleaseWorkMark ? '' : 'active'}" onclick="setActiveReleaseWorkMark('__none__')" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setActiveReleaseWorkMark('__none__'); }" title="Клик по строке удалит метку">
+                    <i class="bi bi-eraser"></i>
+                    <span>Удалить метку</span>
+                </span>
+            `);
+            container.innerHTML = chips.join('');
+        }
+
+        function updateReleaseWorkMarkFilterOptions(items = releaseMonitorItems) {
+            const select = document.getElementById('releaseWorkMarkFilter');
+            if (!select) {
+                return;
+            }
+            const previousValue = select.value || 'all';
+            const participants = getReleaseWorkMarkAvailableParticipants();
+            const marksFromItems = Array.from(new Set((items || []).map(item => normalizeReleaseWorkMark(item.work_mark)).filter(Boolean)));
+            const allMarks = Array.from(new Set([...participants, ...marksFromItems]));
+            select.innerHTML = [
+                '<option value="all">Все релизы</option>',
+                ...allMarks.map(mark => `<option value="${escapeHtml(mark)}">${escapeHtml(mark)}</option>`),
+            ].join('');
+            select.value = Array.from(select.options).some(option => option.value === previousValue) ? previousValue : 'all';
+        }
+
+        function handleReleaseWorkMarkFilter() {
+            applyReleaseFilters();
+        }
+
+        function getCurrentVisibleReleaseItems() {
+            const rows = Array.from(document.querySelectorAll('tr.release-row[data-row-key]'));
+            if (!rows.length) {
+                return [];
+            }
+            return rows
+                .map(row => getReleaseMonitorItem(row.dataset.rowKey || ''))
+                .filter(Boolean);
+        }
+
+        function recomputeReleaseWorkMarkChips(visibleItems = null) {
+            const sourceItems = Array.isArray(visibleItems) ? visibleItems : getCurrentVisibleReleaseItems();
+            const counts = { __none__: 0 };
+            getReleaseWorkMarkAvailableParticipants().forEach(mark => {
+                counts[mark] = 0;
+            });
+            (sourceItems || []).forEach(item => {
+                const mark = normalizeReleaseWorkMark(item.work_mark);
+                if (mark) {
+                    counts[mark] = Number(counts[mark] || 0) + 1;
+                } else {
+                    counts.__none__ += 1;
+                }
+            });
+            releaseWorkMarkCounts = counts;
+            renderReleaseWorkMarkChips(counts);
+            refreshReleaseWorkMarkUi();
+        }
+
+        function getReleaseWorkMarkActiveLabel() {
+            return activeReleaseWorkMark || 'Без метки';
+        }
+
+        function getReleaseWorkMarkActiveCount() {
+            return Number(activeReleaseWorkMark ? releaseWorkMarkCounts[activeReleaseWorkMark] || 0 : releaseWorkMarkCounts.__none__ || 0);
+        }
+
+        function renderReleaseWorkMarkCollapsedBalance() {
+            const target = document.getElementById('releaseWorkMarkCollapsedBalance');
+            if (!target) {
+                return;
+            }
+            const participants = getReleaseWorkMarkAvailableParticipants();
+            const preferred = [];
+            if (activeReleaseWorkMark && participants.includes(activeReleaseWorkMark)) {
+                preferred.push(activeReleaseWorkMark);
+            }
+            participants.forEach(name => {
+                if (!preferred.includes(name) && preferred.length < 3) {
+                    preferred.push(name);
+                }
+            });
+            const hidden = Math.max(0, participants.length - preferred.length);
+            const parts = preferred.map(name => `${escapeHtml(name)} ${Number(releaseWorkMarkCounts[name] || 0)}`);
+            if (hidden) {
+                parts.push(`+${hidden}`);
+            }
+            target.innerHTML = parts.join(' · ');
+        }
+
+        function clearReleaseWorkMarkAutoCollapseTimer() {
+            if (releaseWorkMarkAutoCollapseTimer) {
+                window.clearTimeout(releaseWorkMarkAutoCollapseTimer);
+                releaseWorkMarkAutoCollapseTimer = null;
+            }
+        }
+
+        function resetReleaseWorkMarkAutoCollapseTimer() {
+            clearReleaseWorkMarkAutoCollapseTimer();
+            if (!isReleaseWorkMarkingMode || releaseWorkMarkPanelCollapsed) {
+                return;
+            }
+            releaseWorkMarkAutoCollapseTimer = window.setTimeout(() => {
+                setReleaseWorkMarkPanelCollapsed(true);
+            }, RELEASE_WORK_MARK_AUTO_COLLAPSE_MS);
+        }
+
+        function setReleaseWorkMarkPanelCollapsed(collapsed) {
+            releaseWorkMarkPanelCollapsed = Boolean(collapsed);
+            refreshReleaseWorkMarkUi();
+            resetReleaseWorkMarkAutoCollapseTimer();
+        }
+
+        function getReleaseWorkMarkSnapshot(item) {
+            return {
+                work_mark: normalizeReleaseWorkMark(item?.work_mark),
+                work_mark_updated_at: String(item?.work_mark_updated_at || ''),
+            };
+        }
+
+        function applyReleaseWorkMarkToItem(item, mark) {
+            if (!item) {
+                return;
+            }
+            const normalized = normalizeReleaseWorkMark(mark);
+            item.work_mark = normalized;
+            item.work_mark_updated_at = normalized ? item.work_mark_updated_at || '' : '';
+        }
+
+        function patchReleaseWorkMarkDom(rowKey, mark, pending = false) {
+            const normalizedRowKey = getReleaseWorkMarkRowKey(rowKey);
+            const row = normalizedRowKey ? document.querySelector(`tr.release-row[data-row-key="${escapeCssValue(normalizedRowKey)}"]`) : null;
+            if (!row) {
+                return;
+            }
+            const item = getReleaseMonitorItem(normalizedRowKey);
+            if (item && row.children[1]) {
+                row.children[1].innerHTML = getReleaseNameHtml(item);
+            }
+            row.classList.toggle('work-mark-pending', Boolean(pending));
+            const panel = document.querySelector(`tr.release-row-settings-panel[data-settings-for="${escapeCssValue(normalizedRowKey)}"]`);
+            const select = panel?.querySelector('.release-row-work-mark-select');
+            if (select) {
+                select.value = normalizeReleaseWorkMark(mark);
+            }
+        }
+
+        function setReleaseWorkMarkPending(rowKey, pending) {
+            const normalizedRowKey = getReleaseWorkMarkRowKey(rowKey);
+            const row = normalizedRowKey ? document.querySelector(`tr.release-row[data-row-key="${escapeCssValue(normalizedRowKey)}"]`) : null;
+            if (row) {
+                row.classList.toggle('work-mark-pending', Boolean(pending));
+            }
+        }
+
+        function refreshReleaseWorkMarkUi() {
+            updateReleaseWorkMarkParticipantPicker();
+            updateReleaseWorkMarkFilterOptions(getYearFilteredReleaseItems(releaseMonitorItems));
+            const modeButton = document.getElementById('releaseWorkMarkModeBtn');
+            if (modeButton) {
+                modeButton.classList.toggle('active', isReleaseWorkMarkingMode);
+                modeButton.innerHTML = isReleaseWorkMarkingMode
+                    ? '<i class="bi bi-tags-fill"></i> Разметка активна'
+                    : '<i class="bi bi-tags"></i> Разметка';
+            }
+            const panel = document.getElementById('releaseWorkMarkActiveBanner');
+            const activeName = document.getElementById('releaseWorkMarkActiveName');
+            const collapsedName = document.getElementById('releaseWorkMarkCollapsedName');
+            const collapsedCount = document.getElementById('releaseWorkMarkCollapsedCount');
+            const activeLabel = getReleaseWorkMarkActiveLabel();
+            if (panel) {
+                panel.classList.toggle('show', Boolean(isReleaseWorkMarkingMode));
+                panel.classList.toggle('is-collapsed', Boolean(releaseWorkMarkPanelCollapsed));
+            }
+            if (activeName) {
+                activeName.textContent = activeLabel;
+            }
+            if (collapsedName) {
+                collapsedName.textContent = activeLabel;
+            }
+            if (collapsedCount) {
+                collapsedCount.textContent = getReleaseWorkMarkActiveCount();
+            }
+            renderReleaseWorkMarkCollapsedBalance();
+            const table = document.querySelector('.release-monitor-table');
+            if (table) {
+                table.classList.toggle('work-marking-active', Boolean(isReleaseWorkMarkingMode));
+            }
+        }
+
+        function setReleaseWorkMarkMode(enabled) {
+            isReleaseWorkMarkingMode = Boolean(enabled);
+            if (isReleaseWorkMarkingMode && !activeReleaseWorkMark) {
+                const available = getReleaseWorkMarkAvailableParticipants();
+                activeReleaseWorkMark = available[0] || '';
+                saveReleaseWorkMarkActive();
+            }
+            if (isReleaseWorkMarkingMode) {
+                releaseWorkMarkPanelCollapsed = false;
+                resetReleaseWorkMarkAutoCollapseTimer();
+            } else {
+                releaseWorkMarkPanelCollapsed = false;
+                clearReleaseWorkMarkAutoCollapseTimer();
+            }
+            refreshReleaseWorkMarkUi();
+        }
+
+        function toggleReleaseWorkMarkMode() {
+            setReleaseWorkMarkMode(!isReleaseWorkMarkingMode);
+        }
+
+        async function saveReleaseWorkMarkOptimistic(rowKey, mark) {
+            const normalizedRowKey = getReleaseWorkMarkRowKey(rowKey);
+            const normalizedMark = normalizeReleaseWorkMark(mark);
+            if (!normalizedRowKey) {
+                return;
+            }
+            const item = getReleaseMonitorItem(normalizedRowKey);
+            if (!item) {
+                return;
+            }
+            const snapshot = getReleaseWorkMarkSnapshot(item);
+            if (snapshot.work_mark === normalizedMark) {
+                return;
+            }
+
+            const seq = (releaseWorkMarkSaveSeqByKey.get(normalizedRowKey) || 0) + 1;
+            releaseWorkMarkSaveSeqByKey.set(normalizedRowKey, seq);
+            applyReleaseWorkMarkToItem(item, normalizedMark);
+            applyReleaseFilters();
+            setReleaseWorkMarkPending(normalizedRowKey, true);
+
+            try {
+                const response = await fetch(BASE_PATH + '/dashboard/release-monitor/work-mark', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ row_key: normalizedRowKey, mark: normalizedMark }),
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Не удалось сохранить метку смены');
+                }
+                if (releaseWorkMarkSaveSeqByKey.get(normalizedRowKey) !== seq) {
+                    return;
+                }
+                setReleaseWorkMarkPending(normalizedRowKey, false);
+                if (data.release_monitor_meta) {
+                    releaseMonitorMeta = data.release_monitor_meta || releaseMonitorMeta;
+                    releaseMonitorKnownRevision = getReleaseMonitorRevision(releaseMonitorMeta) || releaseMonitorKnownRevision;
+                    updateReleaseAutoRefreshBadge(releaseMonitorMeta);
+                    window.dashboardData.release_monitor_meta = releaseMonitorMeta;
+                }
+            } catch (error) {
+                if (releaseWorkMarkSaveSeqByKey.get(normalizedRowKey) === seq) {
+                    applyReleaseWorkMarkToItem(item, snapshot.work_mark);
+                    applyReleaseFilters();
+                    setReleaseWorkMarkPending(normalizedRowKey, false);
+                    alert(error.message || 'Не удалось сохранить метку смены');
+                }
+            }
+        }
+
+        function handleReleaseWorkMarkRowClick(event, rowKey) {
+            if (!isReleaseWorkMarkingMode) {
+                return;
+            }
+            const target = event?.target;
+            if (target?.closest('button, a, input, select, textarea, .release-row-settings-panel, .release-color-swatch')) {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            resetReleaseWorkMarkAutoCollapseTimer();
+            saveReleaseWorkMarkOptimistic(rowKey, activeReleaseWorkMark);
+        }
+
+        function captureReleaseWorkMarkScrollState() {
+            return {
+                scrollY: window.scrollY || 0,
+            };
+        }
+
+        function restoreReleaseWorkMarkScrollState(state) {
+            if (!state || !Number.isFinite(Number(state.scrollY))) {
+                return;
+            }
+            requestAnimationFrame(() => {
+                window.scrollTo({ top: Number(state.scrollY), behavior: 'auto' });
+            });
         }
 
         function isManualNumberingOverride(item) {
@@ -3750,8 +4591,12 @@
             const manualReleaseBadge = item.manual_release
                 ? '<span class="release-badge manual-release">Ручной релиз</span>'
                 : '';
-            const statusBadge = (releaseStatusBadge || item.is_pre_final || weekBadge || manualReleaseBadge)
-                ? `<div class="release-micro-meta">${releaseStatusBadge}${item.is_pre_final ? '<span class="release-badge pre-final">\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0430 \u043d\u0430 \u041f\u0420\u041e\u041c</span>' : ''}${weekBadge}${manualReleaseBadge}</div>`
+            const workMark = normalizeReleaseWorkMark(item.work_mark);
+            const workMarkBadge = workMark
+                ? `<span class="release-badge work-mark"><i class="bi bi-tag"></i>${escapeHtml(workMark)}</span>`
+                : '';
+            const statusBadge = (releaseStatusBadge || item.is_pre_final || weekBadge || manualReleaseBadge || workMarkBadge)
+                ? `<div class="release-micro-meta">${releaseStatusBadge}${item.is_pre_final ? '<span class="release-badge pre-final">\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0430 \u043d\u0430 \u041f\u0420\u041e\u041c</span>' : ''}${weekBadge}${manualReleaseBadge}${workMarkBadge}</div>`
                 : '';
 
             if (!lines.length) {
@@ -3996,6 +4841,10 @@
             const numberingSaving = releaseRowNumberingSavingKey === rowKey;
             const moveState = getReleaseRowMoveState(item);
             const orderSaving = releaseRowOrderSavingKey === rowKey;
+            const workMark = normalizeReleaseWorkMark(item.work_mark);
+            const workMarkOptions = Array.from(new Set([workMark, ...getReleaseWorkMarkDirectory()].filter(Boolean)))
+                .map(name => `<option value="${escapeHtml(name)}" ${name === workMark ? 'selected' : ''}>${escapeHtml(name)}</option>`)
+                .join('');
             return `
                 <tr class="release-row-settings-panel" data-settings-for="${escapeHtml(rowKey)}">
                     <td colspan="10">
@@ -4007,6 +4856,16 @@
                                 </div>
                             </div>
                             <div class="release-row-settings-actions" aria-label="Действия строки">
+                                <div class="release-row-settings-work-mark">
+                                    <select
+                                        class="release-filter-select release-row-work-mark-select"
+                                        onchange="saveReleaseWorkMarkOptimistic('${escapeHtml(rowKey)}', this.value)"
+                                        title="Метка смены"
+                                    >
+                                        <option value="">Без метки</option>
+                                        ${workMarkOptions}
+                                    </select>
+                                </div>
                                 <button
                                     type="button"
                                     class="release-row-settings-action-btn ${item.has_manual_release_override ? 'active-warning' : ''}"
@@ -4126,6 +4985,7 @@
             return `
                 <tr
                     class="release-row state-${escapeHtml(item.row_state || 'planned')} ${rolloutClass} ${weekClass} ${isSettingsOpen ? 'settings-open' : ''}"
+                    onclick="handleReleaseWorkMarkRowClick(event, '${escapeHtml(rowKey)}')"
                     data-row-key="${escapeHtml(rowKey)}"
                     data-year="${escapeHtml(item.year)}"
                     data-status="${escapeHtml(item.release_status || '')}"
@@ -4139,7 +4999,7 @@
                                 <button
                                     type="button"
                                     class="release-row-settings-toggle ${isSettingsOpen ? 'active' : ''}"
-                                    onclick="toggleReleaseRowSettings('${escapeHtml(rowKey)}')"
+                                    onclick="toggleReleaseRowSettings('${escapeHtml(rowKey)}', event)"
                                     title="Настройки строки"
                                     aria-label="Настройки строки"
                                     aria-expanded="${isSettingsOpen ? 'true' : 'false'}"
@@ -4167,7 +5027,14 @@
             return (releaseMonitorItems || []).find(item => (item.row_key || item.release_key) === releaseKey) || null;
         }
 
-        function toggleReleaseRowSettings(rowKey) {
+        function toggleReleaseRowSettings(rowKey, event = null) {
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            if (isReleaseWorkMarkingMode) {
+                return;
+            }
             const normalizedRowKey = String(rowKey || '').trim();
             if (!normalizedRowKey) {
                 return;
@@ -6078,6 +6945,7 @@
         }
 
         function renderReleaseMonitor(items, meta) {
+            const workMarkScrollState = isReleaseWorkMarkingMode ? captureReleaseWorkMarkScrollState() : null;
             const tableWrap = document.getElementById('releaseTableWrap');
             const emptyState = document.getElementById('releaseMonitorEmptyState');
             const lastUpdated = document.getElementById('releaseMonitorLastUpdated');
@@ -6108,6 +6976,7 @@
               }
 
               populateResponsibleFilterOptions();
+              refreshReleaseWorkMarkUi();
 
             if (lastUpdated) {
                 lastUpdated.textContent = meta?.last_updated || 'еще не загружалось';
@@ -6146,6 +7015,9 @@
             }
 
             applyReleaseFilters();
+            if (workMarkScrollState) {
+                restoreReleaseWorkMarkScrollState(workMarkScrollState);
+            }
         }
 
         function handleReleaseYearFilter() {
@@ -6568,9 +7440,10 @@
             const searchValue = (document.getElementById('releaseSearchInput')?.value || '').trim();
             const statusValue = document.getElementById('releaseStatusFilter')?.value || 'all';
             const viewValue = document.getElementById('releaseViewFilter')?.value || 'all';
+            const workMarkValue = document.getElementById('releaseWorkMarkFilter')?.value || 'all';
 
             if (!isReleaseOrderMode) {
-                if (searchValue || statusValue !== 'all' || viewValue !== 'all') {
+                if (searchValue || statusValue !== 'all' || viewValue !== 'all' || workMarkValue !== 'all') {
                     alert('Режим порядка строк доступен только без поиска и дополнительных фильтров.');
                     return;
                 }
@@ -7205,10 +8078,19 @@
             const nextLevel = currentLevel === normalizedLevel ? '' : normalizedLevel;
             const enabled = Boolean(nextLevel);
             const previousLevel = currentLevel;
+            const previousWorkMark = getReleaseWorkMarkSnapshot(item);
+            const shouldClearWorkMark = ['success', 'warning', 'danger'].includes(nextLevel) && Boolean(previousWorkMark.work_mark);
             const saveSeq = (releaseColorSaveSeqByKey.get(releaseKey) || 0) + 1;
             releaseColorSaveSeqByKey.set(releaseKey, saveSeq);
             applyReleaseManualColorToItem(item, nextLevel);
-            patchReleaseManualColorDom(releaseKey, nextLevel, true);
+            if (shouldClearWorkMark) {
+                applyReleaseWorkMarkToItem(item, '');
+                applyReleaseFilters();
+                setReleaseManualColorPending(releaseKey, true);
+                setReleaseWorkMarkPending(releaseKey, true);
+            } else {
+                patchReleaseManualColorDom(releaseKey, nextLevel, true);
+            }
             try {
                 const response = await fetch(BASE_PATH + '/dashboard/release-monitor/rollout-notes', {
                     method: 'POST',
@@ -7225,10 +8107,14 @@
                 }
                 if (releaseColorSaveSeqByKey.get(releaseKey) === saveSeq) {
                     setReleaseManualColorPending(releaseKey, false);
+                    setReleaseWorkMarkPending(releaseKey, false);
                     releaseMonitorMeta = data.release_monitor_meta || releaseMonitorMeta;
                     releaseMonitorKnownRevision = getReleaseMonitorRevision(releaseMonitorMeta) || releaseMonitorKnownRevision;
                     updateReleaseAutoRefreshBadge(releaseMonitorMeta);
                     hideReleaseUpdateBanner();
+                    if (data.work_mark_cleanup_failed) {
+                        alert('Цвет релиза сохранен, но метку смены не удалось очистить. Обновите страницу или очистите метку вручную.');
+                    }
                 }
             } catch (error) {
                 console.error('Release rollout notes save error:', error);
@@ -7237,7 +8123,14 @@
                 }
                 if (releaseColorSaveSeqByKey.get(releaseKey) === saveSeq) {
                     applyReleaseManualColorToItem(item, previousLevel);
-                    patchReleaseManualColorDom(releaseKey, previousLevel, false);
+                    if (shouldClearWorkMark) {
+                        applyReleaseWorkMarkToItem(item, previousWorkMark.work_mark);
+                        applyReleaseFilters();
+                        setReleaseManualColorPending(releaseKey, false);
+                        setReleaseWorkMarkPending(releaseKey, false);
+                    } else {
+                        patchReleaseManualColorDom(releaseKey, previousLevel, false);
+                    }
                 }
                 alert('Ошибка сохранения подсветки релиза: ' + error.message);
             }
@@ -8016,6 +8909,7 @@
             const visibleCounter = document.getElementById('releaseVisibleCount');
             const searchValue = (document.getElementById('releaseSearchInput')?.value || '').toLowerCase().trim();
             const statusValue = document.getElementById('releaseStatusFilter')?.value || 'all';
+            const workMarkFilterValue = document.getElementById('releaseWorkMarkFilter')?.value || 'all';
             const responsibleValue = currentReleaseResponsibleFilter || 'all';
             const rawYearItems = getYearFilteredReleaseItems(releaseMonitorItems);
             const yearItems = applyReleaseOrderDraft(rawYearItems);
@@ -8036,16 +8930,22 @@
                     (currentReleaseViewFilter === 'cancelled' && item.is_cancelled)
                 );
                 const matchesStatus = statusValue === 'all' || item.release_status === statusValue;
+                const itemWorkMark = normalizeReleaseWorkMark(item.work_mark);
+                const matchesWorkMark = (
+                    workMarkFilterValue === 'all' ||
+                    itemWorkMark === workMarkFilterValue
+                );
                 const haystack = [
                     item.release_key,
                     item.rov_key,
                     item.ke,
                     item.release_status,
                     item.system_name,
+                    itemWorkMark,
                     ...(Array.isArray(item.release_name_lines) ? item.release_name_lines : [])
                 ].join(' ').toLowerCase();
                 const matchesSearch = !searchValue || haystack.includes(searchValue);
-                return matchesRovVisibility && matchesFarFutureVisibility && matchesResponsible && matchesView && matchesStatus && matchesSearch;
+                return matchesRovVisibility && matchesFarFutureVisibility && matchesResponsible && matchesView && matchesStatus && matchesWorkMark && matchesSearch;
             });
 
             if (body) {
@@ -8070,6 +8970,8 @@
             document.getElementById('releaseSummaryNonFinal').textContent = yearSummary.non_final || 0;
             document.getElementById('releaseSummaryPreFinal').textContent = yearSummary.pre_final || 0;
             updateReleaseStatusFilterOptions(yearItems);
+            updateReleaseWorkMarkFilterOptions(yearItems);
+            recomputeReleaseWorkMarkChips(filteredItems);
 
             if (visibleCounter) {
                 visibleCounter.textContent = filteredItems.length;
@@ -8107,6 +9009,7 @@
             release_monitor_meta: {{ release_monitor_meta | tojson | safe }}
         };
 
+        loadReleaseWorkMarkPreferences();
         renderReleaseMonitor(
             window.dashboardData.release_monitor || [],
             window.dashboardData.release_monitor_meta || {}

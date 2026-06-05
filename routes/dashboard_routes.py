@@ -33,6 +33,7 @@ from services.release_monitor_service import (
     set_release_monitor_reviewer,
     create_release_monitor_zni,
     set_release_monitor_rollout_notes,
+    set_release_monitor_work_mark,
 )
 from services.report_service import save_report_to_disk
 from services.release_report_service import get_release_report_service
@@ -615,12 +616,36 @@ def update_release_monitor_rollout_notes():
             "release_key": result.get("release_key"),
             "has_rollout_notes": result.get("has_rollout_notes"),
             "rollout_notes_level": result.get("rollout_notes_level"),
+            "work_mark_cleared": result.get("work_mark_cleared", False),
+            "work_mark_cleanup_failed": result.get("work_mark_cleanup_failed", False),
             "release_monitor": payload.get("items", []),
             "release_monitor_summary": payload.get("summary", {}),
             "release_monitor_meta": payload.get("meta", {}),
         })
     except Exception as e:
         logging.error(f"Ошибка сохранения ручной подсветки релиза: {e}")
+        return jsonify({"success": False, "error": str(e)}), 400
+
+
+@dashboard_bp.route('/dashboard/release-monitor/work-mark', methods=['POST'])
+def update_release_monitor_work_mark():
+    try:
+        ensure_release_monitor_not_refreshing()
+        data = request.get_json(silent=True) or {}
+        row_key = data.get("row_key", "")
+        mark = data.get("mark", "")
+        result = set_release_monitor_work_mark(row_key, mark=mark)
+        payload = result.get("data", {})
+        return jsonify({
+            "success": True,
+            "row_key": result.get("row_key"),
+            "work_mark": result.get("work_mark", ""),
+            "release_monitor": payload.get("items", []),
+            "release_monitor_summary": payload.get("summary", {}),
+            "release_monitor_meta": payload.get("meta", {}),
+        })
+    except Exception as e:
+        logging.error(f"Ошибка сохранения метки смены релиза: {e}")
         return jsonify({"success": False, "error": str(e)}), 400
 
 

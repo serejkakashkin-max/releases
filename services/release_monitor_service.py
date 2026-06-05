@@ -73,6 +73,7 @@ ORDER_FILE = SNAPSHOT_DIR / "release_monitor_order.json"
 DUTY_SCHEDULE_FILE = SNAPSHOT_DIR / "release_monitor_duty_schedule.json"
 DATE_OVERRIDES_FILE = SNAPSHOT_DIR / "release_monitor_date_overrides.json"
 ZNI_FILE = SNAPSHOT_DIR / "release_monitor_zni.json"
+WORK_MARKS_FILE = SNAPSHOT_DIR / "release_monitor_work_marks.json"
 ATTEMPTS_FILE = SNAPSHOT_DIR / "release_monitor_attempts.json"
 REVISION_FILE = SNAPSHOT_DIR / "release_monitor_revision.txt"
 CONFLUENCE_DELTA_BASE = "https://confluence.delta.sbrf.ru"
@@ -647,6 +648,70 @@ def _save_zni_payload(payload):
     except Exception as exc:
         logging.warning("Release monitor: failed to save ZNI payload: %s", exc)
         raise
+
+
+def _normalize_work_marks(payload):
+    normalized = {}
+    if not isinstance(payload, dict):
+        return normalized
+
+    for row_key, value in payload.items():
+        normalized_row_key = str(row_key or "").strip()
+        if not normalized_row_key:
+            continue
+
+        if isinstance(value, dict):
+            mark = str(value.get("mark") or "").strip()
+            updated_at = str(value.get("updated_at") or "").strip()
+        else:
+            mark = str(value or "").strip()
+            updated_at = ""
+
+        if mark:
+            normalized[normalized_row_key] = {
+                "mark": mark,
+                "updated_at": updated_at,
+            }
+    return normalized
+
+
+def _load_work_marks():
+    return _normalize_work_marks(_load_state_json(WORK_MARKS_FILE, default={}) or {})
+
+
+def _save_work_marks(marks):
+    try:
+        _write_state_json(WORK_MARKS_FILE, _normalize_work_marks(marks))
+    except Exception as exc:
+        logging.warning("Release monitor: failed to save work marks payload: %s", exc)
+        raise
+
+
+def _apply_work_marks(items):
+    marks = _load_work_marks()
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        row_key = _get_assignment_key_for_item(item)
+        mark_payload = marks.get(row_key) or {}
+        mark = str(mark_payload.get("mark") or "").strip()
+        item["work_mark"] = mark
+        item["work_mark_updated_at"] = str(mark_payload.get("updated_at") or "").strip() if mark else ""
+    return items
+
+
+def _clear_release_work_mark(row_key):
+    row_key = str(row_key or "").strip()
+    if not row_key:
+        return False
+
+    marks = _load_work_marks()
+    if row_key not in marks:
+        return False
+
+    marks.pop(row_key, None)
+    _save_work_marks(marks)
+    return True
 
 
 def _load_manual_overrides_payload():
@@ -2172,7 +2237,37 @@ def _append_duty_schedule_meta(meta):
     meta["last_duty_schedule_upload"] = duty_payload.get("last_upload")
     meta["duty_schedule_months"] = list(duty_payload.get("months") or [])
     meta["duty_schedule_files"] = list(duty_payload.get("files") or [])
+    meta["work_mark_suggested_participants"] = _collect_work_mark_suggested_participants(duty_payload)
     return meta
+
+
+def _collect_work_mark_suggested_participants(duty_payload=None):
+    duty_payload = duty_payload if isinstance(duty_payload, dict) else _load_duty_schedule_payload()
+    week_start, week_end = _get_current_week_bounds()
+    dates = duty_payload.get("dates") or {}
+    availability = duty_payload.get("availability") or {}
+    participants = []
+
+    def add_participant(name):
+        raw_name = str(name or "").strip()
+        if not raw_name:
+            return
+        matched_name = raw_name if raw_name in OPLOT_VALUES else _match_oplot_name(raw_name)
+        if matched_name and matched_name not in participants:
+            participants.append(matched_name)
+
+    current_date = week_start
+    while current_date <= week_end:
+        date_key = current_date.isoformat()
+        add_participant(dates.get(date_key))
+        for person, info in (availability.get(date_key) or {}).items():
+            status = str((info or {}).get("status") or "").strip().upper()
+            reason = str((info or {}).get("reason") or "").strip()
+            if status == "ВР" or reason == "Вечерний резервный дежурный":
+                add_participant(person)
+        current_date += timedelta(days=1)
+
+    return participants
 
 
 def _apply_date_overrides(items):
@@ -6007,6 +6102,7 @@ def _normalize_release_payload(payload):
     _apply_duty_schedule_assignments(normalized_items, persist=False)
     _apply_zni_assignments(normalized_items)
     _apply_manual_release_overrides(normalized_items, payload.get("manual_overrides") or {})
+    _apply_work_marks(normalized_items)
     _apply_manual_duplicate_reconciliation(normalized_items)
     _apply_week_control_flags(normalized_items)
     _apply_release_week_buckets(normalized_items)
@@ -6528,6 +6624,70 @@ def create_release_monitor_zni(release_key, reporter=""):
     }
 
 
+def set_release_monitor_work_mark(row_key, mark=""):
+    global _cached_data
+
+    row_key = str(row_key or "").strip()
+    if not row_key:
+        raise ValueError("Не указан ключ строки релиза")
+
+    mark = str(mark or "").strip()
+
+    with _cache_lock:
+        if _cached_data is None:
+            disk_payload = _load_snapshot_from_disk()
+            if disk_payload is not None:
+                _cached_data = _hydrate_release_monitor_payload(disk_payload)
+
+        current_payload = _normalize_release_payload(_get_cached_payload_copy() or _build_empty_release_monitor_payload())
+        target_item = next(
+            (
+                item for item in current_payload.get("items") or []
+                if _get_assignment_key_for_item(item) == row_key
+            ),
+            None,
+        )
+        if target_item is None:
+            raise ValueError("Строка релиза не найдена в актуальном наборе данных")
+
+        marks = _load_work_marks()
+        changed = False
+        if mark:
+            existing_mark = str((marks.get(row_key) or {}).get("mark") or "").strip()
+            next_payload = {
+                "mark": mark,
+                "updated_at": _format_timestamp(),
+            }
+            changed = existing_mark != mark
+            if changed:
+                marks[row_key] = next_payload
+        else:
+            changed = row_key in marks
+            marks.pop(row_key, None)
+        if changed:
+            _save_work_marks(marks)
+
+        if _cached_data is not None:
+            for item in _cached_data.get("items") or []:
+                if _get_assignment_key_for_item(item) == row_key:
+                    item["work_mark"] = mark
+                    item["work_mark_updated_at"] = marks.get(row_key, {}).get("updated_at", "") if mark else ""
+                    break
+            if changed:
+                _mark_release_monitor_state_changed()
+        else:
+            if changed:
+                _touch_release_monitor_revision()
+
+        payload = _normalize_release_payload(_get_cached_payload_copy() or current_payload)
+
+    return {
+        "row_key": row_key,
+        "work_mark": mark,
+        "data": payload,
+    }
+
+
 def set_release_monitor_rollout_notes(release_key, enabled=False, level=""):
     global _cached_data
 
@@ -6541,6 +6701,9 @@ def set_release_monitor_rollout_notes(release_key, enabled=False, level=""):
         level = "warning"
     if not enabled:
         level = ""
+    should_clear_work_mark = bool(enabled and level in {"success", "warning", "danger"})
+    work_mark_cleared = False
+    work_mark_cleanup_failed = False
 
     with _cache_lock:
         flags = _load_rollout_note_flags()
@@ -6554,6 +6717,17 @@ def set_release_monitor_rollout_notes(release_key, enabled=False, level=""):
             flags.pop(release_key, None)
         _save_rollout_note_flags(flags)
 
+        if should_clear_work_mark:
+            try:
+                work_mark_cleared = _clear_release_work_mark(release_key)
+            except Exception as exc:
+                work_mark_cleanup_failed = True
+                logging.warning(
+                    "Release monitor: failed to clear work mark after rollout color for %s: %s",
+                    release_key,
+                    exc,
+                )
+
         if _cached_data is None:
             disk_payload = _load_snapshot_from_disk()
             if disk_payload is not None:
@@ -6564,6 +6738,9 @@ def set_release_monitor_rollout_notes(release_key, enabled=False, level=""):
                 if _get_assignment_key_for_item(item) == release_key:
                     item["has_rollout_notes"] = bool(enabled and level != "none")
                     item["rollout_notes_level"] = level
+                    if should_clear_work_mark and not work_mark_cleanup_failed:
+                        item["work_mark"] = ""
+                        item["work_mark_updated_at"] = ""
                     break
             _mark_release_monitor_state_changed()
         else:
@@ -6575,6 +6752,8 @@ def set_release_monitor_rollout_notes(release_key, enabled=False, level=""):
         "release_key": release_key,
         "has_rollout_notes": bool(enabled and level != "none"),
         "rollout_notes_level": level,
+        "work_mark_cleared": work_mark_cleared,
+        "work_mark_cleanup_failed": work_mark_cleanup_failed,
         "data": payload,
     }
 
