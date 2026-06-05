@@ -30,7 +30,7 @@ from services.release_monitor_service import (
 
 
 REPORTS_DIR = Path(__file__).resolve().parent.parent / "reports" / "rov_statistics"
-ROV_STATS_MAX_AGE_HOURS = int(os.getenv("ROV_STATS_MAX_AGE_HOURS", "24"))
+ROV_STATS_MAX_AGE_HOURS = int(os.getenv("ROV_STATS_MAX_AGE_HOURS", "1"))
 ROV_START_JQL_FIELD = '"Дата/время начала работ по внедрению"'
 
 MONTH_NAMES = {
@@ -337,6 +337,8 @@ def save_rov_statistics_excel(rows: List[Dict[str, Any]], period: Dict[str, Any]
         export_df.to_excel(writer, sheet_name="Все РОВ", index=False)
         _write_summary_sheet(writer, df)
 
+    cleanup_old_rov_statistics_reports()
+
     return {
         "report_id": report_id,
         "path": str(path),
@@ -375,6 +377,9 @@ def cleanup_old_rov_statistics_reports(max_age_hours: int = ROV_STATS_MAX_AGE_HO
             if age_hours > max_age_hours:
                 path.unlink()
                 removed += 1
+                logging.info("ROV statistics: removed old report %s", path.name)
         except Exception as exc:
             logging.warning("ROV statistics: failed to cleanup %s: %s", path, exc)
+    if removed:
+        logging.info("ROV statistics: cleaned up %s old reports", removed)
     return removed

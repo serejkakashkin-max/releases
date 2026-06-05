@@ -18,6 +18,10 @@ from services.rov_statistics_service import (
     cleanup_old_rov_statistics_reports,
     get_rov_statistics_report_path,
 )
+from services.release_monitor_backup_service import (
+    cleanup_old_release_monitor_cache_backups,
+    get_release_monitor_cache_backup_path,
+)
 from services.dashboard_service import get_dashboard_data
 
 chatbot_bp = Blueprint('chatbot', __name__)
@@ -498,6 +502,39 @@ def download_rov_statistics(report_id):
         )
     except Exception as e:
         logging.error(f"Ошибка скачивания статистики по РОВ: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@chatbot_bp.route('/dashboard/api/chat/release-monitor-cache/download/<backup_id>', methods=['GET'])
+def download_release_monitor_cache_backup(backup_id):
+    """Скачивает временный ZIP backup cache/state-файлов Блока релизов."""
+    try:
+        import re
+        if not re.match(r'^[\w\-]+$', backup_id):
+            return jsonify({
+                "success": False,
+                "error": "Некорректный ID backup"
+            }), 400
+
+        cleanup_old_release_monitor_cache_backups()
+        path = get_release_monitor_cache_backup_path(backup_id)
+        if not path or not os.path.exists(path):
+            return jsonify({
+                "success": False,
+                "error": "Backup кэша не найден или уже удален"
+            }), 404
+
+        return send_file(
+            path,
+            mimetype="application/zip",
+            as_attachment=True,
+            download_name=os.path.basename(path),
+        )
+    except Exception as e:
+        logging.error(f"Ошибка скачивания backup кэша Блока релизов: {e}")
         return jsonify({
             "success": False,
             "error": str(e)
