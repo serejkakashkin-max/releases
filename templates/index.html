@@ -12,27 +12,6 @@
         .container {
             max-width: 100%;
         }
-        /* Стили для новой кнопки дашборда */
-        .btn-beta {
-            position: relative;
-            overflow: hidden;
-        }
-        .btn-beta::after {
-            content: "BETA";
-            position: absolute;
-            top: 2px;
-            right: -20px;
-            background: var(--primary);
-            color: white;
-            font-size: 0.6rem;
-            padding: 2px 20px;
-            transform: rotate(45deg);
-            font-weight: bold;
-        }
-        [data-theme="dark"] .btn-beta::after {
-            background: var(--primary);
-        }
-        
         /* Лоадер для дашборда - точно как в release.html */
         #dashboard-loader {
             display: none;
@@ -258,19 +237,6 @@
             font-weight: 800;
             line-height: 1.2;
             white-space: normal;
-        }
-
-        .home-beta-pill {
-            position: absolute;
-            top: 0.35rem;
-            right: 0.45rem;
-            border-radius: 999px;
-            padding: 0.1rem 0.34rem;
-            background: rgba(59, 130, 246, 0.12);
-            color: #60a5fa;
-            font-size: 0.54rem;
-            font-weight: 800;
-            opacity: 0.75;
         }
 
         .usage-chip {
@@ -579,7 +545,6 @@
 
             <div class="home-menu-grid">
                 <a id="link-release-monitor" href="/release-monitor" class="home-menu-tile">
-                    <span class="home-beta-pill">BETA</span>
                     <span class="home-menu-tile-top">
                         <span class="home-menu-icon"><i class="bi bi-rocket-takeoff"></i></span>
                         <i class="bi bi-arrow-right home-menu-arrow"></i>
@@ -589,7 +554,6 @@
                     </span>
                 </a>
                 <button onclick="goToDashboard()" class="home-menu-tile" type="button">
-                    <span class="home-beta-pill">BETA</span>
                     <span class="home-menu-tile-top">
                         <span class="home-menu-icon"><i class="bi bi-speedometer2"></i></span>
                         <i class="bi bi-arrow-right home-menu-arrow"></i>
