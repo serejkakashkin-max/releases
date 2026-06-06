@@ -1291,6 +1291,42 @@
             cursor: pointer;
         }
 
+        .release-snapshot-warning {
+            display: none;
+            align-items: flex-start;
+            gap: 0.65rem;
+            padding: 0.68rem 0.78rem;
+            margin-bottom: 0.55rem;
+            border: 1px solid rgba(245, 158, 11, 0.48);
+            border-radius: 12px;
+            background: color-mix(in srgb, var(--bg-card) 88%, rgba(245, 158, 11, 0.18));
+            color: var(--text-primary);
+            box-shadow: inset 3px 0 0 rgba(245, 158, 11, 0.86);
+        }
+
+        .release-snapshot-warning.show {
+            display: flex;
+        }
+
+        .release-snapshot-warning > i {
+            color: #d97706;
+            font-size: 1rem;
+            margin-top: 0.08rem;
+        }
+
+        .release-snapshot-warning-title {
+            font-size: 0.86rem;
+            font-weight: 800;
+            line-height: 1.25;
+        }
+
+        .release-snapshot-warning-details {
+            margin-top: 0.18rem;
+            color: var(--text-secondary);
+            font-size: 0.78rem;
+            line-height: 1.35;
+        }
+
         .release-update-toast {
             position: fixed;
             right: 1.25rem;
@@ -3462,6 +3498,14 @@
                             </button>
                         </div>
                         <div class="release-work-mark-chip-row" id="releaseWorkMarkChips" aria-label="Участники окна"></div>
+                    </div>
+                </div>
+
+                <div id="releaseSnapshotProtectionWarning" class="release-snapshot-warning" role="alert" aria-live="polite">
+                    <i class="bi bi-shield-exclamation"></i>
+                    <div>
+                        <div class="release-snapshot-warning-title">Обновление не применено. Используется последний подтвержденный снимок.</div>
+                        <div id="releaseSnapshotProtectionWarningDetails" class="release-snapshot-warning-details"></div>
                     </div>
                 </div>
 
@@ -8727,6 +8771,38 @@
             await pollReleaseMonitorRefresh(true);
         }
 
+        function hideReleaseSnapshotProtectionWarning() {
+            document.getElementById('releaseSnapshotProtectionWarning')?.classList.remove('show');
+        }
+
+        function showReleaseSnapshotProtectionWarning(refreshStatus = {}) {
+            const banner = document.getElementById('releaseSnapshotProtectionWarning');
+            const details = document.getElementById('releaseSnapshotProtectionWarningDetails');
+            if (!banner || !details) {
+                return;
+            }
+
+            const report = refreshStatus.validation_report || {};
+            const reason = Array.isArray(report.reasons) && report.reasons.length
+                ? String(report.reasons[0]?.message || '')
+                : String(refreshStatus.error || '');
+            const previousTotal = Number(refreshStatus.previous_total || report.baseline?.total || 0);
+            const candidateTotal = Number(refreshStatus.candidate_total || report.candidate?.total || 0);
+            const confirmedAt = String(refreshStatus.confirmed_snapshot_at || '').trim();
+            const parts = [];
+            if (previousTotal || candidateTotal) {
+                parts.push(`Подтверждено: ${previousTotal}; получено: ${candidateTotal}.`);
+            }
+            if (reason) {
+                parts.push(`Причина: ${reason}.`);
+            }
+            if (confirmedAt) {
+                parts.push(`Снимок: ${confirmedAt}.`);
+            }
+            details.textContent = parts.join(' ');
+            banner.classList.add('show');
+        }
+
         async function pollReleaseMonitorRefresh(forceStart = false) {
             if (releaseMonitorRefreshPoll && !forceStart) {
                 return;
@@ -8750,10 +8826,11 @@
                     releaseMonitorLocalRefreshing = false;
                     releaseMonitorActiveRefreshMode = '';
                     setReleaseRefreshButtonsLoading(false);
+                    hideReleaseSnapshotProtectionWarning();
                     return refreshStatus.state;
                 }
 
-                if (refreshStatus.state === 'failed') {
+                if (refreshStatus.state === 'failed' || refreshStatus.state === 'rejected') {
                     if (releaseMonitorRefreshPoll) {
                         clearInterval(releaseMonitorRefreshPoll);
                         releaseMonitorRefreshPoll = null;
@@ -8761,7 +8838,8 @@
                     releaseMonitorLocalRefreshing = false;
                     releaseMonitorActiveRefreshMode = '';
                     setReleaseRefreshButtonsLoading(false);
-                    throw new Error(refreshStatus.error || 'Ошибка фонового обновления релизов');
+                    showReleaseSnapshotProtectionWarning(refreshStatus);
+                    return refreshStatus.state;
                 }
 
                 setReleaseRefreshButtonsLoading(true);
@@ -8770,7 +8848,7 @@
 
             try {
                 const currentState = await loadStatus();
-                if (currentState === 'completed' || currentState === 'idle') {
+                if (['completed', 'idle', 'failed', 'rejected'].includes(currentState)) {
                     return;
                 }
             } catch (error) {
@@ -8814,6 +8892,11 @@
                 const refreshStatus = data.refresh_status || {};
                 const isRefreshing = refreshStatus.state === 'refreshing';
                 setReleaseMonitorGlobalRefreshing(isRefreshing);
+                if (refreshStatus.state === 'failed' || refreshStatus.state === 'rejected') {
+                    showReleaseSnapshotProtectionWarning(refreshStatus);
+                } else if (refreshStatus.state === 'completed' || refreshStatus.state === 'idle') {
+                    hideReleaseSnapshotProtectionWarning();
+                }
 
                 const meta = data.release_monitor_meta || {};
                 updateReleaseAutoRefreshBadge(meta);

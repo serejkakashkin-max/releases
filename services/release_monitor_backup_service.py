@@ -13,13 +13,16 @@ from typing import Any, Dict, List
 
 from services.release_monitor_service import (
     ATTEMPTS_FILE,
+    CANDIDATE_SNAPSHOT_FILE,
     DATE_OVERRIDES_FILE,
     DUTY_SCHEDULE_FILE,
+    LAST_GOOD_SNAPSHOT_FILE,
     MANUAL_OVERRIDES_FILE,
     MANUAL_RELEASES_FILE,
     ORDER_FILE,
     REVIEWERS_FILE,
     REVISION_FILE,
+    SNAPSHOT_ARCHIVES_DIR,
     SNAPSHOT_FILE,
     WORK_MARKS_FILE,
     ZNI_FILE,
@@ -31,6 +34,8 @@ BACKUP_MAX_AGE_HOURS = int(os.getenv("RELEASE_MONITOR_BACKUP_MAX_AGE_HOURS", "1"
 
 BACKUP_FILES = (
     SNAPSHOT_FILE,
+    LAST_GOOD_SNAPSHOT_FILE,
+    CANDIDATE_SNAPSHOT_FILE,
     MANUAL_RELEASES_FILE,
     MANUAL_OVERRIDES_FILE,
     REVIEWERS_FILE,
@@ -56,10 +61,29 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _backup_role(path: Path) -> str:
+    if path == SNAPSHOT_FILE:
+        return "active_snapshot"
+    if path == LAST_GOOD_SNAPSHOT_FILE:
+        return "last_good_snapshot"
+    if path == CANDIDATE_SNAPSHOT_FILE:
+        return "diagnostic_candidate"
+    if path.suffixes[-2:] == [".json", ".gz"]:
+        return "compressed_archive_snapshot"
+    return "state_file"
+
+
+def _archive_path(path: Path) -> str:
+    if path.parent == SNAPSHOT_ARCHIVES_DIR:
+        return f"cache/{SNAPSHOT_ARCHIVES_DIR.name}/{path.name}"
+    return f"cache/{path.name}"
+
+
 def _file_manifest(path: Path) -> Dict[str, Any]:
     entry: Dict[str, Any] = {
         "name": path.name,
-        "archive_path": f"cache/{path.name}",
+        "archive_path": _archive_path(path),
+        "role": _backup_role(path),
         "exists": path.exists(),
     }
     if not path.exists():
@@ -74,7 +98,7 @@ def _file_manifest(path: Path) -> Dict[str, Any]:
         }
     )
 
-    if path == SNAPSHOT_FILE:
+    if path in {SNAPSHOT_FILE, LAST_GOOD_SNAPSHOT_FILE, CANDIDATE_SNAPSHOT_FILE}:
         try:
             with path.open("r", encoding="utf-8-sig") as handle:
                 payload = json.load(handle)
@@ -82,6 +106,12 @@ def _file_manifest(path: Path) -> Dict[str, Any]:
             entry["snapshot_items_count"] = len(items) if isinstance(items, list) else 0
         except Exception as exc:
             entry["snapshot_read_error"] = str(exc)
+
+    if entry["role"] == "compressed_archive_snapshot":
+        entry["compressed"] = True
+        match = re.search(r"snapshot_(\d{8}_\d{6})", path.name)
+        if match:
+            entry["snapshot_timestamp"] = match.group(1)
 
     return entry
 
@@ -115,7 +145,15 @@ def create_release_monitor_cache_backup(reason: str = "manual_chat_download") ->
     filename = f"release_monitor_cache_{backup_id}.zip"
     path = REPORTS_DIR / filename
 
-    file_entries: List[Dict[str, Any]] = [_file_manifest(file_path) for file_path in BACKUP_FILES]
+    archive_files = []
+    if SNAPSHOT_ARCHIVES_DIR.exists():
+        archive_files = sorted(
+            SNAPSHOT_ARCHIVES_DIR.glob("snapshot_*.json.gz"),
+            key=lambda item: (item.stat().st_mtime, item.name),
+            reverse=True,
+        )[:5]
+    backup_files = list(BACKUP_FILES) + archive_files
+    file_entries: List[Dict[str, Any]] = [_file_manifest(file_path) for file_path in backup_files]
     manifest = {
         "backup_id": backup_id,
         "created_at": datetime.now().isoformat(timespec="seconds"),
@@ -129,7 +167,7 @@ def create_release_monitor_cache_backup(reason: str = "manual_chat_download") ->
             "manifest.json",
             json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8"),
         )
-        for file_path, entry in zip(BACKUP_FILES, file_entries):
+        for file_path, entry in zip(backup_files, file_entries):
             if entry.get("exists"):
                 archive.write(file_path, entry["archive_path"])
 

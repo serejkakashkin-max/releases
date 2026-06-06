@@ -2482,7 +2482,7 @@
                     return refreshStatus.state;
                 }
 
-                if (refreshStatus.state === 'failed') {
+                if (refreshStatus.state === 'failed' || refreshStatus.state === 'rejected') {
                     if (releaseMonitorRefreshPoll) {
                         clearInterval(releaseMonitorRefreshPoll);
                         releaseMonitorRefreshPoll = null;
@@ -2491,7 +2491,12 @@
                         btn.disabled = false;
                         btn.classList.remove('spinning');
                     }
-                    throw new Error(refreshStatus.error || 'Ошибка фонового обновления релизов');
+                    throw new Error(
+                        refreshStatus.error
+                        || (refreshStatus.state === 'rejected'
+                            ? 'Обновление не применено: Jira вернула неполные данные'
+                            : 'Ошибка фонового обновления релизов')
+                    );
                 }
 
                 return refreshStatus.state;

@@ -1,5 +1,7 @@
 import logging
 import copy
+import gzip
+import hashlib
 import json
 import html
 import os
@@ -7,7 +9,7 @@ import re
 import threading
 import time
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 from io import BytesIO
 from pathlib import Path
@@ -58,14 +60,24 @@ AUTO_INCREMENTAL_REFRESH_ENABLED = True
 AUTO_INCREMENTAL_REFRESH_INTERVAL_SECONDS = 180
 AUTO_INCREMENTAL_REFRESH_LOOKBACK_MINUTES = 60
 AUTO_INCREMENTAL_REFRESH_CHECK_INTERVAL = 30
+RELEASE_MONITOR_TRACE_ENABLED = False
 RELIABLE_FULL_REFRESH_MODE = "reliable_full"
-RELIABLE_SEARCH_RETRY_STATUS_CODES = {500, 502, 503, 504}
-RELIABLE_SEARCH_MAX_ATTEMPTS = int(os.getenv("RELEASE_MONITOR_RELIABLE_SEARCH_MAX_ATTEMPTS", "120"))
+RELIABLE_SEARCH_RETRY_STATUS_CODES = {429, 500, 502, 503, 504}
+FULL_SEARCH_MAX_ATTEMPTS = int(os.getenv("RELEASE_MONITOR_FULL_SEARCH_MAX_ATTEMPTS", "3"))
+RELIABLE_SEARCH_MAX_ATTEMPTS = int(os.getenv("RELEASE_MONITOR_RELIABLE_SEARCH_MAX_ATTEMPTS", "6"))
 RELIABLE_SEARCH_RETRY_DELAY_SECONDS = float(os.getenv("RELEASE_MONITOR_RELIABLE_SEARCH_RETRY_DELAY_SECONDS", "3"))
+FULL_REFRESH_DEADLINE_SECONDS = int(os.getenv("RELEASE_MONITOR_FULL_REFRESH_DEADLINE_SECONDS", "300"))
+RELIABLE_FULL_REFRESH_DEADLINE_SECONDS = int(
+    os.getenv("RELEASE_MONITOR_RELIABLE_FULL_REFRESH_DEADLINE_SECONDS", "900")
+)
 AUTO_INCREMENTAL_SEARCH_MAX_ATTEMPTS = int(os.getenv("RELEASE_MONITOR_AUTO_INCREMENTAL_SEARCH_MAX_ATTEMPTS", "3"))
 AUTO_INCREMENTAL_SEARCH_RETRY_DELAY_SECONDS = float(os.getenv("RELEASE_MONITOR_AUTO_INCREMENTAL_SEARCH_RETRY_DELAY_SECONDS", "2"))
 SNAPSHOT_DIR = Path(__file__).resolve().parent.parent / "cache"
 SNAPSHOT_FILE = SNAPSHOT_DIR / "release_monitor_snapshot.json"
+LAST_GOOD_SNAPSHOT_FILE = SNAPSHOT_DIR / "release_monitor_last_good.json"
+CANDIDATE_SNAPSHOT_FILE = SNAPSHOT_DIR / "release_monitor_candidate.json"
+SNAPSHOT_ARCHIVES_DIR = SNAPSHOT_DIR / "release_monitor_archives"
+MAX_GOOD_SNAPSHOT_ARCHIVES = 5
 MANUAL_RELEASES_FILE = SNAPSHOT_DIR / "release_monitor_manual_releases.json"
 MANUAL_OVERRIDES_FILE = SNAPSHOT_DIR / "release_monitor_manual_overrides.json"
 REVIEWERS_FILE = SNAPSHOT_DIR / "release_monitor_reviewers.json"
@@ -213,6 +225,8 @@ _auto_incremental_status = {
 }
 _scheduler_thread = None
 _scheduler_started = False
+_snapshot_recovery_checked = False
+_snapshot_requires_display_migration = False
 _refresh_status = {
     "state": "idle",
     "message": "",
@@ -222,6 +236,31 @@ _refresh_status = {
     "mode": None,
     "trigger": None,
 }
+
+
+class ReleaseMonitorSourceError(RuntimeError):
+    def __init__(self, message, candidate=None):
+        super().__init__(message)
+        self.candidate = candidate
+
+
+class ReleaseMonitorCandidateRejected(RuntimeError):
+    def __init__(self, message, candidate=None, validation_report=None):
+        super().__init__(message)
+        self.candidate = candidate
+        self.validation_report = validation_report or {}
+
+
+def _rm_trace(tag, event, *, started_at=None, level=logging.INFO, **details):
+    if not RELEASE_MONITOR_TRACE_ENABLED:
+        return
+    fields = []
+    if started_at is not None:
+        fields.append(f"elapsed_ms={int((time.monotonic() - started_at) * 1000)}")
+    for key, value in sorted(details.items()):
+        fields.append(f"{key}={value}")
+    suffix = f" {' '.join(fields)}" if fields else ""
+    logging.log(level, "[%s] event=%s%s", tag, event, suffix)
 
 
 def _build_empty_release_monitor_payload():
@@ -291,8 +330,254 @@ def _ensure_snapshot_dir():
     os.makedirs(SNAPSHOT_DIR, exist_ok=True)
 
 
+def _prepare_atomic_bytes(file_path, payload):
+    file_path = Path(file_path)
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = file_path.with_name(f".{file_path.name}.{uuid4().hex}.tmp")
+    try:
+        with temp_path.open("wb") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        return temp_path
+    except Exception:
+        if temp_path.exists():
+            temp_path.unlink()
+        raise
+
+
+def _atomic_write_bytes(file_path, payload):
+    file_path = Path(file_path)
+    temp_path = _prepare_atomic_bytes(file_path, payload)
+    try:
+        os.replace(temp_path, file_path)
+    finally:
+        if temp_path.exists():
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
+
+
+def _atomic_write_text(file_path, text):
+    _atomic_write_bytes(file_path, str(text).encode("utf-8"))
+
+
+def _atomic_write_json(file_path, payload):
+    serialized = json.dumps(payload, ensure_ascii=False, indent=2)
+    json.loads(serialized)
+    _atomic_write_text(file_path, serialized)
+
+
 def _read_json_file(path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def _load_json_payload(file_path, *, log_errors=True):
+    file_path = Path(file_path)
+    if not file_path.exists():
+        return None
+    try:
+        payload = _read_json_file(file_path)
+        return payload if isinstance(payload, dict) else None
+    except Exception as exc:
+        if log_errors:
+            logging.warning("Release monitor: failed to load JSON file %s: %s", file_path, exc)
+        return None
+
+
+def _is_valid_snapshot_payload(payload):
+    return isinstance(payload, dict) and isinstance(payload.get("items"), list)
+
+
+def _parse_snapshot_timestamp(value):
+    value = str(value or "").strip()
+    if not value:
+        return 0
+    for fmt in (
+        "%Y-%m-%dT%H:%M:%S.%fZ",
+        "%Y-%m-%dT%H:%M:%SZ",
+        "%Y-%m-%dT%H:%M:%S",
+        "%d.%m.%Y %H:%M:%S",
+    ):
+        try:
+            return int(datetime.strptime(value, fmt).timestamp() * 1000)
+        except ValueError:
+            continue
+    return 0
+
+
+def _snapshot_revision_value(payload, file_path=None):
+    meta = dict((payload or {}).get("meta") or {})
+    raw_revision = str(meta.get("accepted_revision") or "").strip()
+    try:
+        return int(raw_revision)
+    except (TypeError, ValueError):
+        pass
+
+    timestamp_value = (
+        _parse_snapshot_timestamp(meta.get("accepted_at"))
+        or _parse_snapshot_timestamp(meta.get("last_updated"))
+    )
+    if timestamp_value:
+        return timestamp_value
+    try:
+        return int(Path(file_path).stat().st_mtime * 1000) if file_path else 0
+    except OSError:
+        return 0
+
+
+def _snapshot_payload_hash(payload):
+    comparable = copy.deepcopy(payload or {})
+    meta = dict(comparable.get("meta") or {}) if isinstance(comparable, dict) else {}
+    for field_name in (
+        "accepted_revision",
+        "accepted_at",
+        "data_revision",
+        "last_updated",
+        "last_full_sync",
+        "last_sync_mode",
+    ):
+        meta.pop(field_name, None)
+    if isinstance(comparable, dict):
+        comparable["meta"] = meta
+    raw = json.dumps(comparable, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _load_archive_snapshot(file_path):
+    try:
+        with gzip.open(file_path, "rt", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        return payload if _is_valid_snapshot_payload(payload) else None
+    except Exception as exc:
+        logging.warning("Release monitor: failed to load archive snapshot %s: %s", file_path, exc)
+        return None
+
+
+def _new_accepted_revision(*payloads):
+    highest = int(time.time() * 1000)
+    for payload in payloads:
+        highest = max(highest, _snapshot_revision_value(payload))
+    return str(highest + 1)
+
+
+def _utc_now_iso():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _prepare_accepted_snapshot(payload, accepted_revision=None, accepted_at=None):
+    prepared = copy.deepcopy(payload or {})
+    prepared.setdefault("items", [])
+    meta = dict(prepared.get("meta") or {})
+    revision = str(accepted_revision or meta.get("accepted_revision") or "").strip()
+    if not revision:
+        revision = _new_accepted_revision(prepared)
+    meta["accepted_revision"] = revision
+    meta["accepted_at"] = accepted_at or meta.get("accepted_at") or _utc_now_iso()
+    meta["data_revision"] = revision
+    meta["is_cached"] = True
+    prepared["meta"] = meta
+    return prepared
+
+
+def _recover_snapshot_storage(*, force=False):
+    global _snapshot_recovery_checked, _snapshot_requires_display_migration
+
+    trace_started_at = time.monotonic()
+    if _snapshot_recovery_checked and not force:
+        _rm_trace(
+            "RM_RECOVERY",
+            "skip_already_checked",
+            started_at=trace_started_at,
+            level=logging.DEBUG,
+        )
+        return
+
+    _rm_trace("RM_RECOVERY", "start", force=force)
+    _ensure_snapshot_dir()
+    active = _load_json_payload(SNAPSHOT_FILE)
+    last_good = _load_json_payload(LAST_GOOD_SNAPSHOT_FILE)
+    active_valid = _is_valid_snapshot_payload(active)
+    last_good_valid = _is_valid_snapshot_payload(last_good)
+    selected = None
+    repair_pair = False
+
+    if active_valid and last_good_valid:
+        active_revision = _snapshot_revision_value(active, SNAPSHOT_FILE)
+        last_good_revision = _snapshot_revision_value(last_good, LAST_GOOD_SNAPSHOT_FILE)
+        active_accepted = str((active.get("meta") or {}).get("accepted_revision") or "").strip()
+        last_good_accepted = str((last_good.get("meta") or {}).get("accepted_revision") or "").strip()
+        if active_accepted and active_accepted == last_good_accepted:
+            selected = active
+        elif active_revision != last_good_revision or active_accepted != last_good_accepted:
+            selected = active if active_revision >= last_good_revision else last_good
+            repair_pair = True
+            logging.warning(
+                "Release monitor: active/last-good revisions differ (%s/%s); using newer snapshot",
+                active_accepted or active_revision,
+                last_good_accepted or last_good_revision,
+            )
+        else:
+            selected = active
+    elif active_valid:
+        selected = active
+        repair_pair = True
+        logging.warning("Release monitor: last-good snapshot is missing or invalid; restoring it from active")
+    elif last_good_valid:
+        selected = last_good
+        repair_pair = True
+        logging.warning("Release monitor: active snapshot is missing or invalid; restoring it from last-good")
+    else:
+        archive_paths = sorted(
+            SNAPSHOT_ARCHIVES_DIR.glob("snapshot_*.json.gz") if SNAPSHOT_ARCHIVES_DIR.exists() else [],
+            key=lambda path: (path.stat().st_mtime, path.name),
+            reverse=True,
+        )
+        for archive_path in archive_paths:
+            selected = _load_archive_snapshot(archive_path)
+            if selected is not None:
+                repair_pair = True
+                logging.warning(
+                    "Release monitor: active and last-good are invalid; recovered from %s",
+                    archive_path.name,
+                )
+                break
+
+    if selected is not None:
+        accepted_revision = str((selected.get("meta") or {}).get("accepted_revision") or "").strip()
+        if not accepted_revision:
+            _snapshot_requires_display_migration = True
+            logging.warning("Release monitor: migrating legacy snapshot to accepted_revision model")
+            if not active_valid or selected is not active:
+                _atomic_write_json(SNAPSHOT_FILE, selected)
+            _snapshot_recovery_checked = True
+            _rm_trace(
+                "RM_RECOVERY",
+                "legacy_migration_required",
+                started_at=trace_started_at,
+                active_valid=active_valid,
+                items=_count_payload_items(selected),
+                last_good_valid=last_good_valid,
+            )
+            return
+
+        if repair_pair:
+            _atomic_write_json(LAST_GOOD_SNAPSHOT_FILE, selected)
+            _atomic_write_json(SNAPSHOT_FILE, selected)
+            _atomic_write_text(REVISION_FILE, (selected.get("meta") or {}).get("data_revision") or "")
+
+    _snapshot_recovery_checked = True
+    _rm_trace(
+        "RM_RECOVERY",
+        "complete",
+        started_at=trace_started_at,
+        active_valid=active_valid,
+        items=_count_payload_items(selected),
+        last_good_valid=last_good_valid,
+        repaired=repair_pair,
+        revision=(selected.get("meta") or {}).get("accepted_revision") if selected else "",
+    )
 
 
 def _load_state_json(file_path, default=None):
@@ -349,7 +634,7 @@ def _touch_release_monitor_revision():
     revision = _new_data_revision()
     try:
         _ensure_snapshot_dir()
-        REVISION_FILE.write_text(revision, encoding="utf-8")
+        _atomic_write_text(REVISION_FILE, revision)
     except Exception as exc:
         logging.warning("Release monitor: failed to save revision: %s", exc)
     return revision
@@ -453,28 +738,179 @@ def _save_snapshot_to_disk(payload, bump_revision=True):
             else:
                 payload["meta"] = _append_revision_meta(payload.get("meta", {}))
 
-        payload_to_save = _strip_manual_release_overrides_for_snapshot(payload)
-
-        SNAPSHOT_FILE.write_text(
-            json.dumps(payload_to_save, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        _atomic_write_json(SNAPSHOT_FILE, payload)
     except Exception as exc:
         logging.warning("Release monitor: failed to save snapshot to disk: %s", exc)
 
 
 def _load_snapshot_from_disk():
-    if not SNAPSHOT_FILE.exists():
+    _recover_snapshot_storage()
+    payload = _load_json_payload(SNAPSHOT_FILE)
+    return payload if _is_valid_snapshot_payload(payload) else None
+
+
+def _save_candidate_diagnostic(candidate, validation_report=None, *, state="candidate", error=""):
+    diagnostic = copy.deepcopy(candidate or {})
+    diagnostic.setdefault("items", [])
+    diagnostic["candidate_state"] = state
+    diagnostic["saved_at"] = _utc_now_iso()
+    diagnostic["validation_report"] = copy.deepcopy(validation_report or {})
+    if error:
+        diagnostic["error"] = str(error)
+    try:
+        _atomic_write_json(CANDIDATE_SNAPSHOT_FILE, diagnostic)
+    except Exception as exc:
+        logging.warning("Release monitor: failed to save candidate diagnostic: %s", exc)
+
+
+def _archive_timestamp_for_snapshot(payload):
+    meta = dict((payload or {}).get("meta") or {})
+    timestamp_ms = (
+        _parse_snapshot_timestamp(meta.get("accepted_at"))
+        or _parse_snapshot_timestamp(meta.get("last_updated"))
+        or int(time.time() * 1000)
+    )
+    return datetime.fromtimestamp(timestamp_ms / 1000).strftime("%Y%m%d_%H%M%S")
+
+
+def _latest_archive_hash():
+    if not SNAPSHOT_ARCHIVES_DIR.exists():
+        return ""
+    archive_paths = sorted(
+        SNAPSHOT_ARCHIVES_DIR.glob("snapshot_*.json.gz"),
+        key=lambda path: (path.stat().st_mtime, path.name),
+        reverse=True,
+    )
+    for archive_path in archive_paths:
+        payload = _load_archive_snapshot(archive_path)
+        if payload is not None:
+            return _snapshot_payload_hash(payload)
+    return ""
+
+
+def _archive_previous_good_snapshot(payload):
+    if not _is_valid_snapshot_payload(payload):
+        return None
+    if _snapshot_payload_hash(payload) == _latest_archive_hash():
+        logging.info("Release monitor: previous good snapshot already matches latest archive")
         return None
 
+    SNAPSHOT_ARCHIVES_DIR.mkdir(parents=True, exist_ok=True)
+    timestamp = _archive_timestamp_for_snapshot(payload)
+    archive_path = SNAPSHOT_ARCHIVES_DIR / f"snapshot_{timestamp}.json.gz"
+    suffix = 2
+    while archive_path.exists():
+        archive_path = SNAPSHOT_ARCHIVES_DIR / f"snapshot_{timestamp}_{suffix}.json.gz"
+        suffix += 1
+
+    raw = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+    compressed = gzip.compress(raw, compresslevel=6, mtime=0)
+    _atomic_write_bytes(archive_path, compressed)
+    logging.info(
+        "Release monitor: archived previous good snapshot %s, items=%s",
+        archive_path.name,
+        _count_payload_items(payload),
+    )
+    return archive_path
+
+
+def _rotate_snapshot_archives():
+    if not SNAPSHOT_ARCHIVES_DIR.exists():
+        return
+    archives = sorted(
+        SNAPSHOT_ARCHIVES_DIR.glob("snapshot_*.json.gz"),
+        key=lambda path: (path.stat().st_mtime, path.name),
+        reverse=True,
+    )
+    for archive_path in archives[MAX_GOOD_SNAPSHOT_ARCHIVES:]:
+        try:
+            archive_path.unlink()
+            logging.info("Release monitor: removed old snapshot archive %s", archive_path.name)
+        except OSError as exc:
+            logging.warning("Release monitor: failed to remove archive %s: %s", archive_path, exc)
+
+
+def _commit_accepted_snapshot(payload, *, mode):
+    global _snapshot_recovery_checked
+
+    trace_started_at = time.monotonic()
+    _rm_trace(
+        "RM_COMMIT",
+        "start",
+        items=_count_payload_items(payload),
+        mode=mode,
+    )
+    if not _is_valid_snapshot_payload(payload):
+        raise ValueError("Accepted release monitor snapshot has invalid payload")
+
+    _recover_snapshot_storage()
+    previous_active = _load_json_payload(SNAPSHOT_FILE)
+    previous_last_good = _load_json_payload(LAST_GOOD_SNAPSHOT_FILE)
+    previous_good = (
+        previous_active
+        if _is_valid_snapshot_payload(previous_active)
+        else previous_last_good
+        if _is_valid_snapshot_payload(previous_last_good)
+        else None
+    )
+    accepted_revision = _new_accepted_revision(previous_active, previous_last_good, payload)
+    accepted_at = _utc_now_iso()
+    prepared = _prepare_accepted_snapshot(
+        payload,
+        accepted_revision=accepted_revision,
+        accepted_at=accepted_at,
+    )
+
+    created_archive = None
+    if mode == RELIABLE_FULL_REFRESH_MODE and previous_good is not None:
+        created_archive = _archive_previous_good_snapshot(previous_good)
+
+    serialized = json.dumps(prepared, ensure_ascii=False, indent=2).encode("utf-8")
+    last_good_temp = None
+    active_temp = None
     try:
-        payload = json.loads(SNAPSHOT_FILE.read_text(encoding="utf-8"))
-        if not isinstance(payload, dict):
-            return None
-        return payload
-    except Exception as exc:
-        logging.warning("Release monitor: failed to load snapshot from disk: %s", exc)
-        return None
+        last_good_temp = _prepare_atomic_bytes(LAST_GOOD_SNAPSHOT_FILE, serialized)
+        active_temp = _prepare_atomic_bytes(SNAPSHOT_FILE, serialized)
+        os.replace(last_good_temp, LAST_GOOD_SNAPSHOT_FILE)
+        os.replace(active_temp, SNAPSHOT_FILE)
+        _atomic_write_text(REVISION_FILE, accepted_revision)
+    except Exception:
+        if created_archive and created_archive.exists():
+            try:
+                created_archive.unlink()
+            except OSError:
+                logging.warning(
+                    "Release monitor: failed to remove archive after unsuccessful commit: %s",
+                    created_archive,
+                )
+        _snapshot_recovery_checked = False
+        try:
+            _recover_snapshot_storage(force=True)
+        except Exception:
+            logging.exception("Release monitor: immediate snapshot reconciliation failed")
+        raise
+    finally:
+        for temp_path in (last_good_temp, active_temp):
+            if temp_path and temp_path.exists():
+                try:
+                    temp_path.unlink()
+                except OSError:
+                    pass
+
+    if mode == RELIABLE_FULL_REFRESH_MODE:
+        _rotate_snapshot_archives()
+
+    _snapshot_recovery_checked = True
+    _rm_trace(
+        "RM_COMMIT",
+        "complete",
+        started_at=trace_started_at,
+        archived=bool(created_archive),
+        items=_count_payload_items(prepared),
+        mode=mode,
+        revision=accepted_revision,
+    )
+    return prepared
 
 
 def _get_snapshot_mtime():
@@ -500,6 +936,7 @@ def _reload_snapshot_from_disk_if_newer():
     if disk_payload is not None:
         _cached_data = _hydrate_release_monitor_payload(disk_payload)
         _last_cache_update = disk_mtime
+        _migrate_cached_display_snapshot_pair_if_needed(disk_payload)
 
 
 def _normalize_reviewer_assignments_payload(payload):
@@ -3648,6 +4085,24 @@ def _resolve_field_ids(domain, token):
     return resolved
 
 
+def _remaining_refresh_seconds(deadline_at):
+    if deadline_at is None:
+        return None
+    remaining = float(deadline_at) - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("Release monitor refresh deadline exceeded")
+    return remaining
+
+
+def _sleep_for_retry(delay_seconds, deadline_at):
+    remaining = _remaining_refresh_seconds(deadline_at)
+    delay = float(delay_seconds or 0)
+    if remaining is not None:
+        delay = min(delay, remaining)
+    if delay > 0:
+        time.sleep(delay)
+
+
 def _execute_search(
     domain,
     token,
@@ -3658,6 +4113,10 @@ def _execute_search(
     retry_label="",
     retry_max_attempts=None,
     retry_delay_seconds=None,
+    deadline_at=None,
+    strict_pagination=False,
+    source_ledger=None,
+    source_kind="jira_search",
 ):
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
     url = f"{domain}/rest/api/2/search"
@@ -3677,56 +4136,114 @@ def _execute_search(
         else RELIABLE_SEARCH_RETRY_DELAY_SECONDS
     )
 
-    while True:
-        params = {
-            "jql": jql,
-            "startAt": start_at,
-            "maxResults": 100,
-            "fields": ",".join(sorted(field for field in fields_to_load if field)),
-        }
-        attempt = 1
+    ledger_entry = {
+        "kind": source_kind,
+        "label": retry_label or jql,
+        "domain": domain,
+        "status": "running",
+        "expected_total": None,
+        "fetched_total": 0,
+        "pages": 0,
+    }
+
+    try:
         while True:
+            remaining = _remaining_refresh_seconds(deadline_at)
+            params = {
+                "jql": jql,
+                "startAt": start_at,
+                "maxResults": 100,
+                "fields": ",".join(sorted(field for field in fields_to_load if field)),
+            }
+            attempt = 1
+            while True:
+                try:
+                    request_timeout = 60 if remaining is None else max(1, min(60, int(remaining)))
+                    response = requests.get(
+                        url,
+                        headers=headers,
+                        params=params,
+                        verify=False,
+                        timeout=request_timeout,
+                    )
+                    if (
+                        retry_server_errors
+                        and response.status_code in RELIABLE_SEARCH_RETRY_STATUS_CODES
+                        and attempt < max_attempts
+                    ):
+                        logging.warning(
+                            "Release monitor refresh: Jira search failed with %s for %s, retry %s/%s",
+                            response.status_code,
+                            retry_label or jql,
+                            attempt + 1,
+                            max_attempts,
+                        )
+                        _sleep_for_retry(retry_delay, deadline_at)
+                        attempt += 1
+                        remaining = _remaining_refresh_seconds(deadline_at)
+                        continue
+                    response.raise_for_status()
+                    break
+                except (requests.ConnectionError, requests.Timeout) as exc:
+                    if retry_server_errors and attempt < max_attempts:
+                        logging.warning(
+                            "Release monitor refresh: Jira search transient error for %s: %s, retry %s/%s",
+                            retry_label or jql,
+                            exc,
+                            attempt + 1,
+                            max_attempts,
+                        )
+                        _sleep_for_retry(retry_delay, deadline_at)
+                        attempt += 1
+                        remaining = _remaining_refresh_seconds(deadline_at)
+                        continue
+                    raise
+
+            data = response.json()
+            batch = data.get("issues", [])
+            if not isinstance(batch, list):
+                raise ValueError(f"Jira search returned invalid issues payload for {retry_label or jql}")
             try:
-                response = requests.get(url, headers=headers, params=params, verify=False, timeout=60)
-                if (
-                    retry_server_errors
-                    and response.status_code in RELIABLE_SEARCH_RETRY_STATUS_CODES
-                    and attempt < max_attempts
-                ):
-                    logging.warning(
-                        "Release monitor reliable refresh: Jira search failed with %s for %s, retry %s/%s",
-                        response.status_code,
-                        retry_label or jql,
-                        attempt + 1,
-                        max_attempts,
-                    )
-                    time.sleep(retry_delay)
-                    attempt += 1
-                    continue
-                response.raise_for_status()
+                expected_total = int(data.get("total", 0))
+            except (TypeError, ValueError):
+                raise ValueError(f"Jira search returned invalid total for {retry_label or jql}")
+
+            if ledger_entry["expected_total"] is None:
+                ledger_entry["expected_total"] = expected_total
+            elif strict_pagination and expected_total != ledger_entry["expected_total"]:
+                raise RuntimeError(
+                    f"Jira pagination total changed for {retry_label or jql}: "
+                    f"{ledger_entry['expected_total']} -> {expected_total}"
+                )
+
+            issues.extend(batch)
+            ledger_entry["pages"] += 1
+            ledger_entry["fetched_total"] = len(issues)
+            if len(issues) >= expected_total:
                 break
-            except (requests.ConnectionError, requests.Timeout) as exc:
-                if retry_server_errors and attempt < max_attempts:
-                    logging.warning(
-                        "Release monitor reliable refresh: Jira search transient error for %s: %s, retry %s/%s",
-                        retry_label or jql,
-                        exc,
-                        attempt + 1,
-                        max_attempts,
+            if not batch:
+                if strict_pagination:
+                    raise RuntimeError(
+                        f"Incomplete Jira pagination for {retry_label or jql}: "
+                        f"fetched {len(issues)} of {expected_total}"
                     )
-                    time.sleep(retry_delay)
-                    attempt += 1
-                    continue
-                raise
-        data = response.json()
-        batch = data.get("issues", [])
-        issues.extend(batch)
+                break
+            start_at += len(batch)
 
-        if start_at + len(batch) >= data.get("total", 0) or not batch:
-            break
-        start_at += len(batch)
-
-    return issues
+        if strict_pagination and len(issues) != int(ledger_entry["expected_total"] or 0):
+            raise RuntimeError(
+                f"Incomplete Jira pagination for {retry_label or jql}: "
+                f"fetched {len(issues)} of {ledger_entry['expected_total']}"
+            )
+        ledger_entry["status"] = "success"
+        return issues
+    except Exception as exc:
+        ledger_entry["status"] = "failed"
+        ledger_entry["error"] = str(exc)
+        raise
+    finally:
+        if isinstance(source_ledger, list):
+            source_ledger.append(dict(ledger_entry))
 
 
 def _execute_release_search(
@@ -3737,6 +4254,11 @@ def _execute_release_search(
     fields_to_load,
     *,
     retry_server_errors=False,
+    retry_max_attempts=None,
+    retry_delay_seconds=None,
+    deadline_at=None,
+    strict_pagination=False,
+    source_ledger=None,
 ):
     current_year = datetime.now().year
     jql = (
@@ -3753,6 +4275,12 @@ def _execute_release_search(
         fields_to_load,
         retry_server_errors=retry_server_errors,
         retry_label=f"{domain} {prefix} releases",
+        retry_max_attempts=retry_max_attempts,
+        retry_delay_seconds=retry_delay_seconds,
+        deadline_at=deadline_at,
+        strict_pagination=strict_pagination,
+        source_ledger=source_ledger,
+        source_kind="release_prefix",
     )
 
 
@@ -3846,6 +4374,9 @@ def _execute_issue_keys_search(
     retry_server_errors=False,
     retry_max_attempts=None,
     retry_delay_seconds=None,
+    deadline_at=None,
+    strict_pagination=False,
+    source_ledger=None,
 ):
     issues = []
     for offset in range(0, len(issue_keys), 50):
@@ -3862,6 +4393,10 @@ def _execute_issue_keys_search(
                 retry_label=f"{domain} issue batch {offset // 50 + 1}",
                 retry_max_attempts=retry_max_attempts,
                 retry_delay_seconds=retry_delay_seconds,
+                deadline_at=deadline_at,
+                strict_pagination=strict_pagination,
+                source_ledger=source_ledger,
+                source_kind="linked_rov_batch",
             )
         )
     return issues
@@ -3877,6 +4412,7 @@ def _execute_issue_get(
     retry_max_attempts=None,
     retry_delay_seconds=None,
     retry_label="",
+    deadline_at=None,
 ):
     issue_key = str(issue_key or "").strip()
     if not issue_key:
@@ -3904,7 +4440,15 @@ def _execute_issue_get(
     attempt = 1
     while True:
         try:
-            response = requests.get(url, headers=headers, params=params, verify=False, timeout=60)
+            remaining = _remaining_refresh_seconds(deadline_at)
+            request_timeout = 60 if remaining is None else max(1, min(60, int(remaining)))
+            response = requests.get(
+                url,
+                headers=headers,
+                params=params,
+                verify=False,
+                timeout=request_timeout,
+            )
             if (
                 retry_server_errors
                 and response.status_code in RELIABLE_SEARCH_RETRY_STATUS_CODES
@@ -3917,7 +4461,7 @@ def _execute_issue_get(
                     attempt + 1,
                     max_attempts,
                 )
-                time.sleep(retry_delay)
+                _sleep_for_retry(retry_delay, deadline_at)
                 attempt += 1
                 continue
             response.raise_for_status()
@@ -3931,7 +4475,7 @@ def _execute_issue_get(
                     attempt + 1,
                     max_attempts,
                 )
-                time.sleep(retry_delay)
+                _sleep_for_retry(retry_delay, deadline_at)
                 attempt += 1
                 continue
             raise
@@ -4439,7 +4983,17 @@ def _pick_release_sort_dt(rov_start, rov_end, planned_prom_start, planned_prom_e
     return rov_start or rov_end or planned_prom_start or planned_prom_end
 
 
-def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, current_year, previous_year):
+def _build_release_record(
+    issue,
+    domain,
+    prefix,
+    resolved_fields,
+    rov_map,
+    current_year,
+    previous_year,
+    *,
+    attempt_outcomes=None,
+):
     fields = issue.get("fields", {})
     status_name = (fields.get("status") or {}).get("name", "")
     summary = fields.get("summary", "")
@@ -4485,7 +5039,11 @@ def _build_release_record(issue, domain, prefix, resolved_fields, rov_map, curre
     records = []
     now_dt = datetime.now()
     today = now_dt.date()
-    attempt_outcomes = _load_release_attempt_outcomes()
+    attempt_outcomes = (
+        _load_release_attempt_outcomes()
+        if attempt_outcomes is None
+        else dict(attempt_outcomes or {})
+    )
     has_successful_final_attempt_before = False
     stale_successful_attempt_key = ""
     if is_final and linked_rov_records:
@@ -4974,6 +5532,280 @@ def _build_summary(records, current_year, previous_year):
     return summary
 
 
+def _is_manual_release_monitor_item(item):
+    if not isinstance(item, dict):
+        return False
+    row_key = str(item.get("row_key") or "").strip()
+    return bool(
+        item.get("manual_release")
+        or item.get("source") == "manual"
+        or row_key.startswith("manual::")
+    )
+
+
+def _candidate_prefix(item):
+    prefix = str((item or {}).get("source_prefix") or "").strip().upper()
+    if prefix:
+        return prefix
+    release_key = str((item or {}).get("release_key") or "").strip().upper()
+    return release_key.split("-", 1)[0] if "-" in release_key else ""
+
+
+def _build_snapshot_validation_profile(items, *, years=None):
+    selected_years = set(years or [])
+    profile = {
+        "total": 0,
+        "real_rov": 0,
+        "by_year": {},
+        "by_prefix": {},
+    }
+    for item in items or []:
+        if not isinstance(item, dict) or _is_manual_release_monitor_item(item):
+            continue
+        try:
+            item_year = int(item.get("year"))
+        except (TypeError, ValueError):
+            item_year = None
+        if selected_years and item_year not in selected_years:
+            continue
+
+        profile["total"] += 1
+        if _is_real_rov_key(item.get("rov_key")):
+            profile["real_rov"] += 1
+        if item_year is not None:
+            year_key = str(item_year)
+            profile["by_year"][year_key] = int(profile["by_year"].get(year_key) or 0) + 1
+        prefix = _candidate_prefix(item)
+        if prefix:
+            profile["by_prefix"][prefix] = int(profile["by_prefix"].get(prefix) or 0) + 1
+    return profile
+
+
+def _release_monitor_item_years(items):
+    years = set()
+    for item in items or []:
+        if not isinstance(item, dict) or _is_manual_release_monitor_item(item):
+            continue
+        try:
+            years.add(int(item.get("year")))
+        except (TypeError, ValueError):
+            continue
+    return years
+
+
+def _build_raw_release_candidate(items, source_ledger, mode):
+    current_year = datetime.now().year
+    years = {current_year, current_year - 1}
+    return {
+        "items": [dict(item) for item in (items or []) if isinstance(item, dict)],
+        "source_ledger": [dict(entry) for entry in (source_ledger or [])],
+        "raw_counters": _build_snapshot_validation_profile(items, years=years),
+        "meta": {
+            "mode": mode,
+            "generated_at": _utc_now_iso(),
+            "years": sorted(years, reverse=True),
+            "raw_candidate": True,
+        },
+    }
+
+
+def _drop_exceeds_threshold(previous, candidate, absolute_minimum, ratio):
+    previous = int(previous or 0)
+    candidate = int(candidate or 0)
+    loss = previous - candidate
+    threshold = max(int(absolute_minimum), previous * float(ratio))
+    return loss > threshold, loss, threshold
+
+
+def _validate_release_candidate(candidate, baseline_payload):
+    trace_started_at = time.monotonic()
+    _rm_trace(
+        "RM_VALIDATION",
+        "start",
+        baseline_items=_count_payload_items(baseline_payload),
+        candidate_items=_count_payload_items(candidate),
+        mode=((candidate or {}).get("meta") or {}).get("mode", ""),
+    )
+    current_year = datetime.now().year
+    candidate_items = list((candidate or {}).get("items") or [])
+    baseline_items = list((baseline_payload or {}).get("items") or [])
+    expected_candidate_years = {
+        int(year)
+        for year in ((candidate or {}).get("meta") or {}).get("years", [])
+        if str(year).isdigit()
+    } or {current_year, current_year - 1}
+    baseline_years = _release_monitor_item_years(baseline_items)
+    comparison_years = baseline_years & expected_candidate_years
+    if not comparison_years:
+        comparison_years = expected_candidate_years
+    candidate_profile = _build_snapshot_validation_profile(candidate_items, years=comparison_years)
+    baseline_profile = _build_snapshot_validation_profile(baseline_items, years=comparison_years)
+    reasons = []
+
+    release_keys = []
+    row_keys = []
+    for item in candidate_items:
+        release_key = str((item or {}).get("release_key") or "").strip()
+        row_key = str((item or {}).get("row_key") or "").strip()
+        if not release_key:
+            reasons.append(
+                {
+                    "code": "empty_release_key",
+                    "message": "Candidate contains a row without release_key",
+                }
+            )
+        if release_key:
+            release_keys.append(release_key)
+        if row_key:
+            row_keys.append(row_key)
+        else:
+            reasons.append(
+                {
+                    "code": "empty_row_key",
+                    "message": f"Candidate row {release_key or '<unknown>'} has no row_key",
+                }
+            )
+
+    duplicate_row_keys = sorted(
+        row_key
+        for row_key, count in {
+            key: row_keys.count(key)
+            for key in set(row_keys)
+        }.items()
+        if count > 1
+    )
+    if duplicate_row_keys:
+        reasons.append(
+            {
+                "code": "duplicate_row_key",
+                "message": f"Candidate contains duplicate row_key values: {', '.join(duplicate_row_keys[:10])}",
+                "count": len(duplicate_row_keys),
+            }
+        )
+
+    source_ledger = list((candidate or {}).get("source_ledger") or [])
+    failed_sources = [entry for entry in source_ledger if entry.get("status") != "success"]
+    incomplete_sources = [
+        entry
+        for entry in source_ledger
+        if entry.get("status") == "success"
+        and int(entry.get("fetched_total") or 0) != int(entry.get("expected_total") or 0)
+    ]
+    if failed_sources:
+        reasons.append(
+            {
+                "code": "mandatory_source_failed",
+                "message": f"{len(failed_sources)} mandatory Jira source(s) failed",
+            }
+        )
+    if incomplete_sources:
+        reasons.append(
+            {
+                "code": "incomplete_pagination",
+                "message": f"{len(incomplete_sources)} Jira source(s) have incomplete pagination",
+            }
+        )
+
+    if baseline_profile["total"] > 0:
+        exceeds, loss, threshold = _drop_exceeds_threshold(
+            baseline_profile["total"],
+            candidate_profile["total"],
+            10,
+            0.05,
+        )
+        if exceeds:
+            reasons.append(
+                {
+                    "code": "total_drop",
+                    "message": (
+                        f"Total Jira rows dropped from {baseline_profile['total']} "
+                        f"to {candidate_profile['total']}"
+                    ),
+                    "loss": loss,
+                    "threshold": threshold,
+                }
+            )
+
+        if current_year in comparison_years:
+            previous_current_year = int(baseline_profile["by_year"].get(str(current_year)) or 0)
+            candidate_current_year = int(candidate_profile["by_year"].get(str(current_year)) or 0)
+            exceeds, loss, threshold = _drop_exceeds_threshold(
+                previous_current_year,
+                candidate_current_year,
+                5,
+                0.03,
+            )
+            if exceeds:
+                reasons.append(
+                    {
+                        "code": "current_year_drop",
+                        "message": (
+                            f"Current-year rows dropped from {previous_current_year} "
+                            f"to {candidate_current_year}"
+                        ),
+                        "loss": loss,
+                        "threshold": threshold,
+                    }
+                )
+
+        exceeds, loss, threshold = _drop_exceeds_threshold(
+            baseline_profile["real_rov"],
+            candidate_profile["real_rov"],
+            10,
+            0.05,
+        )
+        if exceeds:
+            reasons.append(
+                {
+                    "code": "real_rov_drop",
+                    "message": (
+                        f"release::REAL_ROV rows dropped from {baseline_profile['real_rov']} "
+                        f"to {candidate_profile['real_rov']}"
+                    ),
+                    "loss": loss,
+                    "threshold": threshold,
+                }
+            )
+
+        for prefix in RELEASE_PREFIXES:
+            previous_count = int(baseline_profile["by_prefix"].get(prefix) or 0)
+            candidate_count = int(candidate_profile["by_prefix"].get(prefix) or 0)
+            if previous_count > 0 and candidate_count == 0:
+                reasons.append(
+                    {
+                        "code": "prefix_disappeared",
+                        "message": f"Previously populated prefix {prefix} disappeared",
+                        "prefix": prefix,
+                        "previous": previous_count,
+                    }
+                )
+
+    status = "accepted" if not reasons else "rejected"
+    report = {
+        "status": status,
+        "validated_at": _utc_now_iso(),
+        "reasons": reasons,
+        "baseline": baseline_profile,
+        "candidate": candidate_profile,
+        "comparison_years": sorted(comparison_years, reverse=True),
+        "thresholds": {
+            "total_drop": {"minimum": 10, "ratio": 0.05},
+            "current_year_drop": {"minimum": 5, "ratio": 0.03},
+            "real_rov_drop": {"minimum": 10, "ratio": 0.05},
+        },
+    }
+    _rm_trace(
+        "RM_VALIDATION",
+        "complete",
+        started_at=trace_started_at,
+        baseline_total=baseline_profile["total"],
+        candidate_total=candidate_profile["total"],
+        reasons=",".join(reason.get("code", "") for reason in reasons) or "none",
+        status=status,
+    )
+    return report
+
+
 def _compose_release_payload(all_records, mode):
     current_year = datetime.now().year
     previous_year = current_year - 1
@@ -5015,39 +5847,57 @@ def _fetch_release_monitor_data(*, reliable=False, base_items=None):
     current_year = datetime.now().year
     previous_year = current_year - 1
     all_records = []
+    source_ledger = []
+    mode = RELIABLE_FULL_REFRESH_MODE if reliable else "full"
+    max_attempts = RELIABLE_SEARCH_MAX_ATTEMPTS if reliable else FULL_SEARCH_MAX_ATTEMPTS
+    deadline_seconds = (
+        RELIABLE_FULL_REFRESH_DEADLINE_SECONDS
+        if reliable
+        else FULL_REFRESH_DEADLINE_SECONDS
+    )
+    deadline_at = time.monotonic() + max(1, deadline_seconds)
+    retry_kwargs = {
+        "retry_server_errors": True,
+        "retry_max_attempts": max_attempts,
+        "retry_delay_seconds": RELIABLE_SEARCH_RETRY_DELAY_SECONDS,
+        "deadline_at": deadline_at,
+    }
 
-    for (domain, token), prefixes in _get_domain_groups().items():
-        resolved_fields = _resolve_field_ids(domain, token)
-        release_fields_to_load = {
-            "key",
-            "summary",
-            "status",
-            "resolution",
-            "assignee",
-            "reporter",
-            "created",
-            "updated",
-            "issuetype",
-            "priority",
-            "issuelinks",
-            resolved_fields["planned_prom_start"],
-            resolved_fields["planned_prom_end"],
-            resolved_fields["system_info"],
-            resolved_fields["ke_object"],
-            resolved_fields["release_distributive"],
-            resolved_fields["delta_release_distributive"],
-        }
+    try:
+        for (domain, token), prefixes in _get_domain_groups().items():
+            _remaining_refresh_seconds(deadline_at)
+            resolved_fields = _resolve_field_ids(domain, token)
+            release_fields_to_load = {
+                "key",
+                "summary",
+                "status",
+                "resolution",
+                "assignee",
+                "reporter",
+                "created",
+                "updated",
+                "issuetype",
+                "priority",
+                "issuelinks",
+                resolved_fields["planned_prom_start"],
+                resolved_fields["planned_prom_end"],
+                resolved_fields["system_info"],
+                resolved_fields["ke_object"],
+                resolved_fields["release_distributive"],
+                resolved_fields["delta_release_distributive"],
+            }
 
-        domain_release_issues = []
-        for prefix in prefixes:
-            try:
+            domain_release_issues = []
+            for prefix in prefixes:
                 issues = _execute_release_search(
                     domain,
                     token,
                     prefix,
                     previous_year,
                     release_fields_to_load,
-                    retry_server_errors=reliable,
+                    strict_pagination=True,
+                    source_ledger=source_ledger,
+                    **retry_kwargs,
                 )
                 logging.info(
                     "Release monitor: loaded %s releases for prefix %s",
@@ -5055,88 +5905,89 @@ def _fetch_release_monitor_data(*, reliable=False, base_items=None):
                     prefix,
                 )
                 domain_release_issues.extend((prefix, issue) for issue in issues)
-            except Exception as exc:
-                logging.error(
-                    "Release monitor: failed to load releases for prefix %s: %s",
-                    prefix,
-                    exc,
-                )
-                if reliable:
-                    raise
 
-        release_issues_by_key = {
-            issue.get("key"): (prefix, issue)
-            for prefix, issue in domain_release_issues
-            if issue.get("key")
-        }
-        restored_rov_records = _restore_missing_rov_links_from_known_state(
-            domain,
-            token,
-            release_issues_by_key,
-            base_items or [],
-            resolved_fields,
-            release_fields_to_load,
-            _release_monitor_rov_fields_to_load(resolved_fields),
-            retry_kwargs={
-                "retry_server_errors": reliable,
-            },
-            context_label=RELIABLE_FULL_REFRESH_MODE if reliable else "full",
-        )
-        domain_release_issues = list(release_issues_by_key.values())
+            release_issues_by_key = {
+                issue.get("key"): (prefix, issue)
+                for prefix, issue in domain_release_issues
+                if issue.get("key")
+            }
+            restored_rov_records = _restore_missing_rov_links_from_known_state(
+                domain,
+                token,
+                release_issues_by_key,
+                base_items or [],
+                resolved_fields,
+                release_fields_to_load,
+                _release_monitor_rov_fields_to_load(resolved_fields),
+                retry_kwargs=retry_kwargs,
+                context_label=mode,
+            )
+            domain_release_issues = list(release_issues_by_key.values())
 
-        rov_keys = sorted(
-            {
-                rov_key
-                for _, issue in domain_release_issues
-                for rov_key in _extract_release_io_keys(issue)
-                if rov_key
-            }
-        )
-        rov_map = {}
-        if rov_keys:
-            rov_fields_to_load = {
-                "key",
-                "summary",
-                "status",
-                "issuetype",
-                resolved_fields["rov_start"],
-                resolved_fields["rov_end"],
-            }
-            try:
+            rov_keys = sorted(
+                {
+                    rov_key
+                    for _, issue in domain_release_issues
+                    for rov_key in _extract_release_io_keys(issue)
+                    if rov_key
+                }
+            )
+            rov_map = {}
+            if rov_keys:
+                rov_fields_to_load = {
+                    "key",
+                    "summary",
+                    "status",
+                    "issuetype",
+                    resolved_fields["rov_start"],
+                    resolved_fields["rov_end"],
+                }
                 rov_issues = _execute_issue_keys_search(
                     domain,
                     token,
                     rov_keys,
                     rov_fields_to_load,
-                    retry_server_errors=reliable,
+                    strict_pagination=True,
+                    source_ledger=source_ledger,
+                    **retry_kwargs,
                 )
+                loaded_rov_keys = {
+                    str(issue.get("key") or "").strip()
+                    for issue in rov_issues
+                    if str(issue.get("key") or "").strip()
+                }
+                missing_rov_keys = sorted(set(rov_keys) - loaded_rov_keys)
+                if missing_rov_keys:
+                    raise RuntimeError(
+                        f"Linked ROV query for {domain} did not return "
+                        f"{len(missing_rov_keys)} requested issue(s): {', '.join(missing_rov_keys[:10])}"
+                    )
                 rov_map = {
                     issue.get("key"): _build_rov_record(issue, domain, resolved_fields)
                     for issue in rov_issues
                 }
                 rov_map.update(restored_rov_records)
-            except Exception as exc:
-                logging.error("Release monitor: failed to load linked ROV issues from %s: %s", domain, exc)
-                if reliable:
-                    raise
+            else:
                 rov_map.update(restored_rov_records)
-        else:
-            rov_map.update(restored_rov_records)
 
-        for prefix, issue in domain_release_issues:
-            records = _build_release_record(
-                issue,
-                domain,
-                prefix,
-                resolved_fields,
-                rov_map,
-                current_year,
-                previous_year,
-            )
-            if records:
-                all_records.extend(records)
+            for prefix, issue in domain_release_issues:
+                records = _build_release_record(
+                    issue,
+                    domain,
+                    prefix,
+                    resolved_fields,
+                    rov_map,
+                    current_year,
+                    previous_year,
+                    attempt_outcomes={},
+                )
+                if records:
+                    all_records.extend(records)
+    except Exception as exc:
+        candidate = _build_raw_release_candidate(all_records, source_ledger, mode)
+        raise ReleaseMonitorSourceError(str(exc), candidate=candidate) from exc
 
-    return _compose_release_payload(all_records, RELIABLE_FULL_REFRESH_MODE if reliable else "full")
+    return _build_raw_release_candidate(all_records, source_ledger, mode)
 
 
 def _merge_release_level_updates_into_known_rov_item(existing_item, update_item):
@@ -5682,16 +6533,58 @@ def _get_cached_payload_copy():
     }
 
 
+def _migrate_cached_display_snapshot_pair_if_needed(source_payload=None):
+    global _cached_data, _snapshot_requires_display_migration
+
+    if not _snapshot_requires_display_migration or not _is_valid_snapshot_payload(_cached_data):
+        return
+    trace_started_at = time.monotonic()
+    _rm_trace(
+        "RM_STARTUP",
+        "display_snapshot_migration_start",
+        items=_count_payload_items(_cached_data),
+    )
+    source_payload = source_payload or {}
+    migrated = _prepare_accepted_snapshot(
+        _cached_data,
+        accepted_revision=(source_payload.get("meta") or {}).get("accepted_revision"),
+        accepted_at=(source_payload.get("meta") or {}).get("accepted_at"),
+    )
+    _atomic_write_json(LAST_GOOD_SNAPSHOT_FILE, migrated)
+    _atomic_write_json(SNAPSHOT_FILE, migrated)
+    _atomic_write_text(REVISION_FILE, (migrated.get("meta") or {}).get("data_revision") or "")
+    _cached_data = migrated
+    _snapshot_requires_display_migration = False
+    _rm_trace(
+        "RM_STARTUP",
+        "display_snapshot_migration_complete",
+        started_at=trace_started_at,
+        items=_count_payload_items(migrated),
+        revision=(migrated.get("meta") or {}).get("accepted_revision", ""),
+    )
+
+
 def _ensure_cached_payload_loaded_locked():
-    global _cached_data, _last_cache_update
+    global _cached_data, _last_cache_update, _snapshot_requires_display_migration
 
     if _cached_data is not None:
+        _migrate_cached_display_snapshot_pair_if_needed()
         return
 
+    trace_started_at = time.monotonic()
+    _rm_trace("RM_STARTUP", "snapshot_load_start")
     disk_payload = _load_snapshot_from_disk()
     if disk_payload is not None:
         _cached_data = _hydrate_release_monitor_payload(disk_payload)
-        _last_cache_update = _get_snapshot_mtime() or time.time()
+        _last_cache_update = time.time()
+        _migrate_cached_display_snapshot_pair_if_needed(disk_payload)
+    _rm_trace(
+        "RM_STARTUP",
+        "snapshot_load_complete",
+        started_at=trace_started_at,
+        items=_count_payload_items(_cached_data),
+        loaded=bool(disk_payload),
+    )
 
 
 def _rebuild_cached_payload_after_state_change_locked():
@@ -5716,8 +6609,10 @@ def _release_monitor_payload_fingerprint(payload):
 def _run_auto_incremental_release_monitor_refresh():
     global _cached_data, _last_cache_update, _last_auto_incremental_refresh_at
 
+    trace_started_at = time.monotonic()
     try:
         started_at = _format_timestamp()
+        _rm_trace("RM_SILENT_REFRESH", "start", started_at_text=started_at)
         with _cache_lock:
             manual_refresh_running = bool(
                 (_refresh_thread and _refresh_thread.is_alive())
@@ -5725,6 +6620,11 @@ def _run_auto_incremental_release_monitor_refresh():
             )
             if manual_refresh_running:
                 logging.info("Release monitor: skipped auto incremental refresh because manual refresh is running")
+                _rm_trace(
+                    "RM_SILENT_REFRESH",
+                    "skip_manual_refresh_running",
+                    started_at=trace_started_at,
+                )
                 return
 
             _auto_incremental_status.update(
@@ -5756,15 +6656,34 @@ def _run_auto_incremental_release_monitor_refresh():
                         "last_error": None,
                     }
                 )
+                _rm_trace(
+                    "RM_SILENT_REFRESH",
+                    "waiting_for_snapshot",
+                    started_at=trace_started_at,
+                )
                 return
 
             base_items = list(base_payload.get("items", []))
             current_meta = dict(base_payload.get("meta", {}))
             before_fingerprint = _release_monitor_payload_fingerprint(base_payload)
+            _rm_trace(
+                "RM_SILENT_REFRESH",
+                "baseline_ready",
+                started_at=trace_started_at,
+                items=len(base_items),
+            )
 
+        jira_started_at = time.monotonic()
+        _rm_trace("RM_SILENT_REFRESH", "jira_fetch_start", items=len(base_items))
         data = _fetch_incremental_release_monitor_data(
             base_items,
             lookback_minutes=AUTO_INCREMENTAL_REFRESH_LOOKBACK_MINUTES,
+        )
+        _rm_trace(
+            "RM_SILENT_REFRESH",
+            "jira_fetch_complete",
+            started_at=jira_started_at,
+            fetched_items=_count_payload_items(data),
         )
 
         now_str = _format_timestamp()
@@ -5787,6 +6706,13 @@ def _run_auto_incremental_release_monitor_refresh():
                 jira_checks_total=int(jira_diagnostics.get("jira_checks_total") or 0),
                 jira_checks_success=int(jira_diagnostics.get("jira_checks_success") or 0),
                 jira_checks_failed=int(jira_diagnostics.get("jira_checks_failed") or 0),
+            )
+            _rm_trace(
+                "RM_SILENT_REFRESH",
+                "jira_checks_failed",
+                started_at=trace_started_at,
+                failed=jira_diagnostics.get("jira_checks_failed", 0),
+                total=jira_diagnostics.get("jira_checks_total", 0),
             )
             return
 
@@ -5818,6 +6744,12 @@ def _run_auto_incremental_release_monitor_refresh():
                 jira_checks_success=int(jira_diagnostics.get("jira_checks_success") or 0),
                 jira_checks_failed=int(jira_diagnostics.get("jira_checks_failed") or 0),
             )
+            _rm_trace(
+                "RM_SILENT_REFRESH",
+                "complete_without_changes",
+                started_at=trace_started_at,
+                state="partial" if jira_failure_state == "partial" else "completed",
+            )
             return
 
         with _cache_lock:
@@ -5834,6 +6766,11 @@ def _run_auto_incremental_release_monitor_refresh():
                         "last_changed": False,
                         "last_error": None,
                     }
+                )
+                _rm_trace(
+                    "RM_SILENT_REFRESH",
+                    "skip_save_manual_refresh_started",
+                    started_at=trace_started_at,
                 )
                 return
             _cached_data = finalized
@@ -5855,6 +6792,13 @@ def _run_auto_incremental_release_monitor_refresh():
             "Release monitor: auto incremental refresh saved updated snapshot, items=%s",
             len(finalized.get("items", [])),
         )
+        _rm_trace(
+            "RM_SILENT_REFRESH",
+            "complete_with_changes",
+            started_at=trace_started_at,
+            items=len(finalized.get("items", [])),
+            state="partial" if jira_failure_state == "partial" else "completed",
+        )
     except Exception as exc:
         logging.exception("Release monitor: auto incremental refresh failed")
         _update_auto_incremental_status(
@@ -5863,19 +6807,39 @@ def _run_auto_incremental_release_monitor_refresh():
             last_changed=False,
             last_error=str(exc),
         )
+        _rm_trace(
+            "RM_SILENT_REFRESH",
+            "failed",
+            started_at=trace_started_at,
+            error_type=type(exc).__name__,
+        )
     finally:
         with _cache_lock:
             _last_auto_incremental_refresh_at = time.time()
+            final_state = _auto_incremental_status.get("state")
+        _rm_trace(
+            "RM_SILENT_REFRESH",
+            "worker_exit",
+            started_at=trace_started_at,
+            state=final_state,
+        )
 
 
 def _ensure_scheduler_started():
     global _scheduler_thread, _scheduler_started, _auto_incremental_thread
 
     if _scheduler_started:
+        _rm_trace(
+            "RM_SCHEDULER",
+            "already_started",
+            level=logging.DEBUG,
+            thread_alive=bool(_scheduler_thread and _scheduler_thread.is_alive()),
+        )
         return
 
     def _scheduler_loop():
         global _auto_incremental_thread
+        _rm_trace("RM_SCHEDULER", "loop_started")
         while True:
             try:
                 with _cache_lock:
@@ -5904,6 +6868,7 @@ def _ensure_scheduler_started():
                 )
 
                 if should_run:
+                    _rm_trace("RM_SCHEDULER", "launch_auto_full")
                     start_release_monitor_refresh(mode="full", trigger="auto")
                     running = True
 
@@ -5925,19 +6890,137 @@ def _ensure_scheduler_started():
                             or _refresh_status.get("state") == "refreshing"
                         )
                         if not manual_refresh_running:
+                            _rm_trace(
+                                "RM_SCHEDULER",
+                                "launch_silent_refresh",
+                                last_auto_ts=last_auto_ts,
+                            )
                             _auto_incremental_thread = threading.Thread(
                                 target=_run_auto_incremental_release_monitor_refresh,
                                 daemon=True,
+                                name="release-monitor-silent-refresh",
                             )
                             _auto_incremental_thread.start()
             except Exception:
                 logging.exception("Release monitor: refresh scheduler failed")
+                _rm_trace("RM_SCHEDULER", "loop_error")
 
             time.sleep(min(AUTO_REFRESH_CHECK_INTERVAL, AUTO_INCREMENTAL_REFRESH_CHECK_INTERVAL))
 
-    _scheduler_thread = threading.Thread(target=_scheduler_loop, daemon=True)
+    _rm_trace(
+        "RM_SCHEDULER",
+        "start",
+        auto_enabled=AUTO_INCREMENTAL_REFRESH_ENABLED,
+        interval_seconds=AUTO_INCREMENTAL_REFRESH_INTERVAL_SECONDS,
+    )
+    _scheduler_thread = threading.Thread(
+        target=_scheduler_loop,
+        daemon=True,
+        name="release-monitor-scheduler",
+    )
     _scheduler_thread.start()
     _scheduler_started = True
+    _rm_trace(
+        "RM_SCHEDULER",
+        "started",
+        thread_alive=_scheduler_thread.is_alive(),
+    )
+
+
+def _prepare_display_ready_full_payload(candidate, mode, current_meta):
+    data = _compose_release_payload(
+        [dict(item) for item in (candidate or {}).get("items", []) if isinstance(item, dict)],
+        mode,
+    )
+    now_str = _format_timestamp()
+    meta = dict(data.get("meta", {}))
+    meta["last_updated"] = now_str
+    meta["last_sync_mode"] = mode
+    meta["quick_refresh_days"] = QUICK_REFRESH_DAYS
+    meta["auto_full_refresh_enabled"] = AUTO_FULL_REFRESH_ENABLED
+    meta["auto_full_refresh_hour"] = AUTO_FULL_REFRESH_HOUR
+    meta["auto_incremental_refresh_enabled"] = AUTO_INCREMENTAL_REFRESH_ENABLED
+    meta["auto_incremental_refresh_interval_seconds"] = AUTO_INCREMENTAL_REFRESH_INTERVAL_SECONDS
+    meta["auto_incremental_refresh_lookback_minutes"] = AUTO_INCREMENTAL_REFRESH_LOOKBACK_MINUTES
+    meta["last_full_sync"] = now_str
+    meta["last_quick_sync"] = current_meta.get("last_quick_sync")
+    meta["last_auto_incremental_sync"] = current_meta.get("last_auto_incremental_sync")
+    meta["last_confluence_sync"] = current_meta.get("last_confluence_sync")
+    data["meta"] = meta
+    return _finalize_release_monitor_payload(data, _load_manual_release_overrides())
+
+
+def _confirmed_snapshot_timestamp(payload):
+    meta = dict((payload or {}).get("meta") or {})
+    return meta.get("accepted_at") or meta.get("last_full_sync") or meta.get("last_updated") or ""
+
+
+def _execute_transactional_full_refresh(*, reliable, base_payload):
+    mode = RELIABLE_FULL_REFRESH_MODE if reliable else "full"
+    trace_tag = "RM_RELIABLE_REFRESH" if reliable else "RM_FULL_REFRESH"
+    trace_started_at = time.monotonic()
+    _rm_trace(
+        trace_tag,
+        "candidate_pipeline_start",
+        baseline_items=_count_payload_items(base_payload),
+    )
+    base_payload = base_payload or _build_empty_release_monitor_payload()
+    candidate = _fetch_release_monitor_data(
+        reliable=reliable,
+        base_items=list(base_payload.get("items") or []),
+    )
+    _rm_trace(
+        trace_tag,
+        "candidate_loaded",
+        started_at=trace_started_at,
+        candidate_items=_count_payload_items(candidate),
+    )
+    validation_report = _validate_release_candidate(candidate, base_payload)
+    _save_candidate_diagnostic(
+        candidate,
+        validation_report,
+        state=validation_report.get("status") or "candidate",
+    )
+    if validation_report.get("status") != "accepted":
+        _rm_trace(
+            trace_tag,
+            "candidate_rejected",
+            started_at=trace_started_at,
+            reasons=",".join(
+                reason.get("code", "")
+                for reason in validation_report.get("reasons") or []
+            ) or "unknown",
+        )
+        primary_reason = next(iter(validation_report.get("reasons") or []), {})
+        raise ReleaseMonitorCandidateRejected(
+            primary_reason.get("message") or "Release monitor candidate was rejected",
+            candidate=candidate,
+            validation_report=validation_report,
+        )
+
+    try:
+        display_payload = _prepare_display_ready_full_payload(
+            candidate,
+            mode,
+            dict(base_payload.get("meta") or {}),
+        )
+        committed = _commit_accepted_snapshot(display_payload, mode=mode)
+    except Exception as exc:
+        _save_candidate_diagnostic(
+            candidate,
+            validation_report,
+            state="commit_failed",
+            error=str(exc),
+        )
+        raise
+    _rm_trace(
+        trace_tag,
+        "candidate_committed",
+        started_at=trace_started_at,
+        items=_count_payload_items(committed),
+        revision=(committed.get("meta") or {}).get("accepted_revision", ""),
+    )
+    return committed, validation_report
 
 
 def get_release_monitor_data(force_refresh=False):
@@ -5945,11 +7028,7 @@ def get_release_monitor_data(force_refresh=False):
 
     with _cache_lock:
         _ensure_scheduler_started()
-        if _cached_data is None:
-            disk_payload = _load_snapshot_from_disk()
-            if disk_payload:
-                _cached_data = _hydrate_release_monitor_payload(disk_payload)
-                _last_cache_update = time.time()
+        _ensure_cached_payload_loaded_locked()
 
         now = time.time()
         if (
@@ -5960,72 +7039,100 @@ def get_release_monitor_data(force_refresh=False):
         ):
             return _cached_data
 
-    manual_overrides = _load_manual_release_overrides()
     with _cache_lock:
-        base_items = list((_cached_data or {}).get("items", []))
-    data = _fetch_release_monitor_data(base_items=base_items)
-    current_meta = (_cached_data or {}).get("meta", {})
-    data["meta"]["last_full_sync"] = data["meta"].get("last_updated")
-    data["meta"]["last_quick_sync"] = current_meta.get("last_quick_sync")
-    data["meta"]["last_auto_incremental_sync"] = current_meta.get("last_auto_incremental_sync")
-    data["meta"]["last_confluence_sync"] = current_meta.get("last_confluence_sync")
-    data["meta"]["auto_full_refresh_enabled"] = AUTO_FULL_REFRESH_ENABLED
-    data["meta"]["auto_full_refresh_hour"] = AUTO_FULL_REFRESH_HOUR
-    data["meta"]["auto_incremental_refresh_enabled"] = AUTO_INCREMENTAL_REFRESH_ENABLED
-    data["meta"]["auto_incremental_refresh_interval_seconds"] = AUTO_INCREMENTAL_REFRESH_INTERVAL_SECONDS
-    data["meta"]["auto_incremental_refresh_lookback_minutes"] = AUTO_INCREMENTAL_REFRESH_LOOKBACK_MINUTES
+        base_payload = copy.deepcopy(_cached_data or _build_empty_release_monitor_payload())
+
+    try:
+        data, _ = _execute_transactional_full_refresh(
+            reliable=False,
+            base_payload=base_payload,
+        )
+    except (ReleaseMonitorSourceError, ReleaseMonitorCandidateRejected) as exc:
+        candidate = getattr(exc, "candidate", None)
+        validation_report = getattr(exc, "validation_report", None) or {}
+        if candidate is not None and isinstance(exc, ReleaseMonitorSourceError):
+            _save_candidate_diagnostic(
+                candidate,
+                validation_report,
+                state="failed",
+                error=str(exc),
+            )
+        if base_payload.get("items"):
+            logging.warning("Release monitor: force refresh was not applied; using confirmed snapshot: %s", exc)
+            return base_payload
+        raise
 
     with _cache_lock:
-        _cached_data = _finalize_release_monitor_payload(data, manual_overrides)
+        _cached_data = data
         _last_cache_update = time.time()
-        _save_snapshot_to_disk(_cached_data)
         return _cached_data
 
 
 def _run_release_monitor_refresh(mode="full", trigger="manual"):
     global _cached_data, _last_cache_update
 
+    trace_tag = (
+        "RM_RELIABLE_REFRESH"
+        if mode == RELIABLE_FULL_REFRESH_MODE
+        else "RM_FULL_REFRESH"
+        if mode == "full"
+        else "RM_QUICK_REFRESH"
+    )
+    trace_started_at = time.monotonic()
     try:
         logging.info("Release monitor: background %s refresh started", mode)
-        manual_overrides = _load_manual_release_overrides()
+        _rm_trace(trace_tag, "worker_start", mode=mode, trigger=trigger)
+        validation_report = None
+        now_str = _format_timestamp()
         with _cache_lock:
-            base_items = list((_cached_data or {}).get("items", []))
-            current_meta = dict((_cached_data or {}).get("meta", {}))
+            _ensure_cached_payload_loaded_locked()
+            base_payload = copy.deepcopy(_cached_data or _build_empty_release_monitor_payload())
+            base_items = list(base_payload.get("items", []))
+            current_meta = dict(base_payload.get("meta", {}))
             if not base_items:
                 disk_payload = _load_snapshot_from_disk()
                 if disk_payload:
-                    base_items = list(disk_payload.get("items", []))
-                    current_meta = dict(disk_payload.get("meta", {}))
+                    base_payload = _hydrate_release_monitor_payload(disk_payload)
+                    base_items = list(base_payload.get("items", []))
+                    current_meta = dict(base_payload.get("meta", {}))
 
         reliable = mode == RELIABLE_FULL_REFRESH_MODE
         if mode == "quick" and base_items:
+            manual_overrides = _load_manual_release_overrides()
             data = _fetch_quick_release_monitor_data(base_items)
+            now_str = _format_timestamp()
+            meta = dict(data.get("meta", {}))
+            meta["last_updated"] = now_str
+            meta["last_sync_mode"] = mode
+            meta["quick_refresh_days"] = QUICK_REFRESH_DAYS
+            meta["auto_full_refresh_enabled"] = AUTO_FULL_REFRESH_ENABLED
+            meta["auto_full_refresh_hour"] = AUTO_FULL_REFRESH_HOUR
+            meta["auto_incremental_refresh_enabled"] = AUTO_INCREMENTAL_REFRESH_ENABLED
+            meta["auto_incremental_refresh_interval_seconds"] = AUTO_INCREMENTAL_REFRESH_INTERVAL_SECONDS
+            meta["auto_incremental_refresh_lookback_minutes"] = AUTO_INCREMENTAL_REFRESH_LOOKBACK_MINUTES
+            meta["last_full_sync"] = current_meta.get("last_full_sync")
+            meta["last_quick_sync"] = now_str
+            meta["last_auto_incremental_sync"] = current_meta.get("last_auto_incremental_sync")
+            meta["last_confluence_sync"] = current_meta.get("last_confluence_sync")
+            data["meta"] = meta
+            data = _finalize_release_monitor_payload(data, manual_overrides)
+            with _cache_lock:
+                _cached_data = data
+                _last_cache_update = time.time()
+                _save_snapshot_to_disk(_cached_data)
         else:
-            data = _fetch_release_monitor_data(reliable=reliable, base_items=base_items)
             if mode == "quick":
                 mode = "full"
+            data, validation_report = _execute_transactional_full_refresh(
+                reliable=reliable,
+                base_payload=base_payload,
+            )
+            with _cache_lock:
+                _cached_data = data
+                _last_cache_update = time.time()
 
         now_str = _format_timestamp()
-        meta = dict(data.get("meta", {}))
-        meta["last_updated"] = now_str
-        meta["last_sync_mode"] = mode
-        meta["quick_refresh_days"] = QUICK_REFRESH_DAYS
-        meta["auto_full_refresh_enabled"] = AUTO_FULL_REFRESH_ENABLED
-        meta["auto_full_refresh_hour"] = AUTO_FULL_REFRESH_HOUR
-        meta["auto_incremental_refresh_enabled"] = AUTO_INCREMENTAL_REFRESH_ENABLED
-        meta["auto_incremental_refresh_interval_seconds"] = AUTO_INCREMENTAL_REFRESH_INTERVAL_SECONDS
-        meta["auto_incremental_refresh_lookback_minutes"] = AUTO_INCREMENTAL_REFRESH_LOOKBACK_MINUTES
-        meta["last_full_sync"] = now_str if mode in {"full", RELIABLE_FULL_REFRESH_MODE} else current_meta.get("last_full_sync")
-        meta["last_quick_sync"] = now_str if mode == "quick" else current_meta.get("last_quick_sync")
-        meta["last_auto_incremental_sync"] = current_meta.get("last_auto_incremental_sync")
-        meta["last_confluence_sync"] = current_meta.get("last_confluence_sync")
-        data["meta"] = meta
-        data = _finalize_release_monitor_payload(data, manual_overrides)
-
         with _cache_lock:
-            _cached_data = data
-            _last_cache_update = time.time()
-            _save_snapshot_to_disk(_cached_data)
             _refresh_status.update(
                 {
                     "state": "completed",
@@ -6035,9 +7142,70 @@ def _run_release_monitor_refresh(mode="full", trigger="manual"):
                     "error": None,
                     "mode": mode,
                     "trigger": trigger,
+                    "validation_report": validation_report if mode in {"full", RELIABLE_FULL_REFRESH_MODE} else None,
                 }
             )
         logging.info("Release monitor: background %s refresh completed, items=%s", mode, len(data.get("items", [])))
+        _rm_trace(
+            trace_tag,
+            "worker_complete",
+            started_at=trace_started_at,
+            items=len(data.get("items", [])),
+            mode=mode,
+        )
+    except ReleaseMonitorCandidateRejected as exc:
+        logging.warning("Release monitor: background %s refresh rejected: %s", mode, exc)
+        report = dict(exc.validation_report or {})
+        baseline = dict(report.get("baseline") or {})
+        candidate_profile = dict(report.get("candidate") or {})
+        with _cache_lock:
+            _refresh_status.update(
+                {
+                    "state": "rejected",
+                    "message": "Обновление не применено: Jira вернула неполные данные",
+                    "finished_at": _format_timestamp(),
+                    "error": str(exc),
+                    "mode": mode,
+                    "trigger": trigger,
+                    "validation_report": report,
+                    "previous_total": int(baseline.get("total") or 0),
+                    "candidate_total": int(candidate_profile.get("total") or 0),
+                    "confirmed_snapshot_at": _confirmed_snapshot_timestamp(_cached_data),
+                }
+            )
+        _rm_trace(
+            trace_tag,
+            "worker_rejected",
+            started_at=trace_started_at,
+            error_type=type(exc).__name__,
+        )
+    except ReleaseMonitorSourceError as exc:
+        logging.exception("Release monitor: background %s refresh failed on mandatory source", mode)
+        _save_candidate_diagnostic(
+            exc.candidate,
+            state="failed",
+            error=str(exc),
+        )
+        with _cache_lock:
+            _refresh_status.update(
+                {
+                    "state": "failed",
+                    "message": "Обновление не применено: обязательный источник Jira недоступен",
+                    "finished_at": _format_timestamp(),
+                    "error": str(exc),
+                    "mode": mode,
+                    "trigger": trigger,
+                    "previous_total": _count_payload_items(_cached_data),
+                    "candidate_total": _count_payload_items(exc.candidate),
+                    "confirmed_snapshot_at": _confirmed_snapshot_timestamp(_cached_data),
+                }
+            )
+        _rm_trace(
+            trace_tag,
+            "worker_source_failed",
+            started_at=trace_started_at,
+            error_type=type(exc).__name__,
+        )
     except Exception as exc:
         logging.exception("Release monitor: background %s refresh failed", mode)
         with _cache_lock:
@@ -6051,6 +7219,12 @@ def _run_release_monitor_refresh(mode="full", trigger="manual"):
                     "trigger": trigger,
                 }
             )
+        _rm_trace(
+            trace_tag,
+            "worker_failed",
+            started_at=trace_started_at,
+            error_type=type(exc).__name__,
+        )
 
 
 def start_release_monitor_refresh(mode="full", trigger="manual"):
@@ -6073,12 +7247,17 @@ def start_release_monitor_refresh(mode="full", trigger="manual"):
                 "error": None,
                 "mode": mode,
                 "trigger": trigger,
+                "validation_report": None,
+                "previous_total": None,
+                "candidate_total": None,
+                "confirmed_snapshot_at": None,
             }
         )
         _refresh_thread = threading.Thread(
             target=_run_release_monitor_refresh,
             kwargs={"mode": mode, "trigger": trigger},
             daemon=True,
+            name=f"release-monitor-{mode}-refresh",
         )
         _refresh_thread.start()
 
@@ -6145,7 +7324,27 @@ def get_release_monitor_refresh_status():
         payload = {
             "status": dict(_refresh_status),
         }
-        payload["data"] = _normalize_release_payload(_get_cached_payload_copy() or _build_empty_release_monitor_payload())
+        data = copy.deepcopy(
+            _get_cached_payload_copy() or _build_empty_release_monitor_payload()
+        )
+        data["meta"] = _append_auto_incremental_meta(data.get("meta", {}))
+        payload["data"] = data
+        persisted_state = str(
+            ((_cached_data or {}).get("meta") or {})
+            .get("auto_incremental_status", {})
+            .get("state", "")
+        )
+        live_status = data["meta"].get("auto_incremental_status") or {}
+        _rm_trace(
+            "RM_SILENT_REFRESH",
+            "status_poll",
+            level=logging.DEBUG,
+            live_running=live_status.get("running", False),
+            live_state=live_status.get("state", ""),
+            persisted_state=persisted_state,
+            scheduler_alive=bool(_scheduler_thread and _scheduler_thread.is_alive()),
+            worker_alive=bool(_auto_incremental_thread and _auto_incremental_thread.is_alive()),
+        )
         return payload
 
 
