@@ -9256,14 +9256,21 @@
             return updatedItem;
         }
 
-        function shouldRefreshReleaseAssignmentFilters(beforeSnapshot, afterItem, fieldGroup) {
-            if (fieldGroup !== 'responsibles') {
-                return false;
+        function shouldRefreshReleaseAssignmentFilters(fieldGroup) {
+            return fieldGroup === 'responsibles' && (currentReleaseResponsibleFilter || 'all') !== 'all';
+        }
+
+        function refreshReleaseAssignmentAfterLocalChange(rowKey, patch, pending, fieldGroup) {
+            const shouldRefreshFilters = shouldRefreshReleaseAssignmentFilters(fieldGroup);
+            if (fieldGroup === 'responsibles') {
+                populateResponsibleFilterOptions();
             }
-            if ((currentReleaseResponsibleFilter || 'all') !== 'all') {
-                return true;
+            if (shouldRefreshFilters) {
+                applyReleaseFilters();
+                setReleaseAssignmentPending(rowKey, fieldGroup, pending);
+                return;
             }
-            return Boolean(beforeSnapshot?.is_missing_week_responsible) !== Boolean(afterItem?.is_missing_week_responsible);
+            patchReleaseAssignmentDom(rowKey, patch, pending, fieldGroup);
         }
 
         function getReleaseReviewerCell(rowKey) {
@@ -9387,13 +9394,7 @@
             releaseAssignmentSaveSeqByKey.set(saveKey, saveSeq);
 
             const optimisticItem = replaceReleaseAssignmentItem(rowKey, patch);
-            const shouldRefreshFilters = shouldRefreshReleaseAssignmentFilters(beforeSnapshot, optimisticItem, fieldGroup);
-            if (shouldRefreshFilters) {
-                applyReleaseFilters();
-                setReleaseAssignmentPending(rowKey, fieldGroup, true);
-            } else {
-                patchReleaseAssignmentDom(rowKey, patch, true, fieldGroup);
-            }
+            refreshReleaseAssignmentAfterLocalChange(rowKey, patch, true, fieldGroup);
 
             try {
                 const response = await fetch(BASE_PATH + '/dashboard/release-monitor/reviewer', {
@@ -9413,12 +9414,8 @@
                     releaseMonitorDismissedRevision = '';
                 }
                 const successPatch = buildReleaseAssignmentSuccessPatch(data);
-                const successItem = replaceReleaseAssignmentItem(rowKey, successPatch);
-                if (shouldRefreshReleaseAssignmentFilters(optimisticItem, successItem, fieldGroup)) {
-                    applyReleaseFilters();
-                } else {
-                    patchReleaseAssignmentDom(rowKey, successPatch, false, fieldGroup);
-                }
+                replaceReleaseAssignmentItem(rowKey, successPatch);
+                refreshReleaseAssignmentAfterLocalChange(rowKey, successPatch, false, fieldGroup);
                 setReleaseAssignmentPending(rowKey, fieldGroup, false);
                 return data;
             } catch (error) {
@@ -9434,12 +9431,8 @@
                     psi_checker: beforeSnapshot.psi_checker,
                     psi_responsibles: beforeSnapshot.psi_responsibles
                 };
-                const rollbackItem = replaceReleaseAssignmentItem(rowKey, rollbackPatch);
-                if (shouldRefreshReleaseAssignmentFilters(optimisticItem, rollbackItem, fieldGroup)) {
-                    applyReleaseFilters();
-                } else {
-                    patchReleaseAssignmentDom(rowKey, rollbackPatch, false, fieldGroup);
-                }
+                replaceReleaseAssignmentItem(rowKey, rollbackPatch);
+                refreshReleaseAssignmentAfterLocalChange(rowKey, rollbackPatch, false, fieldGroup);
                 setReleaseAssignmentPending(rowKey, fieldGroup, false);
                 alert('Ошибка сохранения назначения: ' + error.message);
                 return null;
@@ -9476,6 +9469,14 @@
             }
         }
 
+        function refreshReleaseManualColorAfterLocalChange(rowKey, level, workMark, pending, workMarkChanged) {
+            if (workMarkChanged) {
+                refreshReleaseWorkMarkAfterLocalChange(rowKey, workMark, pending);
+                setReleaseWorkMarkPending(rowKey, pending);
+            }
+            patchReleaseManualColorDom(rowKey, level, pending);
+        }
+
         async function setReleaseManualColor(releaseKey, level) {
             const item = getReleaseMonitorItem(releaseKey);
             if (!item) {
@@ -9495,9 +9496,7 @@
             applyReleaseManualColorToItem(item, nextLevel);
             if (shouldClearWorkMark) {
                 applyReleaseWorkMarkToItem(item, '');
-                applyReleaseFilters();
-                setReleaseManualColorPending(releaseKey, true);
-                setReleaseWorkMarkPending(releaseKey, true);
+                refreshReleaseManualColorAfterLocalChange(releaseKey, nextLevel, '', true, true);
             } else {
                 patchReleaseManualColorDom(releaseKey, nextLevel, true);
             }
@@ -9535,9 +9534,13 @@
                     applyReleaseManualColorToItem(item, previousLevel);
                     if (shouldClearWorkMark) {
                         applyReleaseWorkMarkToItem(item, previousWorkMark.work_mark);
-                        applyReleaseFilters();
-                        setReleaseManualColorPending(releaseKey, false);
-                        setReleaseWorkMarkPending(releaseKey, false);
+                        refreshReleaseManualColorAfterLocalChange(
+                            releaseKey,
+                            previousLevel,
+                            previousWorkMark.work_mark,
+                            false,
+                            true
+                        );
                     } else {
                         patchReleaseManualColorDom(releaseKey, previousLevel, false);
                     }
