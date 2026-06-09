@@ -37,6 +37,7 @@ from services.release_monitor_service import (
 )
 from services.report_service import save_report_to_disk
 from services.release_report_service import get_release_report_service
+from services.sms_service import get_sms_profile_availability
 from routes.release_routes import detect_release_template_from_values, get_previous_version_from_monitor_items
 from config import DASHBOARD_CACHE_TTL, DASHBOARD_ASSIGNEES_DISPLAY, DEFAULT_BH_PLAYBOOKS
 
@@ -196,6 +197,7 @@ def release_monitor_page():
             release_monitor_template_hints=_build_release_monitor_template_hints(release_monitor_items),
             release_document_playbooks=DEFAULT_BH_PLAYBOOKS,
             reviewer_options=get_release_monitor_reviewer_options(),
+            sms_profile_availability=get_sms_profile_availability(),
             last_update=datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
         )
     except Exception as e:
@@ -209,6 +211,7 @@ def release_monitor_page():
             release_monitor_template_hints={},
             release_document_playbooks=DEFAULT_BH_PLAYBOOKS,
             reviewer_options=get_release_monitor_reviewer_options(),
+            sms_profile_availability=get_sms_profile_availability(),
             last_update=datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
             error="Ошибка загрузки данных по релизам. Попробуйте обновить страницу позже.",
         )

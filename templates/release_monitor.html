@@ -451,7 +451,7 @@
 
         .release-monitor-controls {
             display: grid;
-            grid-template-columns: minmax(220px, 1.4fr) repeat(3, minmax(150px, 1fr)) minmax(116px, auto);
+            grid-template-columns: minmax(220px, 1.4fr) repeat(3, minmax(150px, 1fr)) repeat(2, minmax(116px, auto));
             gap: 0.4rem;
             margin-bottom: 0.48rem;
             padding: 0.28rem;
@@ -580,6 +580,333 @@
 
         [data-theme="dark"] .release-work-mark-toggle.active {
             color: #ffd666;
+        }
+
+        .release-sms-visible-btn {
+            border: 1px solid rgba(13, 110, 253, 0.32);
+            background: rgba(13, 110, 253, 0.10);
+            color: var(--primary);
+            border-radius: 10px;
+            padding: 0.36rem 0.68rem;
+            min-height: 32px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.34rem;
+            font-size: 0.78rem;
+            font-weight: 850;
+            white-space: nowrap;
+        }
+
+        .release-sms-visible-btn:hover:not(:disabled) {
+            border-color: rgba(13, 110, 253, 0.58);
+            background: rgba(13, 110, 253, 0.16);
+        }
+
+        .release-sms-visible-btn:disabled {
+            opacity: 0.48;
+            cursor: not-allowed;
+        }
+
+        .release-sms-action {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 34px;
+            min-width: 0;
+        }
+
+        .release-sms-action .release-sms-visible-btn {
+            min-width: 0;
+            border-radius: 10px 0 0 10px;
+        }
+
+        .release-sms-scope-toggle {
+            border: 1px solid rgba(13, 110, 253, 0.32);
+            border-left: 0;
+            border-radius: 0 10px 10px 0;
+            background: rgba(13, 110, 253, 0.10);
+            color: var(--primary);
+            min-height: 32px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .release-sms-scope-toggle:hover,
+        .release-sms-scope-toggle[aria-expanded="true"] {
+            background: rgba(13, 110, 253, 0.18);
+        }
+
+        .release-sms-scope-menu {
+            min-width: 230px;
+            padding: 0.35rem;
+            border: 1px solid var(--release-soft-border);
+            background: var(--bg-secondary);
+            box-shadow: 0 14px 34px var(--release-shadow);
+        }
+
+        .release-sms-scope-menu .dropdown-item {
+            display: flex;
+            align-items: center;
+            gap: 0.48rem;
+            border-radius: 7px;
+            color: var(--text-primary);
+            font-size: 0.8rem;
+            padding: 0.48rem 0.56rem;
+        }
+
+        .release-sms-scope-menu .dropdown-item:hover,
+        .release-sms-scope-menu .dropdown-item.active {
+            background: var(--release-soft-bg-hover);
+            color: var(--primary);
+        }
+
+        .release-sms-scope-menu .scope-check {
+            width: 1rem;
+            opacity: 0;
+        }
+
+        .release-sms-scope-menu .dropdown-item.active .scope-check {
+            opacity: 1;
+        }
+
+        .release-sms-modal .modal-dialog {
+            max-width: min(1380px, 96vw);
+        }
+
+        .release-sms-modal .modal-content {
+            border: 1px solid var(--release-soft-border);
+            background: var(--release-panel-bg);
+            color: var(--text-primary);
+            box-shadow: 0 24px 70px var(--release-shadow);
+        }
+
+        .release-sms-modal .modal-header,
+        .release-sms-modal .modal-footer {
+            border-color: var(--release-soft-border);
+        }
+
+        .release-sms-modal .modal-header {
+            position: relative;
+            z-index: 5;
+            background: #ffffff;
+        }
+
+        .release-sms-toolbar {
+            position: sticky;
+            top: -1rem;
+            z-index: 4;
+            margin: -1rem -1rem 0.8rem;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--release-soft-border);
+            background: #ffffff;
+            box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+        }
+
+        [data-theme="dark"] .release-sms-modal .modal-header,
+        [data-theme="dark"] .release-sms-toolbar {
+            background: #1f2937;
+        }
+
+        .release-sms-summary {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.42rem;
+        }
+
+        .release-sms-summary-pill {
+            border: 1px solid var(--release-soft-border);
+            background: var(--release-soft-bg);
+            border-radius: 999px;
+            padding: 0.28rem 0.52rem;
+            font-size: 0.76rem;
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+
+        .release-sms-summary-pill strong {
+            color: var(--text-primary);
+        }
+
+        .release-sms-summary-pill.warning {
+            border-color: rgba(255, 193, 7, 0.38);
+            background: rgba(255, 193, 7, 0.10);
+        }
+
+        .release-sms-summary-pill.danger {
+            border-color: rgba(220, 53, 69, 0.34);
+            background: rgba(220, 53, 69, 0.08);
+        }
+
+        .release-sms-bulk-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+            margin-top: 0.62rem;
+        }
+
+        .release-sms-list {
+            display: grid;
+            gap: 0.65rem;
+        }
+
+        .release-sms-item {
+            border: 1px solid var(--release-soft-border);
+            border-radius: 10px;
+            background: var(--release-surface-bg);
+            overflow: hidden;
+        }
+
+        .release-sms-item.excluded {
+            opacity: 0.58;
+        }
+
+        .release-sms-item.needs-fill {
+            border-color: rgba(255, 193, 7, 0.48);
+        }
+
+        .release-sms-item-head {
+            display: flex;
+            align-items: center;
+            gap: 0.62rem;
+            padding: 0.62rem 0.72rem;
+            border-bottom: 1px solid var(--release-soft-border);
+            background: var(--release-soft-bg);
+        }
+
+        .release-sms-item-title {
+            min-width: 0;
+            flex: 1;
+        }
+
+        .release-sms-item-title strong {
+            display: block;
+            font-size: 0.86rem;
+        }
+
+        .release-sms-item-title span {
+            display: block;
+            color: var(--text-muted);
+            font-size: 0.73rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .release-sms-item-grid {
+            display: grid;
+            grid-template-columns: minmax(120px, 0.7fr) minmax(150px, 0.8fr) minmax(150px, 0.8fr) minmax(0, 2.6fr);
+            gap: 0.62rem;
+            padding: 0.72rem;
+            align-items: start;
+        }
+
+        .release-sms-field label {
+            display: block;
+            margin-bottom: 0.26rem;
+            color: var(--text-muted);
+            font-size: 0.68rem;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+
+        .release-sms-field .form-control,
+        .release-sms-field .form-select {
+            min-height: 34px;
+            border-color: var(--release-soft-border);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            font-size: 0.78rem;
+        }
+
+        .release-sms-field textarea.form-control {
+            min-height: 92px;
+            resize: vertical;
+            line-height: 1.38;
+        }
+
+        .release-sms-prev-wrap {
+            display: grid;
+            gap: 0.28rem;
+        }
+
+        .release-sms-source-note {
+            color: var(--text-muted);
+            font-size: 0.7rem;
+        }
+
+        .release-sms-source-note.auto {
+            color: #198754;
+        }
+
+        .release-sms-source-note.missing {
+            color: #b42318;
+        }
+
+        [data-theme="dark"] .release-sms-source-note.auto {
+            color: #7ee4ca;
+        }
+
+        [data-theme="dark"] .release-sms-source-note.missing {
+            color: #ff9b9b;
+        }
+
+        .release-sms-text-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.34rem;
+            margin-top: 0.38rem;
+        }
+
+        .release-sms-issues {
+            padding: 0 0.72rem 0.68rem;
+            color: #b42318;
+            font-size: 0.74rem;
+        }
+
+        [data-theme="dark"] .release-sms-issues {
+            color: #ff9b9b;
+        }
+
+        .release-sms-review-warning {
+            margin: 0 0.72rem 0.68rem;
+            padding: 0.5rem 0.62rem;
+            border: 1px solid rgba(255, 193, 7, 0.38);
+            border-radius: 8px;
+            background: rgba(255, 193, 7, 0.08);
+            font-size: 0.75rem;
+        }
+
+        .release-sms-message {
+            display: none;
+            margin-top: 0.62rem;
+            padding: 0.5rem 0.62rem;
+            border-radius: 8px;
+            font-size: 0.78rem;
+        }
+
+        .release-sms-message.show {
+            display: block;
+        }
+
+        .release-sms-message.error {
+            color: #842029;
+            background: rgba(220, 53, 69, 0.10);
+            border: 1px solid rgba(220, 53, 69, 0.28);
+        }
+
+        .release-sms-message.success {
+            color: #0f5132;
+            background: rgba(25, 135, 84, 0.10);
+            border: 1px solid rgba(25, 135, 84, 0.26);
+        }
+
+        [data-theme="dark"] .release-sms-message.error {
+            color: #ffb4b4;
+        }
+
+        [data-theme="dark"] .release-sms-message.success {
+            color: #86efac;
         }
 
         .release-work-mark-floating {
@@ -3090,6 +3417,14 @@
             .release-doc-summary {
                 grid-template-columns: 1fr;
             }
+
+            .release-sms-item-grid {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+
+            .release-sms-field.text {
+                grid-column: 1 / -1;
+            }
         }
 
         @media (max-width: 768px) {
@@ -3154,6 +3489,14 @@
 
             .release-action-stack {
                 min-width: 0;
+            }
+
+            .release-sms-item-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .release-sms-field.text {
+                grid-column: auto;
             }
         }
     </style>
@@ -3466,6 +3809,35 @@
                         <i class="bi bi-tags"></i>
                         Разметка
                     </button>
+                    <div class="dropdown release-sms-action">
+                        <button type="button" id="releaseSmsVisibleBtn" class="release-sms-visible-btn" onclick="openReleaseSmsModal()" disabled title="Нет релизов на сегодня для SMS">
+                            <i class="bi bi-chat-dots"></i>
+                            <span id="releaseSmsVisibleBtnLabel">SMS на сегодня (0)</span>
+                        </button>
+                        <button type="button" class="release-sms-scope-toggle dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false" title="Выбрать набор релизов для SMS">
+                            <span class="visually-hidden">Выбрать набор релизов для SMS</span>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end release-sms-scope-menu">
+                            <li>
+                                <button type="button" class="dropdown-item" data-sms-scope="today" onclick="setReleaseSmsScope('today')">
+                                    <i class="bi bi-check-lg scope-check"></i>
+                                    На сегодня
+                                </button>
+                            </li>
+                            <li>
+                                <button type="button" class="dropdown-item" data-sms-scope="week" onclick="setReleaseSmsScope('week')">
+                                    <i class="bi bi-check-lg scope-check"></i>
+                                    Текущая неделя
+                                </button>
+                            </li>
+                            <li>
+                                <button type="button" class="dropdown-item" data-sms-scope="visible" onclick="setReleaseSmsScope('visible')">
+                                    <i class="bi bi-check-lg scope-check"></i>
+                                    По текущему фильтру
+                                </button>
+                            </li>
+                        </ul>
+                    </div>
                 </div>
 
                 <div id="releaseWorkMarkActiveBanner" class="release-work-mark-floating" role="status" aria-live="polite">
@@ -3698,6 +4070,44 @@
         </div>
     </div>
 
+    <div class="modal fade release-sms-modal" id="releaseSmsModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title" id="releaseSmsModalTitle">SMS на сегодня</h5>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="release-sms-toolbar">
+                        <div id="releaseSmsSummary" class="release-sms-summary"></div>
+                        <div class="release-sms-bulk-actions">
+                            <button type="button" class="btn btn-sm btn-outline-success" onclick="setAllReleaseSmsResults('success')">
+                                <i class="bi bi-check-circle"></i> Все успешно
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="setAllReleaseSmsResults('failure')">
+                                <i class="bi bi-x-circle"></i> Все с ошибкой
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setAllReleaseSmsIncluded(true)">Включить все</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setAllReleaseSmsIncluded(false)">Исключить все</button>
+                        </div>
+                        <div id="releaseSmsMessage" class="release-sms-message" role="alert"></div>
+                    </div>
+                    <div id="releaseSmsItems" class="release-sms-list"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary me-auto" onclick="clearReleaseSmsDraft()">Очистить черновик</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Закрыть</button>
+                    <button type="button" class="btn btn-primary" id="releaseSmsDownloadBtn" onclick="generateReleaseSmsZip()" disabled>
+                        <i class="bi bi-file-earmark-zip"></i>
+                        Скачать ZIP
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         let currentReleaseYearFilter = String(new Date().getFullYear());
         let currentReleaseViewFilter = 'all';
@@ -3731,6 +4141,11 @@
         let releaseUpdateBannerMeta = null;
         let releaseUpdateBannerTimer = null;
         const RELEASE_SCROLL_RESTORE_KEY = 'releaseMonitorScrollRestore';
+        const RELEASE_SMS_DRAFT_KEY = 'releaseMonitorSmsDraft';
+        const RELEASE_SMS_SCOPE_KEY = 'releaseMonitorSmsScope';
+        const RELEASE_SMS_DRAFT_TTL_MS = 12 * 60 * 60 * 1000;
+        const RELEASE_SMS_PROFILES = ['CLM', 'EMRM', 'AIST', 'AI'];
+        const RELEASE_SMS_PROFILE_AVAILABILITY = {{ sms_profile_availability | default({}) | tojson | safe }};
         const RELEASE_WORK_MARK_PARTICIPANTS_KEY = 'releaseMonitorWorkMarkParticipants';
         const RELEASE_WORK_MARK_ACTIVE_KEY = 'releaseMonitorWorkMarkActive';
         const RELEASE_WORK_MARK_AUTO_COLLAPSE_MS = 30000;
@@ -3742,6 +4157,18 @@
         let releaseWorkMarkPanelCollapsed = false;
         let releaseWorkMarkAutoCollapseTimer = null;
         let releaseWorkMarkCounts = { __none__: 0 };
+        let releaseSmsVisibleItems = [];
+        let releaseSmsCurrentFilteredItems = [];
+        let currentReleaseSmsScope = (() => {
+            try {
+                const savedScope = localStorage.getItem(RELEASE_SMS_SCOPE_KEY);
+                return ['today', 'week', 'visible'].includes(savedScope) ? savedScope : 'today';
+            } catch (error) {
+                return 'today';
+            }
+        })();
+        let releaseSmsDraftItems = [];
+        let releaseSmsModalInstance = null;
         const RELEASE_TEMPLATE_HINTS = {{ release_monitor_template_hints | default({}) | tojson | safe }};
         const RELEASE_DOCUMENT_PLAYBOOKS = {{ release_document_playbooks | default([]) | tojson | safe }};
         let releaseDocumentModalInstance = null;
@@ -6975,6 +7402,835 @@
             emptyState.innerHTML = `<i class="bi bi-check-circle-fill text-success"></i><div>Таблица релизов загружена, но строки для отображения отсутствуют.</div>`;
         }
 
+        function getReleaseSmsScopeConfig(scope = currentReleaseSmsScope) {
+            if (scope === 'week') {
+                return {
+                    buttonLabel: 'SMS за неделю',
+                    modalTitle: 'SMS по релизам текущей недели',
+                    emptyHint: 'Нет релизов текущей недели для SMS',
+                    readyHint: count => `Подготовить SMS по ${count} релизам текущей недели`,
+                };
+            }
+            if (scope === 'visible') {
+                return {
+                    buttonLabel: 'SMS по фильтру',
+                    modalTitle: 'SMS по текущему видимому набору',
+                    emptyHint: 'Нет видимых релизов для SMS',
+                    readyHint: count => `Подготовить SMS по ${count} видимым релизам`,
+                };
+            }
+            return {
+                buttonLabel: 'SMS на сегодня',
+                modalTitle: 'SMS по релизам на сегодня',
+                emptyHint: 'Нет релизов на сегодня для SMS',
+                readyHint: count => `Подготовить SMS по ${count} релизам на сегодня`,
+            };
+        }
+
+        function isReleaseSmsEligible(item) {
+            return Boolean(item) && !item.is_cancelled && !item.is_unnumbered;
+        }
+
+        function getReleaseSmsScopeItems(scope = currentReleaseSmsScope) {
+            if (scope === 'visible') {
+                return releaseSmsCurrentFilteredItems.slice();
+            }
+            if (scope === 'week') {
+                return releaseMonitorItems.filter(
+                    item => isReleaseSmsEligible(item) && isReleaseInCurrentWeek(item)
+                );
+            }
+            return releaseMonitorItems.filter(
+                item => isReleaseSmsEligible(item) && isReleaseStartingToday(item)
+            );
+        }
+
+        function updateReleaseSmsScopeMenu() {
+            document.querySelectorAll('[data-sms-scope]').forEach(element => {
+                element.classList.toggle('active', element.dataset.smsScope === currentReleaseSmsScope);
+            });
+        }
+
+        function setReleaseSmsScope(scope) {
+            if (!['today', 'week', 'visible'].includes(scope)) {
+                return;
+            }
+            currentReleaseSmsScope = scope;
+            try {
+                localStorage.setItem(RELEASE_SMS_SCOPE_KEY, scope);
+            } catch (error) {
+                // The selected scope still works for the current page session.
+            }
+            updateReleaseSmsVisibleButton(releaseSmsCurrentFilteredItems);
+        }
+
+        function updateReleaseSmsVisibleButton(items) {
+            releaseSmsCurrentFilteredItems = Array.isArray(items) ? items.slice() : [];
+            releaseSmsVisibleItems = getReleaseSmsScopeItems();
+            const button = document.getElementById('releaseSmsVisibleBtn');
+            const label = document.getElementById('releaseSmsVisibleBtnLabel');
+            const config = getReleaseSmsScopeConfig();
+            const count = releaseSmsVisibleItems.length;
+            if (label) {
+                label.textContent = `${config.buttonLabel} (${count})`;
+            }
+            if (button) {
+                button.disabled = count === 0;
+                button.title = count
+                    ? config.readyHint(count)
+                    : config.emptyHint;
+            }
+            updateReleaseSmsScopeMenu();
+        }
+
+        function getReleaseSmsRowKey(item) {
+            return String(item?.row_key || '').trim();
+        }
+
+        function getReleaseSmsApplication(item) {
+            const keName = String(item?.ke_name || '').trim();
+            const keId = String(item?.ke_id || '').trim();
+            if (keName) {
+                return keId && !keName.includes(keId) ? `${keName} (${keId})` : keName;
+            }
+            const lines = Array.isArray(item?.release_name_lines) ? item.release_name_lines : [];
+            return String(lines[1] || item?.system_name || item?.release_summary || '').trim();
+        }
+
+        function getReleaseSmsSourcePrefix(item) {
+            const explicit = String(item?.source_prefix || '').trim().toUpperCase();
+            if (explicit) {
+                return explicit;
+            }
+            return String(item?.release_key || '').split('-')[0].trim().toUpperCase();
+        }
+
+        function detectReleaseSmsProfile(item) {
+            const prefix = getReleaseSmsSourcePrefix(item);
+            const systemName = String(item?.system_name || '').trim().toUpperCase();
+            const searchable = [
+                item?.release_key,
+                item?.release_summary,
+                item?.ke_name,
+                item?.system_name,
+                ...(Array.isArray(item?.release_name_lines) ? item.release_name_lines : []),
+            ].join(' ').toUpperCase();
+
+            if (
+                systemName === 'AI-АГЕНТЫ' ||
+                ['AIGAS', 'HELPERAI', 'DRMMMB'].includes(prefix) ||
+                /\bAI[- ]?AGENT|\bAI[- ]?АГЕНТ|\bAIGAS\b|\bHELPERAI\b/.test(searchable)
+            ) {
+                return 'AI';
+            }
+            if (prefix === 'SMECSC' || systemName === 'AIST' || systemName === 'АИСТ') {
+                return 'AIST';
+            }
+            if (prefix === 'EMRM' || systemName === 'ФОКУС') {
+                return 'EMRM';
+            }
+            if (prefix === 'SMECLM' || systemName === 'CLM') {
+                return 'CLM';
+            }
+            return '';
+        }
+
+        function parseReleaseSmsDate(value) {
+            const text = String(value || '').trim();
+            if (!text) {
+                return null;
+            }
+            let match = text.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+            if (match) {
+                return new Date(Number(match[3]), Number(match[2]) - 1, Number(match[1]));
+            }
+            match = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+            if (match) {
+                return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+            }
+            return null;
+        }
+
+        function formatReleaseSmsDateInput(date) {
+            if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+                return '';
+            }
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        function formatReleaseSmsDateDisplay(value) {
+            const date = parseReleaseSmsDate(value);
+            if (!date) {
+                return '';
+            }
+            return [
+                String(date.getDate()).padStart(2, '0'),
+                String(date.getMonth() + 1).padStart(2, '0'),
+                date.getFullYear(),
+            ].join('.');
+        }
+
+        function getDefaultReleaseSmsDate(item) {
+            return formatReleaseSmsDateInput(new Date());
+        }
+
+        function getReleaseSmsRollbackGroup(item) {
+            if (String(item?.ke_id || '').trim() !== '3894421') {
+                return '';
+            }
+            const searchable = [
+                item?.release_summary,
+                item?.ke_name,
+                item?.release_version,
+                ...(Array.isArray(item?.release_name_lines) ? item.release_name_lines : []),
+            ].join(' ').toLowerCase().replace(/[^0-9a-zа-яё]+/gi, ' ');
+            const hasBh = /(^|\s)bh(\s|$)/.test(searchable);
+            const hasPl = /(^|\s)pl(\s|$)/.test(searchable);
+            if (hasBh && !hasPl) {
+                return 'bh';
+            }
+            if (hasPl && !hasBh) {
+                return 'pl';
+            }
+            return '';
+        }
+
+        function getReleaseSmsPreviousVersion(currentItem) {
+            const currentNumber = Number.parseInt(String(currentItem?.release_number || ''), 10);
+            const currentKeId = String(currentItem?.ke_id || '').trim();
+            const currentReleaseKey = String(currentItem?.release_key || '').trim();
+            const currentYear = Number.parseInt(String(currentItem?.year || ''), 10);
+            const rollbackGroup = getReleaseSmsRollbackGroup(currentItem);
+            if (!Number.isFinite(currentNumber) || !currentKeId) {
+                return '';
+            }
+
+            const candidates = releaseMonitorItems.filter(item => {
+                const number = Number.parseInt(String(item?.release_number || ''), 10);
+                if (!Number.isFinite(number) || number >= currentNumber) {
+                    return false;
+                }
+                if (String(item?.ke_id || '').trim() !== currentKeId) {
+                    return false;
+                }
+                if (String(item?.release_key || '').trim() === currentReleaseKey) {
+                    return false;
+                }
+                if (!String(item?.release_version || '').trim()) {
+                    return false;
+                }
+                return !rollbackGroup || getReleaseSmsRollbackGroup(item) === rollbackGroup;
+            });
+
+            const currentYearCandidates = candidates.filter(
+                item => Number.parseInt(String(item?.year || ''), 10) === currentYear
+            );
+            const previousYearCandidates = candidates.filter(
+                item => Number.parseInt(String(item?.year || ''), 10) === currentYear - 1
+            );
+            const pool = currentYearCandidates.length ? currentYearCandidates : previousYearCandidates;
+            if (!pool.length) {
+                return '';
+            }
+            pool.sort((left, right) => (
+                Number.parseInt(String(right.release_number || ''), 10) -
+                Number.parseInt(String(left.release_number || ''), 10)
+            ));
+            return String(pool[0]?.release_version || '').trim();
+        }
+
+        function buildReleaseSmsSourceFingerprint(item) {
+            return JSON.stringify({
+                row_key: getReleaseSmsRowKey(item),
+                release_key: String(item?.release_key || '').trim(),
+                rov_key: String(item?.rov_key || '').trim(),
+                application: getReleaseSmsApplication(item),
+                release_version: String(item?.release_version || '').trim(),
+                deployment_start: String(item?.deployment_start_iso || item?.deployment_start || '').trim(),
+                psi_owner: String(item?.psi_owner || '').trim(),
+                source_prefix: getReleaseSmsSourcePrefix(item),
+            });
+        }
+
+        function buildReleaseSmsText(item) {
+            const application = item.application || 'АС не указана';
+            const date = formatReleaseSmsDateDisplay(item.date) || 'дата не указана';
+            const releaseVersion = item.release_version || 'версия не указана';
+            const releaseKey = item.release_key || 'релиз не указан';
+            const rovKey = item.rov_key || 'РОВ не указан';
+            const sender = item.sender || 'отправитель не указан';
+            if (item.result === 'failure') {
+                const previousVersion = item.prev_version || 'версия отката не указана';
+                return `Произошла ошибка при установке в ПРОМ АС ${application}. Дата: ${date}. Версия: ${releaseVersion}. ПО возвращено на версию ${previousVersion}. Релиз: ${releaseKey}, РОВ: ${rovKey}. Подсистема функционирует в штатном режиме. Отправитель: ${sender}`;
+            }
+            return `Успешное внедрение релиза АС ${application}. Дата: ${date}. Версия: ${releaseVersion}. Релиз: ${releaseKey}, РОВ: ${rovKey}. Подсистема функционирует в штатном режиме. Отправитель: ${sender}`;
+        }
+
+        function loadReleaseSmsDraft() {
+            try {
+                const raw = localStorage.getItem(RELEASE_SMS_DRAFT_KEY);
+                if (!raw) {
+                    return {};
+                }
+                const draft = JSON.parse(raw);
+                if (!draft || Date.now() - Number(draft.saved_at || 0) > RELEASE_SMS_DRAFT_TTL_MS) {
+                    localStorage.removeItem(RELEASE_SMS_DRAFT_KEY);
+                    return {};
+                }
+                return draft.items && typeof draft.items === 'object' ? draft.items : {};
+            } catch (error) {
+                localStorage.removeItem(RELEASE_SMS_DRAFT_KEY);
+                return {};
+            }
+        }
+
+        function saveReleaseSmsDraft() {
+            const items = {};
+            releaseSmsDraftItems.forEach(item => {
+                if (item.row_key) {
+                    items[item.row_key] = item;
+                }
+            });
+            localStorage.setItem(RELEASE_SMS_DRAFT_KEY, JSON.stringify({
+                saved_at: Date.now(),
+                items,
+            }));
+        }
+
+        function createReleaseSmsDraftItem(sourceItem, savedItem = null) {
+            const rowKey = getReleaseSmsRowKey(sourceItem);
+            const previousVersion = getReleaseSmsPreviousVersion(sourceItem);
+            const detectedProfile = detectReleaseSmsProfile(sourceItem);
+            const sourceFingerprint = buildReleaseSmsSourceFingerprint(sourceItem);
+            const base = {
+                row_key: rowKey,
+                source_fingerprint: sourceFingerprint,
+                release_key: String(sourceItem?.release_key || '').trim(),
+                rov_key: String(sourceItem?.rov_key || '').trim(),
+                title: String(
+                    (Array.isArray(sourceItem?.release_name_lines) && sourceItem.release_name_lines[0]) ||
+                    sourceItem?.release_summary ||
+                    sourceItem?.release_key ||
+                    ''
+                ).trim(),
+                application: getReleaseSmsApplication(sourceItem),
+                release_version: String(sourceItem?.release_version || '').trim(),
+                sender: String(sourceItem?.psi_owner || '').trim(),
+                included: true,
+                result: 'success',
+                date: getDefaultReleaseSmsDate(sourceItem),
+                date_source: 'auto',
+                prev_version: previousVersion,
+                prev_version_source: previousVersion ? 'auto' : 'missing',
+                profile: detectedProfile,
+                profile_manual: false,
+                text: '',
+                text_dirty: false,
+                needs_review: false,
+            };
+            base.text = buildReleaseSmsText(base);
+
+            if (!savedItem || savedItem.row_key !== rowKey) {
+                return base;
+            }
+
+            const sourceChanged = savedItem.source_fingerprint !== sourceFingerprint;
+            const restored = {
+                ...base,
+                included: savedItem.included !== false,
+                result: ['success', 'failure'].includes(savedItem.result) ? savedItem.result : base.result,
+            };
+
+            if (!sourceChanged) {
+                restored.date = savedItem.date_source === 'manual'
+                    ? String(savedItem.date || base.date)
+                    : base.date;
+                restored.date_source = savedItem.date_source === 'manual' ? 'manual' : 'auto';
+                restored.prev_version = String(savedItem.prev_version || '');
+                restored.prev_version_source = String(savedItem.prev_version_source || (restored.prev_version ? 'manual' : 'missing'));
+                restored.profile = String(savedItem.profile || base.profile);
+                restored.profile_manual = Boolean(savedItem.profile_manual);
+                restored.text = String(savedItem.text || buildReleaseSmsText(restored));
+                restored.text_dirty = Boolean(savedItem.text_dirty);
+                restored.needs_review = Boolean(savedItem.needs_review);
+                return restored;
+            }
+
+            if (savedItem.profile_manual && RELEASE_SMS_PROFILES.includes(savedItem.profile)) {
+                restored.profile = savedItem.profile;
+                restored.profile_manual = true;
+            }
+            if (savedItem.prev_version_source === 'manual') {
+                restored.prev_version = String(savedItem.prev_version || '');
+                restored.prev_version_source = restored.prev_version ? 'manual' : 'missing';
+            }
+            if (savedItem.date_source === 'manual') {
+                restored.date = String(savedItem.date || base.date);
+                restored.date_source = 'manual';
+            }
+            if (savedItem.text_dirty && savedItem.text) {
+                restored.text = String(savedItem.text);
+                restored.text_dirty = true;
+            } else {
+                restored.text = buildReleaseSmsText(restored);
+            }
+            restored.needs_review = true;
+            return restored;
+        }
+
+        function getReleaseSmsItem(rowKey) {
+            return releaseSmsDraftItems.find(item => item.row_key === rowKey) || null;
+        }
+
+        function isReleaseSmsProfileAvailable(profile) {
+            return RELEASE_SMS_PROFILES.includes(profile) && RELEASE_SMS_PROFILE_AVAILABILITY[profile] === true;
+        }
+
+        function getReleaseSmsIssues(item) {
+            const issues = [];
+            if (item.needs_review) {
+                issues.push('Исходные данные строки изменились после сохранения черновика.');
+            }
+            if (!item.release_key) {
+                issues.push('Не указан ключ релиза.');
+            }
+            if (!item.rov_key) {
+                issues.push('Не указан ключ РОВ.');
+            }
+            if (!item.application) {
+                issues.push('Не определена АС / КЭ.');
+            }
+            if (!item.release_version) {
+                issues.push('Не указана версия релиза.');
+            }
+            if (!item.sender) {
+                issues.push('Не указан отправитель.');
+            }
+            if (!parseReleaseSmsDate(item.date)) {
+                issues.push('Не указана корректная дата SMS.');
+            }
+            if (!item.profile) {
+                issues.push('Не определен профиль получателей.');
+            } else if (!isReleaseSmsProfileAvailable(item.profile)) {
+                issues.push(`CSV-шаблон профиля ${item.profile} недоступен.`);
+            }
+            if (item.result === 'failure' && !String(item.prev_version || '').trim()) {
+                issues.push('Для failure обязательна версия отката.');
+            }
+            if (!String(item.text || '').trim()) {
+                issues.push('Текст SMS пуст.');
+            }
+            return issues;
+        }
+
+        function getReleaseSmsSummary() {
+            const total = releaseSmsDraftItems.length;
+            const includedItems = releaseSmsDraftItems.filter(item => item.included);
+            const excluded = total - includedItems.length;
+            const ready = includedItems.filter(item => getReleaseSmsIssues(item).length === 0).length;
+            const needsFill = includedItems.length - ready;
+            const unknownProfile = includedItems.filter(item => !isReleaseSmsProfileAvailable(item.profile)).length;
+            const missingRollback = includedItems.filter(
+                item => item.result === 'failure' && !String(item.prev_version || '').trim()
+            ).length;
+            return {
+                total,
+                included: includedItems.length,
+                ready,
+                needsFill,
+                excluded,
+                unknownProfile,
+                missingRollback,
+            };
+        }
+
+        function renderReleaseSmsSummary() {
+            const summary = getReleaseSmsSummary();
+            const container = document.getElementById('releaseSmsSummary');
+            const downloadButton = document.getElementById('releaseSmsDownloadBtn');
+            if (container) {
+                container.innerHTML = `
+                    <span class="release-sms-summary-pill">Всего: <strong>${summary.total}</strong></span>
+                    <span class="release-sms-summary-pill">Включено: <strong>${summary.included}</strong></span>
+                    <span class="release-sms-summary-pill">Готово: <strong>${summary.ready}</strong></span>
+                    <span class="release-sms-summary-pill ${summary.needsFill ? 'warning' : ''}">Требует заполнения: <strong>${summary.needsFill}</strong></span>
+                    <span class="release-sms-summary-pill">Исключено: <strong>${summary.excluded}</strong></span>
+                    <span class="release-sms-summary-pill ${summary.unknownProfile ? 'danger' : ''}">Неизвестный профиль: <strong>${summary.unknownProfile}</strong></span>
+                    <span class="release-sms-summary-pill ${summary.missingRollback ? 'danger' : ''}">Нет версии отката: <strong>${summary.missingRollback}</strong></span>
+                `;
+            }
+            if (downloadButton) {
+                downloadButton.disabled = summary.included === 0 || summary.needsFill > 0;
+                downloadButton.title = summary.included === 0
+                    ? 'Нет включенных SMS для выгрузки'
+                    : summary.needsFill
+                        ? 'Заполните обязательные поля включенных SMS'
+                        : `Скачать ZIP: ${summary.included} SMS`;
+            }
+        }
+
+        function renderReleaseSmsItem(item, index) {
+            const issues = item.included ? getReleaseSmsIssues(item) : [];
+            const profileOptions = [
+                '<option value="">Выберите профиль</option>',
+                ...RELEASE_SMS_PROFILES.map(profile => {
+                    const available = isReleaseSmsProfileAvailable(profile);
+                    const selected = item.profile === profile ? 'selected' : '';
+                    return `<option value="${profile}" ${selected} ${available ? '' : 'disabled'}>${profile}${available ? '' : ' (нет CSV)'}</option>`;
+                }),
+            ].join('');
+            const prevSourceClass = item.prev_version_source === 'auto'
+                ? 'auto'
+                : item.prev_version ? '' : 'missing';
+            const prevSourceText = item.prev_version_source === 'auto'
+                ? 'Определено автоматически, значение можно изменить'
+                : item.prev_version
+                    ? 'Указано вручную'
+                    : 'Версия отката не определена';
+            const resultLabel = item.result === 'failure' ? 'Ошибка' : 'Успешно';
+            const cardClasses = [
+                'release-sms-item',
+                item.included ? '' : 'excluded',
+                item.included && issues.length ? 'needs-fill' : '',
+            ].filter(Boolean).join(' ');
+
+            return `
+                <article class="${cardClasses}" data-row-key="${escapeHtml(item.row_key)}">
+                    <div class="release-sms-item-head">
+                        <input class="form-check-input mt-0" type="checkbox" ${item.included ? 'checked' : ''}
+                               data-row-key="${escapeHtml(item.row_key)}" onchange="toggleReleaseSmsIncluded(this.dataset.rowKey, this.checked)">
+                        <div class="release-sms-item-title">
+                            <strong>${escapeHtml(item.release_key || `Строка ${index + 1}`)} · ${escapeHtml(item.rov_key || 'без РОВ')}</strong>
+                            <span title="${escapeHtml(item.title)}">${escapeHtml(item.title || item.application || '')}</span>
+                        </div>
+                        <span class="badge ${item.result === 'failure' ? 'text-bg-danger' : 'text-bg-success'}">${resultLabel}</span>
+                    </div>
+                    <div class="release-sms-item-grid">
+                        <div class="release-sms-field">
+                            <label>Результат</label>
+                            <select class="form-select" data-row-key="${escapeHtml(item.row_key)}"
+                                    onchange="changeReleaseSmsResult(this.dataset.rowKey, this.value, this)">
+                                <option value="success" ${item.result === 'success' ? 'selected' : ''}>Успешно</option>
+                                <option value="failure" ${item.result === 'failure' ? 'selected' : ''}>Ошибка</option>
+                            </select>
+                        </div>
+                        <div class="release-sms-field">
+                            <label>Дата SMS</label>
+                            <input type="date" class="form-control" value="${escapeHtml(item.date)}"
+                                   data-row-key="${escapeHtml(item.row_key)}"
+                                   onchange="changeReleaseSmsDate(this.dataset.rowKey, this.value)">
+                        </div>
+                        <div class="release-sms-field">
+                            <label>Профиль получателей</label>
+                            <select class="form-select" data-row-key="${escapeHtml(item.row_key)}"
+                                    onchange="changeReleaseSmsProfile(this.dataset.rowKey, this.value)">
+                                ${profileOptions}
+                            </select>
+                        </div>
+                        <div class="release-sms-field text">
+                            <label>Текст SMS</label>
+                            <textarea class="form-control" data-row-key="${escapeHtml(item.row_key)}"
+                                      oninput="changeReleaseSmsText(this.dataset.rowKey, this.value)">${escapeHtml(item.text)}</textarea>
+                            <div class="release-sms-text-actions">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" data-row-key="${escapeHtml(item.row_key)}"
+                                        onclick="copyReleaseSmsText(this.dataset.rowKey)">
+                                    <i class="bi bi-copy"></i> Копировать
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" data-row-key="${escapeHtml(item.row_key)}"
+                                        onclick="resetReleaseSmsText(this.dataset.rowKey)">Вернуть стандартный текст</button>
+                            </div>
+                        </div>
+                        ${item.result === 'failure' ? `
+                            <div class="release-sms-field" style="grid-column: 1 / 4;">
+                                <label>Версия отката</label>
+                                <div class="release-sms-prev-wrap">
+                                    <input type="text" class="form-control" value="${escapeHtml(item.prev_version)}"
+                                           placeholder="Введите версию отката" data-row-key="${escapeHtml(item.row_key)}"
+                                           oninput="changeReleaseSmsPreviousVersion(this.dataset.rowKey, this.value)">
+                                    <span class="release-sms-source-note ${prevSourceClass}">${escapeHtml(prevSourceText)}</span>
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+                    ${item.needs_review && item.included ? `
+                        <div class="release-sms-review-warning">
+                            Исходные данные релиза изменились после сохранения черновика.
+                            <button type="button" class="btn btn-sm btn-outline-warning ms-2" data-row-key="${escapeHtml(item.row_key)}"
+                                    onclick="confirmReleaseSmsReview(this.dataset.rowKey)">Данные проверены</button>
+                        </div>
+                    ` : ''}
+                    ${issues.length ? `<div class="release-sms-issues">${issues.map(issue => `<div>• ${escapeHtml(issue)}</div>`).join('')}</div>` : ''}
+                </article>
+            `;
+        }
+
+        function renderReleaseSmsModal() {
+            const container = document.getElementById('releaseSmsItems');
+            if (container) {
+                container.innerHTML = releaseSmsDraftItems.map(renderReleaseSmsItem).join('');
+            }
+            renderReleaseSmsSummary();
+            saveReleaseSmsDraft();
+        }
+
+        function showReleaseSmsMessage(message, type = 'error') {
+            const element = document.getElementById('releaseSmsMessage');
+            if (!element) {
+                return;
+            }
+            element.textContent = message || '';
+            element.className = `release-sms-message ${message ? 'show' : ''} ${type}`;
+        }
+
+        function openReleaseSmsModal() {
+            if (!releaseSmsVisibleItems.length) {
+                return;
+            }
+            const scopeConfig = getReleaseSmsScopeConfig();
+            const modalTitle = document.getElementById('releaseSmsModalTitle');
+            if (modalTitle) {
+                modalTitle.textContent = `${scopeConfig.modalTitle} (${releaseSmsVisibleItems.length})`;
+            }
+            const savedDraft = loadReleaseSmsDraft();
+            releaseSmsDraftItems = releaseSmsVisibleItems
+                .filter(item => getReleaseSmsRowKey(item))
+                .map(item => createReleaseSmsDraftItem(item, savedDraft[getReleaseSmsRowKey(item)] || null));
+            showReleaseSmsMessage('');
+            renderReleaseSmsModal();
+            const modalElement = document.getElementById('releaseSmsModal');
+            releaseSmsModalInstance = releaseSmsModalInstance || bootstrap.Modal.getOrCreateInstance(modalElement);
+            releaseSmsModalInstance.show();
+        }
+
+        function toggleReleaseSmsIncluded(rowKey, included) {
+            const item = getReleaseSmsItem(rowKey);
+            if (!item) {
+                return;
+            }
+            item.included = Boolean(included);
+            const card = document.querySelector(`.release-sms-item[data-row-key="${escapeCssValue(rowKey)}"]`);
+            if (card) {
+                card.classList.toggle('excluded', !item.included);
+                card.classList.toggle('needs-fill', item.included && getReleaseSmsIssues(item).length > 0);
+            }
+            saveReleaseSmsDraft();
+            renderReleaseSmsSummary();
+        }
+
+        function changeReleaseSmsResult(rowKey, result, selectElement = null) {
+            const item = getReleaseSmsItem(rowKey);
+            if (!item || !['success', 'failure'].includes(result)) {
+                return;
+            }
+            if (item.text_dirty && item.result !== result) {
+                const replaceText = window.confirm('Текст SMS изменен вручную. Заменить его стандартным текстом для нового результата?');
+                if (!replaceText) {
+                    if (selectElement) {
+                        selectElement.value = item.result;
+                    }
+                    return;
+                }
+            }
+            item.result = result;
+            item.text_dirty = false;
+            item.text = buildReleaseSmsText(item);
+            renderReleaseSmsModal();
+        }
+
+        function patchReleaseSmsTextarea(rowKey) {
+            const item = getReleaseSmsItem(rowKey);
+            const textarea = document.querySelector(`.release-sms-item[data-row-key="${escapeCssValue(rowKey)}"] textarea`);
+            if (item && textarea && !item.text_dirty) {
+                textarea.value = item.text;
+            }
+        }
+
+        function changeReleaseSmsDate(rowKey, value) {
+            const item = getReleaseSmsItem(rowKey);
+            if (!item) {
+                return;
+            }
+            item.date = String(value || '');
+            item.date_source = 'manual';
+            if (!item.text_dirty) {
+                item.text = buildReleaseSmsText(item);
+                patchReleaseSmsTextarea(rowKey);
+            }
+            saveReleaseSmsDraft();
+            renderReleaseSmsSummary();
+        }
+
+        function changeReleaseSmsProfile(rowKey, value) {
+            const item = getReleaseSmsItem(rowKey);
+            if (!item) {
+                return;
+            }
+            item.profile = RELEASE_SMS_PROFILES.includes(value) ? value : '';
+            item.profile_manual = Boolean(item.profile);
+            saveReleaseSmsDraft();
+            renderReleaseSmsModal();
+        }
+
+        function changeReleaseSmsPreviousVersion(rowKey, value) {
+            const item = getReleaseSmsItem(rowKey);
+            if (!item) {
+                return;
+            }
+            item.prev_version = String(value || '').trim();
+            item.prev_version_source = item.prev_version ? 'manual' : 'missing';
+            if (!item.text_dirty) {
+                item.text = buildReleaseSmsText(item);
+                patchReleaseSmsTextarea(rowKey);
+            }
+            saveReleaseSmsDraft();
+            renderReleaseSmsSummary();
+        }
+
+        function changeReleaseSmsText(rowKey, value) {
+            const item = getReleaseSmsItem(rowKey);
+            if (!item) {
+                return;
+            }
+            item.text = String(value || '');
+            item.text_dirty = true;
+            saveReleaseSmsDraft();
+            renderReleaseSmsSummary();
+        }
+
+        function resetReleaseSmsText(rowKey) {
+            const item = getReleaseSmsItem(rowKey);
+            if (!item) {
+                return;
+            }
+            item.text_dirty = false;
+            item.text = buildReleaseSmsText(item);
+            renderReleaseSmsModal();
+        }
+
+        function confirmReleaseSmsReview(rowKey) {
+            const item = getReleaseSmsItem(rowKey);
+            if (!item) {
+                return;
+            }
+            item.needs_review = false;
+            renderReleaseSmsModal();
+        }
+
+        async function copyReleaseSmsText(rowKey) {
+            const item = getReleaseSmsItem(rowKey);
+            if (!item) {
+                return;
+            }
+            try {
+                await navigator.clipboard.writeText(item.text || '');
+                showReleaseSmsMessage(`Текст ${item.release_key || rowKey} скопирован.`, 'success');
+            } catch (error) {
+                showReleaseSmsMessage('Не удалось скопировать текст в буфер обмена.');
+            }
+        }
+
+        function setAllReleaseSmsIncluded(included) {
+            releaseSmsDraftItems.forEach(item => {
+                item.included = Boolean(included);
+            });
+            renderReleaseSmsModal();
+        }
+
+        function setAllReleaseSmsResults(result) {
+            const hasManualText = releaseSmsDraftItems.some(item => item.included && item.text_dirty && item.result !== result);
+            if (hasManualText && !window.confirm('У части SMS текст изменен вручную. Заменить его стандартным текстом?')) {
+                return;
+            }
+            releaseSmsDraftItems.forEach(item => {
+                if (!item.included) {
+                    return;
+                }
+                item.result = result;
+                item.text_dirty = false;
+                item.text = buildReleaseSmsText(item);
+            });
+            renderReleaseSmsModal();
+        }
+
+        function clearReleaseSmsDraft() {
+            localStorage.removeItem(RELEASE_SMS_DRAFT_KEY);
+            releaseSmsDraftItems = releaseSmsVisibleItems
+                .filter(item => getReleaseSmsRowKey(item))
+                .map(item => createReleaseSmsDraftItem(item));
+            showReleaseSmsMessage('Черновик очищен.', 'success');
+            renderReleaseSmsModal();
+        }
+
+        async function generateReleaseSmsZip() {
+            const summary = getReleaseSmsSummary();
+            if (!summary.included) {
+                showReleaseSmsMessage('Нет включенных SMS для выгрузки.');
+                return;
+            }
+            if (summary.needsFill) {
+                showReleaseSmsMessage('Заполните обязательные поля включенных SMS или исключите проблемные строки.');
+                return;
+            }
+
+            const button = document.getElementById('releaseSmsDownloadBtn');
+            const originalHtml = button?.innerHTML || '';
+            if (button) {
+                button.disabled = true;
+                button.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Формирование...';
+            }
+            showReleaseSmsMessage('');
+
+            const items = releaseSmsDraftItems
+                .filter(item => item.included)
+                .map(item => ({
+                    row_key: item.row_key,
+                    release_key: item.release_key,
+                    rov_key: item.rov_key,
+                    result: item.result,
+                    profile: item.profile,
+                    text: item.text,
+                }));
+
+            try {
+                const response = await fetch(BASE_PATH + '/sms/release-monitor/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ items }),
+                });
+                if (!response.ok) {
+                    const data = await response.json().catch(() => ({}));
+                    const details = Array.isArray(data.errors) ? ` ${data.errors.join(' ')}` : '';
+                    throw new Error((data.error || 'Не удалось сформировать ZIP.') + details);
+                }
+
+                const blob = await response.blob();
+                const disposition = response.headers.get('Content-Disposition') || '';
+                const filenameMatch = disposition.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i);
+                const filename = filenameMatch
+                    ? decodeURIComponent(filenameMatch[1].replace(/"/g, ''))
+                    : `sms_release_monitor_${Date.now()}.zip`;
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                URL.revokeObjectURL(url);
+                showReleaseSmsMessage(`ZIP сформирован: ${summary.included} SMS.`, 'success');
+            } catch (error) {
+                showReleaseSmsMessage(error.message || 'Не удалось сформировать ZIP.');
+            } finally {
+                if (button) {
+                    button.innerHTML = originalHtml;
+                }
+                renderReleaseSmsSummary();
+            }
+        }
+
         function renderReleaseMonitor(items, meta) {
             const workMarkScrollState = isReleaseWorkMarkingMode ? captureReleaseWorkMarkScrollState() : null;
             const tableWrap = document.getElementById('releaseTableWrap');
@@ -8929,9 +10185,16 @@
             if (!rawValue) {
                 return null;
             }
-            const isoMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(rawValue);
+            const isoMatch = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?/.exec(rawValue);
             if (isoMatch) {
-                return new Date(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3]));
+                return new Date(
+                    Number(isoMatch[1]),
+                    Number(isoMatch[2]) - 1,
+                    Number(isoMatch[3]),
+                    Number(isoMatch[4] || 0),
+                    Number(isoMatch[5] || 0),
+                    Number(isoMatch[6] || 0)
+                );
             }
             const displayMatch = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(rawValue);
             if (displayMatch) {
@@ -8950,6 +10213,27 @@
             );
         }
 
+        function getReleaseEffectiveEndDate(item) {
+            return parseReleaseDateValue(
+                item?.deployment_end_iso ||
+                item?.deployment_end ||
+                item?.manual_deployment_end ||
+                item?.source_deployment_end_iso ||
+                item?.source_deployment_end
+            );
+        }
+
+        function getReleaseOperationalDayBounds(now = new Date()) {
+            const start = new Date(now);
+            start.setHours(3, 0, 0, 0);
+            if (now < start) {
+                start.setDate(start.getDate() - 1);
+            }
+            const end = new Date(start);
+            end.setDate(end.getDate() + 1);
+            return { start, end };
+        }
+
         function isReleaseFarFuture(item) {
             const deploymentDate = getReleaseEffectiveStartDate(item);
             if (!deploymentDate) {
@@ -8963,13 +10247,32 @@
         }
 
         function isReleaseStartingToday(item) {
-            const deploymentDate = getReleaseEffectiveStartDate(item);
-            if (!deploymentDate) {
+            let deploymentStart = getReleaseEffectiveStartDate(item);
+            let deploymentEnd = getReleaseEffectiveEndDate(item) || deploymentStart;
+            if (!deploymentStart) {
                 return false;
             }
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            return deploymentDate.getTime() === today.getTime();
+            if (deploymentEnd < deploymentStart) {
+                [deploymentStart, deploymentEnd] = [deploymentEnd, deploymentStart];
+            }
+            const { start, end } = getReleaseOperationalDayBounds();
+            const isDateOnlyPoint = (
+                deploymentStart.getTime() === deploymentEnd.getTime() &&
+                deploymentStart.getHours() === 0 &&
+                deploymentStart.getMinutes() === 0 &&
+                deploymentStart.getSeconds() === 0
+            );
+            if (isDateOnlyPoint) {
+                return (
+                    deploymentStart.getFullYear() === start.getFullYear() &&
+                    deploymentStart.getMonth() === start.getMonth() &&
+                    deploymentStart.getDate() === start.getDate()
+                );
+            }
+            if (deploymentStart.getTime() === deploymentEnd.getTime()) {
+                return deploymentStart >= start && deploymentStart < end;
+            }
+            return deploymentStart < end && deploymentEnd > start;
         }
 
         function applyReleaseFilters() {
@@ -9017,6 +10320,7 @@
                 const matchesSearch = !searchValue || haystack.includes(searchValue);
                 return matchesRovVisibility && matchesFarFutureVisibility && matchesResponsible && matchesView && matchesStatus && matchesWorkMark && matchesSearch;
             });
+            updateReleaseSmsVisibleButton(filteredItems);
 
             if (body) {
                 body.innerHTML = filteredItems.map(buildReleaseRow).join('');

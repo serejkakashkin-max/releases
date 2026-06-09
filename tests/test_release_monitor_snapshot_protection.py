@@ -82,6 +82,52 @@ class ReleaseMonitorSnapshotProtectionTests(unittest.TestCase):
             accepted_at="2026-06-01T10:00:00Z",
         )
 
+    def test_operational_day_keeps_evening_window_until_0300(self):
+        release_start = datetime(2026, 6, 9, 21, 0)
+        release_end = datetime(2026, 6, 10, 1, 0)
+
+        self.assertTrue(
+            service._is_release_window_in_operational_day(
+                release_start,
+                release_end,
+                datetime(2026, 6, 10, 2, 59),
+            )
+        )
+        self.assertFalse(
+            service._is_release_window_in_operational_day(
+                release_start,
+                release_end,
+                datetime(2026, 6, 10, 3, 0),
+            )
+        )
+
+    def test_operational_day_includes_release_started_after_midnight(self):
+        self.assertTrue(
+            service._is_release_window_in_operational_day(
+                datetime(2026, 6, 10, 0, 30),
+                datetime(2026, 6, 10, 2, 30),
+                datetime(2026, 6, 10, 2, 0),
+            )
+        )
+
+    def test_date_only_release_uses_operational_day_date(self):
+        release_date = datetime(2026, 6, 9)
+
+        self.assertTrue(
+            service._is_release_window_in_operational_day(
+                release_date,
+                None,
+                datetime(2026, 6, 10, 2, 0),
+            )
+        )
+        self.assertFalse(
+            service._is_release_window_in_operational_day(
+                release_date,
+                None,
+                datetime(2026, 6, 10, 3, 0),
+            )
+        )
+
     def test_large_candidate_drop_is_rejected(self):
         baseline = {"items": [self._item(index) for index in range(456)]}
         candidate = service._build_raw_release_candidate(

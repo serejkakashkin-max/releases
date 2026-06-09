@@ -60,6 +60,7 @@ AUTO_INCREMENTAL_REFRESH_ENABLED = True
 AUTO_INCREMENTAL_REFRESH_INTERVAL_SECONDS = 180
 AUTO_INCREMENTAL_REFRESH_LOOKBACK_MINUTES = 60
 AUTO_INCREMENTAL_REFRESH_CHECK_INTERVAL = 30
+RELEASE_OPERATIONAL_DAY_START_HOUR = 3
 RELEASE_MONITOR_TRACE_ENABLED = False
 RELIABLE_FULL_REFRESH_MODE = "reliable_full"
 RELIABLE_SEARCH_RETRY_STATUS_CODES = {429, 500, 502, 503, 504}
@@ -2209,16 +2210,41 @@ def _is_confirmed_deployment_attempt(item):
     return _is_approved_rov_status(item.get("rov_status"))
 
 
+def _get_release_operational_day_bounds(now_dt=None):
+    now_dt = now_dt or datetime.now()
+    start_dt = now_dt.replace(
+        hour=RELEASE_OPERATIONAL_DAY_START_HOUR,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+    if now_dt < start_dt:
+        start_dt -= timedelta(days=1)
+    return start_dt, start_dt + timedelta(days=1)
+
+
+def _is_release_window_in_operational_day(start_dt, end_dt=None, now_dt=None):
+    window_start, window_end = _get_release_operational_day_bounds(now_dt)
+    release_start = start_dt or end_dt
+    release_end = end_dt or start_dt
+    if not release_start:
+        return False
+    if release_end and release_end < release_start:
+        release_start, release_end = release_end, release_start
+    if release_end == release_start and release_start.time().replace(microsecond=0) == datetime.min.time():
+        return release_start.date() == window_start.date()
+    if release_end == release_start:
+        return bool(window_start <= release_start < window_end)
+    return bool(release_start < window_end and release_end > window_start)
+
+
 def _get_final_manual_date_row_state(start_dt, end_dt, now_dt=None):
     now_dt = now_dt or datetime.now()
-    today = now_dt.date()
     window_end_dt = end_dt or start_dt
     if _is_release_window_expired(window_end_dt, now_dt):
         return "final"
 
-    start_date = start_dt.date() if start_dt else None
-    end_date = end_dt.date() if end_dt else None
-    if (start_date and start_date == today) or (end_date and end_date == today):
+    if _is_release_window_in_operational_day(start_dt, end_dt, now_dt):
         return "today"
     return "planned"
 
@@ -2244,13 +2270,7 @@ def _apply_active_reroll_schedule_state(item, start_dt=None, end_dt=None, now_dt
     if not window_end_dt or _is_release_window_expired(window_end_dt, now_dt):
         return False
 
-    today = now_dt.date()
-    start_date = start_dt.date() if start_dt else None
-    end_date = end_dt.date() if end_dt else None
-    is_today = bool(
-        (start_date and start_date == today)
-        or (end_date and end_date == today)
-    )
+    is_today = _is_release_window_in_operational_day(start_dt, end_dt, now_dt)
 
     item["is_final"] = False
     item["is_non_final"] = True
@@ -2736,16 +2756,14 @@ def _apply_date_overrides(items):
             item["sort_date"] = source_sort_dt.isoformat() if source_sort_dt else ""
             if item.get("is_non_final"):
                 now_dt = datetime.now()
-                today = now_dt.date()
-                source_start_date = source_start_dt.date() if source_start_dt else None
-                source_end_date = source_end_dt.date() if source_end_dt else None
                 item["is_overdue"] = bool(
                     _is_confirmed_deployment_attempt(item)
                     and _is_release_window_expired(source_end_dt, now_dt)
                 )
-                item["is_today"] = bool(
-                    (source_start_date and source_start_date == today)
-                    or (source_end_date and source_end_date == today)
+                item["is_today"] = _is_release_window_in_operational_day(
+                    source_start_dt,
+                    source_end_dt,
+                    now_dt,
                 )
                 item["days_overdue"] = _release_days_overdue(source_end_dt, now_dt) if item.get("is_overdue") else 0
                 if item.get("is_overdue"):
@@ -2804,16 +2822,14 @@ def _apply_date_overrides(items):
         row_is_non_final = bool(item.get("is_non_final"))
         if row_is_non_final:
             now_dt = datetime.now()
-            today = now_dt.date()
-            effective_start_date = effective_start_dt.date() if effective_start_dt else None
-            effective_end_date = effective_end_dt.date() if effective_end_dt else None
             item["is_overdue"] = bool(
                 _is_confirmed_deployment_attempt(item)
                 and _is_release_window_expired(effective_end_dt, now_dt)
             )
-            item["is_today"] = bool(
-                (effective_start_date and effective_start_date == today)
-                or (effective_end_date and effective_end_date == today)
+            item["is_today"] = _is_release_window_in_operational_day(
+                effective_start_dt,
+                effective_end_dt,
+                now_dt,
             )
             item["days_overdue"] = _release_days_overdue(effective_end_dt, now_dt) if item.get("is_overdue") else 0
 
@@ -5038,7 +5054,6 @@ def _build_release_record(
     row_variants = linked_rov_records or [{}]
     records = []
     now_dt = datetime.now()
-    today = now_dt.date()
     attempt_outcomes = (
         _load_release_attempt_outcomes()
         if attempt_outcomes is None
@@ -5063,8 +5078,6 @@ def _build_release_record(
         if release_year not in {current_year, previous_year}:
             continue
 
-        rov_start_date = rov_start.date() if rov_start else None
-        rov_end_date = rov_end.date() if rov_end else None
         row_key = f"{issue.get('key')}::{rov_key or 'no-rov'}"
         is_deferred_attempt = row_key in attempt_outcomes and row_key != stale_successful_attempt_key
         is_reroll = bool(
@@ -5096,10 +5109,7 @@ def _build_release_record(
         )
         is_today = bool(
             row_is_non_final
-            and (
-                (rov_start_date and rov_start_date == today)
-                or (rov_end_date and rov_end_date == today)
-            )
+            and _is_release_window_in_operational_day(rov_start, rov_end, now_dt)
         )
 
         if row_is_cancelled:

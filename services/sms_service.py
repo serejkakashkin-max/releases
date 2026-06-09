@@ -4,6 +4,50 @@ from pathlib import Path
 from docx import Document
 from config import SMS_TEMPLATES_ROOT
 
+SMS_PROFILE_WHITELIST = ("CLM", "EMRM", "AIST", "AI")
+
+
+def normalize_sms_profile(profile):
+    normalized = str(profile or "").strip().upper()
+    if normalized not in SMS_PROFILE_WHITELIST:
+        raise ValueError(
+            f"Неизвестный профиль SMS: {profile or 'не указан'}. "
+            f"Допустимые профили: {', '.join(SMS_PROFILE_WHITELIST)}."
+        )
+    return normalized
+
+
+def resolve_sms_profile_template(profile):
+    """Resolve a whitelisted logical profile to a CSV inside SMS_TEMPLATES_ROOT."""
+    normalized = normalize_sms_profile(profile)
+    root = Path(SMS_TEMPLATES_ROOT).resolve()
+    if not root.exists() or not root.is_dir():
+        raise FileNotFoundError(f"Папка SMS-шаблонов не найдена: {root}")
+
+    for csv_file in sorted(root.glob("*.csv"), key=lambda path: path.name.lower()):
+        resolved = csv_file.resolve()
+        try:
+            resolved.relative_to(root)
+        except ValueError:
+            continue
+        csv_key = str(extract_key_from_filename(csv_file.name) or "").strip().upper()
+        if csv_key == normalized:
+            return resolved
+
+    raise FileNotFoundError(f"CSV-шаблон для профиля {normalized} не найден.")
+
+
+def get_sms_profile_availability():
+    availability = {}
+    for profile in SMS_PROFILE_WHITELIST:
+        try:
+            resolve_sms_profile_template(profile)
+            availability[profile] = True
+        except (FileNotFoundError, ValueError):
+            availability[profile] = False
+    return availability
+
+
 def find_matching_csv(key):
     """Находит CSV шаблон по ключу из имени файла"""
     if not SMS_TEMPLATES_ROOT.exists():
