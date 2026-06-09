@@ -30,6 +30,11 @@ from services.release_artifact_service import (
     is_ai_agent_release_context,
     select_distribution_artifact,
 )
+from services.template_constructor_service import (
+    build_runtime_template_catalog,
+    is_ai_agents_template_category,
+    select_template_by_summary,
+)
 
 
 FINAL_RELEASE_STATUS = "\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u043b\u0435\u043d \u043d\u0430 \u041f\u0420\u041e\u041c"
@@ -61,6 +66,7 @@ AUTO_INCREMENTAL_REFRESH_INTERVAL_SECONDS = 180
 AUTO_INCREMENTAL_REFRESH_LOOKBACK_MINUTES = 60
 AUTO_INCREMENTAL_REFRESH_CHECK_INTERVAL = 30
 RELEASE_OPERATIONAL_DAY_START_HOUR = 3
+AI_AGENTS_SYSTEM_NAME = "AI-\u0410\u0433\u0435\u043d\u0442\u044b"
 RELEASE_MONITOR_TRACE_ENABLED = False
 RELIABLE_FULL_REFRESH_MODE = "reliable_full"
 RELIABLE_SEARCH_RETRY_STATUS_CODES = {429, 500, 502, 503, 504}
@@ -4953,6 +4959,60 @@ def _detect_system(prefix, summary, ke_name, system_info_text):
     return "\u0424\u043e\u043a\u0443\u0441"
 
 
+def _apply_template_system_classification(items):
+    """Give AI_AGENTS templates priority over legacy prefix-based system rules."""
+    try:
+        catalog = build_runtime_template_catalog()
+    except Exception as exc:
+        logging.warning("Release monitor: failed to load template catalog for system classification: %s", exc)
+        return items
+
+    entries_by_ke = defaultdict(list)
+    for entry in catalog:
+        ke_id = str((entry or {}).get("ke") or "").strip()
+        if ke_id:
+            entries_by_ke[ke_id].append(entry)
+
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+
+        item["template_category"] = ""
+        item["is_ai_agent_template"] = False
+        ke_id = str(item.get("ke_id") or "").strip()
+        candidates = entries_by_ke.get(ke_id, [])
+        if not candidates:
+            continue
+
+        summary = str(
+            item.get("release_summary")
+            or item.get("base_release_summary")
+            or " ".join(item.get("release_name_lines") or [])
+            or ""
+        )
+        selected = candidates[0] if len(candidates) == 1 else select_template_by_summary(candidates, summary)
+        if selected:
+            item["template_category"] = str(selected.get("category") or "").strip()
+
+        ai_candidates = [
+            candidate
+            for candidate in candidates
+            if is_ai_agents_template_category(candidate.get("category"))
+        ]
+        selected_is_ai = bool(
+            selected and is_ai_agents_template_category(selected.get("category"))
+        )
+        all_candidates_are_ai = bool(ai_candidates and len(ai_candidates) == len(candidates))
+        if selected_is_ai or all_candidates_are_ai:
+            item["template_category"] = str(
+                (selected or ai_candidates[0]).get("category") or "AI_AGENTS"
+            ).strip()
+            item["is_ai_agent_template"] = True
+            item["system_name"] = AI_AGENTS_SYSTEM_NAME
+
+    return items
+
+
 def _build_release_name_lines(summary, release_ke_line, row_label="(\u0420\u0435\u043b\u0438\u0437)"):
     lines = []
     short_name = _clean_release_summary(summary)
@@ -7291,6 +7351,7 @@ def _normalize_release_payload(payload):
     _apply_duty_schedule_assignments(normalized_items, persist=False)
     _apply_zni_assignments(normalized_items)
     _apply_manual_release_overrides(normalized_items, payload.get("manual_overrides") or {})
+    _apply_template_system_classification(normalized_items)
     _apply_work_marks(normalized_items)
     _apply_manual_duplicate_reconciliation(normalized_items)
     _apply_week_control_flags(normalized_items)
