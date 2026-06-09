@@ -4672,6 +4672,22 @@
             }
         }
 
+        function releaseWorkMarkChangeNeedsFullFilter() {
+            const workMarkFilterValue = document.getElementById('releaseWorkMarkFilter')?.value || 'all';
+            const searchValue = (document.getElementById('releaseSearchInput')?.value || '').trim();
+            return workMarkFilterValue !== 'all' || Boolean(searchValue);
+        }
+
+        function refreshReleaseWorkMarkAfterLocalChange(rowKey, mark, pending = false) {
+            if (releaseWorkMarkChangeNeedsFullFilter()) {
+                applyReleaseFilters();
+                setReleaseWorkMarkPending(rowKey, pending);
+                return;
+            }
+            patchReleaseWorkMarkDom(rowKey, mark, pending);
+            recomputeReleaseWorkMarkChips();
+        }
+
         function refreshReleaseWorkMarkUi() {
             updateReleaseWorkMarkParticipantPicker();
             updateReleaseWorkMarkFilterOptions(getYearFilteredReleaseItems(releaseMonitorItems));
@@ -4746,8 +4762,7 @@
             const seq = (releaseWorkMarkSaveSeqByKey.get(normalizedRowKey) || 0) + 1;
             releaseWorkMarkSaveSeqByKey.set(normalizedRowKey, seq);
             applyReleaseWorkMarkToItem(item, normalizedMark);
-            applyReleaseFilters();
-            setReleaseWorkMarkPending(normalizedRowKey, true);
+            refreshReleaseWorkMarkAfterLocalChange(normalizedRowKey, normalizedMark, true);
 
             try {
                 const response = await fetch(BASE_PATH + '/dashboard/release-monitor/work-mark', {
@@ -4772,8 +4787,7 @@
             } catch (error) {
                 if (releaseWorkMarkSaveSeqByKey.get(normalizedRowKey) === seq) {
                     applyReleaseWorkMarkToItem(item, snapshot.work_mark);
-                    applyReleaseFilters();
-                    setReleaseWorkMarkPending(normalizedRowKey, false);
+                    refreshReleaseWorkMarkAfterLocalChange(normalizedRowKey, snapshot.work_mark, false);
                     alert(error.message || 'Не удалось сохранить метку смены');
                 }
             }
