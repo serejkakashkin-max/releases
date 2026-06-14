@@ -6707,13 +6707,22 @@ def _release_monitor_payload_fingerprint(payload):
     return json.dumps(comparable, ensure_ascii=False, sort_keys=True, default=str)
 
 
-def _schedule_unassigned_confluence_auto_sync(payload, *, refresh_mode):
+def _schedule_unassigned_confluence_auto_sync(
+    payload,
+    *,
+    refresh_mode,
+    force_notify_row_keys=None,
+):
     try:
         from services.release_monitor_confluence_notification_service import (
             schedule_unassigned_auto_sync,
         )
 
-        schedule_unassigned_auto_sync(payload, refresh_mode=refresh_mode)
+        schedule_unassigned_auto_sync(
+            payload,
+            refresh_mode=refresh_mode,
+            force_notify_row_keys=force_notify_row_keys,
+        )
     except Exception:
         logging.exception(
             "Release monitor: failed to schedule Confluence unassigned auto-sync after %s refresh",
@@ -7781,6 +7790,159 @@ def _normalize_giga_recommendation_name(value, allowed_names):
     return matched if matched in allowed_names else ""
 
 
+WEEK_RECOMMENDATION_MAX_LOAD_GAP = 2
+WEEK_RECOMMENDATION_CLM_PRIMARY = (
+    "Кашкин С.Н.",
+    "Гапоненко Д.А.",
+)
+
+
+def _week_recommendation_system_group(item):
+    item = item or {}
+    system_name = str(item.get("system_name") or "").strip()
+    normalized_system = _normalize_text(system_name).lower()
+    release_prefix = str(item.get("release_key") or "").split("-", 1)[0].upper()
+
+    if "ai-" in normalized_system or "агент" in normalized_system:
+        return "AI"
+    if "emrm" in normalized_system or release_prefix == "EMRM":
+        return "EMRM"
+    if "clm" in normalized_system or release_prefix == "SMECLM":
+        return "CLM"
+    if "аист" in normalized_system or release_prefix == "SMECSC":
+        return "AIST"
+    return system_name or release_prefix or "OTHER"
+
+
+def _week_candidate_affinity(candidate_name, item, history):
+    candidate_history = (history or {}).get(candidate_name) or {}
+    system_name = str((item or {}).get("system_name") or "").strip()
+    release_prefix = str((item or {}).get("release_key") or "").split("-", 1)[0]
+    return int((candidate_history.get("by_system") or {}).get(system_name) or 0) + int(
+        (candidate_history.get("by_prefix") or {}).get(release_prefix) or 0
+    )
+
+
+def _week_balanced_candidate_pool(item, allowed_candidates, projected_load):
+    candidates = list(dict.fromkeys(
+        str(name or "").strip()
+        for name in (allowed_candidates or [])
+        if str(name or "").strip()
+    ))
+    if not candidates:
+        return []
+
+    if _week_recommendation_system_group(item) == "EMRM":
+        non_clm_primary = [
+            name for name in candidates
+            if name not in WEEK_RECOMMENDATION_CLM_PRIMARY
+        ]
+        if non_clm_primary:
+            candidates = non_clm_primary
+
+    minimum_load = min(int(projected_load.get(name, 0) or 0) for name in candidates)
+    return [
+        name for name in candidates
+        if int(projected_load.get(name, 0) or 0)
+        <= minimum_load + WEEK_RECOMMENDATION_MAX_LOAD_GAP
+    ]
+
+
+def _select_week_balanced_candidate(item, candidates, projected_load, history):
+    system_group = _week_recommendation_system_group(item)
+
+    def rank(candidate_name):
+        load = int(projected_load.get(candidate_name, 0) or 0)
+        affinity = _week_candidate_affinity(candidate_name, item, history)
+        if system_group == "CLM":
+            return (
+                0 if candidate_name in WEEK_RECOMMENDATION_CLM_PRIMARY else 1,
+                load,
+                -affinity,
+                candidate_name,
+            )
+        return (load, -affinity, candidate_name)
+
+    return min(candidates, key=rank) if candidates else ""
+
+
+def _balance_week_responsible_recommendations(
+    recommendations,
+    *,
+    missing_by_row_key,
+    allowed_candidates,
+    current_week_load,
+    history,
+):
+    projected_load = {
+        candidate: int((current_week_load or {}).get(candidate) or 0)
+        for candidate in allowed_candidates or []
+    }
+    missing_order = {
+        row_key: index
+        for index, row_key in enumerate(missing_by_row_key)
+    }
+    balanced = []
+    correction_count = 0
+
+    for recommendation in sorted(
+        recommendations or [],
+        key=lambda item: missing_order.get(item.get("row_key"), len(missing_order)),
+    ):
+        row_key = recommendation.get("row_key")
+        source_item = missing_by_row_key.get(row_key) or {}
+        candidate_pool = _week_balanced_candidate_pool(
+            source_item,
+            allowed_candidates,
+            projected_load,
+        )
+        if not candidate_pool:
+            continue
+
+        original_name = str(recommendation.get("recommended") or "").strip()
+        selected_name = original_name
+        if selected_name not in candidate_pool:
+            selected_name = _select_week_balanced_candidate(
+                source_item,
+                candidate_pool,
+                projected_load,
+                history,
+            )
+
+        next_item = dict(recommendation)
+        next_item["recommended"] = selected_name
+        if selected_name != original_name:
+            correction_count += 1
+            original_load = int(projected_load.get(original_name, 0) or 0)
+            selected_load = int(projected_load.get(selected_name, 0) or 0)
+            next_item["reason"] = (
+                f"Скорректировано по недельной нагрузке: "
+                f"{selected_name} ({selected_load}) вместо "
+                f"{original_name} ({original_load})."
+            )
+            next_item["confidence"] = "high"
+            next_item["balance_adjusted"] = True
+        else:
+            next_item["balance_adjusted"] = False
+
+        backup_pool = [name for name in candidate_pool if name != selected_name]
+        current_backup = str(next_item.get("backup") or "").strip()
+        if current_backup not in backup_pool:
+            current_backup = _select_week_balanced_candidate(
+                source_item,
+                backup_pool,
+                projected_load,
+                history,
+            )
+        next_item["backup"] = current_backup
+
+        projected_load[selected_name] = int(projected_load.get(selected_name, 0) or 0) + 1
+        next_item["projected_week_load"] = projected_load[selected_name]
+        balanced.append(next_item)
+
+    return balanced, correction_count
+
+
 def get_release_monitor_week_responsible_recommendations():
     snapshot = get_release_monitor_snapshot() or {}
     items = snapshot.get("items", []) if isinstance(snapshot, dict) else []
@@ -7828,6 +7990,10 @@ def get_release_monitor_week_responsible_recommendations():
             "reserve_allowed": bool(control.get("statistics", {}).get("reserve_allowed")),
             "excluded_candidates": control.get("candidates", {}).get("excluded", []),
             "do_not_assign_checkers": True,
+            "max_week_load_gap": WEEK_RECOMMENDATION_MAX_LOAD_GAP,
+            "clm_primary_candidates": list(WEEK_RECOMMENDATION_CLM_PRIMARY),
+            "clm_primary_only_within_load_gap": True,
+            "emrm_use_clm_primary_only_if_no_other_candidate": True,
         },
         "current_week_load": control.get("assigned_load", {}),
         "history": history,
@@ -7867,7 +8033,12 @@ reserve_candidates можно использовать только если rul
 Учитывай:
 - историю назначений по похожим системам, prefix и category/system_name;
 - текущую недельную нагрузку current_week_load;
-- равномерность распределения;
+- равномерность распределения считать обязательным ограничением, а не пожеланием;
+- сначала найти минимальную нагрузку среди допустимых кандидатов;
+- нельзя рекомендовать кандидата, чья текущая или проектная нагрузка больше минимума более чем на rules.max_week_load_gap;
+- учитывать рекомендации в текущем ответе последовательно: после выбора сотрудника мысленно увеличить его нагрузку на 1;
+- для CLM Кашкин С.Н. и Гапоненко Д.А. являются приоритетными специалистами только внутри допустимого коридора нагрузки;
+- для EMRM Кашкин С.Н. и Гапоненко Д.А. допустимы только если нет других разрешенных кандидатов;
 - причины исключения из графика.
 
 Верни строго JSON без markdown:
@@ -7933,11 +8104,25 @@ reserve_candidates можно использовать только если rul
             "reason": str(raw_item.get("reason") or "").strip(),
         })
 
+    normalized_recommendations, correction_count = _balance_week_responsible_recommendations(
+        normalized_recommendations,
+        missing_by_row_key=missing_by_row_key,
+        allowed_candidates=allowed_candidates,
+        current_week_load=control.get("assigned_load") or {},
+        history=history,
+    )
+    summary = str(parsed.get("summary") or "").strip() if isinstance(parsed, dict) else ""
+    if correction_count:
+        balance_note = (
+            f"По недельной нагрузке скорректировано рекомендаций: {correction_count}."
+        )
+        summary = f"{summary} {balance_note}".strip()
+
     return {
         "control": control,
         "recommendations": normalized_recommendations,
         "source": "gigachat",
-        "summary": str(parsed.get("summary") or "").strip() if isinstance(parsed, dict) else "",
+        "summary": summary,
         "message": "" if normalized_recommendations else "GigaChat не вернул применимых рекомендаций.",
     }
 
@@ -9336,6 +9521,7 @@ def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=
         assignments.pop(release_key, None)
     _save_reviewer_assignments(assignments)
 
+    unassigned_snapshot = None
     with _cache_lock:
         if _cached_data is None:
             disk_payload = _load_snapshot_from_disk()
@@ -9345,18 +9531,29 @@ def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=
             for item in _cached_data.get("items", []):
                 item_key = _get_assignment_key_for_item(item)
                 if item_key == release_key:
+                    had_responsible = _has_release_responsible(item)
                     item["psi_owner"] = reviewer
                     item["psi_owner_source"] = resolved_reviewer_source
                     item["psi_owner_date"] = reviewer_date
                     item["psi_zni_reviewer"] = zni_reviewer
                     item["psi_checker"] = checker
                     item["psi_responsibles"] = list(normalized_responsibles)
+                    is_week_scope = _is_release_assignment_relevant_for_week(item)
+                    item["is_current_week_assignment_scope"] = is_week_scope
+                    item["is_missing_week_responsible"] = bool(
+                        is_week_scope and not normalized_responsibles
+                    )
+                    if (
+                        had_responsible
+                        and item["is_missing_week_responsible"]
+                    ):
+                        unassigned_snapshot = copy.deepcopy(_cached_data)
                     break
             _mark_release_monitor_state_changed()
         else:
             _touch_release_monitor_revision()
 
-    return {
+    result = {
         "reviewer": reviewer,
         "reviewer_source": resolved_reviewer_source,
         "reviewer_date": reviewer_date,
@@ -9365,6 +9562,14 @@ def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=
         "responsibles": normalized_responsibles,
         "data_revision": _read_data_revision(),
     }
+    if unassigned_snapshot is not None:
+        unassigned_snapshot.setdefault("meta", {})["data_revision"] = result["data_revision"]
+        _schedule_unassigned_confluence_auto_sync(
+            unassigned_snapshot,
+            refresh_mode="assignment_change",
+            force_notify_row_keys=[release_key],
+        )
+    return result
 
 
 def assign_release_monitor_responsible_if_expected(

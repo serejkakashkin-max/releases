@@ -215,7 +215,7 @@ def select_unassigned_current_week_items(items: Iterable[Dict]) -> List[Dict]:
             continue
         if _has_responsible(item):
             continue
-        if item.get("is_cancelled") or item.get("is_final"):
+        if item.get("is_cancelled"):
             continue
         row_key = str(item.get("row_key") or "").strip()
         if not row_key:
@@ -465,7 +465,7 @@ def _sync_unassigned_release_confluence_page(
         page = _fetch_page(page_id)
         initialized, previous_row_keys = extract_report_state(page.get("storage_html", ""))
 
-        if initialized and current_row_keys == previous_row_keys:
+        if initialized and current_row_keys == previous_row_keys and not new_row_keys:
             return {
                 "updated": False,
                 "rows_count": len(current_row_keys),
@@ -582,6 +582,7 @@ def _run_unassigned_auto_sync(
     *,
     refresh_mode: str,
     force_baseline: bool = False,
+    force_notify_row_keys: Optional[Iterable[str]] = None,
 ) -> Dict:
     if not is_automation_enabled(AUTO_SYNC_FLAG):
         return {"result": "disabled"}
@@ -634,7 +635,12 @@ def _run_unassigned_auto_sync(
 
             notified_row_keys = set(_normalize_row_keys(state.get("notified_row_keys")))
             pending_row_keys = set(_normalize_row_keys(state.get("pending_row_keys"))) & current_row_keys
-            new_row_keys = (current_row_keys - notified_row_keys) | pending_row_keys
+            forced_row_keys = set(_normalize_row_keys(force_notify_row_keys)) & current_row_keys
+            new_row_keys = (
+                (current_row_keys - notified_row_keys)
+                | pending_row_keys
+                | forced_row_keys
+            )
             now = datetime.now()
             now_text = _format_state_timestamp(now)
 
@@ -726,12 +732,18 @@ def _auto_sync_worker_loop() -> None:
                 job["snapshot"],
                 refresh_mode=job["refresh_mode"],
                 force_baseline=job.get("force_baseline", False),
+                force_notify_row_keys=job.get("force_notify_row_keys"),
             )
         except Exception:
             logging.exception("Confluence unassigned auto-sync worker failed unexpectedly")
 
 
-def schedule_unassigned_auto_sync(snapshot: Dict, *, refresh_mode: str) -> bool:
+def schedule_unassigned_auto_sync(
+    snapshot: Dict,
+    *,
+    refresh_mode: str,
+    force_notify_row_keys: Optional[Iterable[str]] = None,
+) -> bool:
     global _auto_sync_worker_thread, _queued_auto_sync_job, _last_observed_auto_sync_enabled
 
     enabled = is_automation_enabled(AUTO_SYNC_FLAG)
@@ -746,12 +758,18 @@ def schedule_unassigned_auto_sync(snapshot: Dict, *, refresh_mode: str) -> bool:
             "items": copy.deepcopy(list((snapshot or {}).get("items") or [])),
             "meta": copy.deepcopy(dict((snapshot or {}).get("meta") or {})),
         }
+        queued_force_notify_row_keys = set()
         if _queued_auto_sync_job:
             force_baseline = force_baseline or bool(_queued_auto_sync_job.get("force_baseline"))
+            queued_force_notify_row_keys.update(
+                _normalize_row_keys(_queued_auto_sync_job.get("force_notify_row_keys"))
+            )
+        queued_force_notify_row_keys.update(_normalize_row_keys(force_notify_row_keys))
         _queued_auto_sync_job = {
             "snapshot": snapshot_copy,
             "refresh_mode": str(refresh_mode or ""),
             "force_baseline": force_baseline,
+            "force_notify_row_keys": sorted(queued_force_notify_row_keys),
         }
 
         if _auto_sync_worker_thread and _auto_sync_worker_thread.is_alive():

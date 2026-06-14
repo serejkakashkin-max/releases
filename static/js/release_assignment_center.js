@@ -325,52 +325,147 @@
         list.hidden = items.length === 0;
     }
 
-    function personCardHtml(candidate, groupName) {
+    function candidateMetric(candidate, metricName) {
+        return Number(candidate?.metrics?.[metricName] || 0);
+    }
+
+    function sortCandidatesByLoad(candidates) {
+        return [...(candidates || [])].sort((left, right) =>
+            candidateMetric(left, 'week') - candidateMetric(right, 'week')
+            || candidateMetric(left, 'active') - candidateMetric(right, 'active')
+            || String(left.name || '').localeCompare(String(right.name || ''), 'ru')
+        );
+    }
+
+    function availableCandidateHtml(candidate, index, maxWeekLoad) {
         const metrics = candidate.metrics || {};
-        const statusLabels = {
-            available: 'Доступен',
-            reserve: 'Резерв',
-            excluded: 'Недоступен'
-        };
-        const reasons = (candidate.reasons || []).join(' · ');
+        const weekLoad = Number(metrics.week || 0);
+        const loadPercent = maxWeekLoad > 0
+            ? Math.max(0, Math.min(100, Math.round((weekLoad / maxWeekLoad) * 100)))
+            : 0;
         return `
-            <div class="assignment-person">
-                <div class="assignment-person-head">
-                    <span class="assignment-person-name">${escapeHtml(candidate.name)}</span>
-                    <span class="assignment-person-status ${groupName}">${statusLabels[groupName]}</span>
+            <article class="assignment-candidate">
+                <div class="assignment-candidate-main">
+                    <span class="assignment-candidate-rank">${index + 1}</span>
+                    <div class="assignment-candidate-identity">
+                        <strong>${escapeHtml(candidate.name)}</strong>
+                        <span><i class="bi bi-check-circle-fill"></i> Можно назначать</span>
+                    </div>
+                    <div class="assignment-week-load" title="Назначений за текущую неделю">
+                        <strong>${weekLoad}</strong>
+                        <span>за неделю</span>
+                    </div>
                 </div>
-                <div class="assignment-person-metrics">
-                    <div class="assignment-person-metric"><span>Активно</span><strong>${Number(metrics.active || 0)}</strong></div>
-                    <div class="assignment-person-metric"><span>Неделя</span><strong>${Number(metrics.week || 0)}</strong></div>
-                    <div class="assignment-person-metric"><span>Квартал</span><strong>${Number(metrics.quarter || 0)}</strong></div>
-                    <div class="assignment-person-metric"><span>Год</span><strong>${Number(metrics.year || 0)}</strong></div>
+                <div class="assignment-load-track" aria-hidden="true">
+                    <span style="width: ${loadPercent}%"></span>
                 </div>
-                ${reasons ? `<div class="assignment-person-reasons">${escapeHtml(reasons)}</div>` : ''}
-            </div>
+                <div class="assignment-load-meta">
+                    <span><strong>${Number(metrics.active || 0)}</strong> активно</span>
+                    <span><strong>${Number(metrics.quarter || 0)}</strong> квартал</span>
+                    <span><strong>${Number(metrics.year || 0)}</strong> год</span>
+                </div>
+            </article>
+        `;
+    }
+
+    function availabilityRowHtml(candidate, groupName) {
+        const metrics = candidate.metrics || {};
+        const reasons = (candidate.reasons || []).join(' · ');
+        const isReserve = groupName === 'reserve';
+        return `
+            <article class="assignment-availability-row ${groupName}">
+                <span class="assignment-availability-icon">
+                    <i class="bi ${isReserve ? 'bi-shield-exclamation' : 'bi-slash-circle'}"></i>
+                </span>
+                <div class="assignment-availability-copy">
+                    <div class="assignment-availability-name">
+                        <strong>${escapeHtml(candidate.name)}</strong>
+                        <span class="assignment-person-status ${groupName}">
+                            ${isReserve ? 'Резерв' : 'Недоступен'}
+                        </span>
+                    </div>
+                    <p>${escapeHtml(reasons || (isReserve ? 'Резерв по графику' : 'Недоступен по графику'))}</p>
+                    <div class="assignment-availability-meta">
+                        <span>Активно <strong>${Number(metrics.active || 0)}</strong></span>
+                        <span>Квартал <strong>${Number(metrics.quarter || 0)}</strong></span>
+                        <span>Год <strong>${Number(metrics.year || 0)}</strong></span>
+                    </div>
+                </div>
+                <div class="assignment-availability-week">
+                    <strong>${Number(metrics.week || 0)}</strong>
+                    <span>неделя</span>
+                </div>
+            </article>
         `;
     }
 
     function renderPeople() {
         const groups = candidateGroups();
-        const definitions = [
-            ['available', 'Можно назначать'],
-            ['reserve', 'Резерв'],
-            ['excluded', 'Недоступны']
-        ];
-        elements.peopleList.innerHTML = definitions.map(([groupName, label]) => {
-            const candidates = groups[groupName] || [];
-            return `
-                <section class="assignment-person-group">
-                    <div class="assignment-person-group-title">
-                        <span>${label}</span>
-                        <strong>${candidates.length}</strong>
+        const available = sortCandidatesByLoad(groups.available);
+        const reserve = sortCandidatesByLoad(groups.reserve);
+        const excluded = [...(groups.excluded || [])].sort((left, right) =>
+            String(left.name || '').localeCompare(String(right.name || ''), 'ru')
+        );
+        const unavailableWasOpen = Boolean(
+            elements.peopleList.querySelector('.assignment-unavailable-group[open]')
+        );
+        const maxWeekLoad = Math.max(
+            1,
+            ...available.map(candidate => candidateMetric(candidate, 'week'))
+        );
+
+        elements.peopleList.innerHTML = `
+            <section class="assignment-candidate-section">
+                <div class="assignment-person-group-title available">
+                    <div>
+                        <span>Доступны сейчас</span>
+                        <small>От меньшей недельной нагрузки к большей</small>
                     </div>
-                    ${candidates.length
-                        ? candidates.map(candidate => personCardHtml(candidate, groupName)).join('')
-                        : '<div class="assignment-person"><span class="assignment-person-reasons">Нет сотрудников</span></div>'}
-                </section>
-            `;
-        }).join('');
+                    <strong>${available.length}</strong>
+                </div>
+                <div class="assignment-candidate-list">
+                    ${available.length
+                        ? available.map((candidate, index) =>
+                            availableCandidateHtml(candidate, index, maxWeekLoad)
+                        ).join('')
+                        : '<div class="assignment-team-empty">Нет доступных сотрудников</div>'}
+                </div>
+            </section>
+
+            <section class="assignment-reserve-section">
+                <div class="assignment-person-group-title reserve">
+                    <div>
+                        <span>Резерв</span>
+                        <small>Можно использовать при необходимости</small>
+                    </div>
+                    <strong>${reserve.length}</strong>
+                </div>
+                <div class="assignment-availability-list">
+                    ${reserve.length
+                        ? reserve.map(candidate => availabilityRowHtml(candidate, 'reserve')).join('')
+                        : '<div class="assignment-team-empty">Резерв не назначен</div>'}
+                </div>
+            </section>
+
+            <details class="assignment-unavailable-group" ${unavailableWasOpen ? 'open' : ''}>
+                <summary>
+                    <span class="assignment-unavailable-summary-icon">
+                        <i class="bi bi-person-x"></i>
+                    </span>
+                    <span>
+                        <strong>Недоступны</strong>
+                        <small>Причины ограничений по графику</small>
+                    </span>
+                    <b>${excluded.length}</b>
+                    <i class="bi bi-chevron-down assignment-details-chevron"></i>
+                </summary>
+                <div class="assignment-availability-list">
+                    ${excluded.length
+                        ? excluded.map(candidate => availabilityRowHtml(candidate, 'excluded')).join('')
+                        : '<div class="assignment-team-empty">Ограничений нет</div>'}
+                </div>
+            </details>
+        `;
     }
 
     function renderCockpit() {

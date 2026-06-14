@@ -56,7 +56,7 @@
                     <span>Новых</span>
                     <strong id="assignmentNewCount">0</strong>
                 </div>
-                <div class="assignment-stat">
+                <div class="assignment-stat available">
                     <span>Доступны</span>
                     <strong id="assignmentAvailableCount">0</strong>
                 </div>
@@ -76,7 +76,7 @@
                 <div class="assignment-section-head">
                     <div>
                         <h2>Требуют назначения</h2>
-                        <p>Назначение сохраняется в том же состоянии, что и в основной таблице.</p>
+                        <p>Назначение сразу сохраняется в Блоке релизов и исчезает из этого списка.</p>
                     </div>
                     <button class="assignment-ai-btn" id="assignmentAiBtn" type="button">
                         <i class="bi bi-stars"></i>
@@ -109,9 +109,16 @@
 
             <aside class="assignment-people">
                 <div class="assignment-people-head">
-                    <div>
-                        <h2>Команда и нагрузка</h2>
-                        <p>Считаются назначения в <code>psi_responsibles</code>, а не факт выполнения.</p>
+                    <div class="assignment-people-title">
+                        <span class="assignment-section-icon"><i class="bi bi-people"></i></span>
+                        <div>
+                            <h2>Кого назначить</h2>
+                            <p>Доступность по графику и текущая нагрузка команды.</p>
+                        </div>
+                    </div>
+                    <div class="assignment-load-legend" title="Главный показатель для сравнения сотрудников">
+                        <strong>Неделя</strong>
+                        <span>основной ориентир</span>
                     </div>
                 </div>
                 <div id="assignmentPeopleList" class="assignment-people-list"></div>
