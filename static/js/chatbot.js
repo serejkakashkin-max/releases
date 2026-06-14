@@ -539,7 +539,7 @@ class DashboardChatBot {
             '• сформировать документы по релизу\n' +
             '• найти инструкцию и Jenkins job для раскатки на ПСИ\n' +
             '• выгрузить таблицу релизов в Confluence\n' +
-            '• собрать контроль недели и предложить ответственных\n' +
+            '• открыть Центр назначений и предложить ответственных\n' +
             '• найти задачи и подготовить сводку дневной или вечерней смены'
         );
     }
@@ -576,5 +576,8 @@ class DashboardChatBot {
 
 // Инициализация при загрузке страницы
 document.addEventListener('DOMContentLoaded', () => {
+    if (window.CHATBOT_DISABLED_BY_MAINTENANCE) {
+        return;
+    }
     window.dashboardChatBot = new DashboardChatBot();
 });

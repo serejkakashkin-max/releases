@@ -258,6 +258,12 @@ class ReleaseMonitorCandidateRejected(RuntimeError):
         self.validation_report = validation_report or {}
 
 
+class ReleaseMonitorAssignmentConflict(RuntimeError):
+    def __init__(self, message, assignment=None):
+        super().__init__(message)
+        self.assignment = assignment or {}
+
+
 def _rm_trace(tag, event, *, started_at=None, level=logging.INFO, **details):
     if not RELEASE_MONITOR_TRACE_ENABLED:
         return
@@ -6255,6 +6261,7 @@ def _fetch_quick_release_monitor_data(base_items=None):
     previous_year = current_year - 1
     updated_since = datetime.now() - timedelta(days=QUICK_REFRESH_DAYS)
     updated_records = []
+    jira_diagnostics = _build_auto_incremental_jira_diagnostics()
 
     for (domain, token), prefixes in _get_domain_groups().items():
         resolved_fields = _resolve_field_ids(domain, token)
@@ -6293,12 +6300,21 @@ def _fetch_quick_release_monitor_data(base_items=None):
                     len(issues),
                     prefix,
                 )
+                _record_auto_incremental_jira_check(
+                    jira_diagnostics,
+                    label=f"{domain} {prefix} quick releases",
+                )
                 domain_release_issues.extend((prefix, issue) for issue in issues)
             except Exception as exc:
                 logging.error(
                     "Release monitor: quick refresh failed for prefix %s: %s",
                     prefix,
                     exc,
+                )
+                _record_auto_incremental_jira_check(
+                    jira_diagnostics,
+                    label=f"{domain} {prefix} quick releases",
+                    error=exc,
                 )
 
         release_issues_by_key = {
@@ -6343,9 +6359,18 @@ def _fetch_quick_release_monitor_data(base_items=None):
                     for issue in rov_issues
                 }
                 rov_map.update(restored_rov_records)
+                _record_auto_incremental_jira_check(
+                    jira_diagnostics,
+                    label=f"{domain} quick linked ROV",
+                )
             except Exception as exc:
                 logging.error("Release monitor: quick refresh failed to load linked ROV issues from %s: %s", domain, exc)
                 rov_map.update(restored_rov_records)
+                _record_auto_incremental_jira_check(
+                    jira_diagnostics,
+                    label=f"{domain} quick linked ROV",
+                    error=exc,
+                )
         else:
             rov_map.update(restored_rov_records)
 
@@ -6362,7 +6387,13 @@ def _fetch_quick_release_monitor_data(base_items=None):
             if records:
                 updated_records.extend(records)
 
-    return _merge_release_records(base_items or [], updated_records)
+    payload = _merge_release_records(base_items or [], updated_records)
+    meta = dict(payload.get("meta") or {})
+    meta["quick_jira_checks_total"] = int(jira_diagnostics.get("jira_checks_total") or 0)
+    meta["quick_jira_checks_success"] = int(jira_diagnostics.get("jira_checks_success") or 0)
+    meta["quick_jira_checks_failed"] = int(jira_diagnostics.get("jira_checks_failed") or 0)
+    payload["meta"] = meta
+    return payload
 
 
 def _fetch_incremental_release_monitor_data(base_items=None, lookback_minutes=AUTO_INCREMENTAL_REFRESH_LOOKBACK_MINUTES):
@@ -6676,6 +6707,20 @@ def _release_monitor_payload_fingerprint(payload):
     return json.dumps(comparable, ensure_ascii=False, sort_keys=True, default=str)
 
 
+def _schedule_unassigned_confluence_auto_sync(payload, *, refresh_mode):
+    try:
+        from services.release_monitor_confluence_notification_service import (
+            schedule_unassigned_auto_sync,
+        )
+
+        schedule_unassigned_auto_sync(payload, refresh_mode=refresh_mode)
+    except Exception:
+        logging.exception(
+            "Release monitor: failed to schedule Confluence unassigned auto-sync after %s refresh",
+            refresh_mode,
+        )
+
+
 def _run_auto_incremental_release_monitor_refresh():
     global _cached_data, _last_cache_update, _last_auto_incremental_refresh_at
 
@@ -6820,6 +6865,11 @@ def _run_auto_incremental_release_monitor_refresh():
                 started_at=trace_started_at,
                 state="partial" if jira_failure_state == "partial" else "completed",
             )
+            if jira_failure_state != "partial":
+                _schedule_unassigned_confluence_auto_sync(
+                    finalized,
+                    refresh_mode="silent",
+                )
             return
 
         with _cache_lock:
@@ -6869,6 +6919,11 @@ def _run_auto_incremental_release_monitor_refresh():
             items=len(finalized.get("items", [])),
             state="partial" if jira_failure_state == "partial" else "completed",
         )
+        if jira_failure_state != "partial":
+            _schedule_unassigned_confluence_auto_sync(
+                finalized,
+                refresh_mode="silent",
+            )
     except Exception as exc:
         logging.exception("Release monitor: auto incremental refresh failed")
         _update_auto_incremental_status(
@@ -7149,6 +7204,7 @@ def _run_release_monitor_refresh(mode="full", trigger="manual"):
         else "RM_QUICK_REFRESH"
     )
     trace_started_at = time.monotonic()
+    auto_sync_allowed = True
     try:
         logging.info("Release monitor: background %s refresh started", mode)
         _rm_trace(trace_tag, "worker_start", mode=mode, trigger=trigger)
@@ -7170,6 +7226,9 @@ def _run_release_monitor_refresh(mode="full", trigger="manual"):
         if mode == "quick" and base_items:
             manual_overrides = _load_manual_release_overrides()
             data = _fetch_quick_release_monitor_data(base_items)
+            auto_sync_allowed = int(
+                ((data.get("meta") or {}).get("quick_jira_checks_failed")) or 0
+            ) == 0
             now_str = _format_timestamp()
             meta = dict(data.get("meta", {}))
             meta["last_updated"] = now_str
@@ -7223,6 +7282,11 @@ def _run_release_monitor_refresh(mode="full", trigger="manual"):
             items=len(data.get("items", [])),
             mode=mode,
         )
+        if auto_sync_allowed:
+            _schedule_unassigned_confluence_auto_sync(
+                data,
+                refresh_mode=mode,
+            )
     except ReleaseMonitorCandidateRejected as exc:
         logging.warning("Release monitor: background %s refresh rejected: %s", mode, exc)
         report = dict(exc.validation_report or {})
@@ -7438,8 +7502,8 @@ def get_release_monitor_reviewer_options():
     return list(OPLOT_VALUES)
 
 
-def get_release_monitor_week_control():
-    snapshot = get_release_monitor_snapshot() or {}
+def get_release_monitor_week_control(snapshot=None):
+    snapshot = snapshot if isinstance(snapshot, dict) else (get_release_monitor_snapshot() or {})
     items = snapshot.get("items", []) if isinstance(snapshot, dict) else []
     week_start, week_end = _get_current_week_bounds()
 
@@ -7500,6 +7564,154 @@ def get_release_monitor_week_control():
         "missing_responsible": missing_responsible,
         "candidates": candidate_groups,
         "assigned_load": dict(sorted(assigned_load.items(), key=lambda pair: (-pair[1], pair[0]))),
+    }
+
+
+def _release_assignment_center_period_stats(items, reference_dt=None):
+    reference_dt = reference_dt or datetime.now()
+    reference_date = reference_dt.date()
+    week_start, week_end = _get_current_week_bounds(reference_dt)
+    quarter_start_month = ((reference_date.month - 1) // 3) * 3 + 1
+    quarter_start = reference_date.replace(month=quarter_start_month, day=1)
+    if quarter_start_month == 10:
+        quarter_end = reference_date.replace(
+            year=reference_date.year + 1,
+            month=1,
+            day=1,
+        ) - timedelta(days=1)
+    else:
+        quarter_end = reference_date.replace(
+            month=quarter_start_month + 3,
+            day=1,
+        ) - timedelta(days=1)
+
+    stats = {
+        name: {
+            "active": 0,
+            "week": 0,
+            "quarter": 0,
+            "year": 0,
+        }
+        for name in OPLOT_VALUES
+    }
+
+    for item in items or []:
+        if item.get("is_cancelled"):
+            continue
+        release_date = _get_release_start_date(item)
+        if not release_date:
+            continue
+        raw_responsibles = item.get("psi_responsibles") or []
+        if not isinstance(raw_responsibles, list):
+            raw_responsibles = [raw_responsibles] if raw_responsibles else []
+        responsibles = {
+            str(value or "").strip()
+            for value in raw_responsibles
+            if str(value or "").strip() in stats
+        }
+        if not responsibles:
+            continue
+
+        is_week = week_start <= release_date <= week_end
+        is_quarter = quarter_start <= release_date <= quarter_end
+        is_year = release_date.year == reference_date.year
+        is_active = is_week and not item.get("is_final")
+        for responsible in responsibles:
+            values = stats[responsible]
+            if is_active:
+                values["active"] += 1
+            if is_week:
+                values["week"] += 1
+            if is_quarter:
+                values["quarter"] += 1
+            if is_year:
+                values["year"] += 1
+    return stats
+
+
+def get_release_monitor_assignment_center_data():
+    snapshot = get_release_monitor_snapshot() or {}
+    items = snapshot.get("items", []) if isinstance(snapshot, dict) else []
+    control = get_release_monitor_week_control(snapshot=snapshot)
+    period_stats = _release_assignment_center_period_stats(items)
+    meta = dict(snapshot.get("meta") or {})
+
+    availability_by_name = {}
+    enriched_candidates = {"available": [], "reserve": [], "excluded": []}
+    for group_name in ("available", "reserve", "excluded"):
+        for candidate in (control.get("candidates") or {}).get(group_name, []):
+            candidate_name = str(candidate.get("name") or "").strip()
+            if not candidate_name:
+                continue
+            enriched = {
+                **candidate,
+                "metrics": dict(period_stats.get(candidate_name) or {}),
+            }
+            enriched_candidates[group_name].append(enriched)
+            availability_by_name[candidate_name] = {
+                "availability": group_name,
+                "reasons": list(candidate.get("reasons") or []),
+                "statuses": list(candidate.get("statuses") or []),
+            }
+
+    for group_name in enriched_candidates:
+        enriched_candidates[group_name].sort(
+            key=lambda candidate: (
+                int((candidate.get("metrics") or {}).get("active") or 0),
+                int((candidate.get("metrics") or {}).get("week") or 0),
+                int((candidate.get("metrics") or {}).get("year") or 0),
+                str(candidate.get("name") or ""),
+            )
+        )
+
+    item_by_row_key = {
+        _get_assignment_key_for_item(item): item
+        for item in items
+        if _get_assignment_key_for_item(item)
+    }
+    missing_items = []
+    for missing in control.get("missing_responsible") or []:
+        row_key = str(missing.get("row_key") or "").strip()
+        source_item = item_by_row_key.get(row_key) or {}
+        missing_items.append({
+            **missing,
+            "ke_id": source_item.get("ke_id", ""),
+            "ke_name": source_item.get("ke_name", ""),
+            "release_version": source_item.get("release_version", ""),
+            "rov_status": source_item.get("rov_status", ""),
+            "row_state": source_item.get("row_state", ""),
+            "is_final": bool(source_item.get("is_final")),
+            "duty_owner": source_item.get("psi_owner", ""),
+            "duty_owner_source": source_item.get("psi_owner_source", ""),
+        })
+
+    week_start, _ = _get_current_week_bounds()
+    week_key = f"{week_start.isocalendar().year}-W{week_start.isocalendar().week:02d}"
+    view_payload = {
+        "week_key": week_key,
+        "missing_responsible": missing_items,
+        "candidates": enriched_candidates,
+        "statistics": control.get("statistics") or {},
+        "employee_metrics": period_stats,
+    }
+    view_revision = hashlib.sha256(
+        json.dumps(view_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+
+    return {
+        **control,
+        "missing_responsible": missing_items,
+        "candidates": enriched_candidates,
+        "employee_metrics": period_stats,
+        "availability_by_name": availability_by_name,
+        "meta": {
+            "data_revision": str(meta.get("data_revision") or _read_data_revision() or ""),
+            "accepted_revision": str(meta.get("accepted_revision") or ""),
+            "snapshot_at": _confirmed_snapshot_timestamp(snapshot),
+            "week_key": week_key,
+            "view_revision": view_revision,
+            "generated_at": _format_timestamp(),
+        },
     }
 
 
@@ -7572,7 +7784,7 @@ def _normalize_giga_recommendation_name(value, allowed_names):
 def get_release_monitor_week_responsible_recommendations():
     snapshot = get_release_monitor_snapshot() or {}
     items = snapshot.get("items", []) if isinstance(snapshot, dict) else []
-    control = get_release_monitor_week_control()
+    control = get_release_monitor_week_control(snapshot=snapshot)
     missing = control.get("missing_responsible") or []
     week_start, week_end = _get_current_week_bounds()
     week_items = [
@@ -9154,3 +9366,117 @@ def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=
         "data_revision": _read_data_revision(),
     }
 
+
+def assign_release_monitor_responsible_if_expected(
+    release_key,
+    responsible,
+    expected_responsibles=None,
+):
+    global _cached_data
+
+    release_key = str(release_key or "").strip()
+    responsible = str(responsible or "").strip()
+    if not release_key:
+        raise ValueError("Не указан ключ строки релиза")
+    if responsible not in OPLOT_VALUES:
+        raise ValueError("Выбранный ответственный отсутствует в списке ОПЛОТ")
+
+    expected = []
+    for value in expected_responsibles or []:
+        normalized_value = str(value or "").strip()
+        if normalized_value and normalized_value not in expected:
+            expected.append(normalized_value)
+
+    with _cache_lock:
+        _ensure_cached_payload_loaded_locked()
+        target_item = next(
+            (
+                item
+                for item in (_cached_data or {}).get("items", [])
+                if _get_assignment_key_for_item(item) == release_key
+            ),
+            None,
+        )
+        if not target_item:
+            raise ValueError("Строка релиза больше не существует в актуальной таблице")
+
+        assignments = _load_reviewer_assignments()
+        legacy_key = str(target_item.get("release_key") or "").strip()
+        current_assignment = dict(
+            assignments.get(release_key)
+            or assignments.get(legacy_key)
+            or {}
+        )
+        raw_current_responsibles = (
+            current_assignment.get("responsibles")
+            if "responsibles" in current_assignment
+            else target_item.get("psi_responsibles")
+        )
+        current_responsibles = []
+        for value in raw_current_responsibles or []:
+            normalized_value = str(value or "").strip()
+            if normalized_value and normalized_value not in current_responsibles:
+                current_responsibles.append(normalized_value)
+
+        if responsible in current_responsibles:
+            return {
+                **current_assignment,
+                "responsibles": current_responsibles,
+                "data_revision": str(
+                    ((_cached_data or {}).get("meta") or {}).get("data_revision")
+                    or _read_data_revision()
+                    or ""
+                ),
+                "idempotent": True,
+            }
+
+        if current_responsibles != expected:
+            raise ReleaseMonitorAssignmentConflict(
+                "Ответственный уже назначен другим пользователем",
+                assignment={
+                    **current_assignment,
+                    "responsibles": current_responsibles,
+                    "data_revision": str(
+                        ((_cached_data or {}).get("meta") or {}).get("data_revision")
+                        or _read_data_revision()
+                        or ""
+                    ),
+                },
+            )
+
+        next_responsibles = [responsible, *current_responsibles]
+        next_assignment = {
+            "reviewer": str(current_assignment.get("reviewer") or target_item.get("psi_owner") or "").strip(),
+            "reviewer_source": str(
+                current_assignment.get("reviewer_source")
+                or target_item.get("psi_owner_source")
+                or ""
+            ).strip(),
+            "reviewer_date": str(
+                current_assignment.get("reviewer_date")
+                or target_item.get("psi_owner_date")
+                or ""
+            ).strip(),
+            "zni_reviewer": str(
+                current_assignment.get("zni_reviewer")
+                or target_item.get("psi_zni_reviewer")
+                or ""
+            ).strip(),
+            "checker": str(
+                current_assignment.get("checker")
+                or target_item.get("psi_checker")
+                or ""
+            ).strip(),
+            "responsibles": next_responsibles,
+        }
+        assignments[release_key] = next_assignment
+        _save_reviewer_assignments(assignments)
+
+        target_item["psi_responsibles"] = list(next_responsibles)
+        target_item["is_missing_week_responsible"] = False
+        revision = _mark_release_monitor_state_changed()
+        return {
+            **next_assignment,
+            "data_revision": revision,
+            "idempotent": False,
+        }

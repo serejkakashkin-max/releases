@@ -1,0 +1,11 @@
+{
+  "maintenance": {
+    "index": false,
+    "release_monitor": false,
+    "duty_dashboard": false,
+    "chatbot": false
+  },
+  "automation": {
+    "confluence_unassigned_auto_sync": false
+  }
+}

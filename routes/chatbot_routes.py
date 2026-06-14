@@ -23,12 +23,23 @@ from services.release_monitor_backup_service import (
     get_release_monitor_cache_backup_path,
 )
 from services.dashboard_service import get_dashboard_data
+from services.feature_flags_service import is_maintenance_enabled
 
 chatbot_bp = Blueprint('chatbot', __name__)
 BASE_PATH = os.getenv("BASE_PATH", "")
 
 # In-memory storage for sessions (в продакшене лучше использовать Redis)
 _chat_sessions = {}
+
+
+@chatbot_bp.before_request
+def reject_chatbot_requests_during_maintenance():
+    has_bypass = request.cookies.get("chatbotMaintenanceBypass") == "1"
+    if is_maintenance_enabled("chatbot") and not has_bypass:
+        return jsonify({
+            "success": False,
+            "error": "Чат-бот временно недоступен: проводятся технические работы.",
+        }), 503
 
 
 def get_or_create_session_id():
@@ -150,7 +161,7 @@ def get_suggestions():
             {"text": "Сформировать документы по релизу", "action": "release_documents"},
             {"text": "Инструкция ПСИ по релизу", "action": "release_psi_instruction"},
             {"text": "Выгрузить таблицу релизов в Confluence", "action": "release_confluence_export"},
-            {"text": "Контроль недели", "action": "release_week_control"},
+            {"text": "Центр назначений", "action": "release_week_control"},
             {"text": "Сводка дневной смены", "action": "handover_day"},
             {"text": "Сформируй статистику", "action": "statistics"},
         ]
@@ -164,7 +175,7 @@ def get_suggestions():
             IntentType.GENERATE_REPORT.value: [
                 {"text": "Сводка дневной смены", "action": "handover_day"},
                 {"text": "Сводка вечерней смены", "action": "handover_evening"},
-                {"text": "Контроль недели", "action": "release_week_control"},
+                {"text": "Центр назначений", "action": "release_week_control"},
                 {"text": "Что ты умеешь", "action": "capabilities"},
             ],
             IntentType.SHOW_CAPABILITIES.value: [
@@ -172,7 +183,7 @@ def get_suggestions():
                 {"text": "Сформировать документы по релизу", "action": "release_documents"},
                 {"text": "Инструкция ПСИ по релизу", "action": "release_psi_instruction"},
                 {"text": "Выгрузить таблицу релизов в Confluence", "action": "release_confluence_export"},
-                {"text": "Контроль недели", "action": "release_week_control"},
+                {"text": "Центр назначений", "action": "release_week_control"},
             ],
         }
         

@@ -1,19 +1,142 @@
+import copy
+import hashlib
 import html
+import json
 import logging
+import os
 import re
+import threading
+import time
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set, Tuple
+from uuid import uuid4
 
 import requests
 
 from config import TOKENS
-from services.release_monitor_service import get_release_monitor_snapshot
+from services.feature_flags_service import is_automation_enabled
 
 
 CONFLUENCE_DELTA_BASE = "https://confluence.delta.sbrf.ru"
 REPORT_MARKER = "rm-unassigned-report-v1"
 ROW_ANCHOR_PREFIX = "rm-unassigned-row-"
 DEFAULT_PAGE_TITLE = "Информирование о новых релизах"
+AUTO_SYNC_FLAG = "confluence_unassigned_auto_sync"
+AUTO_SYNC_THROTTLE_SECONDS = 300
+AUTO_SYNC_LOCK_STALE_SECONDS = 900
+NOTIFY_STATE_FILE = Path(__file__).resolve().parent.parent / "cache" / "release_monitor_unassigned_notify_state.json"
+AUTO_SYNC_LOCK_FILE = NOTIFY_STATE_FILE.with_suffix(".lock")
+
+_auto_sync_process_lock = threading.Lock()
+_auto_sync_queue_lock = threading.Lock()
+_auto_sync_worker_thread = None
+_queued_auto_sync_job = None
+_last_observed_auto_sync_enabled = is_automation_enabled(AUTO_SYNC_FLAG)
+
+
+def _default_notify_state() -> Dict:
+    return {
+        "version": 1,
+        "tracking_state": "uninitialized",
+        "week_key": "",
+        "notified_row_keys": [],
+        "active_row_keys": [],
+        "pending_row_keys": [],
+        "last_evaluated_at": "",
+        "last_auto_attempt_at": "",
+        "last_auto_success_at": "",
+        "last_page_update_at": "",
+        "last_auto_sync_revision": "",
+        "last_new_row_keys": [],
+        "last_new_count": 0,
+        "last_result": "",
+        "last_error": "",
+        "last_page_update_hash": "",
+    }
+
+
+def _normalize_row_keys(values) -> List[str]:
+    return sorted({
+        str(value or "").strip()
+        for value in (values or [])
+        if str(value or "").strip()
+    })
+
+
+def _normalize_notify_state(payload) -> Dict:
+    state = _default_notify_state()
+    if isinstance(payload, dict):
+        for key in state:
+            if key in payload:
+                state[key] = payload[key]
+    for key in ("notified_row_keys", "active_row_keys", "pending_row_keys", "last_new_row_keys"):
+        state[key] = _normalize_row_keys(state.get(key))
+    state["version"] = 1
+    state["last_new_count"] = int(state.get("last_new_count") or 0)
+    return state
+
+
+def _load_notify_state() -> Tuple[Dict, bool]:
+    if not NOTIFY_STATE_FILE.exists():
+        return _default_notify_state(), False
+    try:
+        with NOTIFY_STATE_FILE.open("r", encoding="utf-8-sig") as handle:
+            return _normalize_notify_state(json.load(handle)), True
+    except Exception as exc:
+        logging.error("Confluence unassigned auto-sync: failed to read notify state: %s", exc)
+        return _default_notify_state(), False
+
+
+def _atomic_write_notify_state(state: Dict) -> None:
+    NOTIFY_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    normalized = _normalize_notify_state(state)
+    temp_path = NOTIFY_STATE_FILE.with_name(f".{NOTIFY_STATE_FILE.name}.{uuid4().hex}.tmp")
+    try:
+        with temp_path.open("w", encoding="utf-8") as handle:
+            json.dump(normalized, handle, ensure_ascii=False, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, NOTIFY_STATE_FILE)
+    finally:
+        if temp_path.exists():
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
+
+
+def _format_state_timestamp(value: Optional[datetime] = None) -> str:
+    return (value or datetime.now()).isoformat(timespec="seconds")
+
+
+def _current_week_key(value: Optional[datetime] = None) -> str:
+    iso_year, iso_week, _ = (value or datetime.now()).isocalendar()
+    return f"{iso_year}-W{iso_week:02d}"
+
+
+def _parse_state_timestamp(value: str) -> Optional[datetime]:
+    try:
+        return datetime.fromisoformat(str(value or "").replace("Z", "+00:00")).replace(tzinfo=None)
+    except (TypeError, ValueError):
+        return None
+
+
+def _snapshot_revision(snapshot: Dict) -> str:
+    meta = dict((snapshot or {}).get("meta") or {})
+    return str(meta.get("data_revision") or meta.get("accepted_revision") or "").strip()
+
+
+def _row_key_hash(row_keys: Iterable[str]) -> str:
+    encoded = "\n".join(sorted(set(row_keys or []))).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _page_url(page_id: Optional[str] = None) -> str:
+    resolved_page_id = str(page_id or TOKENS.get("release_monitor_unassigned_confluence_page_id") or "").strip()
+    if not resolved_page_id:
+        return ""
+    return f"{CONFLUENCE_DELTA_BASE}/pages/viewpage.action?pageId={resolved_page_id}"
 
 
 def _confluence_headers() -> Dict[str, str]:
@@ -325,9 +448,12 @@ def _put_page(page: Dict, storage_html: str, version_message: str):
     )
 
 
-def sync_unassigned_release_confluence_page() -> Dict:
+def _sync_unassigned_release_confluence_page(
+    snapshot: Dict,
+    *,
+    new_row_keys: Set[str],
+) -> Dict:
     page_id = _get_page_id()
-    snapshot = get_release_monitor_snapshot() or {}
     selected_items = select_unassigned_current_week_items(snapshot.get("items") or [])
     current_row_keys = {
         str(item.get("row_key") or "").strip()
@@ -338,19 +464,16 @@ def sync_unassigned_release_confluence_page() -> Dict:
     for attempt in range(2):
         page = _fetch_page(page_id)
         initialized, previous_row_keys = extract_report_state(page.get("storage_html", ""))
-        new_row_keys = current_row_keys - previous_row_keys
-        removed_row_keys = previous_row_keys - current_row_keys
 
         if initialized and current_row_keys == previous_row_keys:
             return {
                 "updated": False,
                 "rows_count": len(current_row_keys),
-                "new_rows_count": 0,
-                "removed_rows_count": 0,
+                "new_rows_count": len(new_row_keys),
                 "page_id": page_id,
-                "page_url": f"{CONFLUENCE_DELTA_BASE}/pages/viewpage.action?pageId={page_id}",
+                "page_url": _page_url(page_id),
                 "page_title": page.get("title") or DEFAULT_PAGE_TITLE,
-                "message": "Список не изменился, уведомление не отправлялось.",
+                "message": "Страница уже содержит актуальный состав.",
             }
 
         storage_html = build_unassigned_release_page_storage(
@@ -359,8 +482,8 @@ def sync_unassigned_release_confluence_page() -> Dict:
             snapshot_meta=snapshot.get("meta") or {},
         )
         version_message = (
-            "Обновление релизов без ответственного: "
-            f"добавлено {len(new_row_keys)}, удалено {len(removed_row_keys)}, "
+            "Автоматическое обновление: "
+            f"новых релизов {len(new_row_keys)}, "
             f"всего {len(current_row_keys)}"
         )
         response = _put_page(page, storage_html, version_message)
@@ -379,12 +502,302 @@ def sync_unassigned_release_confluence_page() -> Dict:
             "updated": True,
             "rows_count": len(current_row_keys),
             "new_rows_count": len(new_row_keys),
-            "removed_rows_count": len(removed_row_keys),
             "page_id": page_id,
-            "page_url": f"{CONFLUENCE_DELTA_BASE}/pages/viewpage.action?pageId={page_id}",
+            "page_url": _page_url(page_id),
             "page_title": page.get("title") or DEFAULT_PAGE_TITLE,
             "page_version": int(((response.json().get("version") or {}).get("number")) or 0),
-            "message": "Страница релизов без ответственных обновлена.",
+            "message": "Страница релизов без ответственных обновлена автоматически.",
         }
 
     raise ValueError("Не удалось обновить страницу Confluence из-за конфликта версий")
+
+
+def _acquire_auto_sync_file_lock() -> Optional[int]:
+    AUTO_SYNC_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    for _ in range(2):
+        try:
+            descriptor = os.open(
+                str(AUTO_SYNC_LOCK_FILE),
+                os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+            )
+            os.write(descriptor, f"{os.getpid()} {_format_state_timestamp()}".encode("utf-8"))
+            return descriptor
+        except FileExistsError:
+            try:
+                age_seconds = time.time() - AUTO_SYNC_LOCK_FILE.stat().st_mtime
+            except OSError:
+                return None
+            if age_seconds <= AUTO_SYNC_LOCK_STALE_SECONDS:
+                return None
+            try:
+                AUTO_SYNC_LOCK_FILE.unlink()
+                logging.warning("Confluence unassigned auto-sync: removed stale lock file")
+            except OSError:
+                return None
+    return None
+
+
+def _release_auto_sync_file_lock(descriptor: Optional[int]) -> None:
+    if descriptor is not None:
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+    try:
+        AUTO_SYNC_LOCK_FILE.unlink()
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        logging.warning("Confluence unassigned auto-sync: failed to remove lock file: %s", exc)
+
+
+def _create_baseline_state(
+    state: Dict,
+    *,
+    current_row_keys: Set[str],
+    snapshot: Dict,
+    week_key: str,
+    result: str,
+) -> Dict:
+    now_text = _format_state_timestamp()
+    state.update({
+        "tracking_state": "active",
+        "week_key": week_key,
+        "notified_row_keys": sorted(current_row_keys),
+        "active_row_keys": sorted(current_row_keys),
+        "pending_row_keys": [],
+        "last_evaluated_at": now_text,
+        "last_auto_sync_revision": _snapshot_revision(snapshot),
+        "last_new_row_keys": [],
+        "last_new_count": 0,
+        "last_result": result,
+        "last_error": "",
+    })
+    _atomic_write_notify_state(state)
+    return state
+
+
+def _run_unassigned_auto_sync(
+    snapshot: Dict,
+    *,
+    refresh_mode: str,
+    force_baseline: bool = False,
+) -> Dict:
+    if not is_automation_enabled(AUTO_SYNC_FLAG):
+        return {"result": "disabled"}
+
+    with _auto_sync_process_lock:
+        file_lock = _acquire_auto_sync_file_lock()
+        if file_lock is None:
+            logging.info("Confluence unassigned auto-sync: another worker owns the lock")
+            return {"result": "locked"}
+
+        try:
+            selected_items = select_unassigned_current_week_items((snapshot or {}).get("items") or [])
+            current_row_keys = {
+                str(item.get("row_key") or "").strip()
+                for item in selected_items
+                if str(item.get("row_key") or "").strip()
+            }
+            state, state_exists = _load_notify_state()
+            week_key = _current_week_key()
+
+            if force_baseline or not state_exists or state.get("tracking_state") != "active":
+                _create_baseline_state(
+                    state,
+                    current_row_keys=current_row_keys,
+                    snapshot=snapshot,
+                    week_key=week_key,
+                    result="baseline_created",
+                )
+                logging.info(
+                    "Confluence unassigned auto-sync: baseline created, rows=%s, mode=%s",
+                    len(current_row_keys),
+                    refresh_mode,
+                )
+                return {"result": "baseline_created", "rows_count": len(current_row_keys)}
+
+            if state.get("week_key") != week_key:
+                _create_baseline_state(
+                    state,
+                    current_row_keys=current_row_keys,
+                    snapshot=snapshot,
+                    week_key=week_key,
+                    result="weekly_baseline_created",
+                )
+                logging.info(
+                    "Confluence unassigned auto-sync: weekly baseline created, rows=%s, week=%s",
+                    len(current_row_keys),
+                    week_key,
+                )
+                return {"result": "weekly_baseline_created", "rows_count": len(current_row_keys)}
+
+            notified_row_keys = set(_normalize_row_keys(state.get("notified_row_keys")))
+            pending_row_keys = set(_normalize_row_keys(state.get("pending_row_keys"))) & current_row_keys
+            new_row_keys = (current_row_keys - notified_row_keys) | pending_row_keys
+            now = datetime.now()
+            now_text = _format_state_timestamp(now)
+
+            state.update({
+                "tracking_state": "active",
+                "active_row_keys": sorted(current_row_keys),
+                "pending_row_keys": sorted(new_row_keys),
+                "last_evaluated_at": now_text,
+                "last_auto_sync_revision": _snapshot_revision(snapshot),
+                "last_new_row_keys": sorted(new_row_keys),
+                "last_new_count": len(new_row_keys),
+            })
+
+            if not new_row_keys:
+                state["last_result"] = "waiting"
+                state["last_error"] = ""
+                _atomic_write_notify_state(state)
+                return {"result": "waiting", "rows_count": len(current_row_keys)}
+
+            last_attempt_at = _parse_state_timestamp(state.get("last_auto_attempt_at"))
+            if (
+                last_attempt_at is not None
+                and (now - last_attempt_at).total_seconds() < AUTO_SYNC_THROTTLE_SECONDS
+            ):
+                state["last_result"] = "throttled"
+                _atomic_write_notify_state(state)
+                return {
+                    "result": "throttled",
+                    "new_rows_count": len(new_row_keys),
+                }
+
+            state["last_auto_attempt_at"] = now_text
+            state["last_result"] = "running"
+            _atomic_write_notify_state(state)
+
+            try:
+                result = _sync_unassigned_release_confluence_page(
+                    snapshot,
+                    new_row_keys=set(new_row_keys),
+                )
+            except Exception as exc:
+                state["last_result"] = "error"
+                state["last_error"] = str(exc)
+                state["pending_row_keys"] = sorted(new_row_keys)
+                _atomic_write_notify_state(state)
+                logging.exception("Confluence unassigned auto-sync failed")
+                return {"result": "error", "error": str(exc)}
+
+            success_at = _format_state_timestamp()
+            notified_row_keys.update(new_row_keys)
+            state.update({
+                "notified_row_keys": sorted(notified_row_keys),
+                "pending_row_keys": [],
+                "last_auto_success_at": success_at,
+                "last_page_update_at": success_at if result.get("updated") else state.get("last_page_update_at", ""),
+                "last_result": "updated" if result.get("updated") else "confirmed",
+                "last_error": "",
+                "last_page_update_hash": _row_key_hash(current_row_keys),
+            })
+            _atomic_write_notify_state(state)
+            logging.info(
+                "Confluence unassigned auto-sync completed, updated=%s, new=%s, rows=%s",
+                result.get("updated"),
+                len(new_row_keys),
+                len(current_row_keys),
+            )
+            return {
+                "result": state["last_result"],
+                "new_rows_count": len(new_row_keys),
+                "rows_count": len(current_row_keys),
+            }
+        finally:
+            _release_auto_sync_file_lock(file_lock)
+
+
+def _auto_sync_worker_loop() -> None:
+    global _queued_auto_sync_job, _auto_sync_worker_thread
+
+    while True:
+        with _auto_sync_queue_lock:
+            job = _queued_auto_sync_job
+            _queued_auto_sync_job = None
+            if not job:
+                _auto_sync_worker_thread = None
+                return
+
+        try:
+            _run_unassigned_auto_sync(
+                job["snapshot"],
+                refresh_mode=job["refresh_mode"],
+                force_baseline=job.get("force_baseline", False),
+            )
+        except Exception:
+            logging.exception("Confluence unassigned auto-sync worker failed unexpectedly")
+
+
+def schedule_unassigned_auto_sync(snapshot: Dict, *, refresh_mode: str) -> bool:
+    global _auto_sync_worker_thread, _queued_auto_sync_job, _last_observed_auto_sync_enabled
+
+    enabled = is_automation_enabled(AUTO_SYNC_FLAG)
+    with _auto_sync_queue_lock:
+        previous_enabled = _last_observed_auto_sync_enabled
+        _last_observed_auto_sync_enabled = enabled
+        if not enabled:
+            return False
+
+        force_baseline = previous_enabled is False
+        snapshot_copy = {
+            "items": copy.deepcopy(list((snapshot or {}).get("items") or [])),
+            "meta": copy.deepcopy(dict((snapshot or {}).get("meta") or {})),
+        }
+        if _queued_auto_sync_job:
+            force_baseline = force_baseline or bool(_queued_auto_sync_job.get("force_baseline"))
+        _queued_auto_sync_job = {
+            "snapshot": snapshot_copy,
+            "refresh_mode": str(refresh_mode or ""),
+            "force_baseline": force_baseline,
+        }
+
+        if _auto_sync_worker_thread and _auto_sync_worker_thread.is_alive():
+            return True
+
+        _auto_sync_worker_thread = threading.Thread(
+            target=_auto_sync_worker_loop,
+            daemon=True,
+            name="release-monitor-confluence-unassigned-auto-sync",
+        )
+        _auto_sync_worker_thread.start()
+        return True
+
+
+def get_unassigned_auto_sync_status() -> Dict:
+    global _last_observed_auto_sync_enabled
+
+    enabled = is_automation_enabled(AUTO_SYNC_FLAG)
+    if not enabled:
+        with _auto_sync_queue_lock:
+            _last_observed_auto_sync_enabled = False
+    state, state_exists = _load_notify_state()
+    if not enabled:
+        status = "disabled"
+    elif not state_exists:
+        status = "waiting_refresh"
+    elif state.get("last_result") in {"baseline_created", "weekly_baseline_created"}:
+        status = "baseline_created"
+    elif state.get("last_result") == "error" or state.get("last_error"):
+        status = "error"
+    elif state.get("last_result") in {"updated", "confirmed"}:
+        status = "updated"
+    else:
+        status = "waiting"
+
+    return {
+        "enabled": enabled,
+        "status": status,
+        "running": bool(_auto_sync_worker_thread and _auto_sync_worker_thread.is_alive()),
+        "week_key": state.get("week_key", "") if state_exists else "",
+        "last_evaluated_at": state.get("last_evaluated_at", "") if state_exists else "",
+        "last_auto_attempt_at": state.get("last_auto_attempt_at", "") if state_exists else "",
+        "last_auto_success_at": state.get("last_auto_success_at", "") if state_exists else "",
+        "last_new_count": int(state.get("last_new_count") or 0) if state_exists else 0,
+        "pending_count": len(state.get("pending_row_keys") or []) if state_exists else 0,
+        "last_result": state.get("last_result", "") if state_exists else "",
+        "last_error": state.get("last_error", "") if state_exists else "",
+        "page_url": _page_url(),
+    }

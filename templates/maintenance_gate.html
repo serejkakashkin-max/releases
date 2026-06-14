@@ -1,0 +1,112 @@
+{% if maintenance_enabled %}
+<style>
+    .app-maintenance-active {
+        overflow: hidden;
+    }
+
+    .app-maintenance-gate {
+        position: fixed;
+        inset: 0;
+        z-index: 99999;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 1.25rem;
+        background: rgba(15, 23, 42, 0.72);
+        backdrop-filter: blur(10px);
+    }
+
+    .app-maintenance-active .app-maintenance-gate {
+        display: flex;
+    }
+
+    .app-maintenance-card {
+        width: min(520px, 100%);
+        padding: 1.35rem 1.45rem;
+        border: 1px solid rgba(96, 165, 250, 0.34);
+        border-radius: 20px;
+        background: linear-gradient(145deg, rgba(255, 255, 255, 0.99), rgba(239, 246, 255, 0.98));
+        color: #0f172a;
+        box-shadow: 0 24px 72px rgba(15, 23, 42, 0.34);
+        text-align: center;
+    }
+
+    [data-theme="dark"] .app-maintenance-card {
+        background: linear-gradient(145deg, rgba(30, 41, 59, 0.99), rgba(15, 23, 42, 0.99));
+        color: #e5e7eb;
+    }
+
+    .app-maintenance-icon {
+        width: 52px;
+        height: 52px;
+        margin: 0 auto 0.85rem;
+        border-radius: 16px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        background: linear-gradient(135deg, #2563eb, #22c55e);
+        box-shadow: 0 16px 38px rgba(37, 99, 235, 0.28);
+        font-size: 1.3rem;
+    }
+
+    .app-maintenance-title {
+        margin: 0 0 0.45rem;
+        font-size: 1.35rem;
+        font-weight: 850;
+    }
+
+    .app-maintenance-text {
+        margin: 0;
+        color: rgba(15, 23, 42, 0.72);
+        line-height: 1.45;
+        font-weight: 650;
+    }
+
+    [data-theme="dark"] .app-maintenance-text {
+        color: rgba(229, 231, 235, 0.72);
+    }
+</style>
+<script>
+    (function applyMaintenanceGate() {
+        const scope = {{ maintenance_scope|default('page')|tojson }};
+        const storageKey = `maintenanceBypass:${scope}`;
+        const params = new URLSearchParams(window.location.search);
+        const legacyParam = scope === 'release_monitor' ? 'release_maintenance_bypass' : '';
+        const bypassValue = params.get('maintenance_bypass')
+            ?? (legacyParam ? params.get(legacyParam) : null);
+
+        if (bypassValue === '1') {
+            localStorage.setItem(storageKey, '1');
+        } else if (bypassValue === '0') {
+            localStorage.removeItem(storageKey);
+        }
+
+        if (bypassValue !== null) {
+            params.delete('maintenance_bypass');
+            if (legacyParam) {
+                params.delete(legacyParam);
+            }
+            const query = params.toString();
+            window.history.replaceState(
+                null,
+                document.title,
+                window.location.pathname + (query ? `?${query}` : '') + window.location.hash
+            );
+        }
+
+        if (localStorage.getItem(storageKey) !== '1') {
+            document.documentElement.classList.add('app-maintenance-active');
+        }
+    })();
+</script>
+<div class="app-maintenance-gate" role="status" aria-live="polite">
+    <div class="app-maintenance-card">
+        <div class="app-maintenance-icon"><i class="bi bi-tools"></i></div>
+        <h2 class="app-maintenance-title">{{ maintenance_title|default('Раздел на обслуживании') }}</h2>
+        <p class="app-maintenance-text">
+            {{ maintenance_text|default('Мы проводим короткие технические работы. Попробуйте открыть страницу немного позже.') }}
+        </p>
+    </div>
+</div>
+{% endif %}

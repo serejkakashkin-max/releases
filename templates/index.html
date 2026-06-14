@@ -494,6 +494,7 @@
     </script>
 </head>
 <body>
+    {% include 'maintenance_gate.html' %}
     <!-- Лоадер для дашборда -->
     <div id="dashboard-loader">
         <div class="dashboard-spinner"></div>
@@ -574,7 +575,7 @@
             </div>
         </div>
 
-        <div class="agent-shell">
+        <div class="agent-shell" id="chatbotAgentShell">
             <div class="agent-head">
                 <div class="agent-title">AI-бот Oplot</div>
                 <a id="link-help" class="help-pill" href="/help" title="Открыть FAQ по Oplot">
@@ -725,6 +726,36 @@
                 tooltip.classList.remove('show');
             }
         });
+    </script>
+    <script>
+        (function applyChatbotMaintenance() {
+            const maintenanceEnabled = {{ chatbot_maintenance|default(false)|tojson }};
+            const storageKey = 'maintenanceBypass:chatbot';
+            const params = new URLSearchParams(window.location.search);
+            const bypassValue = params.get('chatbot_maintenance_bypass');
+
+            if (bypassValue === '1') {
+                localStorage.setItem(storageKey, '1');
+            } else if (bypassValue === '0') {
+                localStorage.removeItem(storageKey);
+            }
+            if (bypassValue !== null) {
+                params.delete('chatbot_maintenance_bypass');
+                const query = params.toString();
+                window.history.replaceState(
+                    null,
+                    document.title,
+                    window.location.pathname + (query ? `?${query}` : '') + window.location.hash
+                );
+            }
+
+            const hasBypass = localStorage.getItem(storageKey) === '1';
+            window.CHATBOT_DISABLED_BY_MAINTENANCE = maintenanceEnabled && !hasBypass;
+            document.cookie = `chatbotMaintenanceBypass=${hasBypass ? '1' : '0'}; path=/; SameSite=Lax`;
+            if (window.CHATBOT_DISABLED_BY_MAINTENANCE) {
+                document.getElementById('chatbotAgentShell')?.remove();
+            }
+        })();
     </script>
     <script src="/static/js/chatbot.js"></script>
 </body>

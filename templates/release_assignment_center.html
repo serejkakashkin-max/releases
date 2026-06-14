@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Центр назначений</title>
+    <link href="/static/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/static/css/bootstrap-icons.css" rel="stylesheet">
+    <link href="/static/css/release_assignment_center.css" rel="stylesheet">
+    <script src="/static/js/bootstrap.bundle.min.js"></script>
+    {% include 'base_styles.html' %}
+</head>
+<body>
+    {% include 'maintenance_gate.html' %}
+
+    <header class="assignment-topbar">
+        <a class="assignment-icon-btn" href="{{basepath}}/release-monitor" title="Вернуться в Блок релизов">
+            <i class="bi bi-arrow-left"></i>
+        </a>
+        <div class="assignment-brand">
+            <span class="assignment-brand-icon"><i class="bi bi-person-check"></i></span>
+            <div>
+                <h1>Центр назначений</h1>
+                <p>Релизы текущей недели без ответственного</p>
+            </div>
+        </div>
+        <button class="theme-toggle assignment-icon-btn" type="button" onclick="toggleTheme()" title="Переключить тему">
+            <i class="bi bi-sun"></i>
+        </button>
+    </header>
+
+    <main class="assignment-shell">
+        <section class="assignment-cockpit" aria-label="Сводка">
+            <div class="assignment-cockpit-main">
+                <div>
+                    <span class="assignment-eyebrow" id="assignmentPeriod">Текущая неделя</span>
+                    <h2 id="assignmentHeadline">Загрузка данных...</h2>
+                    <div class="assignment-meta-line">
+                        <span id="assignmentSnapshotTime">Снимок: -</span>
+                        <span id="assignmentConnection" class="assignment-connection waiting">
+                            <i class="bi bi-arrow-repeat"></i> Подключение
+                        </span>
+                    </div>
+                </div>
+                <button class="assignment-refresh-btn" id="assignmentRefreshBtn" type="button" title="Перечитать текущий snapshot">
+                    <i class="bi bi-arrow-clockwise"></i>
+                    Обновить
+                </button>
+            </div>
+            <div class="assignment-stats">
+                <div class="assignment-stat urgent">
+                    <span>Без ответственного</span>
+                    <strong id="assignmentMissingCount">0</strong>
+                </div>
+                <div class="assignment-stat new">
+                    <span>Новых</span>
+                    <strong id="assignmentNewCount">0</strong>
+                </div>
+                <div class="assignment-stat">
+                    <span>Доступны</span>
+                    <strong id="assignmentAvailableCount">0</strong>
+                </div>
+                <div class="assignment-stat reserve">
+                    <span>Резерв</span>
+                    <strong id="assignmentReserveCount">0</strong>
+                </div>
+                <div class="assignment-stat excluded">
+                    <span>Недоступны</span>
+                    <strong id="assignmentExcludedCount">0</strong>
+                </div>
+            </div>
+        </section>
+
+        <div class="assignment-layout">
+            <section class="assignment-queue">
+                <div class="assignment-section-head">
+                    <div>
+                        <h2>Требуют назначения</h2>
+                        <p>Назначение сохраняется в том же состоянии, что и в основной таблице.</p>
+                    </div>
+                    <button class="assignment-ai-btn" id="assignmentAiBtn" type="button">
+                        <i class="bi bi-stars"></i>
+                        Подобрать через GigaChat
+                    </button>
+                </div>
+
+                <section class="assignment-ai-panel" id="assignmentAiPanel" hidden>
+                    <div class="assignment-ai-head">
+                        <div>
+                            <span class="assignment-eyebrow">GigaChat</span>
+                            <h3>Рекомендации по распределению</h3>
+                        </div>
+                        <button class="assignment-apply-all-btn" id="assignmentApplyAllBtn" type="button" hidden>
+                            <i class="bi bi-check2-all"></i>
+                            Применить все
+                        </button>
+                    </div>
+                    <div id="assignmentAiSummary" class="assignment-ai-summary"></div>
+                    <div id="assignmentAiList" class="assignment-ai-list"></div>
+                </section>
+
+                <div id="assignmentReleaseList" class="assignment-release-list" aria-live="polite"></div>
+                <div id="assignmentEmptyState" class="assignment-empty" hidden>
+                    <i class="bi bi-check2-circle"></i>
+                    <h3>Все ответственные назначены</h3>
+                    <p>Новые релизы появятся здесь после следующего обновления snapshot.</p>
+                </div>
+            </section>
+
+            <aside class="assignment-people">
+                <div class="assignment-people-head">
+                    <div>
+                        <h2>Команда и нагрузка</h2>
+                        <p>Считаются назначения в <code>psi_responsibles</code>, а не факт выполнения.</p>
+                    </div>
+                </div>
+                <div id="assignmentPeopleList" class="assignment-people-list"></div>
+            </aside>
+        </div>
+    </main>
+
+    <div class="assignment-toast" id="assignmentToast" role="status" aria-live="polite"></div>
+
+    <script>
+        window.RELEASE_ASSIGNMENT_CENTER_CONFIG = {
+            basePath: {{ basepath|tojson }}
+        };
+    </script>
+    <script src="/static/js/release_assignment_center.js"></script>
+</body>
+</html>

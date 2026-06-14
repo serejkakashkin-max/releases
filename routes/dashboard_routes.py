@@ -18,10 +18,13 @@ from services.release_monitor_service import (
     get_release_monitor_reviewer_options,
     get_release_monitor_week_control,
     get_release_monitor_week_responsible_recommendations,
+    get_release_monitor_assignment_center_data,
     upload_release_monitor_duty_schedules,
     sync_release_monitor_assignments_from_confluence,
     save_release_monitor_manual_order,
     set_release_monitor_assignment,
+    assign_release_monitor_responsible_if_expected,
+    ReleaseMonitorAssignmentConflict,
     set_release_monitor_date_override,
     set_release_monitor_manual_override,
     create_release_monitor_manual_release,
@@ -37,9 +40,8 @@ from services.release_monitor_service import (
 )
 from services.report_service import save_report_to_disk
 from services.release_report_service import get_release_report_service
-from services.release_monitor_confluence_notification_service import (
-    sync_unassigned_release_confluence_page,
-)
+from services.feature_flags_service import is_maintenance_enabled
+from services.release_monitor_confluence_notification_service import get_unassigned_auto_sync_status
 from services.sms_service import get_sms_profile_availability
 from routes.release_routes import detect_release_template_from_values, get_previous_version_from_monitor_items
 from config import DASHBOARD_CACHE_TTL, DASHBOARD_ASSIGNEES_DISPLAY, DEFAULT_BH_PLAYBOOKS
@@ -158,7 +160,10 @@ def dashboard():
             release_monitor_summary=release_monitor_summary,
             release_monitor_meta=release_monitor_meta,
             hidden_tasks=hidden_tasks,
-            hidden_count=len(hidden_tasks)
+            hidden_count=len(hidden_tasks),
+            maintenance_enabled=is_maintenance_enabled("duty_dashboard"),
+            maintenance_scope="duty_dashboard",
+            maintenance_title="Рабочий стол дежурного на обслуживании",
         )
     except Exception as e:
         logging.error(f"Ошибка загрузки дашборда: {e}")
@@ -182,7 +187,10 @@ def dashboard():
             release_monitor_summary={},
             release_monitor_meta={},
             hidden_tasks={},
-            hidden_count=0
+            hidden_count=0,
+            maintenance_enabled=is_maintenance_enabled("duty_dashboard"),
+            maintenance_scope="duty_dashboard",
+            maintenance_title="Рабочий стол дежурного на обслуживании",
         )
 
 @dashboard_bp.route('/release-monitor')
@@ -202,6 +210,9 @@ def release_monitor_page():
             reviewer_options=get_release_monitor_reviewer_options(),
             sms_profile_availability=get_sms_profile_availability(),
             last_update=datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
+            maintenance_enabled=is_maintenance_enabled("release_monitor"),
+            maintenance_scope="release_monitor",
+            maintenance_title="Блок релизов на обслуживании",
         )
     except Exception as e:
         logging.error(f"Ошибка загрузки страницы контроля релизов: {e}")
@@ -216,6 +227,9 @@ def release_monitor_page():
             reviewer_options=get_release_monitor_reviewer_options(),
             sms_profile_availability=get_sms_profile_availability(),
             last_update=datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
+            maintenance_enabled=is_maintenance_enabled("release_monitor"),
+            maintenance_scope="release_monitor",
+            maintenance_title="Блок релизов на обслуживании",
             error="Ошибка загрузки данных по релизам. Попробуйте обновить страницу позже.",
         )
 
@@ -284,6 +298,33 @@ def release_monitor_week_control():
         })
     except Exception as e:
         logging.exception("Ошибка формирования контроля недели по релизам")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@dashboard_bp.route('/dashboard/release-monitor/assignment-center', methods=['GET'])
+def release_monitor_assignment_center_page():
+    try:
+        return render_template(
+            'release_assignment_center.html',
+            basepath=BASE_PATH,
+            maintenance_enabled=is_maintenance_enabled("release_monitor"),
+            maintenance_scope="release_monitor",
+            maintenance_title="Центр назначений на обслуживании",
+        )
+    except Exception as e:
+        logging.exception("Ошибка открытия Центра назначений")
+        return f"Ошибка открытия Центра назначений: {str(e)}", 500
+
+
+@dashboard_bp.route('/dashboard/release-monitor/assignment-center/data', methods=['GET'])
+def release_monitor_assignment_center_data():
+    try:
+        return jsonify({
+            "success": True,
+            "control": get_release_monitor_assignment_center_data(),
+        })
+    except Exception as e:
+        logging.exception("Ошибка получения данных Центра назначений")
         return jsonify({"success": False, "error": str(e)}), 500
 
 
@@ -362,6 +403,7 @@ def release_monitor_status():
         return jsonify({
             "success": True,
             "refresh_status": status_payload.get("status", {}),
+            "confluence_unassigned_auto_sync": get_unassigned_auto_sync_status(),
             "release_monitor": release_monitor_data.get("items", []),
             "release_monitor_summary": release_monitor_data.get("summary", {}),
             "release_monitor_meta": release_monitor_data.get("meta", {}),
@@ -378,6 +420,28 @@ def update_release_monitor_reviewer():
         ensure_release_monitor_not_refreshing()
         data = request.get_json(silent=True) or {}
         release_key = data.get("release_key", "")
+        if data.get("operation") == "assign_responsible_if_empty":
+            expected_responsibles = data.get("expected_responsibles", [])
+            if not isinstance(expected_responsibles, list):
+                raise ValueError("expected_responsibles must be a list")
+            saved_assignment = assign_release_monitor_responsible_if_expected(
+                release_key,
+                data.get("responsible", ""),
+                expected_responsibles=expected_responsibles,
+            )
+            return jsonify({
+                "success": True,
+                "release_key": release_key,
+                "reviewer": saved_assignment.get("reviewer", ""),
+                "reviewer_source": saved_assignment.get("reviewer_source", ""),
+                "reviewer_date": saved_assignment.get("reviewer_date", ""),
+                "zni_reviewer": saved_assignment.get("zni_reviewer", ""),
+                "checker": saved_assignment.get("checker", ""),
+                "responsibles": saved_assignment.get("responsibles", []),
+                "data_revision": saved_assignment.get("data_revision", ""),
+                "idempotent": bool(saved_assignment.get("idempotent")),
+            })
+
         reviewer = data.get("reviewer", "")
         reviewer_source = data.get("reviewer_source")
         zni_reviewer = data.get("zni_reviewer")
@@ -402,6 +466,21 @@ def update_release_monitor_reviewer():
             "responsibles": saved_assignment.get("responsibles", []),
             "data_revision": saved_assignment.get("data_revision", ""),
         })
+    except ReleaseMonitorAssignmentConflict as e:
+        assignment = e.assignment or {}
+        return jsonify({
+            "success": False,
+            "conflict": True,
+            "error": str(e),
+            "release_key": (request.get_json(silent=True) or {}).get("release_key", ""),
+            "reviewer": assignment.get("reviewer", ""),
+            "reviewer_source": assignment.get("reviewer_source", ""),
+            "reviewer_date": assignment.get("reviewer_date", ""),
+            "zni_reviewer": assignment.get("zni_reviewer", ""),
+            "checker": assignment.get("checker", ""),
+            "responsibles": assignment.get("responsibles", []),
+            "data_revision": assignment.get("data_revision", ""),
+        }), 409
     except Exception as e:
         logging.error(f"Ошибка сохранения назначения по релизу: {e}")
         return jsonify({"success": False, "error": str(e)}), 400
@@ -710,20 +789,6 @@ def sync_release_monitor_confluence():
         })
     except Exception as e:
         logging.error(f"Ошибка выгрузки релизов в Confluence: {e}")
-        return jsonify({"success": False, "error": str(e)}), 400
-
-
-@dashboard_bp.route('/dashboard/release-monitor/confluence-unassigned-sync', methods=['POST'])
-def sync_release_monitor_unassigned_confluence():
-    """Обновляет отдельную Confluence-страницу релизов недели без ответственных."""
-    try:
-        sync_result = sync_unassigned_release_confluence_page()
-        return jsonify({
-            "success": True,
-            **sync_result,
-        })
-    except Exception as e:
-        logging.error("Ошибка обновления Confluence-страницы релизов без ответственных: %s", e)
         return jsonify({"success": False, "error": str(e)}), 400
 
 
