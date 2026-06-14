@@ -160,25 +160,52 @@
         }, 900);
     }
 
-    function buildCandidateOptions(selected = '') {
-        const groups = candidateGroups();
+    function rowCandidateAvailability(item, candidateName) {
+        const rowInfo = item?.candidate_availability?.[candidateName];
+        if (rowInfo && rowInfo.availability) {
+            return rowInfo;
+        }
+        const candidate = getCandidate(candidateName);
+        return {
+            availability: candidate?.availability || 'available',
+            status: '',
+            reason: (candidate?.reasons || []).join(', ')
+        };
+    }
+
+    function buildCandidateOptions(item, selected = '') {
+        const groups = { available: [], reserve: [], excluded: [] };
+        for (const candidate of allCandidates()) {
+            const dateAvailability = rowCandidateAvailability(item, candidate.name);
+            const groupName = ['available', 'reserve', 'excluded'].includes(dateAvailability.availability)
+                ? dateAvailability.availability
+                : 'available';
+            groups[groupName].push({ ...candidate, dateAvailability });
+        }
         const definitions = [
             ['available', 'Можно назначать'],
-            ['reserve', 'Резерв'],
-            ['excluded', 'Недоступны по графику']
+            ['reserve', 'Резерв на дату релиза'],
+            ['excluded', 'Недоступны на дату релиза']
         ];
         const html = ['<option value="">Выберите ответственного</option>'];
         for (const [groupName, label] of definitions) {
-            const candidates = groups[groupName] || [];
+            const candidates = [...(groups[groupName] || [])].sort((left, right) =>
+                Number(left?.metrics?.week || 0) - Number(right?.metrics?.week || 0)
+                || String(left.name || '').localeCompare(String(right.name || ''), 'ru')
+            );
             if (!candidates.length) {
                 continue;
             }
             html.push(`<optgroup label="${escapeHtml(label)}">`);
             for (const candidate of candidates) {
-                const reasons = (candidate.reasons || []).join(', ');
-                const suffix = groupName === 'excluded' && reasons ? ` — ${reasons}` : '';
+                const dateInfo = candidate.dateAvailability || {};
+                const reason = groupName === 'reserve' && dateInfo.status
+                    ? `${dateInfo.status} (резерв)`
+                    : (dateInfo.reason || dateInfo.status || '');
+                const suffix = reason ? ` — ${reason}` : '';
+                const disabled = groupName === 'excluded' ? 'disabled' : '';
                 html.push(
-                    `<option value="${escapeHtml(candidate.name)}" ${candidate.name === selected ? 'selected' : ''}>` +
+                    `<option value="${escapeHtml(candidate.name)}" ${candidate.name === selected ? 'selected' : ''} ${disabled}>` +
                     `${escapeHtml(candidate.name + suffix)}</option>`
                 );
             }
@@ -199,7 +226,8 @@
             item.rov_status,
             item.ke_id,
             item.release_version,
-            item.duty_owner
+            item.duty_owner,
+            item.candidate_availability
         ]);
     }
 
@@ -243,7 +271,7 @@
                 <div class="assignment-row-field">
                     <label>Назначить ответственного</label>
                     <div class="assignment-row-control">
-                        <select class="assignment-row-select" aria-label="Ответственный">${buildCandidateOptions()}</select>
+                        <select class="assignment-row-select" aria-label="Ответственный">${buildCandidateOptions(item)}</select>
                         <button class="assignment-row-apply" type="button" disabled title="Назначить">
                             <i class="bi bi-check2"></i>
                         </button>
@@ -307,7 +335,7 @@
                 const select = card.querySelector('.assignment-row-select');
                 if (select && select !== activeElement) {
                     const selected = select.value;
-                    select.innerHTML = buildCandidateOptions(selected);
+                    select.innerHTML = buildCandidateOptions(item, selected);
                 }
                 const rec = recommendations.get(item.row_key);
                 const recElement = card.querySelector('.assignment-row-recommendation');
@@ -340,6 +368,7 @@
     function availableCandidateHtml(candidate, index, maxWeekLoad) {
         const metrics = candidate.metrics || {};
         const weekLoad = Number(metrics.week || 0);
+        const restrictions = candidate.reasons || [];
         const loadPercent = maxWeekLoad > 0
             ? Math.max(0, Math.min(100, Math.round((weekLoad / maxWeekLoad) * 100)))
             : 0;
@@ -364,6 +393,9 @@
                     <span><strong>${Number(metrics.quarter || 0)}</strong> квартал</span>
                     <span><strong>${Number(metrics.year || 0)}</strong> год</span>
                 </div>
+                ${restrictions.length
+                    ? `<div class="assignment-candidate-restrictions"><i class="bi bi-calendar2-week"></i> ${escapeHtml(restrictions.join(' · '))}</div>`
+                    : ''}
             </article>
         `;
     }
@@ -574,9 +606,15 @@
             showToast('Сотрудник отсутствует в актуальном списке кандидатов.', 'error');
             return false;
         }
-        if (candidate.availability === 'excluded') {
-            const reason = (candidate.reasons || []).join(', ') || 'недоступен по графику';
-            if (!window.confirm(`${responsible}: ${reason}. Все равно назначить?`)) {
+        const sourceItem = (currentControl?.missing_responsible || []).find(item => item.row_key === rowKey);
+        const dateAvailability = rowCandidateAvailability(sourceItem, responsible);
+        const reason = dateAvailability.reason || dateAvailability.status || 'ограничение по графику';
+        if (dateAvailability.availability === 'excluded') {
+            showToast(`${responsible} недоступен на дату релиза: ${reason}.`, 'error');
+            return false;
+        }
+        if (dateAvailability.availability === 'reserve') {
+            if (!window.confirm(`${responsible}: ${reason}. Назначить как исключение?`)) {
                 return false;
             }
         }

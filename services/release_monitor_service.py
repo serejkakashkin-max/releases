@@ -2964,6 +2964,11 @@ def _collect_week_candidate_availability(week_start=None, week_end=None, target_
             "availability": "available",
             "reasons": [],
             "statuses": [],
+            "availability_by_date": {},
+            "available_dates": [],
+            "reserve_dates": [],
+            "excluded_dates": [],
+            "is_date_dependent": False,
         }
         for name in OPLOT_VALUES
     }
@@ -2977,30 +2982,47 @@ def _collect_week_candidate_availability(week_start=None, week_end=None, target_
 
     for current_date in dates_to_check:
         day_people = availability_by_date.get(current_date.isoformat()) or {}
-        for name, info in day_people.items():
-            matched_name = name if name in candidates else _match_oplot_name(name)
-            if not matched_name or matched_name not in candidates:
-                continue
+        for matched_name, entry in candidates.items():
+            info = day_people.get(matched_name) or {}
             status = str((info or {}).get("status") or "").strip()
             availability = str((info or {}).get("availability") or "").strip()
             reason = str((info or {}).get("reason") or "").strip() or status
             if not availability:
-                availability, reason = _classify_duty_status(status)
-            entry = candidates[matched_name]
+                availability, reason = _classify_duty_status(status) if status else ("available", "")
+            if availability not in {"available", "reserve", "excluded"}:
+                availability = "available"
+
+            date_key = current_date.isoformat()
+            entry["availability_by_date"][date_key] = {
+                "date": date_key,
+                "status": status,
+                "availability": availability,
+                "reason": reason,
+            }
+            entry[f"{availability}_dates"].append(date_key)
             if status:
                 entry["statuses"].append({
-                    "date": current_date.isoformat(),
+                    "date": date_key,
                     "status": status,
+                    "availability": availability,
                     "reason": reason,
                 })
-            if availability == "excluded":
-                entry["availability"] = "excluded"
-                if reason and reason not in entry["reasons"]:
-                    entry["reasons"].append(reason)
-            elif availability == "reserve" and entry["availability"] != "excluded":
-                entry["availability"] = "reserve"
-                if reason and reason not in entry["reasons"]:
-                    entry["reasons"].append(reason)
+
+    for entry in candidates.values():
+        if entry["available_dates"]:
+            entry["availability"] = "available"
+        elif entry["reserve_dates"]:
+            entry["availability"] = "reserve"
+        else:
+            entry["availability"] = "excluded"
+
+        observed_states = {
+            info.get("availability")
+            for info in entry["availability_by_date"].values()
+            if info.get("availability")
+        }
+        entry["is_date_dependent"] = len(observed_states) > 1
+        entry["reasons"] = _summarize_duty_restrictions(entry["statuses"])
 
     grouped = {"available": [], "reserve": [], "excluded": []}
     for entry in candidates.values():
@@ -3008,6 +3030,77 @@ def _collect_week_candidate_availability(week_start=None, week_end=None, target_
     for values in grouped.values():
         values.sort(key=lambda item: item["name"])
     return grouped
+
+
+def _summarize_duty_restrictions(statuses):
+    normalized = []
+    for status_info in statuses or []:
+        date_value = _parse_release_monitor_date(status_info.get("date"))
+        availability = str(status_info.get("availability") or "").strip()
+        status = str(status_info.get("status") or "").strip()
+        reason = str(status_info.get("reason") or "").strip()
+        if not date_value or availability == "available":
+            continue
+        label = (status or reason or "ограничение") if availability == "reserve" else (reason or status or "ограничение")
+        if availability == "reserve" and "резерв" not in _normalize_text(label):
+            label = f"{label} (резерв)"
+        normalized.append({
+            "date": date_value.date(),
+            "availability": availability,
+            "label": label,
+        })
+
+    normalized.sort(key=lambda item: item["date"])
+    grouped = []
+    for item in normalized:
+        if (
+            grouped
+            and grouped[-1]["availability"] == item["availability"]
+            and grouped[-1]["label"] == item["label"]
+            and item["date"] == grouped[-1]["end"] + timedelta(days=1)
+        ):
+            grouped[-1]["end"] = item["date"]
+        else:
+            grouped.append({
+                "start": item["date"],
+                "end": item["date"],
+                "availability": item["availability"],
+                "label": item["label"],
+            })
+
+    summaries = []
+    for group in grouped:
+        start_date = group["start"]
+        end_date = group["end"]
+        if start_date == end_date:
+            date_label = start_date.strftime("%d.%m")
+        elif start_date.month == end_date.month:
+            date_label = f"{start_date.strftime('%d')}–{end_date.strftime('%d.%m')}"
+        else:
+            date_label = f"{start_date.strftime('%d.%m')}–{end_date.strftime('%d.%m')}"
+        summaries.append(f"{date_label}: {group['label']}")
+    return summaries
+
+
+def _candidate_availability_for_release_date(candidate_groups, release_date):
+    date_key = release_date.isoformat() if release_date else ""
+    result = {}
+    for group_name in ("available", "reserve", "excluded"):
+        for candidate in (candidate_groups or {}).get(group_name, []):
+            candidate_name = str(candidate.get("name") or "").strip()
+            if not candidate_name:
+                continue
+            date_info = dict((candidate.get("availability_by_date") or {}).get(date_key) or {})
+            availability = str(date_info.get("availability") or "").strip()
+            if availability not in {"available", "reserve", "excluded"}:
+                availability = str(candidate.get("availability") or group_name or "available").strip()
+            result[candidate_name] = {
+                "date": date_key,
+                "availability": availability,
+                "status": str(date_info.get("status") or "").strip(),
+                "reason": str(date_info.get("reason") or "").strip(),
+            }
+    return result
 
 
 def _apply_release_status_consistency(items):
@@ -7520,14 +7613,30 @@ def get_release_monitor_week_control(snapshot=None):
         item for item in items
         if _is_release_assignment_relevant_for_week(item, week_start, week_end)
     ]
-    release_dates = {
+    missing_week_items = [
+        item for item in week_items
+        if not _has_release_responsible(item)
+    ]
+    assignment_dates = {
         _get_release_start_date(item)
-        for item in week_items
+        for item in missing_week_items
         if _get_release_start_date(item)
     }
-    candidate_groups = _collect_week_candidate_availability(week_start, week_end, target_dates=release_dates)
-    missing_responsible = [
-        {
+    if not assignment_dates:
+        assignment_dates = {
+            _get_release_start_date(item)
+            for item in week_items
+            if _get_release_start_date(item)
+        }
+    candidate_groups = _collect_week_candidate_availability(
+        week_start,
+        week_end,
+        target_dates=assignment_dates,
+    )
+    missing_responsible = []
+    for item in missing_week_items:
+        release_date = _get_release_start_date(item)
+        missing_responsible.append({
             "row_key": _get_assignment_key_for_item(item),
             "release_key": item.get("release_key", ""),
             "rov_key": item.get("rov_key", ""),
@@ -7538,10 +7647,12 @@ def get_release_monitor_week_control(snapshot=None):
             "deployment_end": item.get("deployment_end", ""),
             "release_url": item.get("release_url", ""),
             "rov_url": item.get("rov_url", ""),
-        }
-        for item in week_items
-        if not _has_release_responsible(item)
-    ]
+            "availability_date": release_date.isoformat() if release_date else "",
+            "candidate_availability": _candidate_availability_for_release_date(
+                candidate_groups,
+                release_date,
+            ),
+        })
 
     assigned_load = defaultdict(int)
     for item in week_items:
@@ -7871,6 +7982,7 @@ def _balance_week_responsible_recommendations(
     *,
     missing_by_row_key,
     allowed_candidates,
+    allowed_candidates_by_row=None,
     current_week_load,
     history,
 ):
@@ -7891,9 +8003,13 @@ def _balance_week_responsible_recommendations(
     ):
         row_key = recommendation.get("row_key")
         source_item = missing_by_row_key.get(row_key) or {}
+        if allowed_candidates_by_row is not None and row_key in allowed_candidates_by_row:
+            row_allowed_candidates = list(allowed_candidates_by_row.get(row_key) or [])
+        else:
+            row_allowed_candidates = list(allowed_candidates or [])
         candidate_pool = _week_balanced_candidate_pool(
             source_item,
-            allowed_candidates,
+            row_allowed_candidates,
             projected_load,
         )
         if not candidate_pool:
@@ -7967,11 +8083,41 @@ def get_release_monitor_week_responsible_recommendations():
         if _is_release_assignment_relevant_for_week(item, week_start, week_end)
     ]
 
-    available_candidates = [item.get("name") for item in control.get("candidates", {}).get("available", []) if item.get("name")]
-    reserve_candidates = [item.get("name") for item in control.get("candidates", {}).get("reserve", []) if item.get("name")]
-    allowed_candidates = list(available_candidates)
-    if control.get("statistics", {}).get("reserve_allowed"):
-        allowed_candidates.extend(name for name in reserve_candidates if name not in allowed_candidates)
+    reserve_allowed = bool(control.get("statistics", {}).get("reserve_allowed"))
+    allowed_candidates = []
+    allowed_candidates_by_row = {}
+    missing_with_rules = []
+    for missing_item in missing:
+        row_key = str(missing_item.get("row_key") or "").strip()
+        candidate_availability = missing_item.get("candidate_availability") or {}
+        row_available = []
+        row_reserve = []
+        row_excluded = []
+        for candidate_name in OPLOT_VALUES:
+            availability = str(
+                (candidate_availability.get(candidate_name) or {}).get("availability")
+                or "available"
+            ).strip()
+            if availability == "excluded":
+                row_excluded.append(candidate_name)
+            elif availability == "reserve":
+                row_reserve.append(candidate_name)
+            else:
+                row_available.append(candidate_name)
+
+        row_allowed = list(row_available)
+        if reserve_allowed:
+            row_allowed.extend(name for name in row_reserve if name not in row_allowed)
+        allowed_candidates_by_row[row_key] = row_allowed
+        for candidate_name in row_allowed:
+            if candidate_name not in allowed_candidates:
+                allowed_candidates.append(candidate_name)
+        missing_with_rules.append({
+            **missing_item,
+            "allowed_candidates": row_allowed,
+            "reserve_candidates": row_reserve,
+            "excluded_candidates": row_excluded,
+        })
 
     if missing and not allowed_candidates:
         return {
@@ -7986,9 +8132,7 @@ def get_release_monitor_week_responsible_recommendations():
         "period": control.get("period", {}),
         "rules": {
             "allowed_candidates": allowed_candidates,
-            "reserve_candidates": reserve_candidates,
-            "reserve_allowed": bool(control.get("statistics", {}).get("reserve_allowed")),
-            "excluded_candidates": control.get("candidates", {}).get("excluded", []),
+            "reserve_allowed": reserve_allowed,
             "do_not_assign_checkers": True,
             "max_week_load_gap": WEEK_RECOMMENDATION_MAX_LOAD_GAP,
             "clm_primary_candidates": list(WEEK_RECOMMENDATION_CLM_PRIMARY),
@@ -7998,7 +8142,7 @@ def get_release_monitor_week_responsible_recommendations():
         "current_week_load": control.get("assigned_load", {}),
         "history": history,
         "current_week_releases": week_items,
-        "releases_without_responsible": missing,
+        "releases_without_responsible": missing_with_rules,
     }
 
     try:
@@ -8026,8 +8170,9 @@ def get_release_monitor_week_responsible_recommendations():
 Сначала сформируй краткую операционную сводку по current_week_releases.
 Если releases_without_responsible пустой, recommendations верни пустым массивом и в summary напиши, что по ответственным критичных пробелов нет.
 Если releases_without_responsible не пустой, предложи ответственного только для релизов из этого списка.
-Используй только ФИО из rules.allowed_candidates. Нельзя предлагать ФИО из excluded_candidates.
-reserve_candidates можно использовать только если rules.reserve_allowed=true.
+Для каждого релиза используй только ФИО из его поля allowed_candidates.
+Нельзя предлагать сотрудника из excluded_candidates конкретного релиза.
+reserve_candidates конкретного релиза уже включены в allowed_candidates только когда rules.reserve_allowed=true.
 Проверяющих не назначай и не анализируй.
 
 Учитывай:
@@ -8077,8 +8222,11 @@ reserve_candidates можно использовать только если rul
     if not isinstance(raw_recommendations, list):
         raw_recommendations = []
 
-    allowed_set = set(allowed_candidates)
-    missing_by_row_key = {item.get("row_key"): item for item in missing if item.get("row_key")}
+    missing_by_row_key = {
+        item.get("row_key"): item
+        for item in missing_with_rules
+        if item.get("row_key")
+    }
     normalized_recommendations = []
     for raw_item in raw_recommendations:
         if not isinstance(raw_item, dict):
@@ -8086,10 +8234,17 @@ reserve_candidates можно использовать только если rul
         row_key = str(raw_item.get("row_key") or "").strip()
         if row_key not in missing_by_row_key:
             continue
-        recommended = _normalize_giga_recommendation_name(raw_item.get("recommended"), allowed_set)
+        row_allowed_set = set(allowed_candidates_by_row.get(row_key) or [])
+        recommended = _normalize_giga_recommendation_name(
+            raw_item.get("recommended"),
+            row_allowed_set,
+        )
         if not recommended:
             continue
-        backup = _normalize_giga_recommendation_name(raw_item.get("backup"), allowed_set)
+        backup = _normalize_giga_recommendation_name(
+            raw_item.get("backup"),
+            row_allowed_set,
+        )
         confidence = str(raw_item.get("confidence") or "medium").strip().lower()
         if confidence not in {"high", "medium", "low"}:
             confidence = "medium"
@@ -8108,6 +8263,7 @@ reserve_candidates можно использовать только если rul
         normalized_recommendations,
         missing_by_row_key=missing_by_row_key,
         allowed_candidates=allowed_candidates,
+        allowed_candidates_by_row=allowed_candidates_by_row,
         current_week_load=control.get("assigned_load") or {},
         history=history,
     )
