@@ -37,6 +37,9 @@ from services.release_monitor_service import (
 )
 from services.report_service import save_report_to_disk
 from services.release_report_service import get_release_report_service
+from services.release_monitor_confluence_notification_service import (
+    sync_unassigned_release_confluence_page,
+)
 from services.sms_service import get_sms_profile_availability
 from routes.release_routes import detect_release_template_from_values, get_previous_version_from_monitor_items
 from config import DASHBOARD_CACHE_TTL, DASHBOARD_ASSIGNEES_DISPLAY, DEFAULT_BH_PLAYBOOKS
@@ -707,6 +710,20 @@ def sync_release_monitor_confluence():
         })
     except Exception as e:
         logging.error(f"Ошибка выгрузки релизов в Confluence: {e}")
+        return jsonify({"success": False, "error": str(e)}), 400
+
+
+@dashboard_bp.route('/dashboard/release-monitor/confluence-unassigned-sync', methods=['POST'])
+def sync_release_monitor_unassigned_confluence():
+    """Обновляет отдельную Confluence-страницу релизов недели без ответственных."""
+    try:
+        sync_result = sync_unassigned_release_confluence_page()
+        return jsonify({
+            "success": True,
+            **sync_result,
+        })
+    except Exception as e:
+        logging.error("Ошибка обновления Confluence-страницы релизов без ответственных: %s", e)
         return jsonify({"success": False, "error": str(e)}), 400
 
 
