@@ -203,9 +203,8 @@
                     ? `${dateInfo.status} (резерв)`
                     : (dateInfo.reason || dateInfo.status || '');
                 const suffix = reason ? ` — ${reason}` : '';
-                const disabled = groupName === 'excluded' ? 'disabled' : '';
                 html.push(
-                    `<option value="${escapeHtml(candidate.name)}" ${candidate.name === selected ? 'selected' : ''} ${disabled}>` +
+                    `<option value="${escapeHtml(candidate.name)}" ${candidate.name === selected ? 'selected' : ''}>` +
                     `${escapeHtml(candidate.name + suffix)}</option>`
                 );
             }
@@ -272,9 +271,6 @@
                     <label>Назначить ответственного</label>
                     <div class="assignment-row-control">
                         <select class="assignment-row-select" aria-label="Ответственный">${buildCandidateOptions(item)}</select>
-                        <button class="assignment-row-apply" type="button" disabled title="Назначить">
-                            <i class="bi bi-check2"></i>
-                        </button>
                     </div>
                 </div>
                 <div class="assignment-row-recommendation">
@@ -288,11 +284,7 @@
 
     function bindReleaseCard(card) {
         const select = card.querySelector('.assignment-row-select');
-        const button = card.querySelector('.assignment-row-apply');
         select.addEventListener('change', () => {
-            button.disabled = !select.value;
-        });
-        button.addEventListener('click', () => {
             if (select.value) {
                 assignResponsible(card.dataset.rowKey, select.value);
             }
@@ -480,15 +472,12 @@
             </section>
 
             <details class="assignment-unavailable-group" ${unavailableWasOpen ? 'open' : ''}>
-                <summary>
-                    <span class="assignment-unavailable-summary-icon">
-                        <i class="bi bi-person-x"></i>
-                    </span>
-                    <span>
-                        <strong>Недоступны</strong>
+                <summary class="assignment-person-group-title unavailable">
+                    <div>
+                        <span>Недоступны</span>
                         <small>Причины ограничений по графику</small>
-                    </span>
-                    <b>${excluded.length}</b>
+                    </div>
+                    <strong>${excluded.length}</strong>
                     <i class="bi bi-chevron-down assignment-details-chevron"></i>
                 </summary>
                 <div class="assignment-availability-list">
@@ -610,13 +599,10 @@
         const dateAvailability = rowCandidateAvailability(sourceItem, responsible);
         const reason = dateAvailability.reason || dateAvailability.status || 'ограничение по графику';
         if (dateAvailability.availability === 'excluded') {
-            showToast(`${responsible} недоступен на дату релиза: ${reason}.`, 'error');
-            return false;
+            showToast(`${responsible}: назначение вне графика. Причина: ${reason}.`, 'error');
         }
         if (dateAvailability.availability === 'reserve') {
-            if (!window.confirm(`${responsible}: ${reason}. Назначить как исключение?`)) {
-                return false;
-            }
+            showToast(`${responsible}: назначение из резерва. ${reason}.`);
         }
 
         const backup = optimisticAssignment(rowKey, responsible);

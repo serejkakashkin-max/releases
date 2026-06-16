@@ -666,7 +666,7 @@ def _render_release_cards(
               <span style="color:#94a3b8;"> · </span><span style="color:#64748b;">РОВ:</span> {rov_label}
               <span style="color:#94a3b8;"> · </span><span style="color:#64748b;">КЭ:</span> {html.escape(_display(item.get("ke")))}
               <span style="color:#94a3b8;"> · </span><span style="color:#64748b;">Версия:</span> {html.escape(_display(item.get("release_version")))}
-              <span style="color:#94a3b8;"> · </span><span style="color:#64748b;">Дежурный:</span> {html.escape(_owner_label(item))}
+              <span style="color:#94a3b8;"> · </span>{html.escape(_owner_label(item))}
             </div>
           </td>
         </tr>
@@ -742,8 +742,7 @@ def build_unassigned_email_content(
             "Релизы без ответственного</div>"
             '<div style="margin:0 0 12px 0;padding:10px 12px;border-left:4px solid #2563eb;'
             'background:#eff6ff;color:#1e3a8a;font-size:13px;line-height:18px;">'
-            "Все текущие релизы без ответственного являются событиями этого уведомления. "
-            "Отдельный дублирующий список не показывается.</div>"
+            "Все текущие релизы без ответственного являются событиями этого уведомления.</div>"
             f"{limit_notice}"
             f"{_render_release_cards(visible_items, pending_events, show_event_badge=True)}"
         )
@@ -804,7 +803,7 @@ def build_unassigned_email_content(
           {event_html_section}
         </td></tr>
         <tr><td style="padding:17px 26px;background:#eef2f7;color:#64748b;font-size:12px;line-height:1.5;">
-          Автоматическое уведомление системы Блок релизов.<br>Ответ на данное письмо не требуется.
+          Автоматическое уведомление системы Блок релизов.<br>Отвечать на данное письмо не требуется.
         </td></tr>
       </table>
     </td></tr>
@@ -879,7 +878,7 @@ def build_unassigned_email_content(
         [
             "",
             "Автоматическое уведомление системы Блок релизов.",
-            "Ответ на данное письмо не требуется.",
+            "Отвечать на данное письмо не требуется.",
         ]
     )
     metadata = {

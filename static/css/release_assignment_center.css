@@ -9,10 +9,14 @@
     --assignment-amber: #d97706;
     --assignment-red: #dc2626;
     --assignment-shadow: rgba(15, 23, 42, 0.1);
+    --assignment-table-head: rgba(241, 245, 249, 0.92);
+    --assignment-row-line: rgba(148, 163, 184, 0.22);
 }
 
 [data-theme="dark"] {
-    --assignment-panel: linear-gradient(135deg, rgba(31, 41, 55, 0.94), rgba(17, 24, 39, 0.96));
+    --assignment-panel:
+        radial-gradient(circle at 50% 0%, rgba(59, 130, 246, 0.13), transparent 34%),
+        linear-gradient(135deg, rgba(31, 41, 55, 0.94), rgba(17, 24, 39, 0.96));
     --assignment-surface: rgba(15, 23, 42, 0.13);
     --assignment-soft: rgba(255, 255, 255, 0.035);
     --assignment-soft-hover: rgba(59, 130, 246, 0.12);
@@ -21,7 +25,9 @@
     --assignment-mint: #34d399;
     --assignment-amber: #fbbf24;
     --assignment-red: #fb7185;
-    --assignment-shadow: rgba(0, 0, 0, 0.16);
+    --assignment-shadow: rgba(0, 0, 0, 0.14);
+    --assignment-table-head: rgba(255, 255, 255, 0.045);
+    --assignment-row-line: rgba(148, 163, 184, 0.12);
 }
 
 * {
@@ -32,6 +38,8 @@ body {
     min-height: 100vh;
     margin: 0;
     background: var(--bg-body);
+    color: var(--text-primary);
+    font-family: inherit;
     letter-spacing: 0;
 }
 
@@ -50,7 +58,7 @@ body {
     border: 1px solid var(--border-color);
     border-radius: 18px;
     background: var(--assignment-panel);
-    box-shadow: 0 16px 38px var(--assignment-shadow);
+    box-shadow: 0 20px 44px var(--assignment-shadow);
 }
 
 .assignment-brand {
@@ -86,8 +94,10 @@ body {
 
 .assignment-brand h1 {
     color: var(--text-primary);
-    font-size: 1.25rem;
+    font-size: 1.28rem;
     font-weight: 850;
+    letter-spacing: 0;
+    line-height: 1.08;
 }
 
 .assignment-brand p,
@@ -117,14 +127,15 @@ body {
 
 .assignment-shell {
     width: min(1600px, calc(100% - 2rem));
-    margin: 0.75rem auto 2rem;
+    margin: 0 auto 2rem;
+    padding-top: 1.05rem;
 }
 
 .assignment-cockpit {
     border: 1px solid var(--assignment-line);
     background: var(--assignment-panel);
     border-radius: 16px;
-    box-shadow: 0 18px 48px var(--assignment-shadow);
+    box-shadow: 0 18px 44px var(--assignment-shadow);
     overflow: hidden;
 }
 
@@ -180,7 +191,6 @@ body {
 .assignment-refresh-btn,
 .assignment-ai-btn,
 .assignment-apply-all-btn,
-.assignment-row-apply,
 .assignment-ai-apply {
     min-height: 36px;
     border: 1px solid var(--assignment-line);
@@ -199,7 +209,6 @@ body {
 .assignment-refresh-btn:hover,
 .assignment-ai-btn:hover,
 .assignment-apply-all-btn:hover,
-.assignment-row-apply:hover,
 .assignment-ai-apply:hover {
     color: var(--assignment-accent);
     border-color: var(--assignment-accent);
@@ -208,7 +217,6 @@ body {
 .assignment-refresh-btn:disabled,
 .assignment-ai-btn:disabled,
 .assignment-apply-all-btn:disabled,
-.assignment-row-apply:disabled,
 .assignment-ai-apply:disabled {
     opacity: 0.55;
     cursor: wait;
@@ -263,9 +271,9 @@ body {
 .assignment-layout {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(390px, 450px);
-    gap: 1rem;
+    gap: 1.25rem;
     align-items: start;
-    margin-top: 1rem;
+    margin-top: 0.85rem;
 }
 
 .assignment-queue,
@@ -273,7 +281,7 @@ body {
     border: 1px solid var(--assignment-line);
     background: var(--assignment-panel);
     border-radius: 14px;
-    box-shadow: 0 14px 36px var(--assignment-shadow);
+    box-shadow: 0 14px 34px var(--assignment-shadow);
     overflow: hidden;
 }
 
@@ -286,7 +294,7 @@ body {
     gap: 1rem;
     padding: 0.82rem 0.95rem;
     border-bottom: 1px solid var(--assignment-line);
-    background: var(--assignment-surface);
+    background: var(--assignment-table-head);
 }
 
 .assignment-section-head h2,
@@ -353,7 +361,7 @@ body {
     align-items: center;
     min-height: 112px;
     padding: 0.8rem 1rem;
-    border-bottom: 1px solid var(--assignment-line);
+    border-bottom: 1px solid var(--assignment-row-line);
     background: transparent;
     transition: background-color 0.18s ease, opacity 0.18s ease;
 }
@@ -424,9 +432,7 @@ body {
 }
 
 .assignment-row-control {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 0.45rem;
+    display: block;
     margin-top: 0.25rem;
 }
 
@@ -435,11 +441,12 @@ body {
     min-width: 0;
     min-height: 36px;
     border: 1px solid var(--assignment-line);
-    border-radius: 7px;
-    padding: 0.35rem 0.5rem;
+    border-radius: 8px;
+    padding: 0.38rem 0.58rem;
     background: var(--bg-input);
     color: var(--text-primary);
-    font-size: 0.78rem;
+    font-size: 0.8rem;
+    font-weight: 650;
 }
 
 .assignment-row-recommendation {
@@ -563,6 +570,15 @@ body {
     box-shadow: inset 3px 0 0 var(--assignment-amber);
 }
 
+.assignment-person-group-title.unavailable {
+    box-shadow: inset 3px 0 0 var(--assignment-red);
+}
+
+.assignment-person-group-title.unavailable > strong {
+    color: var(--assignment-red);
+    background: color-mix(in srgb, var(--assignment-red) 10%, transparent);
+}
+
 .assignment-candidate-section,
 .assignment-reserve-section,
 .assignment-unavailable-group {
@@ -648,13 +664,15 @@ body {
 
 .assignment-week-load strong {
     color: var(--text-primary);
-    font-size: 1.08rem;
+    font-size: 1.15rem;
     font-weight: 900;
 }
 
 .assignment-week-load span {
-    margin-top: 0.1rem;
-    font-size: 0.56rem;
+    margin-top: 0.12rem;
+    color: var(--text-secondary);
+    font-size: 0.64rem;
+    font-weight: 650;
     white-space: nowrap;
 }
 
@@ -678,10 +696,21 @@ body {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 0.25rem 0.8rem;
+    gap: 0.3rem 0.45rem;
     margin-left: 2.95rem;
     color: var(--text-secondary);
-    font-size: 0.62rem;
+    font-size: 0.68rem;
+    line-height: 1.2;
+}
+
+.assignment-load-meta span {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.2rem;
+    padding: 0.12rem 0.34rem;
+    border: 1px solid var(--assignment-line);
+    border-radius: 999px;
+    background: var(--assignment-soft);
 }
 
 .assignment-load-meta strong {
@@ -770,14 +799,26 @@ body {
 .assignment-availability-meta {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.22rem 0.65rem;
-    margin-top: 0.22rem;
+    gap: 0.28rem 0.42rem;
+    margin-top: 0.32rem;
     color: var(--text-secondary);
-    font-size: 0.58rem;
+    font-size: 0.67rem;
+    line-height: 1.2;
+}
+
+.assignment-availability-meta span {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.18rem;
+    padding: 0.1rem 0.32rem;
+    border: 1px solid var(--assignment-line);
+    border-radius: 999px;
+    background: var(--assignment-soft);
 }
 
 .assignment-availability-meta strong {
     color: var(--text-primary);
+    font-weight: 850;
 }
 
 .assignment-person-status {
@@ -815,23 +856,24 @@ body {
 
 .assignment-availability-week strong {
     color: var(--text-primary);
-    font-size: 0.9rem;
+    font-size: 1rem;
     font-weight: 900;
 }
 
 .assignment-availability-week span {
     margin-top: 0.12rem;
     color: var(--text-secondary);
-    font-size: 0.55rem;
+    font-size: 0.62rem;
+    font-weight: 650;
 }
 
 .assignment-unavailable-group summary {
-    display: grid;
-    grid-template-columns: 32px minmax(0, 1fr) auto 18px;
+    display: flex;
     align-items: center;
-    gap: 0.55rem;
-    min-height: 58px;
-    padding: 0.58rem 0.8rem;
+    justify-content: space-between;
+    gap: 0.75rem;
+    min-height: auto;
+    padding: 0.65rem 0.8rem;
     cursor: pointer;
     list-style: none;
     background: var(--assignment-soft);
@@ -845,46 +887,8 @@ body {
     background: var(--assignment-soft-hover);
 }
 
-.assignment-unavailable-summary-icon {
-    width: 32px;
-    height: 32px;
-    border-radius: 9px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--assignment-red);
-    background: color-mix(in srgb, var(--assignment-red) 10%, transparent);
-}
-
-.assignment-unavailable-group summary strong,
-.assignment-unavailable-group summary small {
-    display: block;
-}
-
-.assignment-unavailable-group summary strong {
-    color: var(--text-primary);
-    font-size: 0.75rem;
-}
-
-.assignment-unavailable-group summary small {
-    margin-top: 0.1rem;
-    color: var(--text-secondary);
-    font-size: 0.61rem;
-}
-
-.assignment-unavailable-group summary > b {
-    min-width: 25px;
-    height: 22px;
-    border-radius: 999px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--assignment-red);
-    background: color-mix(in srgb, var(--assignment-red) 10%, transparent);
-    font-size: 0.67rem;
-}
-
 .assignment-details-chevron {
+    flex: 0 0 auto;
     color: var(--text-secondary);
     font-size: 0.7rem;
     transition: transform 0.18s ease;
@@ -1015,7 +1019,7 @@ body {
 
     .assignment-shell {
         width: min(100% - 1rem, 1600px);
-        margin-top: 0.5rem;
+        padding-top: 0.7rem;
     }
 
     .assignment-cockpit-main,
