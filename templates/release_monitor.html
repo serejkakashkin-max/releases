@@ -2040,12 +2040,12 @@
             border-color: rgba(88, 166, 255, 0.34);
         }
 
-        .confluence-auto-inline {
+        .email-auto-inline {
             max-width: min(360px, 48vw);
             overflow: hidden;
         }
 
-        .confluence-auto-inline span {
+        .email-auto-inline span {
             overflow: hidden;
             text-overflow: ellipsis;
         }
@@ -3427,12 +3427,12 @@
                             <span id="releaseAutoRefreshText">Авто: ожидает</span>
                         </div>
                         <div
-                            id="releaseMonitorConfluenceAutoStatus"
-                            class="auto-refresh-badge confluence-auto-inline is-paused"
-                            title="Автоматические Confluence-уведомления выключены"
+                            id="releaseMonitorEmailAutoStatus"
+                            class="auto-refresh-badge email-auto-inline is-paused"
+                            title="Автоматические email-уведомления выключены"
                         >
-                            <i class="bi bi-bell-slash"></i>
-                            <span id="releaseMonitorConfluenceAutoStatusText">Уведомления: выкл</span>
+                            <i class="bi bi-envelope-slash"></i>
+                            <span id="releaseMonitorEmailAutoStatusText">Почта: выключена</span>
                         </div>
                     </div>
                     <div class="hero-action-stack">
@@ -9657,18 +9657,18 @@
             banner.classList.add('show');
         }
 
-        function updateReleaseConfluenceAutoSyncStatus(status = {}) {
-            const container = document.getElementById('releaseMonitorConfluenceAutoStatus');
-            const text = document.getElementById('releaseMonitorConfluenceAutoStatusText');
+        function updateReleaseEmailNotificationStatus(status = {}) {
+            const container = document.getElementById('releaseMonitorEmailAutoStatus');
+            const text = document.getElementById('releaseMonitorEmailAutoStatusText');
             if (!container || !text) {
                 return;
             }
 
             const state = String(status.status || 'disabled');
-            const newCount = Number(status.last_new_count || 0);
+            const eventCount = Number(status.last_email_new_count || 0);
             const pendingCount = Number(status.pending_count || 0);
-            const visualState = status.running ? 'running' : state;
-            const successAt = String(status.last_auto_success_at || '').trim();
+            const visualState = status.running ? 'sending' : state;
+            const successAt = String(status.last_email_success_at || '').trim();
             let successLabel = '';
             if (successAt) {
                 const parsed = new Date(successAt);
@@ -9682,36 +9682,36 @@
                 }
             }
             const labels = {
-                disabled: 'Уведомления: выкл',
-                waiting_refresh: 'Уведомления: ожидают refresh',
-                baseline_created: 'Уведомления: baseline создан',
+                disabled: 'Почта: выключена',
+                waiting_refresh: 'Почта: ожидает refresh',
+                baseline_created: 'Почта: baseline создан',
                 waiting: pendingCount > 0
-                    ? `Уведомления: ожидают · новых ${pendingCount}`
-                    : 'Уведомления: ожидают новых',
-                running: pendingCount > 0
-                    ? `Уведомления: обновление · новых ${pendingCount}`
-                    : 'Уведомления: обновление',
-                updated: `Уведомления: обновлено${successLabel ? ` ${successLabel}` : ''}${newCount > 0 ? ` · новых ${newCount}` : ''}`,
-                error: 'Уведомления: ошибка',
+                    ? `Почта: ожидает отправки · ${pendingCount}`
+                    : 'Почта: ожидает новых',
+                sending: pendingCount > 0
+                    ? `Почта: отправка · ${pendingCount}`
+                    : 'Почта: отправка',
+                sent: `Почта: отправлено${successLabel ? ` ${successLabel}` : ''}${eventCount > 0 ? ` · событий ${eventCount}` : ''}`,
+                error: 'Почта: ошибка',
             };
             const className = {
                 disabled: 'is-paused',
                 waiting_refresh: 'is-paused',
                 baseline_created: 'is-ok',
                 waiting: 'is-paused',
-                running: 'is-running',
-                updated: 'is-ok',
+                sending: 'is-running',
+                sent: 'is-ok',
                 error: 'is-error',
             }[visualState] || 'is-paused';
             const iconClass = {
-                disabled: 'bi-bell-slash',
+                disabled: 'bi-envelope-slash',
                 waiting_refresh: 'bi-clock',
                 baseline_created: 'bi-check2-circle',
-                waiting: 'bi-bell',
-                running: 'bi-arrow-repeat spinning',
-                updated: 'bi-check2-circle',
+                waiting: 'bi-envelope',
+                sending: 'bi-arrow-repeat spinning',
+                sent: 'bi-envelope-check',
                 error: 'bi-exclamation-triangle',
-            }[visualState] || 'bi-bell';
+            }[visualState] || 'bi-envelope';
 
             container.classList.remove(
                 'is-ok',
@@ -9731,8 +9731,8 @@
             if (status.last_evaluated_at) {
                 titleParts.push(`Последняя проверка: ${status.last_evaluated_at}`);
             }
-            if (status.last_auto_success_at) {
-                titleParts.push(`Последнее обновление страницы: ${status.last_auto_success_at}`);
+            if (status.last_email_success_at) {
+                titleParts.push(`Последнее письмо: ${status.last_email_success_at}`);
             }
             if (pendingCount > 0) {
                 titleParts.push(`Ожидают отправки: ${pendingCount}`);
@@ -9755,7 +9755,7 @@
                     throw new Error(data.error || 'Не удалось получить статус обновления релизов');
                 }
 
-                updateReleaseConfluenceAutoSyncStatus(data.confluence_unassigned_auto_sync || {});
+                updateReleaseEmailNotificationStatus(data.email_unassigned_notification || {});
                 const refreshStatus = data.refresh_status || {};
 
                 if (refreshStatus.state === 'completed' || refreshStatus.state === 'idle') {
@@ -9830,7 +9830,7 @@
                     return;
                 }
 
-                updateReleaseConfluenceAutoSyncStatus(data.confluence_unassigned_auto_sync || {});
+                updateReleaseEmailNotificationStatus(data.email_unassigned_notification || {});
                 const refreshStatus = data.refresh_status || {};
                 const isRefreshing = refreshStatus.state === 'refreshing';
                 setReleaseMonitorGlobalRefreshing(isRefreshing);

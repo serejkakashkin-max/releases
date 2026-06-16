@@ -6800,25 +6800,25 @@ def _release_monitor_payload_fingerprint(payload):
     return json.dumps(comparable, ensure_ascii=False, sort_keys=True, default=str)
 
 
-def _schedule_unassigned_confluence_auto_sync(
+def _schedule_unassigned_email_notification(
     payload,
     *,
     refresh_mode,
-    force_notify_row_keys=None,
+    explicit_events=None,
 ):
     try:
-        from services.release_monitor_confluence_notification_service import (
-            schedule_unassigned_auto_sync,
+        from services.release_monitor_email_service import (
+            schedule_unassigned_email_notification,
         )
 
-        schedule_unassigned_auto_sync(
+        schedule_unassigned_email_notification(
             payload,
             refresh_mode=refresh_mode,
-            force_notify_row_keys=force_notify_row_keys,
+            explicit_events=explicit_events,
         )
     except Exception:
         logging.exception(
-            "Release monitor: failed to schedule Confluence unassigned auto-sync after %s refresh",
+            "Release monitor: failed to schedule unassigned email after %s",
             refresh_mode,
         )
 
@@ -6968,7 +6968,7 @@ def _run_auto_incremental_release_monitor_refresh():
                 state="partial" if jira_failure_state == "partial" else "completed",
             )
             if jira_failure_state != "partial":
-                _schedule_unassigned_confluence_auto_sync(
+                _schedule_unassigned_email_notification(
                     finalized,
                     refresh_mode="silent",
                 )
@@ -7022,7 +7022,7 @@ def _run_auto_incremental_release_monitor_refresh():
             state="partial" if jira_failure_state == "partial" else "completed",
         )
         if jira_failure_state != "partial":
-            _schedule_unassigned_confluence_auto_sync(
+            _schedule_unassigned_email_notification(
                 finalized,
                 refresh_mode="silent",
             )
@@ -7385,7 +7385,7 @@ def _run_release_monitor_refresh(mode="full", trigger="manual"):
             mode=mode,
         )
         if auto_sync_allowed:
-            _schedule_unassigned_confluence_auto_sync(
+            _schedule_unassigned_email_notification(
                 data,
                 refresh_mode=mode,
             )
@@ -9720,10 +9720,10 @@ def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=
     }
     if unassigned_snapshot is not None:
         unassigned_snapshot.setdefault("meta", {})["data_revision"] = result["data_revision"]
-        _schedule_unassigned_confluence_auto_sync(
+        _schedule_unassigned_email_notification(
             unassigned_snapshot,
             refresh_mode="assignment_change",
-            force_notify_row_keys=[release_key],
+            explicit_events={release_key: "responsible_removed"},
         )
     return result
 

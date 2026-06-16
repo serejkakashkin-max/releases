@@ -6,6 +6,11 @@
     "chatbot": false
   },
   "automation": {
-    "confluence_unassigned_auto_sync": false
+    "release_monitor_unassigned_email": {
+      "enabled": true,
+      "recipients": [
+        "snkashkin@sberbank.ru"
+      ]
+    }
   }
 }

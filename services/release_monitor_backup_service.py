@@ -27,7 +27,7 @@ from services.release_monitor_service import (
     WORK_MARKS_FILE,
     ZNI_FILE,
 )
-from services.release_monitor_confluence_notification_service import NOTIFY_STATE_FILE
+from services.release_monitor_email_service import NOTIFY_STATE_FILE
 
 
 REPORTS_DIR = Path(__file__).resolve().parent.parent / "reports" / "release_monitor_backups"

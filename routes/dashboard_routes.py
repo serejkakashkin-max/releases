@@ -41,7 +41,7 @@ from services.release_monitor_service import (
 from services.report_service import save_report_to_disk
 from services.release_report_service import get_release_report_service
 from services.feature_flags_service import is_maintenance_enabled
-from services.release_monitor_confluence_notification_service import get_unassigned_auto_sync_status
+from services.release_monitor_email_service import get_unassigned_email_status
 from services.sms_service import get_sms_profile_availability
 from routes.release_routes import detect_release_template_from_values, get_previous_version_from_monitor_items
 from config import DASHBOARD_CACHE_TTL, DASHBOARD_ASSIGNEES_DISPLAY, DEFAULT_BH_PLAYBOOKS
@@ -403,7 +403,7 @@ def release_monitor_status():
         return jsonify({
             "success": True,
             "refresh_status": status_payload.get("status", {}),
-            "confluence_unassigned_auto_sync": get_unassigned_auto_sync_status(),
+            "email_unassigned_notification": get_unassigned_email_status(),
             "release_monitor": release_monitor_data.get("items", []),
             "release_monitor_summary": release_monitor_data.get("summary", {}),
             "release_monitor_meta": release_monitor_data.get("meta", {}),
