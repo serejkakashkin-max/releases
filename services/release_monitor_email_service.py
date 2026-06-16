@@ -612,6 +612,77 @@ def _render_table(
     )
 
 
+def _render_release_cards(
+    items: List[Dict],
+    pending_events: Dict[str, Dict[str, str]],
+    *,
+    show_event_badge: bool,
+) -> str:
+    cards = []
+    for item in items:
+        row_key = str(item.get("row_key") or "").strip()
+        event_type = str((pending_events.get(row_key) or {}).get("event_type") or "")
+        badge = ""
+        card_border = "#d8e0ea"
+        card_background = "#ffffff"
+        if show_event_badge and event_type:
+            label, colour, background = _event_badge(event_type)
+            badge = (
+                f'<span style="display:inline-block;padding:3px 8px;'
+                f"border-radius:10px;background:{background};color:{colour};"
+                'font-size:11px;font-weight:700;line-height:14px;white-space:nowrap;">'
+                f"{html.escape(label)}</span>"
+            )
+            card_border = "#93c5fd" if event_type == EVENT_NEW_UNASSIGNED else "#fecaca"
+            card_background = "#f8fbff" if event_type == EVENT_NEW_UNASSIGNED else "#fff8f8"
+
+        release_key = _display(item.get("release_key"))
+        release_summary = _display(item.get("release_summary"), "")
+        rov_key = _display(item.get("rov_key"))
+        release_label = _html_link(item.get("release_url"), release_key)
+        rov_label = _html_link(item.get("rov_url"), rov_key)
+        if release_label == "—":
+            release_label = f"<strong>{html.escape(release_key)}</strong>"
+        if rov_label == "—":
+            rov_label = html.escape(rov_key)
+
+        cards.append(
+            f"""
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;margin:0 0 7px 0;background:{card_background};border:1px solid {card_border};">
+  <tr>
+    <td style="padding:8px 10px 7px 10px;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;">
+        <tr>
+          <td style="vertical-align:top;padding:0 8px 0 0;">
+            <div style="font-size:14px;line-height:18px;font-weight:700;color:#0f172a;mso-line-height-rule:exactly;">{release_label}</div>
+            <div style="margin-top:2px;font-size:12px;line-height:15px;color:#475569;mso-line-height-rule:exactly;">{html.escape(release_summary or "—")}</div>
+          </td>
+          <td align="right" style="vertical-align:top;width:190px;padding:0 0 0 8px;">{badge}</td>
+        </tr>
+        <tr>
+          <td colspan="2" style="vertical-align:top;padding:6px 0 0 0;border-top:1px solid #e2e8f0;">
+            <div style="font-size:12px;line-height:16px;color:#111827;mso-line-height-rule:exactly;">
+              <span style="color:#64748b;">Дата:</span> <strong>{html.escape(_display(item.get("deployment_start")))}</strong>
+              <span style="color:#94a3b8;"> · </span><span style="color:#64748b;">РОВ:</span> {rov_label}
+              <span style="color:#94a3b8;"> · </span><span style="color:#64748b;">КЭ:</span> {html.escape(_display(item.get("ke")))}
+              <span style="color:#94a3b8;"> · </span><span style="color:#64748b;">Версия:</span> {html.escape(_display(item.get("release_version")))}
+              <span style="color:#94a3b8;"> · </span><span style="color:#64748b;">Дежурный:</span> {html.escape(_owner_label(item))}
+            </div>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+""".strip()
+        )
+
+    return "".join(cards) or (
+        '<div style="padding:12px 14px;border:1px solid #d8e0ea;'
+        'background:#f8fafc;color:#64748b;font-size:13px;">Нет строк для отображения.</div>'
+    )
+
+
 def build_unassigned_email_content(
     snapshot: Dict,
     pending_events: Dict[str, Dict[str, str]],
@@ -639,6 +710,8 @@ def build_unassigned_email_content(
         if str(item.get("row_key") or "").strip() in event_keys
     ]
     total_count = len(sorted_items)
+    current_keys = set(current_by_key)
+    events_match_current_list = bool(event_keys) and event_keys == current_keys
     event_count = len(event_keys)
     removed_count = sum(
         1
@@ -663,37 +736,72 @@ def build_unassigned_email_content(
             "Для просмотра полного списка откройте Центр назначений.</div>"
         )
 
+    if events_match_current_list:
+        event_html_section = (
+            '<div style="margin:4px 0 10px;font-size:18px;font-weight:700;color:#0f172a;">'
+            "Релизы без ответственного</div>"
+            '<div style="margin:0 0 12px 0;padding:10px 12px;border-left:4px solid #2563eb;'
+            'background:#eff6ff;color:#1e3a8a;font-size:13px;line-height:18px;">'
+            "Все текущие релизы без ответственного являются событиями этого уведомления. "
+            "Отдельный дублирующий список не показывается.</div>"
+            f"{limit_notice}"
+            f"{_render_release_cards(visible_items, pending_events, show_event_badge=True)}"
+        )
+    else:
+        event_html_section = (
+            '<div style="margin:4px 0 10px;font-size:18px;font-weight:700;color:#0f172a;">'
+            "Что изменилось</div>"
+            f"{_render_release_cards(visible_event_items, pending_events, show_event_badge=True)}"
+            '<div style="margin:22px 0 10px;font-size:18px;font-weight:700;color:#0f172a;">'
+            "Актуальный список без ответственного</div>"
+            f"{limit_notice}"
+            f"{_render_release_cards(visible_items, pending_events, show_event_badge=True)}"
+        )
+    summary_html = f"""
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;">
+  <tr>
+    <td style="padding:10px;border:1px solid #d8e0ea;background:#f8fafc;width:50%;">
+      <div style="font-size:11px;line-height:14px;color:#64748b;mso-line-height-rule:exactly;">НОВЫХ СОБЫТИЙ</div>
+      <div style="font-size:23px;line-height:28px;font-weight:700;color:#2563eb;mso-line-height-rule:exactly;">{event_count}</div>
+    </td>
+    <td style="padding:10px;border:1px solid #d8e0ea;background:#f8fafc;width:50%;">
+      <div style="font-size:11px;line-height:14px;color:#64748b;mso-line-height-rule:exactly;">ВСЕГО БЕЗ ОТВЕТСТВЕННОГО</div>
+      <div style="font-size:23px;line-height:28px;font-weight:700;color:#0f172a;mso-line-height-rule:exactly;">{total_count}</div>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:10px;border:1px solid #d8e0ea;background:#f8fafc;width:50%;">
+      <div style="font-size:11px;line-height:14px;color:#64748b;mso-line-height-rule:exactly;">ПЕРИОД</div>
+      <div style="font-size:14px;line-height:18px;font-weight:700;color:#0f172a;mso-line-height-rule:exactly;">{html.escape(period)}</div>
+    </td>
+    <td style="padding:10px;border:1px solid #d8e0ea;background:#f8fafc;width:50%;">
+      <div style="font-size:11px;line-height:14px;color:#64748b;mso-line-height-rule:exactly;">СФОРМИРОВАНО</div>
+      <div style="font-size:14px;line-height:18px;font-weight:700;color:#0f172a;mso-line-height-rule:exactly;">{generated_at.strftime('%d.%m.%Y %H:%M')}</div>
+    </td>
+  </tr>
+</table>
+""".strip()
+
     html_body = f"""<!doctype html>
 <html lang="ru">
 <body style="margin:0;padding:0;background:#f3f6fa;font-family:Arial,sans-serif;color:#1f2937;">
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f3f6fa;">
     <tr><td align="center" style="padding:24px 12px;">
-      <table role="presentation" width="920" cellspacing="0" cellpadding="0" style="width:100%;max-width:920px;background:#ffffff;border:1px solid #d8e0ea;">
+      <table role="presentation" width="760" cellspacing="0" cellpadding="0" style="width:100%;max-width:760px;background:#ffffff;border:1px solid #d8e0ea;">
         <tr><td style="padding:22px 26px;background:#14213d;color:#ffffff;">
           <div style="font-size:15px;font-weight:700;color:#93c5fd;">Блок релизов</div>
           <div style="margin-top:6px;font-size:23px;font-weight:700;line-height:1.25;">Требуется назначение ответственных по релизам текущей недели</div>
           <div style="margin-top:10px;color:#dbeafe;font-size:13px;line-height:1.5;">В Блоке релизов обнаружены релизы текущей недели, для которых не назначен ответственный исполнитель. Просьба выполнить назначение в Центре назначений или в Блоке релизов.</div>
         </td></tr>
         <tr><td style="padding:18px 26px 4px;">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
-            <tr>
-              <td style="padding:10px;border:1px solid #d8e0ea;background:#f8fafc;"><div style="font-size:11px;color:#64748b;">НОВЫХ СОБЫТИЙ</div><div style="font-size:23px;font-weight:700;color:#2563eb;">{event_count}</div></td>
-              <td style="padding:10px;border:1px solid #d8e0ea;background:#f8fafc;"><div style="font-size:11px;color:#64748b;">ВСЕГО БЕЗ ОТВЕТСТВЕННОГО</div><div style="font-size:23px;font-weight:700;">{total_count}</div></td>
-              <td style="padding:10px;border:1px solid #d8e0ea;background:#f8fafc;"><div style="font-size:11px;color:#64748b;">ПЕРИОД</div><div style="font-size:14px;font-weight:700;">{html.escape(period)}</div></td>
-              <td style="padding:10px;border:1px solid #d8e0ea;background:#f8fafc;"><div style="font-size:11px;color:#64748b;">СФОРМИРОВАНО</div><div style="font-size:14px;font-weight:700;">{generated_at.strftime('%d.%m.%Y %H:%M')}</div></td>
-            </tr>
-          </table>
+          {summary_html}
           <div style="margin-top:8px;color:#64748b;font-size:12px;">Подтвержденный снимок данных: {html.escape(snapshot_label)}</div>
           <div style="padding:18px 0;text-align:center;">
             <a href="{html.escape(public_url, quote=True)}" style="display:inline-block;padding:11px 22px;background:#2563eb;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;border-radius:4px;">Открыть Центр назначений</a>
           </div>
         </td></tr>
         <tr><td style="padding:0 26px 20px;">
-          <div style="margin:4px 0 10px;font-size:18px;font-weight:700;color:#0f172a;">Новые события</div>
-          {_render_table(visible_event_items, pending_events, show_event_badge=True)}
-          <div style="margin:22px 0 10px;font-size:18px;font-weight:700;color:#0f172a;">Текущий список без ответственного</div>
-          {limit_notice}
-          {_render_table(visible_items, pending_events, show_event_badge=True)}
+          {event_html_section}
         </td></tr>
         <tr><td style="padding:17px 26px;background:#eef2f7;color:#64748b;font-size:12px;line-height:1.5;">
           Автоматическое уведомление системы Блок релизов.<br>Ответ на данное письмо не требуется.
