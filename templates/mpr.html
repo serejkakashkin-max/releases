@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>МПР</title>
+    <link href="/static/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/static/css/bootstrap-icons.css" rel="stylesheet">
+    <script src="/static/js/bootstrap.bundle.min.js"></script>
+    {% include 'base_styles.html' %}
+    <style>
+        body {
+            min-height: 100vh;
+            --mpr-panel-bg: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96));
+            --mpr-surface-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96));
+            --mpr-soft-bg: rgba(15, 23, 42, 0.035);
+            --mpr-soft-border: rgba(148, 163, 184, 0.24);
+            --mpr-shadow: rgba(15, 23, 42, 0.10);
+            --mpr-upload-bg: rgba(245, 158, 11, 0.07);
+        }
+
+        [data-theme="dark"] body {
+            --mpr-panel-bg:
+                radial-gradient(circle at 50% 0%, rgba(245, 158, 11, 0.12), transparent 34%),
+                linear-gradient(135deg, rgba(31, 41, 55, 0.94), rgba(17, 24, 39, 0.96));
+            --mpr-surface-bg: linear-gradient(180deg, rgba(31, 41, 55, 0.92), rgba(17, 24, 39, 0.94));
+            --mpr-soft-bg: rgba(255, 255, 255, 0.035);
+            --mpr-soft-border: rgba(148, 163, 184, 0.13);
+            --mpr-shadow: rgba(0, 0, 0, 0.14);
+            --mpr-upload-bg: rgba(245, 158, 11, 0.10);
+        }
+
+        .page-shell {
+            max-width: 1060px;
+            margin: 0 auto;
+            padding: 0 1rem 3rem;
+        }
+
+        .nav-home-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
+            border: 1px solid var(--border-color);
+        }
+
+        .nav-home-btn:hover {
+            color: var(--primary);
+            border-color: var(--primary);
+        }
+
+        .theme-toggle {
+            border: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border-radius: 12px;
+            width: 40px;
+            height: 40px;
+        }
+
+        .mpr-hero {
+            max-width: 920px;
+            margin: 0 auto 1rem;
+            padding: 1.05rem 1.2rem 1.18rem;
+            border-radius: 18px;
+            border: 1px solid var(--border-color);
+            background: var(--mpr-panel-bg);
+            box-shadow: 0 20px 44px var(--mpr-shadow);
+            text-align: center;
+        }
+
+        .mpr-hero-title {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.65rem;
+            margin: 0;
+            color: var(--text-primary);
+            font-size: clamp(1.55rem, 2.4vw, 2.05rem);
+            font-weight: 850;
+            letter-spacing: 0;
+            line-height: 1.1;
+        }
+
+        .mpr-hero-title .bi {
+            width: 38px;
+            height: 38px;
+            border-radius: 13px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            background: linear-gradient(135deg, #f59e0b, #3b82f6);
+            box-shadow: 0 12px 28px rgba(245, 158, 11, 0.22);
+            font-size: 1.05rem;
+        }
+
+        .mpr-hero-subtitle {
+            margin: 0.55rem 0 0;
+            color: var(--text-secondary);
+            font-size: 0.92rem;
+            font-weight: 600;
+        }
+
+        .mpr-workspace {
+            max-width: 920px;
+            margin: 0 auto;
+            padding: 1.25rem;
+            border-radius: 18px;
+            border: 1px solid var(--border-color);
+            background: var(--mpr-surface-bg);
+            box-shadow: 0 18px 44px var(--mpr-shadow);
+        }
+
+        .mpr-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+            gap: 1rem;
+        }
+
+        .mpr-panel {
+            border: 1px solid var(--mpr-soft-border);
+            border-radius: 16px;
+            background: var(--mpr-soft-bg);
+            padding: 1rem;
+        }
+
+        .mpr-panel.upload {
+            border-style: dashed;
+            border-color: rgba(245, 158, 11, 0.42);
+            background: var(--mpr-upload-bg);
+        }
+
+        .mpr-panel-head {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 0.9rem;
+        }
+
+        .mpr-panel-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 13px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            background: rgba(59, 130, 246, 0.95);
+            flex: 0 0 auto;
+        }
+
+        .mpr-panel.upload .mpr-panel-icon {
+            background: rgba(245, 158, 11, 0.95);
+        }
+
+        .mpr-panel-title {
+            margin: 0;
+            color: var(--text-primary);
+            font-size: 1rem;
+            font-weight: 850;
+        }
+
+        .mpr-panel-note {
+            margin: 0.15rem 0 0;
+            color: var(--text-secondary);
+            font-size: 0.84rem;
+            font-weight: 600;
+        }
+
+        .mpr-template-list {
+            display: grid;
+            gap: 0.5rem;
+        }
+
+        .mpr-template-option {
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            padding: 0.85rem;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+        }
+
+        .mpr-template-option.active {
+            border-color: rgba(59, 130, 246, 0.70);
+            box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.28);
+            background: rgba(59, 130, 246, 0.10);
+        }
+
+        .mpr-template-name {
+            font-weight: 850;
+            line-height: 1.2;
+        }
+
+        .mpr-template-file {
+            color: var(--text-secondary);
+            font-size: 0.82rem;
+            margin-top: 0.25rem;
+        }
+
+        .mpr-file-input {
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            padding: 0.8rem;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            width: 100%;
+        }
+
+        .mpr-file-list {
+            display: grid;
+            gap: 0.45rem;
+            margin-top: 0.85rem;
+        }
+
+        .mpr-file-row {
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+            min-width: 0;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 0.55rem 0.7rem;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            font-weight: 700;
+        }
+
+        .mpr-file-row span {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .mpr-actions {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.65rem;
+            margin-top: 1rem;
+        }
+
+        .mpr-alert {
+            display: none;
+            margin-top: 1rem;
+            border-radius: 14px;
+            border: 1px solid rgba(239, 68, 68, 0.28);
+            background: rgba(239, 68, 68, 0.08);
+            color: #f87171;
+            padding: 0.8rem 0.9rem;
+            font-weight: 700;
+        }
+
+        .mpr-alert ul {
+            margin: 0.45rem 0 0;
+            padding-left: 1.2rem;
+        }
+
+        .mpr-status {
+            min-height: 1.4rem;
+            color: var(--text-secondary);
+            font-size: 0.86rem;
+            font-weight: 700;
+        }
+
+        @media (max-width: 768px) {
+            .mpr-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .mpr-actions {
+                align-items: stretch;
+                flex-direction: column-reverse;
+            }
+
+            .mpr-actions .btn {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark mb-4">
+        <div class="container-fluid">
+            <a class="nav-home-btn" href="{{ basepath }}/" title="На главную">
+                <i class="bi bi-house-door-fill"></i>
+            </a>
+            <button class="theme-toggle" onclick="toggleTheme()" title="Переключить тему">
+                <i class="bi bi-sun"></i>
+            </button>
+        </div>
+    </nav>
+
+    <main class="page-shell">
+        <section class="mpr-hero">
+            <h1 class="mpr-hero-title">
+                <i class="bi bi-file-earmark-word"></i>
+                МПР
+            </h1>
+            <p class="mpr-hero-subtitle">Генерация плана работ по загруженным выгрузкам лимитов.</p>
+        </section>
+
+        <section class="mpr-workspace">
+            <div class="mpr-grid">
+                <div class="mpr-panel">
+                    <div class="mpr-panel-head">
+                        <div class="mpr-panel-icon"><i class="bi bi-layout-text-window"></i></div>
+                        <div>
+                            <h2 class="mpr-panel-title">Шаблон документа</h2>
+                            <p class="mpr-panel-note">Выберите тип МПР для итогового DOCX.</p>
+                        </div>
+                    </div>
+
+                    <div class="mpr-template-list" id="mprTemplateList">
+                        {% if templates %}
+                            {% for item in templates %}
+                                <button
+                                    class="mpr-template-option{% if loop.first %} active{% endif %}"
+                                    type="button"
+                                    data-template-code="{{ item.code }}"
+                                >
+                                    <div class="mpr-template-name">{{ item.name }}</div>
+                                    <div class="mpr-template-file">{{ item.filename }}</div>
+                                </button>
+                            {% endfor %}
+                        {% else %}
+                            <div class="mpr-status">В папке doc_templates_MPR нет DOCX-шаблонов.</div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="mpr-panel upload">
+                    <div class="mpr-panel-head">
+                        <div class="mpr-panel-icon"><i class="bi bi-cloud-arrow-up"></i></div>
+                        <div>
+                            <h2 class="mpr-panel-title">Excel/CSV выгрузки</h2>
+                            <p class="mpr-panel-note">Можно загрузить несколько файлов download*.xlsx или CSV.</p>
+                        </div>
+                    </div>
+
+                    <input
+                        id="mprFiles"
+                        class="mpr-file-input"
+                        type="file"
+                        accept=".xlsx,.csv"
+                        multiple
+                    >
+                    <div class="mpr-file-list" id="mprFileList"></div>
+                </div>
+            </div>
+
+            <div class="mpr-alert" id="mprAlert"></div>
+
+            <div class="mpr-actions">
+                <div class="mpr-status" id="mprStatus"></div>
+                <button
+                    id="mprGenerateBtn"
+                    class="btn btn-primary"
+                    type="button"
+                    {% if not templates %}disabled{% endif %}
+                >
+                    <i class="bi bi-file-earmark-arrow-down"></i>
+                    Сформировать DOCX
+                </button>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        const BASE_PATH = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '' : '/releases';
+        let selectedTemplateCode = {{ (templates[0].code if templates else '') | tojson }};
+
+        const fileInput = document.getElementById('mprFiles');
+        const fileList = document.getElementById('mprFileList');
+        const alertBox = document.getElementById('mprAlert');
+        const statusBox = document.getElementById('mprStatus');
+        const generateBtn = document.getElementById('mprGenerateBtn');
+
+        function setAlert(message, details = []) {
+            if (!message) {
+                alertBox.style.display = 'none';
+                alertBox.innerHTML = '';
+                return;
+            }
+            const detailHtml = details.length
+                ? `<ul>${details.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`
+                : '';
+            alertBox.innerHTML = `<div>${escapeHtml(message)}</div>${detailHtml}`;
+            alertBox.style.display = 'block';
+        }
+
+        function escapeHtml(value) {
+            return String(value || '')
+                .replaceAll('&', '&amp;')
+                .replaceAll('<', '&lt;')
+                .replaceAll('>', '&gt;')
+                .replaceAll('"', '&quot;')
+                .replaceAll("'", '&#39;');
+        }
+
+        function renderFileList() {
+            const files = Array.from(fileInput.files || []);
+            if (!files.length) {
+                fileList.innerHTML = '<div class="mpr-status">Файлы пока не выбраны.</div>';
+                return;
+            }
+            fileList.innerHTML = files.map(file => `
+                <div class="mpr-file-row">
+                    <i class="bi bi-file-earmark-spreadsheet"></i>
+                    <span>${escapeHtml(file.name)}</span>
+                </div>
+            `).join('');
+        }
+
+        document.querySelectorAll('.mpr-template-option').forEach(button => {
+            button.addEventListener('click', () => {
+                document.querySelectorAll('.mpr-template-option').forEach(item => item.classList.remove('active'));
+                button.classList.add('active');
+                selectedTemplateCode = button.dataset.templateCode || '';
+                setAlert('');
+            });
+        });
+
+        fileInput.addEventListener('change', () => {
+            renderFileList();
+            setAlert('');
+        });
+
+        generateBtn.addEventListener('click', async () => {
+            setAlert('');
+            const files = Array.from(fileInput.files || []);
+            if (!selectedTemplateCode) {
+                setAlert('Не выбран шаблон');
+                return;
+            }
+            if (!files.length) {
+                setAlert('Не загружены файлы');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('template_code', selectedTemplateCode);
+            files.forEach(file => formData.append('files', file, file.name));
+
+            generateBtn.disabled = true;
+            statusBox.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Формируем DOCX...';
+            try {
+                const response = await fetch(`${BASE_PATH}/mpr/generate`, {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                const contentType = response.headers.get('content-type') || '';
+                if (!response.ok) {
+                    let payload = {};
+                    if (contentType.includes('application/json')) {
+                        payload = await response.json();
+                    }
+                    throw payload;
+                }
+
+                const blob = await response.blob();
+                const disposition = response.headers.get('content-disposition') || '';
+                const filename = getDownloadFilename(disposition) || 'mpr.docx';
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                URL.revokeObjectURL(url);
+                statusBox.textContent = 'DOCX сформирован.';
+            } catch (error) {
+                statusBox.textContent = '';
+                setAlert(error.error || 'Не удалось сформировать DOCX', error.details || []);
+            } finally {
+                generateBtn.disabled = false;
+            }
+        });
+
+        function getDownloadFilename(disposition) {
+            const utfMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+            if (utfMatch) {
+                return decodeURIComponent(utfMatch[1]);
+            }
+            const match = disposition.match(/filename="?([^"]+)"?/i);
+            return match ? match[1] : '';
+        }
+
+        renderFileList();
+    </script>
+</body>
+</html>

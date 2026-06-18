@@ -224,7 +224,7 @@
         }
 
         .home-menu-tile:nth-child(3) .home-menu-icon {
-            background: rgba(34, 197, 94, 0.95);
+            background: rgba(245, 158, 11, 0.95);
         }
 
         .home-menu-arrow {
@@ -479,7 +479,7 @@
         
         window.onload = function() {
             // Устанавливаем правильные ссылки
-            document.getElementById('link-sms').href = BASE_PATH + '/sms';
+            document.getElementById('link-mpr').href = BASE_PATH + '/mpr';
             document.getElementById('link-release-monitor').href = BASE_PATH + '/release-monitor';
             document.getElementById('link-help').href = BASE_PATH + '/help';
             // Дашборд теперь через onclick
@@ -563,13 +563,13 @@
                         <span class="home-menu-name">Рабочий стол дежурного</span>
                     </span>
                 </button>
-                <a id="link-sms" href="/sms" class="home-menu-tile">
+                <a id="link-mpr" href="/mpr" class="home-menu-tile">
                     <span class="home-menu-tile-top">
-                        <span class="home-menu-icon"><i class="bi bi-envelope"></i></span>
+                        <span class="home-menu-icon"><i class="bi bi-file-earmark-word"></i></span>
                         <i class="bi bi-arrow-right home-menu-arrow"></i>
                     </span>
                     <span>
-                        <span class="home-menu-name">SMS-оповещения</span>
+                        <span class="home-menu-name">МПР</span>
                     </span>
                 </a>
             </div>
@@ -619,7 +619,7 @@
             </div>
             <div class="stat-row">
                 <div class="d-flex justify-content-between align-items-center mb-1">
-                    <span class="stat-label">SMS генератор</span>
+                    <span class="stat-label">SMS из Блока релизов</span>
                     <span class="stat-values">{{ stats.sms.total }} (30д: {{ stats.sms.last_30_days }})</span>
                 </div>
                 <div class="progress" style="height: 6px;">

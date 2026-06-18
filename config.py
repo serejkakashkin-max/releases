@@ -8,6 +8,7 @@ from version import VERSION, VERSION_HISTORY
 # --- Базовые пути ---
 SCRIPT_DIR = Path(__file__).resolve().parent
 DOC_TEMPLATES_ROOT = SCRIPT_DIR / "doc_templates"
+MPR_TEMPLATES_ROOT = SCRIPT_DIR / "doc_templates_MPR"
 SMS_TEMPLATES_ROOT = SCRIPT_DIR / "sms_templates"
 LOG_FILE = SCRIPT_DIR / "logs" / "release_generator.log"
 SMS_LOG_FILE = SCRIPT_DIR / "logs" / "sms_generator.log"
