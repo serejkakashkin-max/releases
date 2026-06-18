@@ -16,6 +16,11 @@ from config import MPR_TEMPLATES_ROOT
 
 
 APPENDIX_PLACEHOLDER = "{{APPENDIX_1_TABLE}}"
+HOST_PLACEHOLDERS = {
+    "{{MPR_SOWA_HOSTS}}": ("sowa",),
+    "{{MPR_POSTGRES_HOSTS}}": ("postgres", "postgre", "pgsql", "pgbouncer", "pangolin"),
+    "{{MPR_SYNGX_HOSTS}}": ("syngx", "syng"),
+}
 MPR_TEMPLATE_FILENAME = "template.docx"
 MPR_TEMPLATE_NAMES = {
     "os_update": "Обновление ОС",
@@ -235,6 +240,8 @@ def generate_mpr_docx(template_path, rows):
     except Exception as exc:
         raise MprError("Не удалось открыть DOCX-шаблон") from exc
 
+    _replace_host_placeholders(document, _build_host_placeholder_values(rows))
+
     paragraph = _find_placeholder_paragraph(document)
     if paragraph is None:
         raise MprError(f"Плейсхолдер {APPENDIX_PLACEHOLDER} не найден в DOCX-шаблоне")
@@ -253,6 +260,79 @@ def build_output_filename(template_info):
     safe_name = re.sub(r'[<>:"/\\|?*]+', " ", name).strip() or "МПР"
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return f"МПР_{safe_name}_{timestamp}.docx"
+
+
+def _build_host_placeholder_values(rows):
+    values = {}
+    for placeholder, keywords in HOST_PLACEHOLDERS.items():
+        hosts = []
+        seen = set()
+        for item in rows:
+            name = item.get("КТС", "")
+            haystack = f"{item.get('Наименование', '')} {name}".casefold()
+            if not name or not any(keyword in haystack for keyword in keywords):
+                continue
+            marker = name.casefold()
+            if marker in seen:
+                continue
+            seen.add(marker)
+            hosts.append(name)
+        values[placeholder] = "\n".join(hosts) if hosts else "—"
+    return values
+
+
+def _replace_host_placeholders(document, values):
+    for paragraph in _iter_document_paragraphs(document):
+        text = paragraph.text
+        if not text:
+            continue
+        updated = text
+        for placeholder, value in values.items():
+            updated = updated.replace(placeholder, value)
+        if updated != text:
+            _replace_paragraph_multiline(paragraph, updated)
+
+
+def _iter_document_paragraphs(document):
+    for paragraph in document.paragraphs:
+        yield paragraph
+    for table in document.tables:
+        yield from _iter_table_paragraphs(table)
+
+
+def _iter_table_paragraphs(table):
+    for row in table.rows:
+        for cell in row.cells:
+            for paragraph in cell.paragraphs:
+                yield paragraph
+            for nested_table in cell.tables:
+                yield from _iter_table_paragraphs(nested_table)
+
+
+def _replace_paragraph_multiline(paragraph, text):
+    source_run = paragraph.runs[0] if paragraph.runs else None
+    for run in paragraph.runs:
+        run.text = ""
+
+    lines = str(text or "").splitlines() or [""]
+    target_run = paragraph.runs[0] if paragraph.runs else paragraph.add_run()
+    _copy_run_style(source_run, target_run)
+    target_run.text = lines[0]
+    for line in lines[1:]:
+        target_run.add_break()
+        target_run.add_text(line)
+
+
+def _copy_run_style(source, target):
+    if source is None:
+        return
+    target.bold = source.bold
+    target.italic = source.italic
+    target.underline = source.underline
+    target.font.name = source.font.name
+    target.font.size = source.font.size
+    if source.font.color and source.font.color.rgb:
+        target.font.color.rgb = source.font.color.rgb
 
 
 def _find_placeholder_paragraph(document):
