@@ -16,10 +16,21 @@ from config import MPR_TEMPLATES_ROOT
 
 
 APPENDIX_PLACEHOLDER = "{{APPENDIX_1_TABLE}}"
+LOCATION_PLACEHOLDER = "{{MPR_LOCATION}}"
 HOST_PLACEHOLDERS = {
     "{{MPR_SOWA_HOSTS}}": ("sowa",),
     "{{MPR_POSTGRES_HOSTS}}": ("postgres", "postgre", "pgsql", "pgbouncer", "pangolin"),
     "{{MPR_SYNGX_HOSTS}}": ("syngx", "syng"),
+}
+MPR_PACKAGES = {
+    "mcod_vavilova": {
+        "label": "МЦОД и Вавилова",
+        "datacenters": ("МегаЦОД", "Вавилова", "Вавилова (observer)"),
+    },
+    "skolkovo": {
+        "label": "Сколково",
+        "datacenters": ("Сколково",),
+    },
 }
 MPR_TEMPLATE_FILENAME = "template.docx"
 MPR_TEMPLATE_NAMES = {
@@ -234,13 +245,75 @@ def _validate_columns(headers, filename):
         raise MprError(f"{filename}: отсутствуют обязательные колонки: {', '.join(missing)}")
 
 
-def generate_mpr_docx(template_path, rows):
+def normalize_mpr_package_codes(values):
+    requested = [str(value or "").strip() for value in (values or []) if str(value or "").strip()]
+    if not requested:
+        return list(MPR_PACKAGES)
+
+    result = []
+    unknown = []
+    for code in requested:
+        if code not in MPR_PACKAGES:
+            unknown.append(code)
+            continue
+        if code not in result:
+            result.append(code)
+    if unknown:
+        raise MprError(f"Неизвестные пакеты МПР: {', '.join(unknown)}")
+    if not result:
+        raise MprError("Не выбран ни один документ МПР")
+    return result
+
+
+def build_mpr_package_preview(rows):
+    grouped, unmapped = _split_mpr_rows(rows)
+    packages = []
+    for code, config in MPR_PACKAGES.items():
+        packages.append({
+            "code": code,
+            "label": config["label"],
+            "datacenters": list(config["datacenters"]),
+            "rows_count": len(grouped[code]),
+            "available": bool(grouped[code]),
+        })
+    return {
+        "rows_count": len(rows),
+        "packages": packages,
+        "unmapped": [
+            {"datacenter": datacenter, "rows_count": count}
+            for datacenter, count in unmapped.items()
+        ],
+    }
+
+
+def select_mpr_package_rows(rows, package_codes):
+    codes = normalize_mpr_package_codes(package_codes)
+    grouped, unmapped = _split_mpr_rows(rows)
+    if unmapped:
+        details = [
+            f"{datacenter}: {count} строк"
+            for datacenter, count in unmapped.items()
+        ]
+        raise MprError("В загруженных данных есть нераспределенные значения ЦОД", details)
+
+    empty = [MPR_PACKAGES[code]["label"] for code in codes if not grouped[code]]
+    if empty:
+        raise MprError(f"Для выбранных пакетов не найдены хосты: {', '.join(empty)}")
+    return {code: grouped[code] for code in codes}
+
+
+def generate_mpr_docx(template_path, rows, location_label=None):
     try:
         document = Document(template_path)
     except Exception as exc:
         raise MprError("Не удалось открыть DOCX-шаблон") from exc
 
-    _replace_host_placeholders(document, _build_host_placeholder_values(rows))
+    replacements = _build_host_placeholder_values(rows)
+    if location_label is not None:
+        if not _document_contains_placeholder(document, LOCATION_PLACEHOLDER):
+            raise MprError(f"Плейсхолдер {LOCATION_PLACEHOLDER} не найден в DOCX-шаблоне")
+        replacements[LOCATION_PLACEHOLDER] = location_label
+    _replace_host_placeholders(document, replacements)
 
     paragraph = _find_placeholder_paragraph(document)
     if paragraph is None:
@@ -255,11 +328,45 @@ def generate_mpr_docx(template_path, rows):
     return output
 
 
-def build_output_filename(template_info):
+def build_output_filename(template_info, package_label=None, timestamp=None):
     name = template_info.get("name") or template_info.get("code") or "МПР"
     safe_name = re.sub(r'[<>:"/\\|?*]+', " ", name).strip() or "МПР"
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    if package_label:
+        safe_package = re.sub(r'[<>:"/\\|?*]+', " ", package_label).strip()
+        if safe_package:
+            safe_name = f"{safe_name}_{safe_package}"
+    timestamp = timestamp or datetime.now().strftime("%Y%m%d_%H%M%S")
     return f"МПР_{safe_name}_{timestamp}.docx"
+
+
+def build_archive_filename(template_info, timestamp=None):
+    name = template_info.get("name") or template_info.get("code") or "МПР"
+    safe_name = re.sub(r'[<>:"/\\|?*]+', " ", name).strip() or "МПР"
+    timestamp = timestamp or datetime.now().strftime("%Y%m%d_%H%M%S")
+    return f"МПР_{safe_name}_{timestamp}.zip"
+
+
+def _split_mpr_rows(rows):
+    datacenter_map = {}
+    for code, config in MPR_PACKAGES.items():
+        for datacenter in config["datacenters"]:
+            datacenter_map[_normalize_datacenter(datacenter)] = code
+
+    grouped = {code: [] for code in MPR_PACKAGES}
+    unmapped = {}
+    for item in rows:
+        raw_datacenter = str(item.get("ЦОД", "") or "").strip()
+        code = datacenter_map.get(_normalize_datacenter(raw_datacenter))
+        if code:
+            grouped[code].append(item)
+            continue
+        label = raw_datacenter or "Пустое значение ЦОД"
+        unmapped[label] = unmapped.get(label, 0) + 1
+    return grouped, unmapped
+
+
+def _normalize_datacenter(value):
+    return re.sub(r"\s+", " ", str(value or "").strip()).casefold()
 
 
 def _build_host_placeholder_values(rows):
@@ -283,14 +390,28 @@ def _build_host_placeholder_values(rows):
 
 def _replace_host_placeholders(document, values):
     for paragraph in _iter_document_paragraphs(document):
-        text = paragraph.text
-        if not text:
+        if not paragraph.text:
             continue
-        updated = text
+        needs_fallback = False
         for placeholder, value in values.items():
-            updated = updated.replace(placeholder, value)
-        if updated != text:
+            if placeholder not in paragraph.text:
+                continue
+            matching_runs = [run for run in paragraph.runs if placeholder in run.text]
+            if matching_runs:
+                for run in matching_runs:
+                    _replace_run_placeholder(run, placeholder, value)
+            else:
+                needs_fallback = True
+                break
+        if needs_fallback:
+            updated = paragraph.text
+            for placeholder, value in values.items():
+                updated = updated.replace(placeholder, value)
             _replace_paragraph_multiline(paragraph, updated)
+
+
+def _document_contains_placeholder(document, placeholder):
+    return any(placeholder in paragraph.text for paragraph in _iter_document_paragraphs(document))
 
 
 def _iter_document_paragraphs(document):
@@ -321,6 +442,16 @@ def _replace_paragraph_multiline(paragraph, text):
     for line in lines[1:]:
         target_run.add_break()
         target_run.add_text(line)
+
+
+def _replace_run_placeholder(run, placeholder, value):
+    before, after = run.text.split(placeholder, 1)
+    lines = str(value or "").splitlines() or [""]
+    run.text = before + lines[0]
+    for line in lines[1:]:
+        run.add_break()
+        run.add_text(line)
+    run.add_text(after)
 
 
 def _copy_run_style(source, target):

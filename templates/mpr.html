@@ -270,6 +270,126 @@
             font-weight: 700;
         }
 
+        .mpr-package-modal .modal-content {
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: #ffffff;
+            color: var(--text-primary);
+            box-shadow: 0 24px 64px rgba(15, 23, 42, 0.28);
+            isolation: isolate;
+            opacity: 1;
+            overflow: hidden;
+            transform: translateZ(0);
+        }
+
+        [data-theme="dark"] .mpr-package-modal .modal-content {
+            background: #1f2937;
+        }
+
+        .mpr-package-modal .modal-header,
+        .mpr-package-modal .modal-body,
+        .mpr-package-modal .modal-footer {
+            background: #ffffff;
+        }
+
+        [data-theme="dark"] .mpr-package-modal .modal-header,
+        [data-theme="dark"] .mpr-package-modal .modal-body,
+        [data-theme="dark"] .mpr-package-modal .modal-footer {
+            background: #1f2937;
+        }
+
+        .mpr-package-modal .modal-header,
+        .mpr-package-modal .modal-footer {
+            border-color: var(--border-color);
+        }
+
+        .mpr-package-modal .btn-close {
+            filter: none;
+        }
+
+        [data-theme="dark"] .mpr-package-modal .btn-close {
+            filter: invert(1) grayscale(100%) brightness(200%);
+        }
+
+        .mpr-package-summary {
+            color: var(--text-secondary);
+            font-size: 0.86rem;
+            font-weight: 650;
+            margin-bottom: 0.85rem;
+        }
+
+        .mpr-package-options {
+            display: grid;
+            gap: 0.65rem;
+        }
+
+        .mpr-package-option {
+            display: grid;
+            grid-template-columns: 22px minmax(0, 1fr) auto;
+            gap: 0.75rem;
+            align-items: center;
+            padding: 0.85rem;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: var(--mpr-soft-bg);
+            cursor: pointer;
+            transition: border-color 0.16s ease, background 0.16s ease;
+        }
+
+        .mpr-package-option.selected {
+            border-color: rgba(59, 130, 246, 0.72);
+            background: rgba(59, 130, 246, 0.10);
+        }
+
+        .mpr-package-option.disabled {
+            cursor: not-allowed;
+            opacity: 0.55;
+        }
+
+        .mpr-package-option input {
+            width: 18px;
+            height: 18px;
+            margin: 0;
+            accent-color: #3b82f6;
+        }
+
+        .mpr-package-name {
+            color: var(--text-primary);
+            font-weight: 850;
+            line-height: 1.2;
+        }
+
+        .mpr-package-datacenters {
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-top: 0.2rem;
+        }
+
+        .mpr-package-count {
+            min-width: 74px;
+            text-align: right;
+            color: var(--primary);
+            font-weight: 850;
+        }
+
+        .mpr-unmapped {
+            display: none;
+            margin-top: 0.8rem;
+            padding: 0.75rem 0.85rem;
+            border: 1px solid rgba(239, 68, 68, 0.32);
+            border-radius: 8px;
+            background: rgba(239, 68, 68, 0.08);
+            color: #ef4444;
+            font-size: 0.84rem;
+            font-weight: 700;
+        }
+
+        .mpr-unmapped ul {
+            margin: 0.4rem 0 0;
+            padding-left: 1.2rem;
+        }
+
         @media (max-width: 768px) {
             .mpr-grid {
                 grid-template-columns: 1fr;
@@ -282,6 +402,15 @@
 
             .mpr-actions .btn {
                 width: 100%;
+            }
+
+            .mpr-package-option {
+                grid-template-columns: 22px minmax(0, 1fr);
+            }
+
+            .mpr-package-count {
+                grid-column: 2;
+                text-align: left;
             }
         }
     </style>
@@ -366,12 +495,37 @@
                     type="button"
                     {% if not templates %}disabled{% endif %}
                 >
-                    <i class="bi bi-file-earmark-arrow-down"></i>
-                    Сформировать DOCX
+                    <i class="bi bi-arrow-right"></i>
+                    Продолжить
                 </button>
             </div>
         </section>
     </main>
+
+    <div class="modal fade mpr-package-modal" id="mprPackageModal" tabindex="-1" aria-labelledby="mprPackageModalTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h2 class="modal-title fs-5" id="mprPackageModalTitle">Какие документы сформировать?</h2>
+                        <div class="mpr-package-summary" id="mprPackageSummary"></div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mpr-package-options" id="mprPackageOptions"></div>
+                    <div class="mpr-unmapped" id="mprUnmapped"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-primary" id="mprConfirmGenerateBtn">
+                        <i class="bi bi-file-earmark-arrow-down"></i>
+                        <span id="mprConfirmGenerateLabel">Сформировать пакет (2)</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script>
         const BASE_PATH = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '' : '/releases';
@@ -382,6 +536,14 @@
         const alertBox = document.getElementById('mprAlert');
         const statusBox = document.getElementById('mprStatus');
         const generateBtn = document.getElementById('mprGenerateBtn');
+        const packageModalElement = document.getElementById('mprPackageModal');
+        const packageModal = new bootstrap.Modal(packageModalElement);
+        const packageSummary = document.getElementById('mprPackageSummary');
+        const packageOptions = document.getElementById('mprPackageOptions');
+        const unmappedBox = document.getElementById('mprUnmapped');
+        const confirmGenerateBtn = document.getElementById('mprConfirmGenerateBtn');
+        const confirmGenerateLabel = document.getElementById('mprConfirmGenerateLabel');
+        let mprPreview = null;
 
         function setAlert(message, details = []) {
             if (!message) {
@@ -424,12 +586,14 @@
                 document.querySelectorAll('.mpr-template-option').forEach(item => item.classList.remove('active'));
                 button.classList.add('active');
                 selectedTemplateCode = button.dataset.templateCode || '';
+                mprPreview = null;
                 setAlert('');
             });
         });
 
         fileInput.addEventListener('change', () => {
             renderFileList();
+            mprPreview = null;
             setAlert('');
         });
 
@@ -445,46 +609,152 @@
                 return;
             }
 
-            const formData = new FormData();
-            formData.append('template_code', selectedTemplateCode);
-            files.forEach(file => formData.append('files', file, file.name));
-
             generateBtn.disabled = true;
-            statusBox.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Формируем DOCX...';
+            statusBox.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Проверяем состав пакетов...';
+            try {
+                const response = await fetch(`${BASE_PATH}/mpr/preview`, {
+                    method: 'POST',
+                    body: buildMprFormData(files),
+                });
+                if (!response.ok) {
+                    throw await readErrorPayload(response);
+                }
+                mprPreview = await response.json();
+                renderPackageSelection(mprPreview, files.length);
+                statusBox.textContent = '';
+                packageModal.show();
+            } catch (error) {
+                statusBox.textContent = '';
+                setAlert(error.error || 'Не удалось проверить данные МПР', error.details || []);
+            } finally {
+                generateBtn.disabled = false;
+            }
+        });
+
+        confirmGenerateBtn.addEventListener('click', async () => {
+            const selectedPackages = getSelectedPackageCodes();
+            if (!selectedPackages.length || (mprPreview?.unmapped || []).length) {
+                updateConfirmGenerateState();
+                return;
+            }
+
+            const files = Array.from(fileInput.files || []);
+            const formData = buildMprFormData(files);
+            selectedPackages.forEach(code => formData.append('packages', code));
+
+            confirmGenerateBtn.disabled = true;
+            confirmGenerateLabel.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Формируем...';
             try {
                 const response = await fetch(`${BASE_PATH}/mpr/generate`, {
                     method: 'POST',
                     body: formData,
                 });
-
-                const contentType = response.headers.get('content-type') || '';
                 if (!response.ok) {
-                    let payload = {};
-                    if (contentType.includes('application/json')) {
-                        payload = await response.json();
-                    }
-                    throw payload;
+                    throw await readErrorPayload(response);
                 }
-
-                const blob = await response.blob();
-                const disposition = response.headers.get('content-disposition') || '';
-                const filename = getDownloadFilename(disposition) || 'mpr.docx';
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = filename;
-                document.body.appendChild(link);
-                link.click();
-                link.remove();
-                URL.revokeObjectURL(url);
-                statusBox.textContent = 'DOCX сформирован.';
+                await downloadResponse(response);
+                packageModal.hide();
+                statusBox.textContent = selectedPackages.length > 1
+                    ? 'Пакет МПР сформирован.'
+                    : 'DOCX МПР сформирован.';
+                setAlert('');
             } catch (error) {
+                packageModal.hide();
                 statusBox.textContent = '';
-                setAlert(error.error || 'Не удалось сформировать DOCX', error.details || []);
+                setAlert(error.error || 'Не удалось сформировать документы МПР', error.details || []);
             } finally {
-                generateBtn.disabled = false;
+                updateConfirmGenerateState();
             }
         });
+
+        function buildMprFormData(files) {
+            const formData = new FormData();
+            formData.append('template_code', selectedTemplateCode);
+            files.forEach(file => formData.append('files', file, file.name));
+            return formData;
+        }
+
+        function renderPackageSelection(preview, filesCount) {
+            packageSummary.textContent = `Файлов: ${filesCount} · хостов после обработки: ${preview.rows_count || 0}`;
+            packageOptions.innerHTML = (preview.packages || []).map(item => {
+                const disabled = !item.available;
+                return `
+                    <label class="mpr-package-option${disabled ? ' disabled' : ' selected'}">
+                        <input
+                            type="checkbox"
+                            class="mpr-package-checkbox"
+                            value="${escapeHtml(item.code)}"
+                            ${disabled ? 'disabled' : 'checked'}
+                        >
+                        <span>
+                            <span class="mpr-package-name">${escapeHtml(item.label)}</span>
+                            <span class="mpr-package-datacenters d-block">${escapeHtml((item.datacenters || []).join(' · '))}</span>
+                        </span>
+                        <span class="mpr-package-count">${item.rows_count || 0} хостов</span>
+                    </label>
+                `;
+            }).join('');
+
+            packageOptions.querySelectorAll('.mpr-package-checkbox').forEach(checkbox => {
+                checkbox.addEventListener('change', () => {
+                    checkbox.closest('.mpr-package-option')?.classList.toggle('selected', checkbox.checked);
+                    updateConfirmGenerateState();
+                });
+            });
+
+            const unmapped = preview.unmapped || [];
+            if (unmapped.length) {
+                unmappedBox.innerHTML = `
+                    <div>Есть хосты с нераспределенным значением ЦОД:</div>
+                    <ul>${unmapped.map(item => `<li>${escapeHtml(item.datacenter)}: ${item.rows_count} строк</li>`).join('')}</ul>
+                `;
+                unmappedBox.style.display = 'block';
+            } else {
+                unmappedBox.innerHTML = '';
+                unmappedBox.style.display = 'none';
+            }
+            updateConfirmGenerateState();
+        }
+
+        function getSelectedPackageCodes() {
+            return Array.from(packageOptions.querySelectorAll('.mpr-package-checkbox:checked'))
+                .map(item => item.value);
+        }
+
+        function updateConfirmGenerateState() {
+            const count = getSelectedPackageCodes().length;
+            const hasUnmapped = Boolean((mprPreview?.unmapped || []).length);
+            confirmGenerateBtn.disabled = count === 0 || hasUnmapped;
+            confirmGenerateLabel.textContent = count > 1
+                ? `Сформировать пакет (${count})`
+                : count === 1
+                    ? 'Сформировать DOCX (1)'
+                    : 'Выберите документ';
+        }
+
+        async function readErrorPayload(response) {
+            const contentType = response.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) {
+                return await response.json();
+            }
+            return { error: 'Сервис вернул непредвиденный ответ' };
+        }
+
+        async function downloadResponse(response) {
+            const blob = await response.blob();
+            const disposition = response.headers.get('content-disposition') || '';
+            const contentType = response.headers.get('content-type') || '';
+            const fallback = contentType.includes('application/zip') ? 'mpr.zip' : 'mpr.docx';
+            const filename = getDownloadFilename(disposition) || fallback;
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+        }
 
         function getDownloadFilename(disposition) {
             const utfMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
