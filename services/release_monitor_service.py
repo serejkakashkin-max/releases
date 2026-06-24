@@ -6823,6 +6823,40 @@ def _schedule_unassigned_email_notification(
         )
 
 
+def _schedule_responsible_email_notification(
+    payload,
+    *,
+    refresh_mode,
+    explicit_assignments=None,
+):
+    try:
+        from services.release_monitor_responsible_email_service import (
+            schedule_responsible_email_notification,
+        )
+
+        schedule_responsible_email_notification(
+            payload,
+            refresh_mode=refresh_mode,
+            explicit_assignments=explicit_assignments,
+        )
+    except Exception:
+        logging.exception(
+            "Release monitor: failed to schedule responsible email after %s",
+            refresh_mode,
+        )
+
+
+def _schedule_responsible_weekly_digest(payload):
+    try:
+        from services.release_monitor_responsible_email_service import (
+            schedule_responsible_weekly_digest,
+        )
+
+        schedule_responsible_weekly_digest(payload)
+    except Exception:
+        logging.exception("Release monitor: failed to schedule responsible weekly digest")
+
+
 def _run_auto_incremental_release_monitor_refresh():
     global _cached_data, _last_cache_update, _last_auto_incremental_refresh_at
 
@@ -6972,6 +7006,10 @@ def _run_auto_incremental_release_monitor_refresh():
                     finalized,
                     refresh_mode="silent",
                 )
+                _schedule_responsible_email_notification(
+                    finalized,
+                    refresh_mode="silent",
+                )
             return
 
         with _cache_lock:
@@ -7023,6 +7061,10 @@ def _run_auto_incremental_release_monitor_refresh():
         )
         if jira_failure_state != "partial":
             _schedule_unassigned_email_notification(
+                finalized,
+                refresh_mode="silent",
+            )
+            _schedule_responsible_email_notification(
                 finalized,
                 refresh_mode="silent",
             )
@@ -7128,6 +7170,7 @@ def _ensure_scheduler_started():
                                 name="release-monitor-silent-refresh",
                             )
                             _auto_incremental_thread.start()
+                _schedule_responsible_weekly_digest(snapshot)
             except Exception:
                 logging.exception("Release monitor: refresh scheduler failed")
                 _rm_trace("RM_SCHEDULER", "loop_error")
@@ -7386,6 +7429,10 @@ def _run_release_monitor_refresh(mode="full", trigger="manual"):
         )
         if auto_sync_allowed:
             _schedule_unassigned_email_notification(
+                data,
+                refresh_mode=mode,
+            )
+            _schedule_responsible_email_notification(
                 data,
                 refresh_mode=mode,
             )
@@ -9635,6 +9682,21 @@ def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=
 
     assignments = _load_reviewer_assignments()
     current_assignment = dict(assignments.get(release_key, {}))
+    previous_responsibles = []
+    for value in current_assignment.get("responsibles") or []:
+        previous_value = str(value or "").strip()
+        if previous_value and previous_value not in previous_responsibles:
+            previous_responsibles.append(previous_value)
+    previous_current_responsible = previous_responsibles[0] if previous_responsibles else ""
+    next_current_responsible = (
+        normalized_responsibles[0] if normalized_responsibles else ""
+    )
+    responsible_assignment_events = (
+        {release_key: next_current_responsible}
+        if next_current_responsible
+        and next_current_responsible != previous_current_responsible
+        else {}
+    )
     if reviewer_source is None:
         reviewer_source = current_assignment.get("reviewer_source")
     reviewer_source = str(reviewer_source or "").strip()
@@ -9678,6 +9740,7 @@ def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=
     _save_reviewer_assignments(assignments)
 
     unassigned_snapshot = None
+    responsible_snapshot = None
     with _cache_lock:
         if _cached_data is None:
             disk_payload = _load_snapshot_from_disk()
@@ -9704,6 +9767,8 @@ def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=
                         and item["is_missing_week_responsible"]
                     ):
                         unassigned_snapshot = copy.deepcopy(_cached_data)
+                    if responsible_assignment_events:
+                        responsible_snapshot = copy.deepcopy(_cached_data)
                     break
             _mark_release_monitor_state_changed()
         else:
@@ -9724,6 +9789,13 @@ def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=
             unassigned_snapshot,
             refresh_mode="assignment_change",
             explicit_events={release_key: "responsible_removed"},
+        )
+    if responsible_snapshot is not None:
+        responsible_snapshot.setdefault("meta", {})["data_revision"] = result["data_revision"]
+        _schedule_responsible_email_notification(
+            responsible_snapshot,
+            refresh_mode="assignment_change",
+            explicit_assignments=responsible_assignment_events,
         )
     return result
 
@@ -9836,6 +9908,13 @@ def assign_release_monitor_responsible_if_expected(
         target_item["psi_responsibles"] = list(next_responsibles)
         target_item["is_missing_week_responsible"] = False
         revision = _mark_release_monitor_state_changed()
+        responsible_snapshot = copy.deepcopy(_cached_data)
+        responsible_snapshot.setdefault("meta", {})["data_revision"] = revision
+        _schedule_responsible_email_notification(
+            responsible_snapshot,
+            refresh_mode="assignment_change",
+            explicit_assignments={release_key: responsible},
+        )
         return {
             **next_assignment,
             "data_revision": revision,

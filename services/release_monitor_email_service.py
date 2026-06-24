@@ -293,6 +293,13 @@ def _current_week_period(value: Optional[datetime] = None) -> str:
     return f"{start.strftime('%d.%m.%Y')} - {end.strftime('%d.%m.%Y')}"
 
 
+def _operational_assignment_period(value: Optional[datetime] = None) -> str:
+    current = value or datetime.now()
+    start = current.date() - timedelta(days=current.weekday())
+    next_monday = start + timedelta(days=7)
+    return f"{start.strftime('%d.%m.%Y')} - {next_monday.strftime('%d.%m.%Y')}"
+
+
 def _snapshot_revision(snapshot: Dict) -> str:
     meta = dict((snapshot or {}).get("meta") or {})
     return str(
@@ -327,8 +334,16 @@ def _has_responsible(item: Dict) -> bool:
 
 
 def _is_current_week_active(item: Dict) -> bool:
+    release_dt = _parse_item_date(item)
+    if release_dt == datetime.max:
+        return False
+    release_date = release_dt.date()
+    current = datetime.now()
+    week_start = current.date() - timedelta(days=current.weekday())
+    week_end = week_start + timedelta(days=6)
+    next_monday = week_end + timedelta(days=1)
     return bool(
-        item.get("is_current_week_assignment_scope")
+        (week_start <= release_date <= week_end or release_date == next_monday)
         and not item.get("is_cancelled")
         and not item.get("is_final")
         and str(item.get("row_key") or "").strip()
@@ -719,7 +734,7 @@ def build_unassigned_email_content(
         if event.get("event_type") == EVENT_RESPONSIBLE_REMOVED
     )
     generated_at = datetime.now().astimezone()
-    period = _current_week_period(generated_at)
+    period = _operational_assignment_period(generated_at)
     snapshot_label = _snapshot_label(snapshot)
     subject = (
         f"[Блок релизов] Требуется назначение ответственных: "
@@ -789,8 +804,8 @@ def build_unassigned_email_content(
       <table role="presentation" width="760" cellspacing="0" cellpadding="0" style="width:100%;max-width:760px;background:#ffffff;border:1px solid #d8e0ea;">
         <tr><td style="padding:22px 26px;background:#14213d;color:#ffffff;">
           <div style="font-size:15px;font-weight:700;color:#93c5fd;">Блок релизов</div>
-          <div style="margin-top:6px;font-size:23px;font-weight:700;line-height:1.25;">Требуется назначение ответственных по релизам текущей недели</div>
-          <div style="margin-top:10px;color:#dbeafe;font-size:13px;line-height:1.5;">В Блоке релизов обнаружены релизы текущей недели, для которых не назначен ответственный исполнитель. Просьба выполнить назначение в Центре назначений или в Блоке релизов.</div>
+          <div style="margin-top:6px;font-size:23px;font-weight:700;line-height:1.25;">Требуется назначение ответственных по ближайшим релизам</div>
+          <div style="margin-top:10px;color:#dbeafe;font-size:13px;line-height:1.5;">В Блоке релизов обнаружены релизы текущей недели или следующего понедельника, для которых не назначен ответственный исполнитель. Просьба выполнить назначение в Центре назначений или в Блоке релизов.</div>
         </td></tr>
         <tr><td style="padding:18px 26px 4px;">
           {summary_html}
@@ -813,10 +828,10 @@ def build_unassigned_email_content(
 
     text_lines = [
         "Блок релизов",
-        "Требуется назначение ответственных по релизам текущей недели",
+        "Требуется назначение ответственных по ближайшим релизам",
         "",
         (
-            "В Блоке релизов обнаружены релизы текущей недели, для которых "
+            "В Блоке релизов обнаружены релизы текущей недели или следующего понедельника, для которых "
             "не назначен ответственный исполнитель."
         ),
         "Просьба выполнить назначение в Центре назначений или в Блоке релизов.",

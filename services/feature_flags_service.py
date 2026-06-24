@@ -3,7 +3,7 @@ import json
 import logging
 import threading
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 
 FEATURE_FLAGS_FILE = Path(__file__).resolve().parent.parent / "feature_flags.json"
@@ -20,6 +20,14 @@ DEFAULT_FEATURE_FLAGS = {
             "enabled": False,
             "recipients": [],
         },
+        "release_monitor_responsible_email": {
+            "enabled": False,
+            "employee_recipients": {},
+            "weekly_digest_enabled": True,
+            "weekly_digest_time": "16:00",
+            "assignment_email_delay_minutes": 6,
+            "personal_email_send_interval_seconds": 5,
+        },
     },
 }
 
@@ -27,6 +35,26 @@ _flags_lock = threading.RLock()
 _cached_flags = copy.deepcopy(DEFAULT_FEATURE_FLAGS)
 _cached_mtime_ns = None
 _last_load_error_key = None
+
+
+def _normalize_string_list(value: Any) -> List[str]:
+    values = value if isinstance(value, (list, tuple, set)) else [value]
+    normalized = []
+    for item in values:
+        clean_item = str(item or "").strip()
+        if clean_item:
+            normalized.append(clean_item)
+    return normalized
+
+
+def _normalize_non_negative_int(value: Any, default: int) -> int:
+    if isinstance(value, bool):
+        return default
+    try:
+        normalized = int(value)
+    except (TypeError, ValueError):
+        return default
+    return normalized if normalized >= 0 else default
 
 
 def _normalize_flags(payload: Any) -> Dict[str, Dict[str, Any]]:
@@ -54,6 +82,41 @@ def _normalize_flags(payload: Any) -> Dict[str, Dict[str, Any]]:
                     for value in recipients
                     if str(value or "").strip()
                 ]
+        responsible_email_source = automation.get("release_monitor_responsible_email")
+        if isinstance(responsible_email_source, dict):
+            target = normalized["automation"]["release_monitor_responsible_email"]
+            if isinstance(responsible_email_source.get("enabled"), bool):
+                target["enabled"] = responsible_email_source["enabled"]
+            employee_recipients = responsible_email_source.get("employee_recipients")
+            if isinstance(employee_recipients, dict):
+                normalized_recipients = {}
+                for name, addresses in employee_recipients.items():
+                    clean_name = str(name or "").strip()
+                    clean_addresses = _normalize_string_list(addresses)
+                    if clean_name and clean_addresses:
+                        normalized_recipients[clean_name] = clean_addresses
+                target["employee_recipients"] = normalized_recipients
+            if isinstance(responsible_email_source.get("weekly_digest_enabled"), bool):
+                target["weekly_digest_enabled"] = responsible_email_source[
+                    "weekly_digest_enabled"
+                ]
+            weekly_digest_time = str(
+                responsible_email_source.get("weekly_digest_time") or ""
+            ).strip()
+            if weekly_digest_time:
+                target["weekly_digest_time"] = weekly_digest_time
+            target["assignment_email_delay_minutes"] = _normalize_non_negative_int(
+                responsible_email_source.get("assignment_email_delay_minutes"),
+                DEFAULT_FEATURE_FLAGS["automation"]["release_monitor_responsible_email"][
+                    "assignment_email_delay_minutes"
+                ],
+            )
+            target["personal_email_send_interval_seconds"] = _normalize_non_negative_int(
+                responsible_email_source.get("personal_email_send_interval_seconds"),
+                DEFAULT_FEATURE_FLAGS["automation"]["release_monitor_responsible_email"][
+                    "personal_email_send_interval_seconds"
+                ],
+            )
     return normalized
 
 
