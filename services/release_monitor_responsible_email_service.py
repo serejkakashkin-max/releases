@@ -565,7 +565,7 @@ def _build_personal_email_content(
     final_count = sum(1 for item in all_items if item.get("is_final"))
     generated_at = datetime.now().astimezone()
     period = _week_period(generated_at)
-    public_url = _mail_settings()["public_url"]
+    release_monitor_url, _assignment_center_url = _release_monitor_links()
     subject = (
         f"[Блок релизов] Вы назначены ответственным: {len(event_keys)} "
         f"новое назначение"
@@ -595,6 +595,7 @@ def _build_personal_email_content(
 """.strip()
     html_body = f"""<!doctype html>
 <html lang="ru">
+<head><meta http-equiv="Content-Type" content="text/html; charset=utf-8"></head>
 <body style="margin:0;padding:0;background:#f3f6fa;font-family:Arial,sans-serif;color:#1f2937;">
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f3f6fa;">
     <tr><td align="center" style="padding:24px 12px;">
@@ -608,7 +609,7 @@ def _build_personal_email_content(
           {summary_html}
           <div style="margin-top:8px;color:#64748b;font-size:12px;">Период: {html.escape(period)} · Сформировано: {generated_at.strftime('%d.%m.%Y %H:%M')} · Снимок: {html.escape(_snapshot_label(snapshot))}</div>
           <div style="padding:18px 0;text-align:center;">
-            <a href="{html.escape(public_url, quote=True)}" style="display:inline-block;padding:11px 22px;background:#2563eb;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;border-radius:4px;">Открыть Центр назначений</a>
+            <a href="{html.escape(release_monitor_url, quote=True)}" style="display:inline-block;padding:11px 22px;background:#2563eb;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;border-radius:4px;">Открыть Блок релизов</a>
           </div>
         </td></tr>
         <tr><td style="padding:0 26px 20px;">
@@ -634,7 +635,7 @@ def _build_personal_email_content(
         f"Актуально в окне: {len(all_items)}",
         f"Активно / завершено: {active_count} / {final_count}",
         f"Период: {period}",
-        f"Центр назначений: {public_url}",
+        f"Блок релизов: {release_monitor_url}",
         "",
         "Новые назначения:",
     ]
@@ -790,9 +791,9 @@ def _build_weekly_digest_content(
     assigned_count = total_count - missing_count
     period = _week_period(now)
     focus_day = _focus_day_summary(items, now)
-    public_url = _mail_settings()["public_url"]
+    release_monitor_url, assignment_center_url = _release_monitor_links()
     subject = (
-        f"[Блок релизов] Недельная сводка распределения: "
+        f"[Блок релизов] Предварительная сводка недели: "
         f"{assigned_count} назначено, {missing_count} без ответственного"
     )
     limit_notice = ""
@@ -801,7 +802,7 @@ def _build_weekly_digest_content(
             f'<div style="margin:14px 0;padding:11px 14px;border-left:4px solid #f59e0b;'
             'background:#fff7ed;color:#7c2d12;font-size:13px;">'
             f"Показаны первые {MAX_EMAIL_ROWS} записей из {total_count}. "
-            "Для просмотра полного списка откройте Центр назначений.</div>"
+            "Для просмотра полного списка откройте Блок релизов.</div>"
         )
     summary_html = f"""
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;">
@@ -827,20 +828,23 @@ def _build_weekly_digest_content(
 """.strip()
     html_body = f"""<!doctype html>
 <html lang="ru">
+<head><meta http-equiv="Content-Type" content="text/html; charset=utf-8"></head>
 <body style="margin:0;padding:0;background:#f3f6fa;font-family:Arial,sans-serif;color:#1f2937;">
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f3f6fa;">
     <tr><td align="center" style="padding:24px 12px;">
       <table role="presentation" width="860" cellspacing="0" cellpadding="0" style="width:100%;max-width:860px;background:#ffffff;border:1px solid #d8e0ea;">
         <tr><td style="padding:22px 26px;background:#14213d;color:#ffffff;">
           <div style="font-size:15px;font-weight:700;color:#93c5fd;">Блок релизов</div>
-          <div style="margin-top:6px;font-size:23px;font-weight:700;line-height:1.25;">Недельная сводка распределения релизов</div>
-          <div style="margin-top:10px;color:#dbeafe;font-size:13px;line-height:1.5;">Это недельная сводка распределения релизов. Она показывает актуальных ответственных по релизам текущей недели. Для назначения или корректировки ответственных откройте Центр назначений.</div>
+          <div style="margin-top:6px;font-size:23px;font-weight:700;line-height:1.25;">Предварительная сводка по релизам текущей недели</div>
+          <div style="margin-top:10px;color:#dbeafe;font-size:13px;line-height:1.5;">Это предварительная сводка по предстоящим релизам текущей недели. Общую таблицу смотрите в Блоке релизов.</div>
         </td></tr>
         <tr><td style="padding:18px 26px 4px;">
           {summary_html}
           <div style="margin-top:8px;color:#64748b;font-size:12px;">Период: {html.escape(period)} · Сформировано: {now.strftime('%d.%m.%Y %H:%M')} · Снимок: {html.escape(_snapshot_label(snapshot))}</div>
           <div style="padding:18px 0;text-align:center;">
-            <a href="{html.escape(public_url, quote=True)}" style="display:inline-block;padding:11px 22px;background:#2563eb;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;border-radius:4px;">Открыть Центр назначений</a>
+            <a href="{html.escape(release_monitor_url, quote=True)}" style="display:inline-block;padding:11px 22px;background:#2563eb;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;border-radius:4px;">Открыть Блок релизов</a>
+            <span style="display:inline-block;width:10px;line-height:10px;">&nbsp;</span>
+            <a href="{html.escape(assignment_center_url, quote=True)}" style="display:inline-block;padding:11px 22px;background:#0f766e;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;border-radius:4px;">Открыть Центр назначений</a>
           </div>
         </td></tr>
         <tr><td style="padding:0 26px 20px;">
@@ -858,11 +862,11 @@ def _build_weekly_digest_content(
 </html>"""
     text_lines = [
         "Блок релизов",
-        "Недельная сводка распределения релизов",
+        "Предварительная сводка по релизам текущей недели",
         "",
-        "Это недельная сводка распределения релизов.",
-        "Она показывает актуальных ответственных по релизам текущей недели.",
-        "Для назначения или корректировки ответственных откройте Центр назначений.",
+        "Это предварительная сводка по предстоящим релизам текущей недели.",
+        "В письме показаны актуальные ответственные и релизы, где ответственный еще не назначен.",
+        "Общую таблицу смотрите в Блоке релизов; назначение отсутствующих ответственных выполняется в Центре назначений.",
         "",
         f"Всего релизов текущей недели: {total_count}",
         f"Назначено: {assigned_count}",
@@ -870,7 +874,8 @@ def _build_weekly_digest_content(
         f"Фокус дня: {focus_day}",
         f"Период: {period}",
         f"Сформировано: {now.strftime('%d.%m.%Y %H:%M:%S')}",
-        f"Центр назначений: {public_url}",
+        f"Блок релизов: {release_monitor_url}",
+        f"Центр назначений: {assignment_center_url}",
         "",
         "Релизы текущей недели:",
     ]
@@ -892,7 +897,7 @@ def _build_weekly_digest_content(
     if total_count > MAX_EMAIL_ROWS:
         text_lines.append(
             f"Показаны первые {MAX_EMAIL_ROWS} записей из {total_count}. "
-            "Для просмотра полного списка откройте Центр назначений."
+            "Для просмотра полного списка откройте Блок релизов."
         )
     text_lines.extend(
         [
@@ -913,6 +918,14 @@ def _latest_snapshot() -> Dict:
     from services.release_monitor_service import get_release_monitor_snapshot
 
     return get_release_monitor_snapshot() or {}
+
+
+def _release_monitor_links() -> Tuple[str, str]:
+    public_url = _mail_settings()["public_url"].rstrip("/")
+    assignment_suffix = "/assignment-center"
+    if public_url.endswith(assignment_suffix):
+        return public_url[: -len(assignment_suffix)], public_url
+    return public_url, f"{public_url}{assignment_suffix}"
 
 
 def _merge_assignment_event(
