@@ -26,6 +26,7 @@ from services.release_monitor_email_service import (
     _snapshot_label,
     _validate_delivery_settings,
 )
+from services.release_report_service import get_release_report_service
 
 
 RESPONSIBLE_EMAIL_AUTOMATION_FLAG = "release_monitor_responsible_email"
@@ -455,6 +456,58 @@ def _secondary_meta(item: Dict) -> str:
     return " · ".join(parts)
 
 
+def _digest_release_title(item: Dict) -> str:
+    lines = [
+        str(part or "").strip()
+        for part in (item.get("release_name_lines") or [])[:2]
+        if str(part or "").strip()
+    ]
+    if lines:
+        return " / ".join(lines)
+    return str(item.get("release_summary") or "").strip()
+
+
+def _release_type_label(item: Dict) -> str:
+    try:
+        return get_release_report_service()._get_item_kind_label(item)
+    except Exception:
+        logging.debug("Failed to classify release type via current-week report service", exc_info=True)
+    release_type = str(item.get("release_type") or "").strip().lower()
+    if item.get("is_reroll") or release_type == "reroll":
+        return "Перераскатка"
+    if item.get("is_hotfix") or release_type == "hotfix":
+        return "Хотфикс"
+    if release_type == "technical":
+        return "Технический"
+    return "Релиз"
+
+
+def _system_label(item: Dict) -> str:
+    try:
+        return get_release_report_service()._get_item_system_name(item)
+    except Exception:
+        logging.debug("Failed to classify system via current-week report service", exc_info=True)
+    if bool(item.get("is_ai_agent_template")):
+        return "AI-Агенты"
+    manual_system_name = str(item.get("manual_system_name") or "").strip()
+    if manual_system_name:
+        return manual_system_name
+    source_prefix = str(item.get("source_prefix") or "").strip().upper()
+    if source_prefix == "SMECSC":
+        return "АИСТ"
+    if source_prefix in {"AIGAS", "HELPERAI", "DRMMMB"}:
+        return "AI-Агенты"
+    if source_prefix == "EMRM":
+        return "EMRM"
+    if source_prefix in {"SMECLM", "CLM"}:
+        return "CLM"
+    system_name = str(item.get("system_name") or "").strip()
+    if system_name:
+        return system_name
+    release_key = str(item.get("release_key") or "").strip()
+    return release_key.split("-", 1)[0] if "-" in release_key else release_key
+
+
 def _render_personal_cards(
     items: List[Dict],
     event_keys: Set[str],
@@ -678,7 +731,6 @@ def _sort_digest_items(items: Iterable[Dict]) -> List[Dict]:
     return sorted(
         items or [],
         key=lambda item: (
-            0 if not _current_responsible(item) else 1,
             _parse_item_date(item) or datetime.max.date(),
             _item_source_index(item),
         ),
@@ -696,21 +748,32 @@ def _digest_week_items(snapshot: Dict, reference_dt: Optional[datetime] = None) 
     return _sort_digest_items(selected)
 
 
-def _focus_day_summary(items: List[Dict], reference_dt: Optional[datetime] = None) -> str:
-    now = reference_dt or datetime.now()
-    today = now.date()
+def _system_summary_parts(items: List[Dict]) -> List[Tuple[str, int]]:
     counts = defaultdict(int)
-    for item in items:
-        release_date = _parse_item_date(item)
-        if release_date:
-            counts[release_date] += 1
-    if counts.get(today):
-        return f"Сегодня {today.strftime('%d.%m.%Y')}: {counts[today]}"
-    future_dates = sorted(date_value for date_value in counts if date_value >= today)
-    if future_dates:
-        nearest = future_dates[0]
-        return f"Ближайшая дата {nearest.strftime('%d.%m.%Y')}: {counts[nearest]}"
-    return "Сегодня/ближайшая дата: 0"
+    for item in items or []:
+        system_name = _display(_system_label(item), "Не указано")
+        counts[system_name] += 1
+    return sorted(counts.items(), key=lambda pair: (-pair[1], pair[0].casefold()))
+
+
+def _system_summary_html(items: List[Dict]) -> str:
+    parts = _system_summary_parts(items)
+    if not parts:
+        return "—"
+    chunks = []
+    for label, count in parts[:6]:
+        chunks.append(
+            f'<span style="white-space:nowrap;color:#0f172a;font-weight:700;">'
+            f'{html.escape(label)} <span style="color:#2563eb;">{count}</span></span>'
+        )
+    return '<span style="color:#94a3b8;"> · </span>'.join(chunks)
+
+
+def _system_summary_text(items: List[Dict]) -> str:
+    parts = _system_summary_parts(items)
+    if not parts:
+        return "—"
+    return ", ".join(f"{label} {count}" for label, count in parts)
 
 
 def _render_digest_table(items: List[Dict]) -> str:
@@ -734,21 +797,15 @@ def _render_digest_table(items: List[Dict]) -> str:
             release_link = html.escape(release_key)
         if rov_link == "—":
             rov_link = html.escape(rov_key)
-        secondary = _secondary_meta(item)
-        secondary_html = (
-            f'<div style="margin-top:3px;color:#64748b;font-size:11px;">{secondary}</div>'
-            if secondary
-            else ""
-        )
         values = (
             html.escape(_display(item.get("deployment_start"))),
             release_link,
             rov_link,
-            f"{html.escape(_display(item.get('release_summary'), ''))}{secondary_html}",
+            html.escape(_display(_digest_release_title(item), "")),
+            html.escape(_release_type_label(item)),
+            html.escape(_display(_system_label(item))),
             responsible_cell,
             html.escape(_owner_label(item)),
-            _html_link(item.get("release_url"), release_key),
-            _html_link(item.get("rov_url"), rov_key),
         )
         cells = "".join(
             f'<td style="padding:8px 9px;border:1px solid #d8e0ea;'
@@ -761,10 +818,10 @@ def _render_digest_table(items: List[Dict]) -> str:
         "Release",
         "РОВ",
         "Название",
+        "Тип",
+        "Система",
         "Ответственный",
         "Дежурный",
-        "Jira Release",
-        "Jira РОВ",
     )
     header_html = "".join(
         '<th style="padding:8px 9px;border:1px solid #cbd5e1;'
@@ -790,7 +847,8 @@ def _build_weekly_digest_content(
     missing_count = sum(1 for item in items if not _current_responsible(item))
     assigned_count = total_count - missing_count
     period = _week_period(now)
-    focus_day = _focus_day_summary(items, now)
+    system_summary_html = _system_summary_html(items)
+    system_summary_text = _system_summary_text(items)
     release_monitor_url, assignment_center_url = _release_monitor_links()
     subject = (
         f"[Блок релизов] Предварительная сводка недели: "
@@ -807,21 +865,21 @@ def _build_weekly_digest_content(
     summary_html = f"""
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;">
   <tr>
-    <td style="padding:10px;border:1px solid #d8e0ea;background:#f8fafc;width:25%;">
-      <div style="font-size:11px;line-height:14px;color:#64748b;">ВСЕГО</div>
-      <div style="font-size:23px;line-height:28px;font-weight:700;color:#0f172a;">{total_count}</div>
+    <td style="padding:8px 10px;border:1px solid #d8e0ea;background:#f8fafc;width:22%;">
+      <div style="font-size:10px;line-height:13px;color:#64748b;">ВСЕГО</div>
+      <div style="font-size:21px;line-height:24px;font-weight:700;color:#0f172a;">{total_count}</div>
     </td>
-    <td style="padding:10px;border:1px solid #d8e0ea;background:#f8fafc;width:25%;">
-      <div style="font-size:11px;line-height:14px;color:#64748b;">НАЗНАЧЕНО</div>
-      <div style="font-size:23px;line-height:28px;font-weight:700;color:#166534;">{assigned_count}</div>
+    <td style="padding:8px 10px;border:1px solid #d8e0ea;background:#f8fafc;width:22%;">
+      <div style="font-size:10px;line-height:13px;color:#64748b;">НАЗНАЧЕНО</div>
+      <div style="font-size:21px;line-height:24px;font-weight:700;color:#166534;">{assigned_count}</div>
     </td>
-    <td style="padding:10px;border:1px solid #d8e0ea;background:#f8fafc;width:25%;">
-      <div style="font-size:11px;line-height:14px;color:#64748b;">БЕЗ ОТВЕТСТВЕННОГО</div>
-      <div style="font-size:23px;line-height:28px;font-weight:700;color:#991b1b;">{missing_count}</div>
+    <td style="padding:8px 10px;border:1px solid #d8e0ea;background:#f8fafc;width:22%;">
+      <div style="font-size:10px;line-height:13px;color:#64748b;">БЕЗ ОТВЕТСТВЕННОГО</div>
+      <div style="font-size:21px;line-height:24px;font-weight:700;color:#991b1b;">{missing_count}</div>
     </td>
-    <td style="padding:10px;border:1px solid #d8e0ea;background:#f8fafc;width:25%;">
-      <div style="font-size:11px;line-height:14px;color:#64748b;">ФОКУС ДНЯ</div>
-      <div style="font-size:14px;line-height:18px;font-weight:700;color:#0f172a;">{html.escape(focus_day)}</div>
+    <td style="padding:8px 10px;border:1px solid #d8e0ea;background:#f8fafc;width:34%;">
+      <div style="font-size:10px;line-height:13px;color:#64748b;">ПО СИСТЕМАМ</div>
+      <div style="margin-top:4px;font-size:12px;line-height:16px;">{system_summary_html}</div>
     </td>
   </tr>
 </table>
@@ -865,13 +923,12 @@ def _build_weekly_digest_content(
         "Предварительная сводка по релизам текущей недели",
         "",
         "Это предварительная сводка по предстоящим релизам текущей недели.",
-        "В письме показаны актуальные ответственные и релизы, где ответственный еще не назначен.",
-        "Общую таблицу смотрите в Блоке релизов; назначение отсутствующих ответственных выполняется в Центре назначений.",
+        "Общую таблицу смотрите в Блоке релизов.",
         "",
         f"Всего релизов текущей недели: {total_count}",
         f"Назначено: {assigned_count}",
         f"Без ответственного: {missing_count}",
-        f"Фокус дня: {focus_day}",
+        f"По системам: {system_summary_text}",
         f"Период: {period}",
         f"Сформировано: {now.strftime('%d.%m.%Y %H:%M:%S')}",
         f"Блок релизов: {release_monitor_url}",
@@ -887,9 +944,11 @@ def _build_weekly_digest_content(
                     f"- {_display(item.get('deployment_start'))} | "
                     f"{_display(item.get('release_key'))} | "
                     f"РОВ: {_display(item.get('rov_key'))} | "
+                    f"Тип: {_release_type_label(item)} | "
+                    f"Система: {_display(_system_label(item))} | "
                     f"Ответственный: {responsible} | {_owner_label(item)}"
                 ),
-                f"  {_display(item.get('release_summary'), '')}",
+                f"  {_display(_digest_release_title(item), '')}",
                 f"  Jira Release: {_display(item.get('release_url'))}",
                 f"  Jira РОВ: {_display(item.get('rov_url'))}",
             ]
