@@ -5,6 +5,11 @@ import time
 import threading
 from datetime import datetime, timedelta
 from config import TOKENS
+from services.feature_flags_service import (
+    get_jira_domain_config,
+    get_release_prefix_configs,
+    get_release_prefix_jira_domain,
+)
 from services.release_artifact_service import (
     extract_artifact_ke_id,
     extract_distribution_version,
@@ -103,6 +108,13 @@ def _extract_version_from_distributive_field(raw_value, release_context=None):
 
 
 def get_jira_domain_and_token(release_id):
+    prefix = str(release_id or "").split("-", 1)[0].strip().upper()
+    configured_domain = get_release_prefix_jira_domain(prefix)
+    if configured_domain:
+        domain_config = get_jira_domain_config(configured_domain)
+        if domain_config:
+            return domain_config["url"], TOKENS[domain_config["token_key"]]
+
     # ИЗМЕНЕНО: релизы из delta-домена
     delta_prefixes = ("SMECSC", "SMEPG", "HELPERAI", "AIGAS")
     if any(release_id.startswith(prefix) for prefix in delta_prefixes):
@@ -180,14 +192,32 @@ def _extract_related_issues_from_fields(fields):
     return issues
 
 
+def _prefix_number_match(key, prefixes):
+    escaped_prefixes = [re.escape(prefix) for prefix in prefixes if prefix]
+    if not escaped_prefixes:
+        return None
+    return re.search(rf"(?:{'|'.join(escaped_prefixes)})-(\d+)", key)
+
+
+def _domain_prefixes(domain_key, *, legacy_extra=()):
+    prefixes = [
+        str(entry.get("prefix") or "").strip().upper()
+        for entry in get_release_prefix_configs(include_disabled=False)
+        if str(entry.get("jira_domain") or "").strip().lower() == domain_key
+    ]
+    prefixes.extend(prefix for prefix in legacy_extra if prefix not in prefixes)
+    return prefixes
+
+
 def _extract_pob_from_fields(fields):
     issuelinks = fields.get("issuelinks", []) or []
     pobs = []
+    sberbank_prefixes = _domain_prefixes("sberbank")
     for link in issuelinks:
         if link.get("type", {}).get("id") == "11500" and "inwardIssue" in link:
             key = link["inwardIssue"].get("key")
             if key:
-                match = re.search(r'(?:EMRM|SMECLM|DRMMMB)-(\d+)', key)
+                match = _prefix_number_match(key, sberbank_prefixes)
                 if match:
                     pobs.append((int(match.group(1)), key))
     if pobs:
@@ -195,11 +225,12 @@ def _extract_pob_from_fields(fields):
         return pobs[0][1]
 
     pobs = []
+    delta_prefixes = _domain_prefixes("delta", legacy_extra=("SMEPG",))
     for link in issuelinks:
         if link.get("type", {}).get("id") == "11600" and "inwardIssue" in link:
             key = link["inwardIssue"].get("key")
             if key:
-                match = re.search(r'(?:SMECSC|SMEPG)-(\d+)', key)
+                match = _prefix_number_match(key, delta_prefixes)
                 if match:
                     pobs.append((int(match.group(1)), key))
     if pobs:

@@ -20,6 +20,10 @@ from openpyxl import load_workbook
 
 from config import DASHBOARD_CACHE_TTL, OPLOT_VALUES, TOKENS
 from services.jira_service import get_jira_domain_and_token
+from services.feature_flags_service import (
+    get_enabled_release_prefixes,
+    get_release_prefix_system,
+)
 from services.jira_oplot_issue_service import create_oplot_release_issue
 from services.release_artifact_service import (
     classify_artifact_entry,
@@ -245,6 +249,10 @@ _refresh_status = {
 }
 
 
+def _active_release_prefixes():
+    return get_enabled_release_prefixes()
+
+
 class ReleaseMonitorSourceError(RuntimeError):
     def __init__(self, message, candidate=None):
         super().__init__(message)
@@ -317,7 +325,7 @@ def _build_empty_release_monitor_payload():
             "cancelled_status": CANCELLED_RELEASE_STATUS,
             "final_statuses": list(FINAL_RELEASE_STATUSES),
             "pre_final_statuses": list(PRE_FINAL_RELEASE_STATUSES),
-            "prefixes": list(RELEASE_PREFIXES),
+            "prefixes": _active_release_prefixes(),
             "years": [current_year, previous_year],
             "current_year": current_year,
             "last_updated": None,
@@ -2903,10 +2911,17 @@ def _has_release_responsible(item):
     return any(str(value or "").strip() for value in responsibles)
 
 
-def _is_release_assignment_relevant_for_week(item, week_start=None, week_end=None):
+def _is_release_assignment_relevant_for_week(
+    item,
+    week_start=None,
+    week_end=None,
+    *,
+    include_next_monday=False,
+):
     week_start, week_end = (week_start, week_end) if week_start and week_end else _get_current_week_bounds()
     start_date = _get_release_start_date(item)
-    if not start_date or start_date < week_start or start_date > week_end:
+    effective_end = week_end + timedelta(days=1) if include_next_monday else week_end
+    if not start_date or start_date < week_start or start_date > effective_end:
         return False
     if item.get("is_cancelled"):
         return False
@@ -2916,7 +2931,12 @@ def _is_release_assignment_relevant_for_week(item, week_start=None, week_end=Non
 def _apply_week_control_flags(items):
     week_start, week_end = _get_current_week_bounds()
     for item in items:
-        is_week_release = _is_release_assignment_relevant_for_week(item, week_start, week_end)
+        is_week_release = _is_release_assignment_relevant_for_week(
+            item,
+            week_start,
+            week_end,
+            include_next_monday=True,
+        )
         missing_responsible = bool(is_week_release and not _has_release_responsible(item))
         item["is_current_week_assignment_scope"] = is_week_release
         item["is_missing_week_responsible"] = missing_responsible
@@ -4150,7 +4170,7 @@ def _extract_release_dist(fields, resolved_fields, release_context=None):
 
 def _get_domain_groups():
     groups = {}
-    for prefix in RELEASE_PREFIXES:
+    for prefix in _active_release_prefixes():
         domain, token = get_jira_domain_and_token(f"{prefix}-1")
         groups.setdefault((domain, token), []).append(prefix)
     return groups
@@ -5045,6 +5065,10 @@ def _clean_release_summary(summary):
 
 
 def _detect_system(prefix, summary, ke_name, system_info_text):
+    configured_system = get_release_prefix_system(prefix)
+    if configured_system:
+        return configured_system
+
     raw_searchable = str(f"{summary} {ke_name} {system_info_text}" or "").lower()
     searchable = _normalize_text(raw_searchable)
 
@@ -5936,7 +5960,7 @@ def _validate_release_candidate(candidate, baseline_payload):
                 }
             )
 
-        for prefix in RELEASE_PREFIXES:
+        for prefix in _active_release_prefixes():
             previous_count = int(baseline_profile["by_prefix"].get(prefix) or 0)
             candidate_count = int(candidate_profile["by_prefix"].get(prefix) or 0)
             if previous_count > 0 and candidate_count == 0:
@@ -5990,7 +6014,7 @@ def _compose_release_payload(all_records, mode):
             "cancelled_status": CANCELLED_RELEASE_STATUS,
             "final_statuses": list(FINAL_RELEASE_STATUSES),
             "pre_final_statuses": list(PRE_FINAL_RELEASE_STATUSES),
-            "prefixes": list(RELEASE_PREFIXES),
+            "prefixes": _active_release_prefixes(),
             "years": [current_year, previous_year],
             "current_year": current_year,
             "last_updated": _format_timestamp(),
@@ -6823,6 +6847,17 @@ def _schedule_unassigned_email_notification(
         )
 
 
+def _schedule_unassigned_weekly_reminder(payload):
+    try:
+        from services.release_monitor_email_service import (
+            schedule_unassigned_weekly_reminder,
+        )
+
+        schedule_unassigned_weekly_reminder(payload)
+    except Exception:
+        logging.exception("Release monitor: failed to schedule unassigned weekly reminder")
+
+
 def _schedule_responsible_email_notification(
     payload,
     *,
@@ -7170,6 +7205,7 @@ def _ensure_scheduler_started():
                                 name="release-monitor-silent-refresh",
                             )
                             _auto_incremental_thread.start()
+                _schedule_unassigned_weekly_reminder(snapshot)
                 _schedule_responsible_weekly_digest(snapshot)
             except Exception:
                 logging.exception("Release monitor: refresh scheduler failed")
@@ -9757,7 +9793,10 @@ def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=
                     item["psi_zni_reviewer"] = zni_reviewer
                     item["psi_checker"] = checker
                     item["psi_responsibles"] = list(normalized_responsibles)
-                    is_week_scope = _is_release_assignment_relevant_for_week(item)
+                    is_week_scope = _is_release_assignment_relevant_for_week(
+                        item,
+                        include_next_monday=True,
+                    )
                     item["is_current_week_assignment_scope"] = is_week_scope
                     item["is_missing_week_responsible"] = bool(
                         is_week_scope and not normalized_responsibles

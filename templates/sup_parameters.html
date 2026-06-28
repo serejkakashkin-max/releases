@@ -1,0 +1,1607 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>СУП-параметры</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #15191f;
+      --panel: #1d2633;
+      --panel-2: #222d3b;
+      --panel-3: #172231;
+      --line: #314055;
+      --line-soft: rgba(49, 64, 85, 0.66);
+      --text: #e8eef8;
+      --muted: #9eadc1;
+      --muted-2: #c3d1e5;
+      --blue: #4d95ff;
+      --green: #21d39b;
+      --yellow: #ffc43d;
+      --red: #ff6380;
+      --purple: #9c6bff;
+      --input: #2b3543;
+      --shadow: 0 18px 50px rgba(0, 0, 0, 0.25);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 20% -10%, rgba(77, 149, 255, 0.13), transparent 36%),
+        radial-gradient(circle at 82% 0%, rgba(33, 211, 155, 0.08), transparent 30%),
+        var(--bg);
+      color: var(--text);
+      font-family: Inter, "Segoe UI", Arial, sans-serif;
+      font-size: 14px;
+    }
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: 30px; line-height: 1.15; letter-spacing: 0; }
+    h2 { font-size: 17px; line-height: 1.25; }
+    h3 { font-size: 15px; line-height: 1.25; }
+    button, input, select, textarea { font: inherit; }
+    button {
+      border: 1px solid var(--line);
+      color: var(--text);
+      background: #263244;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    button:hover { border-color: rgba(77, 149, 255, 0.7); }
+    button.primary { background: #0d6efd; border-color: #0d6efd; }
+    button.ghost { background: rgba(17, 25, 38, 0.42); }
+    button.danger { color: #ffd7de; border-color: rgba(255, 99, 128, 0.45); }
+    button.link {
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: #8ebcff;
+    }
+    button.icon-btn {
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      display: inline-grid;
+      place-items: center;
+    }
+    button:disabled { opacity: 0.55; cursor: not-allowed; }
+    input, select, textarea {
+      width: 100%;
+      color: var(--text);
+      background: var(--input);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 9px 10px;
+      outline: none;
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(77, 149, 255, 0.14);
+    }
+    textarea { min-height: 96px; resize: vertical; }
+    label {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .page {
+      width: min(1520px, calc(100% - 48px));
+      margin: 28px auto 48px;
+    }
+    .topbar {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 18px;
+      align-items: stretch;
+      padding: 18px 22px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: linear-gradient(180deg, #1d2735, #182232);
+      box-shadow: var(--shadow);
+    }
+    .topbar-main {
+      display: grid;
+      align-content: center;
+      gap: 8px;
+    }
+    .topbar-side {
+      display: grid;
+      grid-template-columns: 230px 280px;
+      gap: 12px;
+      align-items: stretch;
+    }
+    .file-card {
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(17, 25, 38, 0.58);
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+    }
+    .file-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-weight: 900;
+    }
+    .file-meta {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 3px 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .file-meta strong { color: var(--muted-2); font-weight: 700; }
+    .button-stack {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      align-content: center;
+    }
+    .button-stack .wide { grid-column: 1 / -1; }
+    .muted { color: var(--muted); }
+    .status {
+      margin-top: 14px;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(77, 149, 255, 0.08);
+      color: var(--muted-2);
+      white-space: pre-line;
+    }
+    .status.error {
+      color: #ffd6df;
+      border-color: rgba(255, 99, 128, 0.45);
+      background: rgba(255, 99, 128, 0.08);
+    }
+    .status.success {
+      color: #cef8e8;
+      border-color: rgba(33, 211, 155, 0.45);
+      background: rgba(33, 211, 155, 0.08);
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 22px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--muted-2);
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .badge.green { color: #bff5df; border-color: rgba(33, 211, 155, 0.3); background: rgba(33, 211, 155, 0.12); }
+    .badge.red { color: #ffd3dc; border-color: rgba(255, 99, 128, 0.32); background: rgba(255, 99, 128, 0.13); }
+    .badge.blue { color: #d7e7ff; border-color: rgba(77, 149, 255, 0.34); background: rgba(77, 149, 255, 0.13); }
+    .badge.yellow { color: #fff0c4; border-color: rgba(255, 196, 61, 0.32); background: rgba(255, 196, 61, 0.13); }
+    .tabs {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 16px;
+      padding: 8px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(29, 38, 51, 0.76);
+    }
+    .tab-btn {
+      min-height: 42px;
+      border-radius: 10px;
+      background: transparent;
+      border-color: transparent;
+      color: var(--muted-2);
+      text-align: center;
+    }
+    .tab-btn.active {
+      color: #fff;
+      border-color: rgba(77, 149, 255, 0.34);
+      background: rgba(77, 149, 255, 0.16);
+    }
+    .tab-btn.has-error { border-color: rgba(255, 99, 128, 0.5); }
+    .panel { display: none; margin-top: 16px; }
+    .panel.active { display: block; }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(29, 38, 51, 0.94);
+      overflow: hidden;
+    }
+    .card-header {
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(34, 45, 59, 0.84);
+    }
+    .card-body { padding: 16px 18px; }
+    .stack { display: grid; gap: 12px; }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .summary-card {
+      min-height: 82px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: linear-gradient(180deg, rgba(34, 45, 59, 0.95), rgba(25, 34, 49, 0.95));
+    }
+    .summary-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+    .summary-value {
+      margin-top: 6px;
+      font-size: 28px;
+      font-weight: 900;
+      line-height: 1;
+    }
+    .summary-note {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .zone-card {
+      display: grid;
+      gap: 10px;
+      min-height: 150px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(23, 34, 49, 0.72);
+      text-align: left;
+    }
+    .zone-card:hover { border-color: rgba(77, 149, 255, 0.65); }
+    .feature-card {
+      display: grid;
+      gap: 14px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: rgba(23, 34, 49, 0.72);
+      padding: 16px;
+      min-height: 100%;
+    }
+    .feature-card.blue { border-color: rgba(77, 149, 255, 0.45); }
+    .feature-card.green { border-color: rgba(33, 211, 155, 0.42); }
+    .feature-card.purple { border-color: rgba(156, 107, 255, 0.45); }
+    .feature-card.amber { border-color: rgba(255, 196, 61, 0.45); }
+    .feature-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: flex-start;
+    }
+    .feature-title {
+      display: grid;
+      gap: 4px;
+    }
+    .feature-title strong { font-size: 16px; }
+    .field-row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .switch {
+      position: relative;
+      width: 44px;
+      height: 24px;
+      flex: 0 0 auto;
+    }
+    .switch input {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .switch span {
+      position: absolute;
+      inset: 0;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.14);
+      transition: 0.18s ease;
+    }
+    .switch span::after {
+      content: "";
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #dbe6f5;
+      transition: 0.18s ease;
+    }
+    .switch input:checked + span {
+      background: linear-gradient(90deg, #0d6efd, #21d39b);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+    .switch input:checked + span::after { transform: translateX(19px); }
+    .toggle-card {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      padding: 13px 14px;
+      border: 1px solid var(--line-soft);
+      border-radius: 13px;
+      background: rgba(23, 34, 49, 0.7);
+    }
+    .toggle-card.closed { border-color: rgba(255, 196, 61, 0.35); background: rgba(255, 196, 61, 0.06); }
+    .switch-line {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--text);
+      font-weight: 800;
+      text-transform: none;
+      margin: 0;
+    }
+    .mini-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      display: grid;
+      place-items: center;
+      color: #d7e7ff;
+      background: rgba(77, 149, 255, 0.16);
+      border: 1px solid rgba(77, 149, 255, 0.22);
+      font-size: 12px;
+      font-weight: 900;
+    }
+    .table-toolbar {
+      display: grid;
+      grid-template-columns: minmax(240px, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+    .filter-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+    .filter-tabs button {
+      padding: 8px 10px;
+      font-size: 13px;
+    }
+    .filter-tabs button.active {
+      color: #fff;
+      border-color: rgba(77, 149, 255, 0.6);
+      background: rgba(77, 149, 255, 0.18);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+    th, td {
+      padding: 10px 8px;
+      text-align: left;
+      vertical-align: middle;
+      border-bottom: 1px solid var(--line-soft);
+    }
+    th {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      font-weight: 900;
+    }
+    tr.disabled-row { opacity: 0.55; }
+    .check-cell { width: 64px; }
+    .count-cell { width: 120px; }
+    .action-cell { width: 116px; text-align: right; }
+    .domain-cell { width: 160px; }
+    .prefix-cell { width: 160px; }
+    .chips {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      max-width: 320px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--line-soft);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--muted-2);
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .empty-state {
+      padding: 26px;
+      border: 1px dashed var(--line);
+      border-radius: 14px;
+      color: var(--muted);
+      text-align: center;
+      background: rgba(17, 25, 38, 0.28);
+    }
+    .help-box {
+      border: 1px solid rgba(77, 149, 255, 0.26);
+      border-radius: 12px;
+      background: rgba(77, 149, 255, 0.07);
+      overflow: hidden;
+    }
+    .help-box summary {
+      padding: 11px 13px;
+      cursor: pointer;
+      color: #dceaff;
+      font-weight: 900;
+    }
+    .help-content {
+      padding: 0 13px 13px;
+      color: #bfd4f4;
+      line-height: 1.5;
+    }
+    .code-pill {
+      display: inline-block;
+      margin: 2px 2px 0;
+      padding: 2px 7px;
+      border: 1px solid rgba(77, 149, 255, 0.35);
+      border-radius: 999px;
+      background: rgba(77, 149, 255, 0.12);
+      color: #d7e7ff;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    details.diagnostics {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #121925;
+      overflow: hidden;
+    }
+    details.diagnostics summary {
+      padding: 14px 16px;
+      cursor: pointer;
+      font-weight: 900;
+      color: var(--text);
+    }
+    pre {
+      margin: 0;
+      padding: 16px;
+      overflow: auto;
+      color: #c8d5e8;
+      border-top: 1px solid var(--line);
+      background: #0e1420;
+      max-height: 480px;
+    }
+    .token-box {
+      max-width: 620px;
+      margin-top: 16px;
+    }
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: grid;
+      place-items: center;
+      padding: 18px;
+      background: rgba(5, 8, 13, 0.72);
+    }
+    .modal-card {
+      width: min(620px, 100%);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .modal-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: center;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel-2);
+    }
+    .modal-body { padding: 16px 18px; }
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      padding: 14px 18px 18px;
+    }
+    .hidden { display: none !important; }
+    @media (max-width: 1120px) {
+      .topbar,
+      .topbar-side,
+      .grid-2,
+      .grid-3,
+      .grid-4 {
+        grid-template-columns: 1fr;
+      }
+      .tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .field-row { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 720px) {
+      .page { width: calc(100% - 24px); margin-top: 16px; }
+      .button-stack { grid-template-columns: 1fr; }
+      .tabs { grid-template-columns: 1fr; }
+      .table-toolbar { grid-template-columns: 1fr; }
+      .filter-tabs { justify-content: flex-start; }
+      table, thead, tbody, tr, th, td { display: block; width: 100% !important; }
+      thead { display: none; }
+      tr {
+        border: 1px solid var(--line-soft);
+        border-radius: 12px;
+        padding: 8px;
+        margin-bottom: 10px;
+      }
+      td { border: 0; padding: 6px 4px; }
+      .action-cell { text-align: left; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="topbar">
+      <div class="topbar-main">
+        <h1>СУП-параметры</h1>
+        <p class="muted">Локальные настройки приложения: режим обслуживания, почтовые рассылки, сотрудники и префиксы релизов.</p>
+      </div>
+      <div class="topbar-side">
+        <div class="file-card">
+          <div class="file-title">
+            <span>Файл конфигурации</span>
+            <span id="fileStateBadge" class="badge">не загружен</span>
+          </div>
+          <div class="file-meta">
+            <span>Файл</span><strong id="fileName">feature_flags.json</strong>
+            <span>Изменен</span><strong id="fileMtime">-</strong>
+            <span>Хеш</span><strong id="fileHash">-</strong>
+          </div>
+        </div>
+        <div class="button-stack">
+          <button type="button" class="ghost" id="reloadBtn">Обновить</button>
+          <button type="button" class="primary" id="saveBtn" disabled>Сохранить</button>
+          <button type="button" class="ghost wide" id="resetBtn" disabled>Сбросить изменения</button>
+        </div>
+      </div>
+    </section>
+
+    <div id="statusBox" class="status">Введите токен для загрузки СУП-параметров.</div>
+
+    <section id="tokenBox" class="card token-box">
+      <div class="card-header">
+        <h2>Доступ</h2>
+        <p class="muted">Токен сохраняется только в текущем браузере и не показывается после входа.</p>
+      </div>
+      <div class="card-body stack">
+        {% if token_configured %}
+        <div>
+          <label for="tokenInput">Токен администратора</label>
+          <input id="tokenInput" type="password" autocomplete="off" placeholder="Введите токен">
+        </div>
+        <div class="button-stack">
+          <button type="button" class="primary" id="unlockBtn">Открыть</button>
+          <button type="button" class="ghost" id="clearTokenBtn">Сбросить токен</button>
+        </div>
+        {% else %}
+        <div class="status error">Токен администратора не задан в конфигурации. Чтение и сохранение СУП-параметров закрыты.</div>
+        {% endif %}
+      </div>
+    </section>
+
+    <section id="appBox" class="hidden">
+      <nav class="tabs" aria-label="Разделы СУП-параметров">
+        <button type="button" class="tab-btn active" data-tab="overview">Обзор</button>
+        <button type="button" class="tab-btn" data-tab="maintenance">Режим обслуживания</button>
+        <button type="button" class="tab-btn" data-tab="mail">Почтовые уведомления</button>
+        <button type="button" class="tab-btn" data-tab="employees">Сотрудники</button>
+        <button type="button" class="tab-btn" data-tab="prefixes">Префиксы релизов</button>
+        <button type="button" class="tab-btn" data-tab="automation">Автоматизация</button>
+        <button type="button" class="tab-btn" data-tab="diagnostics">Диагностика</button>
+      </nav>
+
+      <section class="panel active" data-panel="overview">
+        <div class="grid-4">
+          <div class="summary-card">
+            <div class="summary-label">Включенные рассылки</div>
+            <div class="summary-value" id="summaryMail">0</div>
+            <div class="summary-note">из 3 типов уведомлений</div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-label">Активные сотрудники</div>
+            <div class="summary-value" id="summaryEmployees">0</div>
+            <div class="summary-note" id="summaryEmployeeEmails">0 email-адресов</div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-label">Включенные prefix-и</div>
+            <div class="summary-value" id="summaryPrefixes">0</div>
+            <div class="summary-note">участвуют в поиске релизов</div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-label">Задержка личных писем</div>
+            <div class="summary-value" id="summaryDelay">0 мин</div>
+            <div class="summary-note">антиспам-окно после назначения</div>
+          </div>
+        </div>
+        <div class="grid-4" style="margin-top:16px;">
+          <button type="button" class="zone-card" data-open-tab="mail">
+            <h3>Почта</h3>
+            <p class="muted">Оперативные письма, предварительный список недели и личные уведомления.</p>
+            <span class="badge blue">Перейти</span>
+          </button>
+          <button type="button" class="zone-card" data-open-tab="maintenance">
+            <h3>Режим обслуживания</h3>
+            <p class="muted">Закрытие разделов для пользователей с bypass-доступом администратора.</p>
+            <span class="badge yellow" id="overviewMaintenanceBadge">0 закрыто</span>
+          </button>
+          <button type="button" class="zone-card" data-open-tab="employees">
+            <h3>Сотрудники</h3>
+            <p class="muted">Справочник ФИО и email для персональных уведомлений.</p>
+            <span class="badge green" id="overviewEmployeesBadge">0 активных</span>
+          </button>
+          <button type="button" class="zone-card" data-open-tab="prefixes">
+            <h3>Префиксы релизов</h3>
+            <p class="muted">Управление prefix-ами, Jira-доменами и системами.</p>
+            <span class="badge blue" id="overviewPrefixesBadge">0 включено</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="panel" data-panel="maintenance">
+        <section class="card">
+          <div class="card-header">
+            <h2>Режим обслуживания</h2>
+            <p class="muted">Включенный переключатель закрывает выбранный раздел для пользователей. Администратор может войти через maintenance bypass.</p>
+          </div>
+          <div class="card-body stack">
+            <details class="help-box">
+              <summary>Как администратору зайти в закрытый раздел</summary>
+              <div class="help-content">
+                Добавьте к адресу страницы <span class="code-pill">?maintenance_bypass=1</span>.
+                Для чат-бота на главной странице используйте <span class="code-pill">?chatbot_maintenance_bypass=1</span>.
+                Чтобы сбросить доступ в текущем браузере, откройте страницу с <span class="code-pill">?maintenance_bypass=0</span>.
+              </div>
+            </details>
+            <div class="stack" id="maintenanceToggles"></div>
+          </div>
+        </section>
+      </section>
+
+      <section class="panel" data-panel="mail">
+        <div class="grid-3">
+          <section class="feature-card blue" id="mail-unassigned-card">
+            <div class="feature-head">
+              <div class="feature-title">
+                <strong>Письма “без ответственного”</strong>
+                <span class="muted">Оперативные уведомления по релизам без назначенного ответственного.</span>
+              </div>
+              <label class="switch" title="Включить письма без ответственного">
+                <input type="checkbox" id="unassignedEnabled" data-dirty-field>
+                <span></span>
+              </label>
+            </div>
+            <div>
+              <label for="unassignedRecipientsInput">Получатели</label>
+              <textarea id="unassignedRecipientsInput" data-dirty-field placeholder="one.mail@sberbank.ru&#10;second.mail@sberbank.ru"></textarea>
+            </div>
+            <p class="muted">Письмо уходит по новым проблемным релизам и событиям снятия ответственного.</p>
+          </section>
+
+          <section class="feature-card amber" id="mail-unassigned-weekly-card">
+            <div class="feature-head">
+              <div class="feature-title">
+                <strong>Понедельник без назначений</strong>
+                <span class="muted">Один общий список релизов без ответственного после смены недели.</span>
+              </div>
+              <label class="switch" title="Включить понедельничное письмо без назначений">
+                <input type="checkbox" id="weeklyReminderEnabled" data-dirty-field>
+                <span></span>
+              </label>
+            </div>
+            <div class="field-row">
+              <div>
+                <label for="weeklyReminderTimeInput">Время проверки</label>
+                <input id="weeklyReminderTimeInput" type="time" value="09:00" data-dirty-field>
+              </div>
+              <div>
+                <label>День проверки</label>
+                <input value="Понедельник" disabled>
+              </div>
+            </div>
+            <div>
+              <label for="weeklyReminderRecipientsInput">Получатели</label>
+              <textarea id="weeklyReminderRecipientsInput" data-dirty-field placeholder="one.mail@sberbank.ru&#10;second.mail@sberbank.ru"></textarea>
+              <p class="muted" id="weeklyReminderFallbackHint" style="margin-top:8px;"></p>
+            </div>
+          </section>
+
+          <section class="feature-card green" id="mail-weekly-card">
+            <div class="feature-head">
+              <div class="feature-title">
+                <strong>Предварительный список релизов на неделю</strong>
+                <span class="muted">Общая сводка по релизам текущей недели. Отправляется по понедельникам.</span>
+              </div>
+              <label class="switch" title="Включить недельную сводку">
+                <input type="checkbox" id="weeklyEnabled" data-dirty-field>
+                <span></span>
+              </label>
+            </div>
+            <div class="field-row">
+              <div>
+                <label for="weeklyTimeInput">Время отправки</label>
+                <input id="weeklyTimeInput" type="time" value="16:00" data-dirty-field>
+              </div>
+              <div>
+                <label>День отправки</label>
+                <input value="Понедельник" disabled>
+              </div>
+            </div>
+            <div>
+              <label for="weeklyRecipientsInput">Получатели</label>
+              <textarea id="weeklyRecipientsInput" data-dirty-field placeholder="one.mail@sberbank.ru&#10;second.mail@sberbank.ru"></textarea>
+              <p class="muted" id="weeklyFallbackHint" style="margin-top:8px;"></p>
+            </div>
+          </section>
+
+          <section class="feature-card purple" id="mail-personal-card">
+            <div class="feature-head">
+              <div class="feature-title">
+                <strong>Личные письма ответственным</strong>
+                <span class="muted">Уведомления сотрудникам о назначении актуальным ответственным по релизу.</span>
+              </div>
+              <label class="switch" title="Включить личные письма">
+                <input type="checkbox" id="responsibleEnabled" data-dirty-field>
+                <span></span>
+              </label>
+            </div>
+            <div class="field-row">
+              <div>
+                <label for="assignmentDelayInput">Задержка после назначения, мин</label>
+                <input id="assignmentDelayInput" type="number" min="0" step="1" value="6" data-dirty-field>
+              </div>
+              <div>
+                <label for="sendIntervalInput">Пауза между письмами, сек</label>
+                <input id="sendIntervalInput" type="number" min="0" step="1" value="5" data-dirty-field>
+              </div>
+            </div>
+            <div class="grid-2">
+              <div>
+                <div class="summary-label">Активных сотрудников</div>
+                <div class="summary-value" id="personalActiveEmployees">0</div>
+              </div>
+              <div>
+                <div class="summary-label">Получателей email</div>
+                <div class="summary-value" id="personalEmailCount">0</div>
+              </div>
+            </div>
+            <button type="button" class="ghost" data-open-tab="employees">Открыть сотрудников</button>
+          </section>
+        </div>
+      </section>
+
+      <section class="panel" data-panel="employees">
+        <section class="card">
+          <div class="card-header">
+            <h2>Сотрудники и email</h2>
+            <p class="muted">Отключенный сотрудник остается в справочнике, но персональные письма ему не отправляются.</p>
+          </div>
+          <div class="card-body">
+            <div class="table-toolbar">
+              <input id="employeeSearch" type="search" placeholder="Поиск по ФИО или email">
+              <div class="filter-tabs" id="employeeFilters">
+                <button type="button" class="active" data-employee-filter="all">Все</button>
+                <button type="button" data-employee-filter="enabled">Включенные</button>
+                <button type="button" data-employee-filter="disabled">Выключенные</button>
+                <button type="button" data-employee-filter="without_email">Без email</button>
+                <button type="button" class="primary" id="addEmployeeBtn">Добавить сотрудника</button>
+              </div>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th class="check-cell">Вкл.</th>
+                  <th>ФИО</th>
+                  <th class="count-cell">Email</th>
+                  <th>Email-адреса</th>
+                  <th class="action-cell">Действия</th>
+                </tr>
+              </thead>
+              <tbody id="employeeRows"></tbody>
+            </table>
+            <div id="employeeEmpty" class="empty-state hidden">Сотрудники по текущему фильтру не найдены.</div>
+          </div>
+        </section>
+      </section>
+
+      <section class="panel" data-panel="prefixes">
+        <section class="card">
+          <div class="card-header">
+            <h2>Префиксы релизов</h2>
+            <p class="muted">Включенные prefix-и участвуют в поиске релизов. Отключенный prefix остается в списке, но временно не используется.</p>
+          </div>
+          <div class="card-body">
+            <div class="table-toolbar">
+              <input id="prefixSearch" type="search" placeholder="Поиск по prefix, системе или Jira-домену">
+              <div class="filter-tabs" id="prefixFilters">
+                <button type="button" class="active" data-prefix-filter="all">Все</button>
+                <button type="button" data-prefix-filter="enabled">Включенные</button>
+                <button type="button" data-prefix-filter="disabled">Выключенные</button>
+                <button type="button" class="primary" id="addPrefixBtn">Добавить prefix</button>
+              </div>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th class="check-cell">Вкл.</th>
+                  <th class="prefix-cell">Prefix</th>
+                  <th class="domain-cell">Jira-домен</th>
+                  <th>Система</th>
+                  <th class="action-cell">Действия</th>
+                </tr>
+              </thead>
+              <tbody id="prefixRows"></tbody>
+            </table>
+            <div id="prefixEmpty" class="empty-state hidden">Prefix-и по текущему фильтру не найдены.</div>
+          </div>
+        </section>
+      </section>
+
+      <section class="panel" data-panel="automation">
+        <section class="card">
+          <div class="card-header">
+            <h2>Автоматизация</h2>
+            <p class="muted">Обзор расписаний и антиспам-настроек. Редактирование выполняется в карточках почтовых уведомлений.</p>
+          </div>
+          <div class="card-body">
+            <div class="grid-3">
+              <div class="zone-card">
+                <h3>Предварительный список</h3>
+                <p class="muted" id="automationWeeklyText">-</p>
+                <button type="button" class="ghost" data-open-tab="mail" data-focus-card="mail-weekly-card">Редактировать в почте</button>
+              </div>
+              <div class="zone-card">
+                <h3>Понедельник без назначений</h3>
+                <p class="muted" id="automationReminderText">-</p>
+                <button type="button" class="ghost" data-open-tab="mail" data-focus-card="mail-unassigned-weekly-card">Редактировать в почте</button>
+              </div>
+              <div class="zone-card">
+                <h3>Личные письма</h3>
+                <p class="muted" id="automationPersonalText">-</p>
+                <button type="button" class="ghost" data-open-tab="mail" data-focus-card="mail-personal-card">Редактировать в почте</button>
+              </div>
+              <div class="zone-card">
+                <h3>Защита от спама</h3>
+                <p class="muted">Задержка и пауза применяются только к персональным письмам ответственным.</p>
+                <span class="badge blue">Без дублей настроек</span>
+              </div>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <section class="panel" data-panel="diagnostics">
+        <div class="grid-2">
+          <section class="card">
+            <div class="card-header">
+              <h2>Диагностика файла</h2>
+              <p class="muted">Служебная информация для проверки локального SUP-конфига.</p>
+            </div>
+            <div class="card-body stack">
+              <div class="file-meta">
+                <span>Путь</span><strong id="diagPath">-</strong>
+                <span>Файл</span><strong id="diagFileName">-</strong>
+                <span>Изменен</span><strong id="diagMtime">-</strong>
+                <span>Хеш</span><strong id="diagHash">-</strong>
+                <span>Backup-файлов</span><strong id="diagBackupCount">0</strong>
+                <span>Ошибка чтения</span><strong id="diagReadError">-</strong>
+              </div>
+              <p class="muted">`feature_flags.json` является локальным SUP-конфигом приложения и не коммитится в репозиторий.</p>
+            </div>
+          </section>
+          <section class="card">
+            <div class="card-header">
+              <h2>Raw JSON preview</h2>
+              <p class="muted">Только просмотр текущего файла. Ручное редактирование JSON в v1 не используется.</p>
+            </div>
+            <div class="card-body">
+              <details class="diagnostics">
+                <summary>Показать JSON</summary>
+                <pre id="rawJsonPreview"></pre>
+              </details>
+            </div>
+          </section>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <div id="modalBackdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <section class="modal-card">
+      <div class="modal-head">
+        <h2 id="modalTitle">Редактирование</h2>
+        <button type="button" class="icon-btn ghost" id="modalCloseBtn" aria-label="Закрыть">X</button>
+      </div>
+      <div class="modal-body">
+        <div id="employeeForm" class="stack hidden">
+          <label class="switch-line">
+            <span class="switch"><input type="checkbox" id="modalEmployeeEnabled"><span></span></span>
+            <span>Сотрудник включен</span>
+          </label>
+          <div>
+            <label for="modalEmployeeName">ФИО</label>
+            <input id="modalEmployeeName" placeholder="Фисан К.Ю.">
+          </div>
+          <div>
+            <label for="modalEmployeeEmails">Email-адреса</label>
+            <textarea id="modalEmployeeEmails" placeholder="first@sberbank.ru&#10;second@sber.ru"></textarea>
+          </div>
+        </div>
+        <div id="prefixForm" class="stack hidden">
+          <label class="switch-line">
+            <span class="switch"><input type="checkbox" id="modalPrefixEnabled"><span></span></span>
+            <span>Prefix включен</span>
+          </label>
+          <div class="field-row">
+            <div>
+              <label for="modalPrefixCode">Prefix</label>
+              <input id="modalPrefixCode" placeholder="SMECLM">
+            </div>
+            <div>
+              <label for="modalPrefixDomain">Jira-домен</label>
+              <select id="modalPrefixDomain"></select>
+            </div>
+          </div>
+          <div>
+            <label for="modalPrefixSystem">Система</label>
+            <input id="modalPrefixSystem" list="systemOptions" placeholder="CLM / EMRM / АИСТ / AI-Агенты">
+            <datalist id="systemOptions"></datalist>
+          </div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="ghost" id="modalCancelBtn">Отмена</button>
+        <button type="button" class="primary" id="modalSaveBtn">Применить</button>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const TOKEN_KEY = "supAdminToken";
+    const state = {
+      revision: "",
+      config: null,
+      loadedConfig: null,
+      metadata: {},
+      path: "",
+      readError: "",
+      rawJson: "",
+      dirty: false,
+      activeTab: "overview",
+      employeeFilter: "all",
+      prefixFilter: "all",
+      modal: { type: "", index: -1 }
+    };
+
+    const maintenanceLabels = {
+      index: "Главная страница",
+      release_monitor: "Блок релизов",
+      duty_dashboard: "Рабочий стол дежурного",
+      chatbot: "Чат-бот"
+    };
+    const maintenanceDescriptions = {
+      index: "Закрывает главную страницу проекта.",
+      release_monitor: "Закрывает Блок релизов, Центр назначений и связанные экраны.",
+      duty_dashboard: "Закрывает рабочий стол дежурного.",
+      chatbot: "Отключает обращения к чат-боту для пользователей."
+    };
+    const maintenanceCodes = {
+      index: "MAIN",
+      release_monitor: "RM",
+      duty_dashboard: "DUTY",
+      chatbot: "BOT"
+    };
+
+    const $ = (id) => document.getElementById(id);
+    const clone = (value) => JSON.parse(JSON.stringify(value || {}));
+
+    function setStatus(message, kind = "") {
+      const box = $("statusBox");
+      box.textContent = message;
+      box.className = `status ${kind || ""}`.trim();
+    }
+
+    function getToken() {
+      return sessionStorage.getItem(TOKEN_KEY) || "";
+    }
+
+    function splitLines(value) {
+      return String(value || "")
+        .split(/\r?\n|,/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+
+    function lines(values) {
+      return (values || []).join("\n");
+    }
+
+    function escapeHtml(value) {
+      return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function escapeAttr(value) {
+      return escapeHtml(value).replace(/'/g, "&#39;");
+    }
+
+    function initTokenFromUrl() {
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get("token");
+      if (token) {
+        sessionStorage.setItem(TOKEN_KEY, token);
+        params.delete("token");
+        const nextUrl = `${window.location.pathname}${params.toString() ? "?" + params.toString() : ""}`;
+        window.history.replaceState({}, document.title, nextUrl);
+      }
+    }
+
+    async function api(path, options = {}) {
+      const headers = new Headers(options.headers || {});
+      headers.set("X-SUP-Admin-Token", getToken());
+      if (options.body && !headers.has("Content-Type")) {
+        headers.set("Content-Type", "application/json");
+      }
+      const response = await fetch(path, { ...options, headers });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.success === false) {
+        const error = new Error(payload.error || `HTTP ${response.status}`);
+        error.payload = payload;
+        error.status = response.status;
+        throw error;
+      }
+      return payload;
+    }
+
+    function initConfigShape(config) {
+      config.maintenance = config.maintenance || {};
+      config.automation = config.automation || {};
+      config.automation.release_monitor_unassigned_email = config.automation.release_monitor_unassigned_email || { enabled: false, recipients: [] };
+      config.automation.release_monitor_responsible_email = config.automation.release_monitor_responsible_email || {};
+      const unassigned = config.automation.release_monitor_unassigned_email;
+      unassigned.recipients = Array.isArray(unassigned.recipients) ? unassigned.recipients : [];
+      unassigned.weekly_reminder_recipients = Array.isArray(unassigned.weekly_reminder_recipients) ? unassigned.weekly_reminder_recipients : [];
+      const responsible = config.automation.release_monitor_responsible_email;
+      responsible.employee_recipients = Array.isArray(responsible.employee_recipients) ? responsible.employee_recipients : [];
+      responsible.weekly_digest_recipients = Array.isArray(responsible.weekly_digest_recipients) ? responsible.weekly_digest_recipients : [];
+      config.release_monitor = config.release_monitor || {};
+      config.release_monitor.prefixes = Array.isArray(config.release_monitor.prefixes) ? config.release_monitor.prefixes : [];
+      return config;
+    }
+
+    function currentFormConfig() {
+      const config = initConfigShape(clone(state.config));
+      document.querySelectorAll("[data-maintenance]").forEach((input) => {
+        config.maintenance[input.dataset.maintenance] = input.checked;
+      });
+      const unassigned = config.automation.release_monitor_unassigned_email;
+      const responsible = config.automation.release_monitor_responsible_email;
+      unassigned.enabled = $("unassignedEnabled").checked;
+      unassigned.recipients = splitLines($("unassignedRecipientsInput").value);
+      unassigned.weekly_reminder_enabled = $("weeklyReminderEnabled").checked;
+      unassigned.weekly_reminder_time = $("weeklyReminderTimeInput").value || "09:00";
+      unassigned.weekly_reminder_recipients = splitLines($("weeklyReminderRecipientsInput").value);
+      responsible.enabled = $("responsibleEnabled").checked;
+      responsible.weekly_digest_enabled = $("weeklyEnabled").checked;
+      responsible.weekly_digest_time = $("weeklyTimeInput").value || "16:00";
+      responsible.weekly_digest_recipients = splitLines($("weeklyRecipientsInput").value);
+      responsible.assignment_email_delay_minutes = Number($("assignmentDelayInput").value || 0);
+      responsible.personal_email_send_interval_seconds = Number($("sendIntervalInput").value || 0);
+      return config;
+    }
+
+    function markDirty() {
+      state.dirty = true;
+      $("saveBtn").disabled = false;
+      $("resetBtn").disabled = false;
+      $("fileStateBadge").textContent = "есть изменения";
+      $("fileStateBadge").className = "badge yellow";
+      refreshDerived();
+    }
+
+    function markClean() {
+      state.dirty = false;
+      $("saveBtn").disabled = true;
+      $("resetBtn").disabled = true;
+    }
+
+    function renderMetadata(payload) {
+      state.metadata = payload.metadata || {};
+      state.path = payload.path || "";
+      state.readError = payload.read_error || "";
+      const fileName = state.metadata.file_name || "feature_flags.json";
+      const mtime = state.metadata.file_mtime_display || "-";
+      const hash = (payload.revision || "").slice(0, 12) || "-";
+      $("fileName").textContent = fileName;
+      $("fileMtime").textContent = mtime;
+      $("fileHash").textContent = hash;
+      $("diagPath").textContent = state.path || "-";
+      $("diagFileName").textContent = fileName;
+      $("diagMtime").textContent = mtime;
+      $("diagHash").textContent = hash;
+      $("diagBackupCount").textContent = String(state.metadata.backup_count ?? 0);
+      $("diagReadError").textContent = state.readError || "-";
+      $("fileStateBadge").textContent = state.readError ? "ошибка чтения" : "файл корректен";
+      $("fileStateBadge").className = state.readError ? "badge red" : "badge green";
+    }
+
+    function renderMaintenance(values) {
+      $("maintenanceToggles").innerHTML = Object.entries(maintenanceLabels).map(([key, label]) => {
+        const checked = Boolean(values[key]);
+        return `
+          <label class="toggle-card ${checked ? "closed" : ""}" style="text-transform:none;margin:0;">
+            <span class="mini-icon">${maintenanceCodes[key] || "SUP"}</span>
+            <span>
+              <strong>${label}</strong>
+              <span class="muted" style="display:block;margin-top:3px;">${maintenanceDescriptions[key] || ""}</span>
+            </span>
+            <span style="display:flex;align-items:center;gap:10px;">
+              <span class="badge ${checked ? "yellow" : "green"}">${checked ? "Закрыт" : "Открыт"}</span>
+              <span class="switch"><input type="checkbox" data-maintenance="${key}" ${checked ? "checked" : ""}><span></span></span>
+            </span>
+          </label>
+        `;
+      }).join("");
+    }
+
+    function renderMail(config) {
+      const automation = config.automation || {};
+      const unassigned = automation.release_monitor_unassigned_email || {};
+      const responsible = automation.release_monitor_responsible_email || {};
+      $("unassignedEnabled").checked = Boolean(unassigned.enabled);
+      $("unassignedRecipientsInput").value = lines(unassigned.recipients || []);
+      $("weeklyReminderEnabled").checked = Boolean(unassigned.weekly_reminder_enabled);
+      $("weeklyReminderTimeInput").value = unassigned.weekly_reminder_time || "09:00";
+      const reminderRecipients = unassigned.weekly_reminder_recipients || [];
+      $("weeklyReminderRecipientsInput").value = lines(reminderRecipients.length ? reminderRecipients : (unassigned.recipients || []));
+      $("weeklyEnabled").checked = Boolean(responsible.weekly_digest_enabled);
+      $("weeklyTimeInput").value = responsible.weekly_digest_time || "16:00";
+      const weeklyRecipients = responsible.weekly_digest_recipients || [];
+      $("weeklyRecipientsInput").value = lines(weeklyRecipients.length ? weeklyRecipients : (unassigned.recipients || []));
+      $("responsibleEnabled").checked = Boolean(responsible.enabled);
+      $("assignmentDelayInput").value = responsible.assignment_email_delay_minutes ?? 6;
+      $("sendIntervalInput").value = responsible.personal_email_send_interval_seconds ?? 5;
+      $("weeklyFallbackHint").textContent = weeklyRecipients.length
+        ? "Используется отдельный список получателей недельной сводки."
+        : "Сейчас показан список писем “без ответственного”; его можно отредактировать отдельно для недельной сводки.";
+      $("weeklyReminderFallbackHint").textContent = reminderRecipients.length
+        ? "Используется отдельный список получателей понедельничного письма."
+        : "Сейчас показан общий список писем “без ответственного”; его можно отредактировать отдельно для понедельника.";
+    }
+
+    function employeeMatches(row) {
+      const query = $("employeeSearch").value.trim().toLowerCase();
+      const emails = (row.emails || []).join(" ").toLowerCase();
+      const matchesQuery = !query || row.name.toLowerCase().includes(query) || emails.includes(query);
+      if (!matchesQuery) return false;
+      if (state.employeeFilter === "enabled") return row.enabled !== false;
+      if (state.employeeFilter === "disabled") return row.enabled === false;
+      if (state.employeeFilter === "without_email") return !(row.emails || []).length;
+      return true;
+    }
+
+    function renderEmployees() {
+      const rows = state.config.automation.release_monitor_responsible_email.employee_recipients || [];
+      const filtered = rows.map((row, index) => ({ ...row, index })).filter(employeeMatches);
+      $("employeeRows").innerHTML = filtered.map(({ index, name, enabled, emails }) => `
+        <tr class="${enabled === false ? "disabled-row" : ""}">
+          <td><input type="checkbox" data-toggle-employee="${index}" ${enabled === false ? "" : "checked"}></td>
+          <td><strong>${escapeHtml(name)}</strong></td>
+          <td><span class="badge ${emails && emails.length ? "blue" : "red"}">${(emails || []).length}</span></td>
+          <td><div class="chips">${emailChips(emails || [])}</div></td>
+          <td class="action-cell">
+            <button type="button" class="icon-btn ghost" data-edit-employee="${index}" title="Редактировать">Изм.</button>
+            <button type="button" class="icon-btn danger" data-remove-employee="${index}" title="Удалить">Удал.</button>
+          </td>
+        </tr>
+      `).join("");
+      $("employeeEmpty").classList.toggle("hidden", filtered.length > 0);
+      refreshDerived();
+    }
+
+    function emailChips(emails) {
+      if (!emails.length) return `<span class="chip">email не указан</span>`;
+      const visible = emails.slice(0, 2).map((email) => `<span class="chip">${escapeHtml(email)}</span>`);
+      if (emails.length > 2) visible.push(`<span class="chip">+${emails.length - 2}</span>`);
+      return visible.join("");
+    }
+
+    function prefixMatches(row) {
+      const query = $("prefixSearch").value.trim().toLowerCase();
+      const haystack = `${row.prefix || ""} ${row.jira_domain || ""} ${row.system || ""}`.toLowerCase();
+      const matchesQuery = !query || haystack.includes(query);
+      if (!matchesQuery) return false;
+      if (state.prefixFilter === "enabled") return row.enabled !== false;
+      if (state.prefixFilter === "disabled") return row.enabled === false;
+      return true;
+    }
+
+    function renderPrefixes() {
+      const rows = state.config.release_monitor.prefixes || [];
+      const filtered = rows.map((row, index) => ({ ...row, index })).filter(prefixMatches);
+      $("prefixRows").innerHTML = filtered.map(({ index, prefix, enabled, jira_domain, system }) => `
+        <tr class="${enabled === false ? "disabled-row" : ""}">
+          <td><input type="checkbox" data-toggle-prefix="${index}" ${enabled === false ? "" : "checked"}></td>
+          <td><strong>${escapeHtml(prefix || "")}</strong></td>
+          <td><span class="badge blue">${escapeHtml(jira_domain || "-")}</span></td>
+          <td>${escapeHtml(system || "-")}</td>
+          <td class="action-cell">
+            <button type="button" class="icon-btn ghost" data-edit-prefix="${index}" title="Редактировать">Изм.</button>
+            <button type="button" class="icon-btn danger" data-remove-prefix="${index}" title="Удалить">Удал.</button>
+          </td>
+        </tr>
+      `).join("");
+      $("prefixEmpty").classList.toggle("hidden", filtered.length > 0);
+      refreshDerived();
+    }
+
+    function refreshDerived() {
+      if (!state.config) return;
+      const config = currentFormConfig();
+      const responsible = config.automation.release_monitor_responsible_email;
+      const unassigned = config.automation.release_monitor_unassigned_email;
+      const employees = responsible.employee_recipients || [];
+      const prefixes = config.release_monitor.prefixes || [];
+      const activeEmployees = employees.filter((row) => row.enabled !== false).length;
+      const totalEmployeeEmails = employees.reduce((total, row) => total + (row.emails || []).length, 0);
+      const enabledPrefixes = prefixes.filter((row) => row.enabled !== false).length;
+      const enabledMail = [
+        unassigned.enabled,
+        unassigned.weekly_reminder_enabled,
+        responsible.weekly_digest_enabled,
+        responsible.enabled
+      ].filter(Boolean).length;
+      const closedSections = Object.values(config.maintenance || {}).filter(Boolean).length;
+      $("summaryMail").textContent = String(enabledMail);
+      $("summaryEmployees").textContent = String(activeEmployees);
+      $("summaryEmployeeEmails").textContent = `${totalEmployeeEmails} email-адресов`;
+      $("summaryPrefixes").textContent = String(enabledPrefixes);
+      $("summaryDelay").textContent = `${responsible.assignment_email_delay_minutes || 0} мин`;
+      $("overviewMaintenanceBadge").textContent = `${closedSections} закрыто`;
+      $("overviewEmployeesBadge").textContent = `${activeEmployees} активных`;
+      $("overviewPrefixesBadge").textContent = `${enabledPrefixes} включено`;
+      $("personalActiveEmployees").textContent = String(activeEmployees);
+      $("personalEmailCount").textContent = String(totalEmployeeEmails);
+      $("automationWeeklyText").textContent = `${responsible.weekly_digest_enabled ? "Включено" : "Выключено"} · понедельник ${responsible.weekly_digest_time || "16:00"}`;
+      $("automationReminderText").textContent = `${unassigned.weekly_reminder_enabled ? "Включено" : "Выключено"} · понедельник ${unassigned.weekly_reminder_time || "09:00"}`;
+      $("automationPersonalText").textContent = `${responsible.enabled ? "Включено" : "Выключено"} · задержка ${responsible.assignment_email_delay_minutes || 0} мин · пауза ${responsible.personal_email_send_interval_seconds || 0} сек`;
+    }
+
+    function renderSystemOptions() {
+      const systems = state.metadata.standard_systems || ["CLM", "EMRM", "АИСТ", "AI-Агенты", "Фокус"];
+      $("systemOptions").innerHTML = systems.map((system) => `<option value="${escapeAttr(system)}"></option>`).join("");
+    }
+
+    function renderDomainOptions(selected) {
+      const domains = state.metadata.jira_domains || ["sberbank", "delta"];
+      $("modalPrefixDomain").innerHTML = domains.map((domain) => `<option value="${escapeAttr(domain)}" ${domain === selected ? "selected" : ""}>${escapeHtml(domain)}</option>`).join("");
+    }
+
+    function render(payload) {
+      state.revision = payload.revision || "";
+      state.config = initConfigShape(clone(payload.config || {}));
+      state.loadedConfig = clone(state.config);
+      state.rawJson = payload.raw_json_preview || "";
+      renderMetadata(payload);
+      renderSystemOptions();
+      renderMaintenance(state.config.maintenance || {});
+      renderMail(state.config);
+      renderEmployees();
+      renderPrefixes();
+      $("rawJsonPreview").textContent = state.rawJson;
+      $("tokenBox").classList.add("hidden");
+      $("appBox").classList.remove("hidden");
+      markClean();
+      refreshDerived();
+      showTab(state.activeTab || "overview");
+      if (payload.read_error) {
+        setStatus(`Файл feature_flags.json сейчас поврежден: ${payload.read_error}. После сохранения будет создана валидная структура, старое содержимое уйдет в backup.`, "error");
+      } else {
+        setStatus("СУП-параметры загружены.", "success");
+      }
+    }
+
+    function showTab(name, focusCardId = "") {
+      state.activeTab = name;
+      document.querySelectorAll("[data-panel]").forEach((panel) => panel.classList.toggle("active", panel.dataset.panel === name));
+      document.querySelectorAll("[data-tab]").forEach((button) => button.classList.toggle("active", button.dataset.tab === name));
+      if (focusCardId) {
+        setTimeout(() => $(focusCardId)?.scrollIntoView({ block: "center", behavior: "smooth" }), 50);
+      }
+    }
+
+    function collectConfig() {
+      return currentFormConfig();
+    }
+
+    async function loadData({ force = false } = {}) {
+      if (state.dirty && !force && !confirm("Есть несохраненные изменения. Обновить данные без сохранения?")) {
+        return;
+      }
+      if (!getToken()) {
+        $("tokenBox").classList.remove("hidden");
+        $("appBox").classList.add("hidden");
+        $("saveBtn").disabled = true;
+        $("resetBtn").disabled = true;
+        return;
+      }
+      setStatus("Загружаю СУП-параметры...");
+      try {
+        const payload = await api("/admin/sup-parameters/data");
+        render(payload);
+      } catch (error) {
+        $("tokenBox").classList.remove("hidden");
+        $("appBox").classList.add("hidden");
+        $("saveBtn").disabled = true;
+        $("resetBtn").disabled = true;
+        setStatus(error.message, "error");
+      }
+    }
+
+    async function saveData() {
+      setStatus("Сохраняю СУП-параметры...");
+      $("saveBtn").disabled = true;
+      clearTabErrors();
+      try {
+        const payload = await api("/admin/sup-parameters/save", {
+          method: "POST",
+          body: JSON.stringify({ revision: state.revision, config: collectConfig() })
+        });
+        render(payload);
+        setStatus("СУП-параметры сохранены. Приложение перечитает изменения без перезапуска.", "success");
+      } catch (error) {
+        const errors = error.payload && Array.isArray(error.payload.errors)
+          ? error.payload.errors
+          : [];
+        markErrorTabs(errors.join("\n") || error.message);
+        const details = errors.length ? "\n" + errors.join("\n") : "";
+        setStatus(`${error.message}${details}`, "error");
+        $("saveBtn").disabled = false;
+      }
+    }
+
+    function resetChanges() {
+      if (!state.loadedConfig) return;
+      state.config = clone(state.loadedConfig);
+      renderMaintenance(state.config.maintenance || {});
+      renderMail(state.config);
+      renderEmployees();
+      renderPrefixes();
+      markClean();
+      renderMetadata({ metadata: state.metadata, revision: state.revision, read_error: state.readError, path: state.path });
+      setStatus("Изменения сброшены до последней загруженной версии.", "success");
+    }
+
+    function clearTabErrors() {
+      document.querySelectorAll("[data-tab]").forEach((button) => button.classList.remove("has-error"));
+    }
+
+    function markErrorTabs(message) {
+      clearTabErrors();
+      const rules = [
+        ["maintenance", /Режим обслуживания|maintenance/i],
+        ["mail", /Письма|Weekly|digest|Получатели|персональн|email/i],
+        ["employees", /Сотрудник|ФИО/i],
+        ["prefixes", /Prefix|Release prefixes|jira_domain|system/i],
+      ];
+      rules.forEach(([tab, pattern]) => {
+        if (pattern.test(message)) {
+          document.querySelector(`[data-tab="${tab}"]`)?.classList.add("has-error");
+        }
+      });
+    }
+
+    function openEmployeeModal(index = -1) {
+      const employees = state.config.automation.release_monitor_responsible_email.employee_recipients || [];
+      const row = index >= 0 ? employees[index] : { enabled: true, name: "", emails: [] };
+      state.modal = { type: "employee", index };
+      $("modalTitle").textContent = index >= 0 ? "Редактировать сотрудника" : "Добавить сотрудника";
+      $("employeeForm").classList.remove("hidden");
+      $("prefixForm").classList.add("hidden");
+      $("modalEmployeeEnabled").checked = row.enabled !== false;
+      $("modalEmployeeName").value = row.name || "";
+      $("modalEmployeeEmails").value = lines(row.emails || []);
+      $("modalBackdrop").classList.remove("hidden");
+      $("modalEmployeeName").focus();
+    }
+
+    function openPrefixModal(index = -1) {
+      const prefixes = state.config.release_monitor.prefixes || [];
+      const row = index >= 0 ? prefixes[index] : { enabled: true, prefix: "", jira_domain: "sberbank", system: "" };
+      state.modal = { type: "prefix", index };
+      $("modalTitle").textContent = index >= 0 ? "Редактировать prefix" : "Добавить prefix";
+      $("employeeForm").classList.add("hidden");
+      $("prefixForm").classList.remove("hidden");
+      $("modalPrefixEnabled").checked = row.enabled !== false;
+      $("modalPrefixCode").value = row.prefix || "";
+      renderDomainOptions(row.jira_domain || "sberbank");
+      $("modalPrefixSystem").value = row.system || "";
+      $("modalBackdrop").classList.remove("hidden");
+      $("modalPrefixCode").focus();
+    }
+
+    function closeModal() {
+      $("modalBackdrop").classList.add("hidden");
+      state.modal = { type: "", index: -1 };
+    }
+
+    function saveModal() {
+      if (state.modal.type === "employee") {
+        const rows = state.config.automation.release_monitor_responsible_email.employee_recipients;
+        const nextRow = {
+          enabled: $("modalEmployeeEnabled").checked,
+          name: $("modalEmployeeName").value.trim(),
+          emails: splitLines($("modalEmployeeEmails").value)
+        };
+        if (state.modal.index >= 0) rows[state.modal.index] = nextRow;
+        else rows.push(nextRow);
+        renderEmployees();
+      }
+      if (state.modal.type === "prefix") {
+        const rows = state.config.release_monitor.prefixes;
+        const nextRow = {
+          enabled: $("modalPrefixEnabled").checked,
+          prefix: $("modalPrefixCode").value.trim().toUpperCase(),
+          jira_domain: $("modalPrefixDomain").value,
+          system: $("modalPrefixSystem").value.trim()
+        };
+        if (state.modal.index >= 0) rows[state.modal.index] = nextRow;
+        else rows.push(nextRow);
+        renderPrefixes();
+      }
+      markDirty();
+      closeModal();
+    }
+
+    document.addEventListener("click", (event) => {
+      const tabButton = event.target.closest("[data-tab]");
+      if (tabButton) showTab(tabButton.dataset.tab);
+
+      const openTabButton = event.target.closest("[data-open-tab]");
+      if (openTabButton) showTab(openTabButton.dataset.openTab, openTabButton.dataset.focusCard || "");
+
+      const employeeFilter = event.target.closest("[data-employee-filter]");
+      if (employeeFilter) {
+        state.employeeFilter = employeeFilter.dataset.employeeFilter;
+        document.querySelectorAll("[data-employee-filter]").forEach((button) => button.classList.toggle("active", button === employeeFilter));
+        renderEmployees();
+      }
+
+      const prefixFilter = event.target.closest("[data-prefix-filter]");
+      if (prefixFilter) {
+        state.prefixFilter = prefixFilter.dataset.prefixFilter;
+        document.querySelectorAll("[data-prefix-filter]").forEach((button) => button.classList.toggle("active", button === prefixFilter));
+        renderPrefixes();
+      }
+
+      const editEmployee = event.target.closest("[data-edit-employee]");
+      if (editEmployee) openEmployeeModal(Number(editEmployee.dataset.editEmployee));
+
+      const removeEmployee = event.target.closest("[data-remove-employee]");
+      if (removeEmployee) {
+        state.config.automation.release_monitor_responsible_email.employee_recipients.splice(Number(removeEmployee.dataset.removeEmployee), 1);
+        renderEmployees();
+        markDirty();
+      }
+
+      const editPrefix = event.target.closest("[data-edit-prefix]");
+      if (editPrefix) openPrefixModal(Number(editPrefix.dataset.editPrefix));
+
+      const removePrefix = event.target.closest("[data-remove-prefix]");
+      if (removePrefix) {
+        state.config.release_monitor.prefixes.splice(Number(removePrefix.dataset.removePrefix), 1);
+        renderPrefixes();
+        markDirty();
+      }
+    });
+
+    document.addEventListener("change", (event) => {
+      const employeeToggle = event.target.closest("[data-toggle-employee]");
+      if (employeeToggle) {
+        const row = state.config.automation.release_monitor_responsible_email.employee_recipients[Number(employeeToggle.dataset.toggleEmployee)];
+        row.enabled = employeeToggle.checked;
+        renderEmployees();
+        markDirty();
+        return;
+      }
+      const prefixToggle = event.target.closest("[data-toggle-prefix]");
+      if (prefixToggle) {
+        const row = state.config.release_monitor.prefixes[Number(prefixToggle.dataset.togglePrefix)];
+        row.enabled = prefixToggle.checked;
+        renderPrefixes();
+        markDirty();
+        return;
+      }
+      if (event.target.matches("[data-maintenance]")) {
+        state.config.maintenance = currentFormConfig().maintenance;
+        renderMaintenance(state.config.maintenance);
+        markDirty();
+        return;
+      }
+      if (event.target.matches("[data-dirty-field]")) {
+        markDirty();
+      }
+    });
+
+    document.addEventListener("input", (event) => {
+      if (event.target.matches("[data-dirty-field]")) markDirty();
+    });
+
+    $("employeeSearch").addEventListener("input", renderEmployees);
+    $("prefixSearch").addEventListener("input", renderPrefixes);
+    $("addEmployeeBtn").addEventListener("click", () => openEmployeeModal());
+    $("addPrefixBtn").addEventListener("click", () => openPrefixModal());
+    $("modalCloseBtn").addEventListener("click", closeModal);
+    $("modalCancelBtn").addEventListener("click", closeModal);
+    $("modalSaveBtn").addEventListener("click", saveModal);
+    $("modalBackdrop").addEventListener("click", (event) => {
+      if (event.target === $("modalBackdrop")) closeModal();
+    });
+    $("saveBtn").addEventListener("click", saveData);
+    $("reloadBtn").addEventListener("click", () => loadData());
+    $("resetBtn").addEventListener("click", resetChanges);
+
+    const unlockBtn = $("unlockBtn");
+    if (unlockBtn) {
+      unlockBtn.addEventListener("click", () => {
+        const token = $("tokenInput").value.trim();
+        if (token) {
+          sessionStorage.setItem(TOKEN_KEY, token);
+          $("tokenInput").value = "";
+          loadData({ force: true });
+        }
+      });
+    }
+    const clearTokenBtn = $("clearTokenBtn");
+    if (clearTokenBtn) {
+      clearTokenBtn.addEventListener("click", () => {
+        sessionStorage.removeItem(TOKEN_KEY);
+        location.reload();
+      });
+    }
+    window.addEventListener("beforeunload", (event) => {
+      if (!state.dirty) return;
+      event.preventDefault();
+      event.returnValue = "";
+    });
+
+    initTokenFromUrl();
+    loadData({ force: true });
+  </script>
+</body>
+</html>

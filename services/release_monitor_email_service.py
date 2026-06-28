@@ -70,6 +70,10 @@ def _default_state() -> Dict:
         "last_email_new_count": 0,
         "last_email_total_count": 0,
         "last_email_responsible_removed_count": 0,
+        "last_weekly_reminder_week_key": "",
+        "last_weekly_reminder_success_at": "",
+        "last_weekly_reminder_recipients": [],
+        "last_weekly_reminder_total_count": 0,
     }
 
 
@@ -115,10 +119,15 @@ def _normalize_state(payload) -> Dict:
         state.get("last_email_recipients"),
         strict=False,
     )
+    state["last_weekly_reminder_recipients"] = _normalize_recipients(
+        state.get("last_weekly_reminder_recipients"),
+        strict=False,
+    )
     for key in (
         "last_email_new_count",
         "last_email_total_count",
         "last_email_responsible_removed_count",
+        "last_weekly_reminder_total_count",
     ):
         try:
             state[key] = max(0, int(state.get(key) or 0))
@@ -161,10 +170,26 @@ def _atomic_write_state(state: Dict) -> None:
 def _automation_settings() -> Dict:
     config = get_automation_config(EMAIL_AUTOMATION_FLAG)
     if not isinstance(config, dict):
-        return {"enabled": False, "recipients": []}
+        return {
+            "enabled": False,
+            "recipients": [],
+            "weekly_reminder_enabled": False,
+            "weekly_reminder_time": "09:00",
+            "weekly_reminder_recipients": [],
+        }
     return {
         "enabled": bool(config.get("enabled", False)),
         "recipients": _normalize_recipients(config.get("recipients"), strict=False),
+        "weekly_reminder_enabled": bool(
+            config.get("weekly_reminder_enabled", False)
+        ),
+        "weekly_reminder_time": str(
+            config.get("weekly_reminder_time") or "09:00"
+        ).strip(),
+        "weekly_reminder_recipients": _normalize_recipients(
+            config.get("weekly_reminder_recipients"),
+            strict=False,
+        ),
     }
 
 
@@ -293,6 +318,35 @@ def _current_week_period(value: Optional[datetime] = None) -> str:
     return f"{start.strftime('%d.%m.%Y')} - {end.strftime('%d.%m.%Y')}"
 
 
+def _parse_hhmm(value: str, default: str = "09:00") -> Tuple[int, int]:
+    raw_value = str(value or default).strip()
+    try:
+        hours_text, minutes_text = raw_value.split(":", 1)
+        hours = int(hours_text)
+        minutes = int(minutes_text)
+    except (TypeError, ValueError):
+        hours, minutes = 9, 0
+    if not (0 <= hours <= 23 and 0 <= minutes <= 59):
+        return 9, 0
+    return hours, minutes
+
+
+def _weekly_reminder_due(
+    state: Dict,
+    settings: Dict,
+    now: Optional[datetime] = None,
+) -> bool:
+    current = now or datetime.now()
+    if not settings.get("weekly_reminder_enabled"):
+        return False
+    if current.weekday() != 0:
+        return False
+    hours, minutes = _parse_hhmm(settings.get("weekly_reminder_time"), "09:00")
+    if (current.hour, current.minute) < (hours, minutes):
+        return False
+    return state.get("last_weekly_reminder_week_key") != _current_week_key(current)
+
+
 def _operational_assignment_period(value: Optional[datetime] = None) -> str:
     current = value or datetime.now()
     start = current.date() - timedelta(days=current.weekday())
@@ -355,7 +409,7 @@ def select_unassigned_current_week_items(items: Iterable[Dict]) -> List[Dict]:
     for source_index, item in enumerate(items or []):
         if not isinstance(item, dict) or not _is_current_week_active(item):
             continue
-        if not item.get("is_missing_week_responsible") or _has_responsible(item):
+        if _has_responsible(item):
             continue
         selected_item = dict(item)
         selected_item["_notification_source_index"] = source_index
@@ -372,7 +426,7 @@ def _current_assignment_sets(items: Iterable[Dict]) -> Tuple[Set[str], Set[str]]
         row_key = str(item.get("row_key") or "").strip()
         if _has_responsible(item):
             responsible.add(row_key)
-        elif item.get("is_missing_week_responsible"):
+        else:
             missing.add(row_key)
     return missing, responsible
 
@@ -975,9 +1029,13 @@ def _run_notification(
     refresh_mode: str,
     force_baseline: bool,
     explicit_events: Optional[Dict[str, str]],
+    process_weekly_reminder: bool = False,
 ) -> Dict:
     settings_config = _automation_settings()
-    if not settings_config["enabled"]:
+    if process_weekly_reminder:
+        if not settings_config["weekly_reminder_enabled"]:
+            return {"result": "disabled"}
+    elif not settings_config["enabled"]:
         return {"result": "disabled"}
 
     with _process_lock:
@@ -995,8 +1053,20 @@ def _run_notification(
                 "quick",
                 "silent",
             }
+            initializing_weekly_reminder = bool(
+                process_weekly_reminder
+                and (
+                    not state_exists
+                    or state.get("tracking_state") != "active"
+                    or force_baseline
+                    or state.get("week_key") != week_key
+                )
+            )
 
-            if not state_exists or state.get("tracking_state") != "active":
+            if (
+                not process_weekly_reminder
+                and (not state_exists or state.get("tracking_state") != "active")
+            ):
                 if not is_refresh:
                     return {"result": "waiting_refresh"}
                 _create_baseline(
@@ -1012,7 +1082,10 @@ def _run_notification(
                     "rows_count": len(current_missing),
                 }
 
-            if force_baseline or state.get("week_key") != week_key:
+            if (
+                not process_weekly_reminder
+                and (force_baseline or state.get("week_key") != week_key)
+            ):
                 if not is_refresh:
                     return {"result": "waiting_refresh"}
                 _create_baseline(
@@ -1034,7 +1107,11 @@ def _run_notification(
 
             now = datetime.now()
             now_text = _format_timestamp(now)
-            notified = set(_normalize_row_keys(state.get("notified_row_keys")))
+            notified = (
+                set()
+                if initializing_weekly_reminder
+                else set(_normalize_row_keys(state.get("notified_row_keys")))
+            )
             previous_responsible = set(
                 _normalize_row_keys(state.get("responsible_row_keys"))
             )
@@ -1053,9 +1130,35 @@ def _run_notification(
             for row_key, event_type in (explicit_events or {}).items():
                 if row_key in current_missing:
                     _merge_event(pending, row_key, event_type, now_text)
+            if process_weekly_reminder:
+                for row_key in current_missing:
+                    _merge_event(pending, row_key, EVENT_NEW_UNASSIGNED, now_text)
+                if not current_missing:
+                    state.update(
+                        {
+                            "tracking_state": "active",
+                            "week_key": week_key,
+                            "notified_row_keys": [],
+                            "active_row_keys": [],
+                            "responsible_row_keys": sorted(current_responsible),
+                            "pending_events": {},
+                            "last_evaluated_at": now_text,
+                            "last_snapshot_revision": _snapshot_revision(snapshot),
+                            "last_weekly_reminder_week_key": week_key,
+                            "last_weekly_reminder_success_at": "",
+                            "last_weekly_reminder_recipients": [],
+                            "last_weekly_reminder_total_count": 0,
+                            "last_result": "weekly_reminder_empty",
+                            "last_error": "",
+                        }
+                    )
+                    _atomic_write_state(state)
+                    return {"result": "weekly_reminder_empty", "rows_count": 0}
 
             state.update(
                 {
+                    "tracking_state": "active",
+                    "week_key": week_key,
                     "active_row_keys": sorted(current_missing),
                     "responsible_row_keys": sorted(current_responsible),
                     "pending_events": pending,
@@ -1077,8 +1180,12 @@ def _run_notification(
                 for row_key, event in pending.items()
                 if row_key in latest_missing
             }
-            for row_key in latest_missing - notified:
-                _merge_event(pending, row_key, EVENT_NEW_UNASSIGNED, now_text)
+            if process_weekly_reminder:
+                for row_key in latest_missing:
+                    _merge_event(pending, row_key, EVENT_NEW_UNASSIGNED, now_text)
+            else:
+                for row_key in latest_missing - notified:
+                    _merge_event(pending, row_key, EVENT_NEW_UNASSIGNED, now_text)
             state.update(
                 {
                     "active_row_keys": sorted(latest_missing),
@@ -1089,6 +1196,15 @@ def _run_notification(
                 }
             )
             if not pending:
+                if process_weekly_reminder:
+                    state.update(
+                        {
+                            "last_weekly_reminder_week_key": week_key,
+                            "last_weekly_reminder_success_at": "",
+                            "last_weekly_reminder_recipients": [],
+                            "last_weekly_reminder_total_count": 0,
+                        }
+                    )
                 state["last_result"] = "waiting"
                 state["last_error"] = ""
                 _atomic_write_state(state)
@@ -1100,7 +1216,8 @@ def _run_notification(
                 for event in pending.values()
             )
             if (
-                only_new_events
+                not process_weekly_reminder
+                and only_new_events
                 and current_fingerprint
                 and current_fingerprint == state.get("last_sent_fingerprint")
             ):
@@ -1128,10 +1245,14 @@ def _run_notification(
                     "pending_count": len(pending),
                 }
 
-            recipients = _normalize_recipients(
-                settings_config["recipients"],
-                strict=True,
-            )
+            if process_weekly_reminder:
+                recipient_source = (
+                    settings_config.get("weekly_reminder_recipients")
+                    or settings_config["recipients"]
+                )
+            else:
+                recipient_source = settings_config["recipients"]
+            recipients = _normalize_recipients(recipient_source, strict=True)
             delivery_settings = _mail_settings()
             state.update(
                 {
@@ -1196,6 +1317,17 @@ def _run_notification(
                     ),
                 }
             )
+            if process_weekly_reminder:
+                state.update(
+                    {
+                        "last_weekly_reminder_week_key": week_key,
+                        "last_weekly_reminder_success_at": success_at,
+                        "last_weekly_reminder_recipients": recipients,
+                        "last_weekly_reminder_total_count": int(
+                            metadata["total_count"]
+                        ),
+                    }
+                )
             _atomic_write_state(state)
             logging.info(
                 "Release monitor email sent: events=%s total=%s recipients=%s",
@@ -1227,6 +1359,7 @@ def _worker_loop() -> None:
                 refresh_mode=job["refresh_mode"],
                 force_baseline=job.get("force_baseline", False),
                 explicit_events=job.get("explicit_events"),
+                process_weekly_reminder=bool(job.get("process_weekly_reminder")),
             )
         except Exception:
             logging.exception("Release monitor email worker failed unexpectedly")
@@ -1250,9 +1383,13 @@ def schedule_unassigned_email_notification(
 
         force_baseline = previous_enabled is False
         merged_events = {}
+        process_weekly_reminder = False
         if _queued_job:
             force_baseline = force_baseline or bool(
                 _queued_job.get("force_baseline")
+            )
+            process_weekly_reminder = bool(
+                _queued_job.get("process_weekly_reminder")
             )
             for row_key, event_type in (
                 _queued_job.get("explicit_events") or {}
@@ -1276,6 +1413,51 @@ def schedule_unassigned_email_notification(
                 row_key: event["event_type"]
                 for row_key, event in merged_events.items()
             },
+            "process_weekly_reminder": process_weekly_reminder,
+        }
+        if _worker_thread and _worker_thread.is_alive():
+            return True
+        _worker_thread = threading.Thread(
+            target=_worker_loop,
+            daemon=True,
+            name="release-monitor-unassigned-email",
+        )
+        _worker_thread.start()
+        return True
+
+
+def schedule_unassigned_weekly_reminder(snapshot: Dict) -> bool:
+    global _queued_job, _worker_thread
+
+    automation = _automation_settings()
+    if not automation.get("weekly_reminder_enabled"):
+        return False
+    state, _ = _load_state()
+    if not _weekly_reminder_due(state, automation):
+        return False
+
+    with _queue_lock:
+        merged_events = {}
+        force_baseline = False
+        if _queued_job:
+            force_baseline = bool(_queued_job.get("force_baseline"))
+            for row_key, event_type in (
+                _queued_job.get("explicit_events") or {}
+            ).items():
+                _merge_event(merged_events, row_key, event_type)
+
+        _queued_job = {
+            "snapshot": {
+                "items": copy.deepcopy(list((snapshot or {}).get("items") or [])),
+                "meta": copy.deepcopy(dict((snapshot or {}).get("meta") or {})),
+            },
+            "refresh_mode": "weekly_unassigned_reminder",
+            "force_baseline": force_baseline,
+            "explicit_events": {
+                row_key: event["event_type"]
+                for row_key, event in merged_events.items()
+            },
+            "process_weekly_reminder": True,
         }
         if _worker_thread and _worker_thread.is_alive():
             return True
@@ -1342,6 +1524,17 @@ def get_unassigned_email_status() -> Dict:
         ),
         "last_email_total_count": (
             int(state.get("last_email_total_count") or 0)
+            if state_exists
+            else 0
+        ),
+        "last_weekly_reminder_week_key": (
+            state.get("last_weekly_reminder_week_key", "") if state_exists else ""
+        ),
+        "last_weekly_reminder_success_at": (
+            state.get("last_weekly_reminder_success_at", "") if state_exists else ""
+        ),
+        "last_weekly_reminder_total_count": (
+            int(state.get("last_weekly_reminder_total_count") or 0)
             if state_exists
             else 0
         ),

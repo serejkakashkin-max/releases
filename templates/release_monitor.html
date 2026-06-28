@@ -7168,8 +7168,20 @@
         }
 
         function isReleaseAssignmentScopeForCurrentWeek(item) {
+            const deploymentDate = getReleaseEffectiveStartDate(item);
+            if (!deploymentDate) {
+                return false;
+            }
+            deploymentDate.setHours(0, 0, 0, 0);
+            const { start, end } = getCurrentWeekDateBounds();
+            const nextMonday = new Date(end);
+            nextMonday.setDate(end.getDate() + 1);
+            nextMonday.setHours(0, 0, 0, 0);
             return Boolean(
-                isReleaseInCurrentWeek(item) &&
+                (
+                    (deploymentDate >= start && deploymentDate <= end) ||
+                    deploymentDate.getTime() === nextMonday.getTime()
+                ) &&
                 !item?.is_cancelled
             );
         }

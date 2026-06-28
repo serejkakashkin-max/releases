@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 from config import OPLOT_VALUES
+from services.feature_flags_service import get_release_prefix_system
 from services.template_constructor_service import is_ai_agents_template_category
 
 
@@ -1854,6 +1855,9 @@ class ReleaseReportService:
         }
         normalized = mojibake_map.get(raw, raw)
         upper_normalized = normalized.upper()
+        configured_system = get_release_prefix_system(prefix)
+        if configured_system:
+            return configured_system
 
         if "AI-" in upper_normalized or "AI " in upper_normalized or "\u0410\u0413\u0415\u041d\u0422" in upper_normalized:
             return "AI-\u0410\u0433\u0435\u043d\u0442\u044b"

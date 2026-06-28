@@ -145,6 +145,7 @@ cache/
 
 # Config with sensitive data
 config.json
+feature_flags.json
 
 # Local Playwright MCP artifacts
 .playwright-mcp/

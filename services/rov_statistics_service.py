@@ -17,8 +17,8 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
+from services.feature_flags_service import get_enabled_release_prefixes
 from services.release_monitor_service import (
-    RELEASE_PREFIXES,
     ROV_ISSUE_TYPE,
     _execute_search,
     _extract_field_value,
@@ -154,7 +154,7 @@ def _is_linked_release(issue: Dict[str, Any]) -> bool:
     issue_type = _issue_type_name(issue)
     if issue_type == "Release 2.0":
         return True
-    return any(key.startswith(f"{prefix}-") for prefix in RELEASE_PREFIXES)
+    return any(key.startswith(f"{prefix}-") for prefix in get_enabled_release_prefixes())
 
 
 def _extract_linked_release_info(fields: Dict[str, Any]) -> Dict[str, str]:

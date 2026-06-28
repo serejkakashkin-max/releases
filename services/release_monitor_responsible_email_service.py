@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 from uuid import uuid4
 
-from services.feature_flags_service import get_automation_config
+from services.feature_flags_service import get_automation_config, get_release_prefix_system
 from services.release_monitor_email_service import (
     EMAIL_THROTTLE_SECONDS,
     MAX_EMAIL_ROWS,
@@ -211,6 +211,7 @@ def _responsible_settings() -> Dict:
             "employee_recipients": {},
             "weekly_digest_enabled": False,
             "weekly_digest_time": "16:00",
+            "weekly_digest_recipients": [],
             "assignment_email_delay_minutes": DEFAULT_ASSIGNMENT_EMAIL_DELAY_MINUTES,
             "personal_email_send_interval_seconds": DEFAULT_PERSONAL_EMAIL_SEND_INTERVAL_SECONDS,
         }
@@ -233,6 +234,10 @@ def _responsible_settings() -> Dict:
         "weekly_digest_enabled": bool(config.get("weekly_digest_enabled", True)),
         "weekly_digest_time": str(config.get("weekly_digest_time") or "16:00").strip()
         or "16:00",
+        "weekly_digest_recipients": _normalize_recipients(
+            config.get("weekly_digest_recipients"),
+            strict=False,
+        ),
         "assignment_email_delay_minutes": _coerce_non_negative_int(
             config.get("assignment_email_delay_minutes"),
             DEFAULT_ASSIGNMENT_EMAIL_DELAY_MINUTES,
@@ -493,6 +498,9 @@ def _system_label(item: Dict) -> str:
     if manual_system_name:
         return manual_system_name
     source_prefix = str(item.get("source_prefix") or "").strip().upper()
+    configured_system = get_release_prefix_system(source_prefix)
+    if configured_system:
+        return configured_system
     if source_prefix == "SMECSC":
         return "АИСТ"
     if source_prefix in {"AIGAS", "HELPERAI", "DRMMMB"}:
@@ -1137,7 +1145,10 @@ def _send_weekly_digest(
 ) -> Tuple[bool, Dict]:
     if not _weekly_digest_due(state, settings):
         return False, {}
-    recipients = _normalize_recipients(_unassigned_recipients(), strict=True)
+    recipients = _normalize_recipients(
+        settings.get("weekly_digest_recipients") or _unassigned_recipients(),
+        strict=True,
+    )
     delivery_settings = _mail_settings()
     _validate_delivery_settings(delivery_settings, recipients)
     subject, text_body, html_body, metadata = _build_weekly_digest_content(
