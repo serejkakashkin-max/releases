@@ -594,6 +594,11 @@
             opacity: 1;
         }
 
+        .release-sms-scope-menu .dropdown-divider {
+            margin: 0.28rem 0.18rem;
+            border-color: var(--release-soft-border);
+        }
+
         .release-sms-modal .modal-dialog {
             max-width: min(1380px, 96vw);
         }
@@ -867,6 +872,175 @@
 
         [data-theme="dark"] .release-sms-issues {
             color: #ff9b9b;
+        }
+
+        .sms-template-editor-modal .modal-dialog {
+            max-width: min(860px, 94vw);
+        }
+
+        .sms-template-editor-modal .modal-content {
+            border: 1px solid var(--release-soft-border);
+            background: var(--release-panel-bg);
+            color: var(--text-primary);
+            box-shadow: 0 24px 70px var(--release-shadow);
+        }
+
+        .sms-template-editor-modal .modal-header,
+        .sms-template-editor-modal .modal-footer {
+            border-color: var(--release-soft-border);
+        }
+
+        .sms-template-editor-subtitle {
+            color: var(--text-secondary);
+            font-size: 0.82rem;
+            margin-top: 0.18rem;
+        }
+
+        .sms-template-tabs {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.45rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .sms-template-tab {
+            border: 1px solid var(--release-soft-border);
+            border-radius: 9px;
+            background: var(--release-soft-bg);
+            color: var(--text-primary);
+            padding: 0.52rem 0.62rem;
+            text-align: left;
+            transition: border-color 0.16s ease, background-color 0.16s ease, color 0.16s ease;
+        }
+
+        .sms-template-tab:hover,
+        .sms-template-tab.active {
+            border-color: rgba(13, 110, 253, 0.55);
+            background: rgba(13, 110, 253, 0.12);
+            color: var(--primary);
+        }
+
+        .sms-template-tab.unavailable {
+            opacity: 0.58;
+        }
+
+        .sms-template-tab-name {
+            display: block;
+            font-weight: 800;
+            font-size: 0.86rem;
+            line-height: 1.15;
+        }
+
+        .sms-template-tab-count {
+            display: block;
+            color: var(--text-secondary);
+            font-size: 0.72rem;
+            margin-top: 0.15rem;
+        }
+
+        .sms-template-editor-panel {
+            border: 1px solid var(--release-soft-border);
+            border-radius: 10px;
+            background: var(--release-surface-bg);
+            overflow: hidden;
+        }
+
+        .sms-template-editor-panel-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            padding: 0.72rem 0.85rem;
+            border-bottom: 1px solid var(--release-soft-border);
+            background: var(--release-soft-bg);
+        }
+
+        .sms-template-editor-profile-title {
+            font-size: 0.95rem;
+            font-weight: 800;
+            line-height: 1.2;
+        }
+
+        .sms-template-editor-profile-meta {
+            color: var(--text-secondary);
+            font-size: 0.74rem;
+            margin-top: 0.16rem;
+        }
+
+        .sms-template-phone-list {
+            display: grid;
+            gap: 0.38rem;
+            padding: 0.75rem 0.85rem;
+            max-height: min(430px, 48vh);
+            overflow: auto;
+        }
+
+        .sms-template-phone-row {
+            display: grid;
+            grid-template-columns: 2rem minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 0.45rem;
+        }
+
+        .sms-template-phone-index {
+            color: var(--text-muted);
+            font-size: 0.72rem;
+            text-align: right;
+        }
+
+        .sms-template-phone-row .form-control,
+        .sms-template-add-row .form-control {
+            border-color: var(--release-soft-border);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            font-size: 0.82rem;
+        }
+
+        .sms-template-phone-row.invalid .form-control {
+            border-color: rgba(220, 53, 69, 0.75);
+            box-shadow: 0 0 0 0.12rem rgba(220, 53, 69, 0.12);
+        }
+
+        .sms-template-add-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 0.45rem;
+            padding: 0 0.85rem 0.85rem;
+        }
+
+        .sms-template-editor-message {
+            min-height: 1.25rem;
+            padding: 0 0.85rem 0.75rem;
+            color: #b42318;
+            font-size: 0.78rem;
+        }
+
+        .sms-template-editor-message.success {
+            color: #198754;
+        }
+
+        [data-theme="dark"] .sms-template-editor-message {
+            color: #ff9b9b;
+        }
+
+        [data-theme="dark"] .sms-template-editor-message.success {
+            color: #7ee4ca;
+        }
+
+        .sms-template-empty {
+            padding: 1rem;
+            color: var(--text-secondary);
+            text-align: center;
+            font-size: 0.82rem;
+        }
+
+        .sms-template-dirty-indicator {
+            color: #b7791f;
+            font-size: 0.78rem;
+        }
+
+        [data-theme="dark"] .sms-template-dirty-indicator {
+            color: #ffd166;
         }
 
         .release-sms-review-warning {
@@ -3664,6 +3838,13 @@
                                     По текущему фильтру
                                 </button>
                             </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <button type="button" class="dropdown-item" onclick="openSmsTemplateEditor(event)">
+                                    <i class="bi bi-pencil-square"></i>
+                                    Редактировать
+                                </button>
+                            </li>
                         </ul>
                     </div>
                 </div>
@@ -3916,6 +4097,52 @@
         </div>
     </div>
 
+    <div class="modal fade sms-template-editor-modal" id="smsTemplateEditorModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title">Редактировать получателей SMS</h5>
+                        <div class="sms-template-editor-subtitle">Меняются только номера. Текст SMS формируется автоматически при выгрузке.</div>
+                    </div>
+                    <button type="button" class="btn-close" onclick="closeSmsTemplateEditor()" aria-label="Закрыть"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="smsTemplateProfileTabs" class="sms-template-tabs" aria-label="Профили SMS"></div>
+                    <div class="sms-template-editor-panel">
+                        <div class="sms-template-editor-panel-head">
+                            <div>
+                                <div id="smsTemplateProfileTitle" class="sms-template-editor-profile-title">CLM</div>
+                                <div id="smsTemplateProfileMeta" class="sms-template-editor-profile-meta"></div>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="reloadSmsTemplateEditor()">
+                                <i class="bi bi-arrow-clockwise"></i>
+                                Обновить
+                            </button>
+                        </div>
+                        <div id="smsTemplatePhoneRows" class="sms-template-phone-list"></div>
+                        <div class="sms-template-add-row">
+                            <input type="text" id="smsTemplateNewPhoneInput" class="form-control" placeholder="+79991234567" onkeydown="if (event.key === 'Enter') { event.preventDefault(); addSmsTemplatePhone(); }">
+                            <button type="button" class="btn btn-outline-primary" onclick="addSmsTemplatePhone()">
+                                <i class="bi bi-plus-lg"></i>
+                                Добавить
+                            </button>
+                        </div>
+                        <div id="smsTemplateEditorMessage" class="sms-template-editor-message" role="alert"></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <span id="smsTemplateDirtyIndicator" class="sms-template-dirty-indicator me-auto"></span>
+                    <button type="button" class="btn btn-outline-secondary" onclick="closeSmsTemplateEditor()">Отмена</button>
+                    <button type="button" class="btn btn-primary" id="smsTemplateSaveBtn" onclick="saveSmsTemplateProfile()" disabled>
+                        <i class="bi bi-save"></i>
+                        Сохранить
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         let currentReleaseYearFilter = String(new Date().getFullYear());
         let currentReleaseViewFilter = 'all';
@@ -3977,6 +4204,14 @@
         })();
         let releaseSmsDraftItems = [];
         let releaseSmsModalInstance = null;
+        const SMS_TEMPLATE_PROFILES = ['CLM', 'EMRM', 'AIST', 'AI'];
+        let smsTemplateEditorModalInstance = null;
+        let smsTemplateEditorState = {
+            activeProfile: 'CLM',
+            profiles: {},
+            loading: false,
+            dirty: false,
+        };
         const RELEASE_TEMPLATE_HINTS = {{ release_monitor_template_hints | default({}) | tojson | safe }};
         const RELEASE_DOCUMENT_PLAYBOOKS = {{ release_document_playbooks | default([]) | tojson | safe }};
         let releaseDocumentModalInstance = null;
@@ -8078,6 +8313,364 @@
                     button.innerHTML = originalHtml;
                 }
                 renderReleaseSmsSummary();
+            }
+        }
+
+        function getSmsTemplateProfile(profile = smsTemplateEditorState.activeProfile) {
+            const key = String(profile || '').trim().toUpperCase();
+            if (!smsTemplateEditorState.profiles[key]) {
+                smsTemplateEditorState.profiles[key] = {
+                    profile: key,
+                    available: false,
+                    numbers: [],
+                    originalNumbers: [],
+                    count: 0,
+                    error: '',
+                };
+            }
+            return smsTemplateEditorState.profiles[key];
+        }
+
+        function normalizeSmsTemplatePhone(value) {
+            const normalized = String(value || '').trim().replace(/[\s()\-\u00A0]+/g, '');
+            if (!normalized) {
+                return '';
+            }
+            if (!/^\+?\d{5,20}$/.test(normalized)) {
+                throw new Error(`Некорректный номер: ${value}`);
+            }
+            return normalized;
+        }
+
+        function isSmsTemplatePhoneValid(value) {
+            try {
+                normalizeSmsTemplatePhone(value);
+                return true;
+            } catch (error) {
+                return false;
+            }
+        }
+
+        function setSmsTemplateEditorMessage(message = '', type = 'danger') {
+            const element = document.getElementById('smsTemplateEditorMessage');
+            if (!element) {
+                return;
+            }
+            element.textContent = message || '';
+            element.classList.toggle('success', type === 'success');
+        }
+
+        function setSmsTemplateDirty(dirty) {
+            smsTemplateEditorState.dirty = Boolean(dirty);
+            const indicator = document.getElementById('smsTemplateDirtyIndicator');
+            const saveButton = document.getElementById('smsTemplateSaveBtn');
+            const profile = getSmsTemplateProfile();
+            if (indicator) {
+                indicator.textContent = smsTemplateEditorState.dirty ? 'Есть несохраненные изменения' : '';
+            }
+            if (saveButton) {
+                saveButton.disabled = !smsTemplateEditorState.dirty || smsTemplateEditorState.loading || !profile.available;
+            }
+        }
+
+        function hydrateSmsTemplateProfiles(rawProfiles) {
+            const nextProfiles = {};
+            SMS_TEMPLATE_PROFILES.forEach(profile => {
+                const data = rawProfiles?.[profile] || {};
+                const numbers = Array.isArray(data.numbers) ? data.numbers.map(value => String(value || '')) : [];
+                nextProfiles[profile] = {
+                    profile,
+                    available: data.available !== false,
+                    filename: data.filename || '',
+                    numbers: numbers.slice(),
+                    originalNumbers: numbers.slice(),
+                    count: Number(data.count ?? numbers.length) || numbers.length,
+                    error: data.error || '',
+                };
+            });
+            smsTemplateEditorState.profiles = nextProfiles;
+            if (!SMS_TEMPLATE_PROFILES.includes(smsTemplateEditorState.activeProfile)) {
+                smsTemplateEditorState.activeProfile = 'CLM';
+            }
+            setSmsTemplateDirty(false);
+        }
+
+        function renderSmsTemplateTabs() {
+            const container = document.getElementById('smsTemplateProfileTabs');
+            if (!container) {
+                return;
+            }
+            container.innerHTML = SMS_TEMPLATE_PROFILES.map(profile => {
+                const data = getSmsTemplateProfile(profile);
+                const count = Array.isArray(data.numbers) ? data.numbers.length : 0;
+                const active = profile === smsTemplateEditorState.activeProfile;
+                const unavailableClass = data.available ? '' : ' unavailable';
+                return `
+                    <button type="button" class="sms-template-tab${active ? ' active' : ''}${unavailableClass}" onclick="setSmsTemplateProfile('${profile}')">
+                        <span class="sms-template-tab-name">${escapeHtml(profile)}</span>
+                        <span class="sms-template-tab-count">${data.available ? `${count} ном.` : 'CSV недоступен'}</span>
+                    </button>
+                `;
+            }).join('');
+        }
+
+        function renderSmsTemplatePhones() {
+            const profile = getSmsTemplateProfile();
+            const title = document.getElementById('smsTemplateProfileTitle');
+            const meta = document.getElementById('smsTemplateProfileMeta');
+            const rows = document.getElementById('smsTemplatePhoneRows');
+            const addInput = document.getElementById('smsTemplateNewPhoneInput');
+            const addButton = document.querySelector('.sms-template-add-row .btn');
+
+            if (title) {
+                title.textContent = profile.profile || smsTemplateEditorState.activeProfile;
+            }
+            if (meta) {
+                meta.textContent = profile.available
+                    ? `${profile.numbers.length} номеров${profile.filename ? ` · ${profile.filename}` : ''}`
+                    : (profile.error || 'CSV-шаблон профиля недоступен.');
+            }
+            if (addInput) {
+                addInput.disabled = !profile.available;
+            }
+            if (addButton) {
+                addButton.disabled = !profile.available;
+            }
+            if (!rows) {
+                return;
+            }
+            if (!profile.available) {
+                rows.innerHTML = `<div class="sms-template-empty">${escapeHtml(profile.error || 'CSV-шаблон профиля недоступен.')}</div>`;
+                setSmsTemplateDirty(false);
+                return;
+            }
+            if (!profile.numbers.length) {
+                rows.innerHTML = '<div class="sms-template-empty">В профиле пока нет номеров.</div>';
+                return;
+            }
+            rows.innerHTML = profile.numbers.map((phone, index) => {
+                const invalid = phone && !isSmsTemplatePhoneValid(phone);
+                return `
+                    <div class="sms-template-phone-row${invalid ? ' invalid' : ''}">
+                        <div class="sms-template-phone-index">${index + 1}</div>
+                        <input type="text" class="form-control" value="${escapeHtml(phone)}" oninput="updateSmsTemplatePhone(${index}, this.value)">
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeSmsTemplatePhone(${index})" title="Удалить номер">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderSmsTemplateEditor() {
+            renderSmsTemplateTabs();
+            renderSmsTemplatePhones();
+            setSmsTemplateDirty(smsTemplateEditorState.dirty);
+        }
+
+        function resetActiveSmsTemplateProfile() {
+            const profile = getSmsTemplateProfile();
+            profile.numbers = Array.isArray(profile.originalNumbers) ? profile.originalNumbers.slice() : [];
+            profile.count = profile.numbers.length;
+            setSmsTemplateDirty(false);
+        }
+
+        function setSmsTemplateProfile(profile) {
+            const normalized = String(profile || '').trim().toUpperCase();
+            if (!SMS_TEMPLATE_PROFILES.includes(normalized) || normalized === smsTemplateEditorState.activeProfile) {
+                return;
+            }
+            if (smsTemplateEditorState.dirty && !window.confirm('Есть несохраненные изменения. Переключиться без сохранения?')) {
+                return;
+            }
+            if (smsTemplateEditorState.dirty) {
+                resetActiveSmsTemplateProfile();
+            }
+            smsTemplateEditorState.activeProfile = normalized;
+            setSmsTemplateEditorMessage('');
+            renderSmsTemplateEditor();
+        }
+
+        async function loadSmsTemplateEditor() {
+            smsTemplateEditorState.loading = true;
+            setSmsTemplateDirty(false);
+            setSmsTemplateEditorMessage('Загрузка шаблонов...', 'success');
+            try {
+                const response = await fetch(BASE_PATH + '/sms/templates');
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || data.success === false) {
+                    throw new Error(data.error || 'Не удалось загрузить SMS-шаблоны.');
+                }
+                hydrateSmsTemplateProfiles(data.profiles || {});
+                setSmsTemplateEditorMessage('');
+            } catch (error) {
+                setSmsTemplateEditorMessage(error.message || 'Не удалось загрузить SMS-шаблоны.');
+            } finally {
+                smsTemplateEditorState.loading = false;
+                renderSmsTemplateEditor();
+            }
+        }
+
+        function openSmsTemplateEditor(event) {
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            const modalElement = document.getElementById('smsTemplateEditorModal');
+            if (!modalElement) {
+                return;
+            }
+            smsTemplateEditorModalInstance = smsTemplateEditorModalInstance || bootstrap.Modal.getOrCreateInstance(modalElement);
+            smsTemplateEditorModalInstance.show();
+            loadSmsTemplateEditor();
+        }
+
+        function closeSmsTemplateEditor() {
+            if (smsTemplateEditorState.dirty && !window.confirm('Закрыть редактор без сохранения?')) {
+                return;
+            }
+            if (smsTemplateEditorState.dirty) {
+                resetActiveSmsTemplateProfile();
+            }
+            smsTemplateEditorModalInstance?.hide();
+        }
+
+        function reloadSmsTemplateEditor() {
+            if (smsTemplateEditorState.dirty && !window.confirm('Обновить данные без сохранения изменений?')) {
+                return;
+            }
+            loadSmsTemplateEditor();
+        }
+
+        function updateSmsTemplatePhone(index, value) {
+            const profile = getSmsTemplateProfile();
+            if (!profile.available || !Array.isArray(profile.numbers) || index < 0 || index >= profile.numbers.length) {
+                return;
+            }
+            profile.numbers[index] = value;
+            setSmsTemplateEditorMessage('');
+            setSmsTemplateDirty(true);
+        }
+
+        function removeSmsTemplatePhone(index) {
+            const profile = getSmsTemplateProfile();
+            if (!profile.available || !Array.isArray(profile.numbers) || index < 0 || index >= profile.numbers.length) {
+                return;
+            }
+            profile.numbers.splice(index, 1);
+            setSmsTemplateEditorMessage('');
+            setSmsTemplateDirty(true);
+            renderSmsTemplateEditor();
+        }
+
+        function addSmsTemplatePhone() {
+            const input = document.getElementById('smsTemplateNewPhoneInput');
+            const profile = getSmsTemplateProfile();
+            if (!input || !profile.available) {
+                return;
+            }
+            try {
+                const phone = normalizeSmsTemplatePhone(input.value);
+                if (!phone) {
+                    throw new Error('Введите номер телефона.');
+                }
+                const existing = new Set(profile.numbers.map(value => {
+                    try {
+                        return normalizeSmsTemplatePhone(value).toLowerCase();
+                    } catch (error) {
+                        return String(value || '').toLowerCase();
+                    }
+                }));
+                if (existing.has(phone.toLowerCase())) {
+                    throw new Error('Такой номер уже есть в списке.');
+                }
+                profile.numbers.push(phone);
+                input.value = '';
+                setSmsTemplateEditorMessage('');
+                setSmsTemplateDirty(true);
+                renderSmsTemplateEditor();
+            } catch (error) {
+                setSmsTemplateEditorMessage(error.message || 'Некорректный номер телефона.');
+            }
+        }
+
+        function collectSmsTemplateNumbers() {
+            const profile = getSmsTemplateProfile();
+            const result = [];
+            const seen = new Set();
+            for (const value of profile.numbers || []) {
+                const phone = normalizeSmsTemplatePhone(value);
+                if (!phone) {
+                    continue;
+                }
+                const key = phone.toLowerCase();
+                if (seen.has(key)) {
+                    continue;
+                }
+                seen.add(key);
+                result.push(phone);
+            }
+            if (!result.length) {
+                throw new Error('Список получателей не может быть пустым.');
+            }
+            return result;
+        }
+
+        async function saveSmsTemplateProfile() {
+            const profile = getSmsTemplateProfile();
+            if (!profile.available) {
+                setSmsTemplateEditorMessage(profile.error || 'CSV-шаблон профиля недоступен.');
+                return;
+            }
+            let numbers = [];
+            try {
+                numbers = collectSmsTemplateNumbers();
+            } catch (error) {
+                setSmsTemplateEditorMessage(error.message || 'Проверьте номера телефонов.');
+                renderSmsTemplatePhones();
+                return;
+            }
+
+            const button = document.getElementById('smsTemplateSaveBtn');
+            const originalHtml = button?.innerHTML || '';
+            if (button) {
+                button.disabled = true;
+                button.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Сохранение...';
+            }
+            smsTemplateEditorState.loading = true;
+            setSmsTemplateEditorMessage('');
+            try {
+                const response = await fetch(BASE_PATH + `/sms/templates/${encodeURIComponent(profile.profile)}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ numbers }),
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || data.success === false) {
+                    throw new Error(data.error || 'Не удалось сохранить SMS-шаблон.');
+                }
+                const saved = data.profile || {};
+                const savedNumbers = Array.isArray(saved.numbers) ? saved.numbers.map(value => String(value || '')) : numbers;
+                smsTemplateEditorState.profiles[profile.profile] = {
+                    ...profile,
+                    ...saved,
+                    available: true,
+                    numbers: savedNumbers.slice(),
+                    originalNumbers: savedNumbers.slice(),
+                    count: savedNumbers.length,
+                    error: '',
+                };
+                setSmsTemplateDirty(false);
+                setSmsTemplateEditorMessage(`Профиль ${profile.profile} сохранен: ${savedNumbers.length} номеров.`, 'success');
+                renderSmsTemplateEditor();
+            } catch (error) {
+                setSmsTemplateEditorMessage(error.message || 'Не удалось сохранить SMS-шаблон.');
+            } finally {
+                smsTemplateEditorState.loading = false;
+                if (button) {
+                    button.innerHTML = originalHtml;
+                }
+                setSmsTemplateDirty(smsTemplateEditorState.dirty);
             }
         }
 

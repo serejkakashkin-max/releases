@@ -142,6 +142,7 @@ data/
 logs/
 certificates/
 cache/
+sms_templates/
 
 # Config with sensitive data
 config.json

@@ -990,6 +990,8 @@
 
   <script>
     const TOKEN_KEY = "supAdminToken";
+    /* Базовый путь для API-запросов: локально — без префикса, на стенде — /releases */
+    const BASE_PATH = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '' : '/releases';
     const state = {
       revision: "",
       config: null,
@@ -1362,7 +1364,7 @@
       }
       setStatus("Загружаю СУП-параметры...");
       try {
-        const payload = await api("/admin/sup-parameters/data");
+        const payload = await api(BASE_PATH + "/admin/sup-parameters/data");
         render(payload);
       } catch (error) {
         $("tokenBox").classList.remove("hidden");
@@ -1378,7 +1380,7 @@
       $("saveBtn").disabled = true;
       clearTabErrors();
       try {
-        const payload = await api("/admin/sup-parameters/save", {
+        const payload = await api(BASE_PATH + "/admin/sup-parameters/save", {
           method: "POST",
           body: JSON.stringify({ revision: state.revision, config: collectConfig() })
         });

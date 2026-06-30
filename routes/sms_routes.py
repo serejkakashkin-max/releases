@@ -9,9 +9,12 @@ from flask import Blueprint, request, send_file, jsonify
 
 from config import sms_logger
 from services.sms_service import (
+    SMS_PROFILE_WHITELIST,
     normalize_sms_profile,
     process_csv,
+    read_sms_template_numbers,
     resolve_sms_profile_template,
+    save_sms_template_numbers,
 )
 from services.counter_service import increment_counter
 
@@ -30,6 +33,92 @@ def _safe_release_sms_filename(item, index):
     if not stem:
         stem = f"sms_{index + 1}"
     return f"SMS_{stem}.csv"
+
+
+@sms_bp.route("/sms/templates", methods=["GET"])
+def get_sms_templates():
+    profiles = {}
+    for profile in SMS_PROFILE_WHITELIST:
+        try:
+            data = read_sms_template_numbers(profile)
+            data["available"] = True
+            profiles[profile] = data
+        except FileNotFoundError:
+            profiles[profile] = {
+                "profile": profile,
+                "available": False,
+                "numbers": [],
+                "count": 0,
+                "error": f"CSV-шаблон профиля {profile} недоступен.",
+            }
+        except ValueError as exc:
+            profiles[profile] = {
+                "profile": profile,
+                "available": False,
+                "numbers": [],
+                "count": 0,
+                "error": str(exc),
+            }
+        except Exception:
+            sms_logger.exception("SMS template read failed for profile %s", profile)
+            profiles[profile] = {
+                "profile": profile,
+                "available": False,
+                "numbers": [],
+                "count": 0,
+                "error": f"Не удалось прочитать CSV-шаблон профиля {profile}.",
+            }
+    return jsonify({"success": True, "profiles": profiles})
+
+
+@sms_bp.route("/sms/templates/<profile>", methods=["POST"])
+def save_sms_template(profile):
+    try:
+        normalized_profile = normalize_sms_profile(profile)
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"success": False, "error": "Ожидается JSON-объект."}), 400
+
+    forbidden_keys = {
+        "filename",
+        "file_name",
+        "path",
+        "csv",
+        "csv_path",
+        "template",
+        "template_path",
+    }
+    if forbidden_keys.intersection(payload):
+        return jsonify({
+            "success": False,
+            "error": "Путь или имя CSV-шаблона нельзя передавать с frontend.",
+        }), 400
+
+    try:
+        data = save_sms_template_numbers(normalized_profile, payload.get("numbers"))
+        data["available"] = True
+        return jsonify({"success": True, "profile": data})
+    except FileNotFoundError:
+        return jsonify({
+            "success": False,
+            "error": f"CSV-шаблон профиля {normalized_profile} недоступен.",
+        }), 404
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    except UnicodeEncodeError:
+        return jsonify({
+            "success": False,
+            "error": "Номер содержит символы, которые нельзя записать в CSV-кодировке cp1251.",
+        }), 400
+    except Exception:
+        sms_logger.exception("SMS template save failed for profile %s", normalized_profile)
+        return jsonify({
+            "success": False,
+            "error": "Не удалось сохранить CSV-шаблон SMS.",
+        }), 500
 
 
 @sms_bp.route("/sms/release-monitor/generate", methods=["POST"])

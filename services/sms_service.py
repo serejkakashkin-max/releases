@@ -1,11 +1,18 @@
 import logging
+import os
 import re
+import shutil
+from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
 
 from config import SMS_TEMPLATES_ROOT
 
 
 SMS_PROFILE_WHITELIST = ("CLM", "EMRM", "AIST", "AI")
+SMS_PHONE_PATTERN = re.compile(r"^\+?\d{5,20}$")
+SMS_TEMPLATE_BACKUP_LIMIT = 10
+SMS_TEMPLATE_BACKUP_ROOT = Path(__file__).resolve().parent.parent / "cache" / "sms_template_backups"
 
 
 def normalize_sms_profile(profile):
@@ -47,6 +54,114 @@ def get_sms_profile_availability():
         except (FileNotFoundError, ValueError):
             availability[profile] = False
     return availability
+
+
+def normalize_sms_phone(phone):
+    value = str(phone or "").strip()
+    if not value:
+        return ""
+    normalized = re.sub(r"[\s()\-\u00a0]+", "", value)
+    if not SMS_PHONE_PATTERN.fullmatch(normalized):
+        raise ValueError(f"Некорректный номер телефона: {value}.")
+    return normalized
+
+
+def normalize_sms_phone_list(numbers):
+    if not isinstance(numbers, list):
+        raise ValueError("Ожидается список номеров телефонов.")
+
+    normalized_numbers = []
+    seen = set()
+    for number in numbers:
+        phone = normalize_sms_phone(number)
+        if not phone:
+            continue
+        key = phone.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized_numbers.append(phone)
+
+    if not normalized_numbers:
+        raise ValueError("Список получателей не может быть пустым.")
+    return normalized_numbers
+
+
+def read_sms_template_numbers(profile):
+    normalized_profile = normalize_sms_profile(profile)
+    template_path = resolve_sms_profile_template(normalized_profile)
+    numbers = []
+    seen = set()
+
+    with open(template_path, "r", encoding="cp1251") as file:
+        for line_number, line in enumerate(file, start=1):
+            phone_part = line.strip().split(";", 1)[0].strip()
+            if not phone_part:
+                continue
+            try:
+                phone = normalize_sms_phone(phone_part)
+            except ValueError as exc:
+                raise ValueError(f"{normalized_profile}, строка {line_number}: {exc}") from exc
+            key = phone.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            numbers.append(phone)
+
+    return {
+        "profile": normalized_profile,
+        "filename": template_path.name,
+        "numbers": numbers,
+        "count": len(numbers),
+    }
+
+
+def _backup_sms_template(profile, template_path):
+    if not template_path.exists():
+        return None
+
+    SMS_TEMPLATE_BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_name = f"{profile}_{timestamp}_{template_path.name}"
+    backup_path = SMS_TEMPLATE_BACKUP_ROOT / backup_name
+    shutil.copy2(template_path, backup_path)
+
+    backups = sorted(
+        SMS_TEMPLATE_BACKUP_ROOT.glob(f"{profile}_*_{template_path.name}"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for old_backup in backups[SMS_TEMPLATE_BACKUP_LIMIT:]:
+        try:
+            old_backup.unlink()
+        except OSError:
+            logging.warning("Failed to remove old SMS template backup: %s", old_backup)
+    return backup_path
+
+
+def save_sms_template_numbers(profile, numbers):
+    normalized_profile = normalize_sms_profile(profile)
+    template_path = resolve_sms_profile_template(normalized_profile)
+    normalized_numbers = normalize_sms_phone_list(numbers)
+
+    _backup_sms_template(normalized_profile, template_path)
+
+    temp_path = template_path.with_name(f".{template_path.name}.{uuid4().hex}.tmp")
+    try:
+        with open(temp_path, "w", encoding="cp1251", newline="") as file:
+            for phone in normalized_numbers:
+                file.write(f"{phone}\n")
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(temp_path, template_path)
+    finally:
+        if temp_path.exists():
+            try:
+                temp_path.unlink()
+            except OSError:
+                logging.warning("Failed to remove temporary SMS template file: %s", temp_path)
+
+    return read_sms_template_numbers(normalized_profile)
 
 
 def process_csv(template_path, notification_text, output_path):
