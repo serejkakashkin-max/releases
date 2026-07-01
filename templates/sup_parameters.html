@@ -187,7 +187,7 @@
     .badge.yellow { color: #fff0c4; border-color: rgba(255, 196, 61, 0.32); background: rgba(255, 196, 61, 0.13); }
     .tabs {
       display: grid;
-      grid-template-columns: repeat(7, minmax(0, 1fr));
+      grid-template-columns: repeat(8, minmax(0, 1fr));
       gap: 8px;
       margin-top: 16px;
       padding: 8px;
@@ -620,6 +620,7 @@
         <button type="button" class="tab-btn" data-tab="employees">Сотрудники</button>
         <button type="button" class="tab-btn" data-tab="prefixes">Префиксы релизов</button>
         <button type="button" class="tab-btn" data-tab="automation">Автоматизация</button>
+        <button type="button" class="tab-btn" data-tab="sbertrack">Email → SberTrack</button>
         <button type="button" class="tab-btn" data-tab="diagnostics">Диагностика</button>
       </nav>
 
@@ -628,7 +629,7 @@
           <div class="summary-card">
             <div class="summary-label">Включенные рассылки</div>
             <div class="summary-value" id="summaryMail">0</div>
-            <div class="summary-note">из 3 типов уведомлений</div>
+            <div class="summary-note">из 5 типов автоматизации</div>
           </div>
           <div class="summary-card">
             <div class="summary-label">Активные сотрудники</div>
@@ -893,11 +894,112 @@
                 <button type="button" class="ghost" data-open-tab="mail" data-focus-card="mail-personal-card">Редактировать в почте</button>
               </div>
               <div class="zone-card">
+                <h3>Email → SberTrack</h3>
+                <p class="muted" id="automationSberTrackText">-</p>
+                <button type="button" class="ghost" data-open-tab="sbertrack">Открыть настройки</button>
+              </div>
+              <div class="zone-card">
                 <h3>Защита от спама</h3>
                 <p class="muted">Задержка и пауза применяются только к персональным письмам ответственным.</p>
                 <span class="badge blue">Без дублей настроек</span>
               </div>
             </div>
+          </div>
+        </section>
+      </section>
+
+      <section class="panel" data-panel="sbertrack">
+        <div class="grid-2">
+          <section class="card">
+            <div class="card-header">
+              <h2>Email → SberTrack</h2>
+              <p class="muted">Чтение входящей почты техучетки и создание задач в SberTrack по ключевым словам в теме письма.</p>
+            </div>
+            <div class="card-body stack">
+              <div class="grid-2">
+                <label class="switch-line">
+                  <span class="switch"><input type="checkbox" id="sbertrackEnabled" data-dirty-field><span></span></span>
+                  <span>Включить сервис</span>
+                </label>
+                <label class="switch-line">
+                  <span class="switch"><input type="checkbox" id="sbertrackDryRun" data-dirty-field><span></span></span>
+                  <span>Dry-run: задачи не создаются</span>
+                </label>
+              </div>
+              <div class="field-row">
+                <div>
+                  <label for="sbertrackPollIntervalInput">Интервал проверки, сек</label>
+                  <input id="sbertrackPollIntervalInput" type="number" min="1" step="1" value="300" data-dirty-field>
+                </div>
+                <div>
+                  <label for="sbertrackLookbackInput">Новых писем за цикл</label>
+                  <input id="sbertrackLookbackInput" type="number" min="1" step="1" value="20" data-dirty-field>
+                </div>
+              </div>
+              <div class="field-row">
+                <div>
+                  <label for="sbertrackPendingInput">Pending retry за цикл</label>
+                  <input id="sbertrackPendingInput" type="number" min="1" step="1" value="10" data-dirty-field>
+                </div>
+                <div>
+                  <label for="sbertrackBodyLimitInput">Лимит текста письма, символов</label>
+                  <input id="sbertrackBodyLimitInput" type="number" min="1000" step="100" value="6000" data-dirty-field>
+                </div>
+              </div>
+              <div>
+                <label for="sbertrackTechnicalMailboxesInput">Технические ящики и алиасы</label>
+                <textarea id="sbertrackTechnicalMailboxesInput" data-dirty-field placeholder="SA-S00000013655@sberbank.ru&#10;alias@sberbank.ru"></textarea>
+                <p class="muted" style="margin-top:8px;">Эти адреса игнорируются при выборе исполнителя из поля “Кому”.</p>
+              </div>
+              <div class="status" id="sbertrackRuntimeStatus">Статус будет показан после загрузки SUP-параметров.</div>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card-header">
+              <h2>Правила маршрутизации</h2>
+              <p class="muted">Одно письмо может создать задачи в нескольких пространствах. Триггеры ищутся только в теме.</p>
+            </div>
+            <div class="card-body stack">
+              <button type="button" class="primary" id="addSbertrackRouteBtn">Добавить правило</button>
+              <table>
+                <thead>
+                  <tr>
+                    <th class="check-cell">Вкл.</th>
+                    <th>Правило</th>
+                    <th>Триггеры</th>
+                    <th>Spaces</th>
+                    <th>Suit / Priority</th>
+                    <th class="action-cell">Действия</th>
+                  </tr>
+                </thead>
+                <tbody id="sbertrackRouteRows"></tbody>
+              </table>
+              <div id="sbertrackRouteEmpty" class="empty-state hidden">Правила не добавлены.</div>
+            </div>
+          </section>
+        </div>
+
+        <section class="card" style="margin-top:16px;">
+          <div class="card-header">
+            <h2>Пользователи SberTrack</h2>
+            <p class="muted">Справочник используется только для надежного назначения исполнителя по единственному сотруднику в поле “Кому”.</p>
+          </div>
+          <div class="card-body stack">
+            <button type="button" class="primary" id="addSbertrackUserBtn">Добавить пользователя</button>
+            <table>
+              <thead>
+                <tr>
+                  <th class="check-cell">Вкл.</th>
+                  <th>Email</th>
+                  <th>ФИО</th>
+                  <th>SberTrack user id</th>
+                  <th class="action-cell">Действия</th>
+                </tr>
+              </thead>
+              <tbody id="sbertrackUserRows"></tbody>
+            </table>
+            <div id="sbertrackUserEmpty" class="empty-state hidden">Пользователи SberTrack не добавлены.</div>
           </div>
         </section>
       </section>
@@ -931,6 +1033,24 @@
                 <summary>Показать JSON</summary>
                 <pre id="rawJsonPreview"></pre>
               </details>
+            </div>
+          </section>
+          <section class="card">
+            <div class="card-header">
+              <h2>Email → SberTrack</h2>
+              <p class="muted">Служебный статус чтения почты и создания задач. Секреты здесь не отображаются.</p>
+            </div>
+            <div class="card-body">
+              <div class="file-meta">
+                <span>Режим</span><strong id="diagSbertrackMode">-</strong>
+                <span>Последняя проверка</span><strong id="diagSbertrackCheckedAt">-</strong>
+                <span>Последний UID</span><strong id="diagSbertrackUid">0</strong>
+                <span>Pending</span><strong id="diagSbertrackPending">0</strong>
+                <span>Dry-run matches</span><strong id="diagSbertrackDryRun">0</strong>
+                <span>Создано задач</span><strong id="diagSbertrackCreated">0</strong>
+                <span>Последний результат</span><strong id="diagSbertrackResult">-</strong>
+                <span>Ошибка</span><strong id="diagSbertrackError">-</strong>
+              </div>
             </div>
           </section>
         </div>
@@ -1050,6 +1170,35 @@
       return (values || []).join("\n");
     }
 
+    function collectSbertrackRoutesFromDom() {
+      const rows = [];
+      document.querySelectorAll("[data-sbertrack-route-row]").forEach((row) => {
+        rows.push({
+          enabled: row.querySelector("[data-route-enabled]")?.checked || false,
+          name: row.querySelector("[data-route-name]")?.value.trim() || "",
+          subject_triggers: splitLines(row.querySelector("[data-route-triggers]")?.value || ""),
+          spaces: splitLines(row.querySelector("[data-route-spaces]")?.value || ""),
+          suit: row.querySelector("[data-route-suit]")?.value.trim() || "task",
+          priority: row.querySelector("[data-route-priority]")?.value.trim() || "low",
+          summary_template: row.querySelector("[data-route-summary]")?.value.trim() || "Письмо: {subject}"
+        });
+      });
+      return rows;
+    }
+
+    function collectSbertrackUsersFromDom() {
+      const rows = [];
+      document.querySelectorAll("[data-sbertrack-user-row]").forEach((row) => {
+        rows.push({
+          enabled: row.querySelector("[data-user-enabled]")?.checked || false,
+          email: (row.querySelector("[data-user-email]")?.value || "").trim().toLowerCase(),
+          name: row.querySelector("[data-user-name]")?.value.trim() || "",
+          sbertrack_user_id: row.querySelector("[data-user-id]")?.value.trim() || ""
+        });
+      });
+      return rows;
+    }
+
     function escapeHtml(value) {
       return String(value || "")
         .replace(/&/g, "&amp;")
@@ -1095,14 +1244,19 @@
       config.automation = config.automation || {};
       config.automation.release_monitor_unassigned_email = config.automation.release_monitor_unassigned_email || { enabled: false, recipients: [] };
       config.automation.release_monitor_responsible_email = config.automation.release_monitor_responsible_email || {};
+      config.automation.email_to_sbertrack = config.automation.email_to_sbertrack || {};
       const unassigned = config.automation.release_monitor_unassigned_email;
       unassigned.recipients = Array.isArray(unassigned.recipients) ? unassigned.recipients : [];
       unassigned.weekly_reminder_recipients = Array.isArray(unassigned.weekly_reminder_recipients) ? unassigned.weekly_reminder_recipients : [];
       const responsible = config.automation.release_monitor_responsible_email;
       responsible.employee_recipients = Array.isArray(responsible.employee_recipients) ? responsible.employee_recipients : [];
       responsible.weekly_digest_recipients = Array.isArray(responsible.weekly_digest_recipients) ? responsible.weekly_digest_recipients : [];
+      const sbertrack = config.automation.email_to_sbertrack;
+      sbertrack.technical_mailboxes = Array.isArray(sbertrack.technical_mailboxes) ? sbertrack.technical_mailboxes : [];
+      sbertrack.routes = Array.isArray(sbertrack.routes) ? sbertrack.routes : [];
       config.release_monitor = config.release_monitor || {};
       config.release_monitor.prefixes = Array.isArray(config.release_monitor.prefixes) ? config.release_monitor.prefixes : [];
+      config.sbertrack_users = Array.isArray(config.sbertrack_users) ? config.sbertrack_users : [];
       return config;
     }
 
@@ -1124,6 +1278,16 @@
       responsible.weekly_digest_recipients = splitLines($("weeklyRecipientsInput").value);
       responsible.assignment_email_delay_minutes = Number($("assignmentDelayInput").value || 0);
       responsible.personal_email_send_interval_seconds = Number($("sendIntervalInput").value || 0);
+      const sbertrack = config.automation.email_to_sbertrack;
+      sbertrack.enabled = $("sbertrackEnabled").checked;
+      sbertrack.dry_run = $("sbertrackDryRun").checked;
+      sbertrack.poll_interval_seconds = Number($("sbertrackPollIntervalInput").value || 0);
+      sbertrack.lookback_limit = Number($("sbertrackLookbackInput").value || 0);
+      sbertrack.max_pending_per_cycle = Number($("sbertrackPendingInput").value || 0);
+      sbertrack.body_max_chars = Number($("sbertrackBodyLimitInput").value || 0);
+      sbertrack.technical_mailboxes = splitLines($("sbertrackTechnicalMailboxesInput").value);
+      sbertrack.routes = collectSbertrackRoutesFromDom();
+      config.sbertrack_users = collectSbertrackUsersFromDom();
       return config;
     }
 
@@ -1158,6 +1322,7 @@
       $("diagHash").textContent = hash;
       $("diagBackupCount").textContent = String(state.metadata.backup_count ?? 0);
       $("diagReadError").textContent = state.readError || "-";
+      renderSberTrackRuntimeStatus(state.metadata.email_to_sbertrack_status || {});
       $("fileStateBadge").textContent = state.readError ? "ошибка чтения" : "файл корректен";
       $("fileStateBadge").className = state.readError ? "badge red" : "badge green";
     }
@@ -1204,6 +1369,79 @@
       $("weeklyReminderFallbackHint").textContent = reminderRecipients.length
         ? "Используется отдельный список получателей понедельничного письма."
         : "Сейчас показан общий список писем “без ответственного”; его можно отредактировать отдельно для понедельника.";
+    }
+
+    function renderSberTrack(config) {
+      const automation = config.automation || {};
+      const sbertrack = automation.email_to_sbertrack || {};
+      $("sbertrackEnabled").checked = Boolean(sbertrack.enabled);
+      $("sbertrackDryRun").checked = sbertrack.dry_run !== false;
+      $("sbertrackPollIntervalInput").value = sbertrack.poll_interval_seconds ?? 300;
+      $("sbertrackLookbackInput").value = sbertrack.lookback_limit ?? 20;
+      $("sbertrackPendingInput").value = sbertrack.max_pending_per_cycle ?? 10;
+      $("sbertrackBodyLimitInput").value = sbertrack.body_max_chars ?? 6000;
+      $("sbertrackTechnicalMailboxesInput").value = lines(sbertrack.technical_mailboxes || []);
+      renderSberTrackRoutes(sbertrack.routes || []);
+      renderSberTrackUsers(config.sbertrack_users || []);
+    }
+
+    function renderSberTrackRoutes(routes) {
+      $("sbertrackRouteRows").innerHTML = (routes || []).map((route, index) => `
+        <tr data-sbertrack-route-row="${index}">
+          <td><input type="checkbox" data-route-enabled data-dirty-field ${route.enabled === false ? "" : "checked"}></td>
+          <td>
+            <input data-route-name data-dirty-field value="${escapeAttr(route.name || "")}" placeholder="Амбассадор">
+            <input data-route-summary data-dirty-field value="${escapeAttr(route.summary_template || "Письмо: {subject}")}" placeholder="Письмо: {subject}" style="margin-top:6px;">
+          </td>
+          <td><textarea data-route-triggers data-dirty-field placeholder="Амбассадор&#10;ЗНИ">${escapeHtml(lines(route.subject_triggers || []))}</textarea></td>
+          <td><textarea data-route-spaces data-dirty-field placeholder="TSTM&#10;OPLOT">${escapeHtml(lines(route.spaces || []))}</textarea></td>
+          <td>
+            <input data-route-suit data-dirty-field value="${escapeAttr(route.suit || "task")}" placeholder="task">
+            <input data-route-priority data-dirty-field value="${escapeAttr(route.priority || "low")}" placeholder="low" style="margin-top:6px;">
+          </td>
+          <td class="action-cell">
+            <button type="button" class="icon-btn danger" data-remove-sbertrack-route="${index}">Удал.</button>
+          </td>
+        </tr>
+      `).join("");
+      $("sbertrackRouteEmpty").classList.toggle("hidden", Boolean((routes || []).length));
+    }
+
+    function renderSberTrackUsers(users) {
+      $("sbertrackUserRows").innerHTML = (users || []).map((user, index) => `
+        <tr data-sbertrack-user-row="${index}">
+          <td><input type="checkbox" data-user-enabled data-dirty-field ${user.enabled === false ? "" : "checked"}></td>
+          <td><input data-user-email data-dirty-field value="${escapeAttr(user.email || "")}" placeholder="ivanov.ii@sberbank.ru"></td>
+          <td><input data-user-name data-dirty-field value="${escapeAttr(user.name || "")}" placeholder="Иванов И.И."></td>
+          <td><input data-user-id data-dirty-field value="${escapeAttr(user.sbertrack_user_id || "")}" placeholder="12345678"></td>
+          <td class="action-cell">
+            <button type="button" class="icon-btn danger" data-remove-sbertrack-user="${index}">Удал.</button>
+          </td>
+        </tr>
+      `).join("");
+      $("sbertrackUserEmpty").classList.toggle("hidden", Boolean((users || []).length));
+    }
+
+    function renderSberTrackRuntimeStatus(status) {
+      const mode = status.mode || "disabled";
+      const modeText = mode === "dry_run"
+        ? "dry-run, задачи не создаются"
+        : mode === "active"
+          ? "боевой режим"
+          : mode === "error"
+            ? "ошибка"
+            : "выключено";
+      $("diagSbertrackMode").textContent = modeText;
+      $("diagSbertrackCheckedAt").textContent = status.last_checked_at || "-";
+      $("diagSbertrackUid").textContent = String(status.last_checked_uid || 0);
+      $("diagSbertrackPending").textContent = String(status.pending_count || 0);
+      $("diagSbertrackDryRun").textContent = String(status.dry_run_match_count || 0);
+      $("diagSbertrackCreated").textContent = String(status.created_count || 0);
+      $("diagSbertrackResult").textContent = status.last_result || "-";
+      $("diagSbertrackError").textContent = status.last_error || "-";
+      const statusBox = $("sbertrackRuntimeStatus");
+      statusBox.textContent = `Email → SberTrack: ${modeText}. UID: ${status.last_checked_uid || 0}; pending: ${status.pending_count || 0}; dry-run matches: ${status.dry_run_match_count || 0}.`;
+      statusBox.className = `status ${status.last_error ? "error" : mode === "active" ? "success" : ""}`.trim();
     }
 
     function employeeMatches(row) {
@@ -1277,8 +1515,10 @@
       const config = currentFormConfig();
       const responsible = config.automation.release_monitor_responsible_email;
       const unassigned = config.automation.release_monitor_unassigned_email;
+      const sbertrack = config.automation.email_to_sbertrack || {};
       const employees = responsible.employee_recipients || [];
       const prefixes = config.release_monitor.prefixes || [];
+      const sbertrackUsers = config.sbertrack_users || [];
       const activeEmployees = employees.filter((row) => row.enabled !== false).length;
       const totalEmployeeEmails = employees.reduce((total, row) => total + (row.emails || []).length, 0);
       const enabledPrefixes = prefixes.filter((row) => row.enabled !== false).length;
@@ -1286,7 +1526,8 @@
         unassigned.enabled,
         unassigned.weekly_reminder_enabled,
         responsible.weekly_digest_enabled,
-        responsible.enabled
+        responsible.enabled,
+        sbertrack.enabled
       ].filter(Boolean).length;
       const closedSections = Object.values(config.maintenance || {}).filter(Boolean).length;
       $("summaryMail").textContent = String(enabledMail);
@@ -1302,6 +1543,7 @@
       $("automationWeeklyText").textContent = `${responsible.weekly_digest_enabled ? "Включено" : "Выключено"} · понедельник ${responsible.weekly_digest_time || "16:00"}`;
       $("automationReminderText").textContent = `${unassigned.weekly_reminder_enabled ? "Включено" : "Выключено"} · понедельник ${unassigned.weekly_reminder_time || "09:00"}`;
       $("automationPersonalText").textContent = `${responsible.enabled ? "Включено" : "Выключено"} · задержка ${responsible.assignment_email_delay_minutes || 0} мин · пауза ${responsible.personal_email_send_interval_seconds || 0} сек`;
+      $("automationSberTrackText").textContent = `${sbertrack.enabled ? "Включено" : "Выключено"} · ${sbertrack.dry_run ? "dry-run" : "боевой режим"} · правил ${(sbertrack.routes || []).length} · users ${sbertrackUsers.length}`;
     }
 
     function renderSystemOptions() {
@@ -1323,6 +1565,7 @@
       renderSystemOptions();
       renderMaintenance(state.config.maintenance || {});
       renderMail(state.config);
+      renderSberTrack(state.config);
       renderEmployees();
       renderPrefixes();
       $("rawJsonPreview").textContent = state.rawJson;
@@ -1402,6 +1645,7 @@
       state.config = clone(state.loadedConfig);
       renderMaintenance(state.config.maintenance || {});
       renderMail(state.config);
+      renderSberTrack(state.config);
       renderEmployees();
       renderPrefixes();
       markClean();
@@ -1420,6 +1664,7 @@
         ["mail", /Письма|Weekly|digest|Получатели|персональн|email/i],
         ["employees", /Сотрудник|ФИО/i],
         ["prefixes", /Prefix|Release prefixes|jira_domain|system/i],
+        ["sbertrack", /SberTrack|Email → SberTrack|route|technical mailboxes/i],
       ];
       rules.forEach(([tab, pattern]) => {
         if (pattern.test(message)) {
@@ -1530,6 +1775,22 @@
         renderPrefixes();
         markDirty();
       }
+
+      const removeSbertrackRoute = event.target.closest("[data-remove-sbertrack-route]");
+      if (removeSbertrackRoute) {
+        state.config = currentFormConfig();
+        state.config.automation.email_to_sbertrack.routes.splice(Number(removeSbertrackRoute.dataset.removeSbertrackRoute), 1);
+        renderSberTrack(state.config);
+        markDirty();
+      }
+
+      const removeSbertrackUser = event.target.closest("[data-remove-sbertrack-user]");
+      if (removeSbertrackUser) {
+        state.config = currentFormConfig();
+        state.config.sbertrack_users.splice(Number(removeSbertrackUser.dataset.removeSbertrackUser), 1);
+        renderSberTrack(state.config);
+        markDirty();
+      }
     });
 
     document.addEventListener("change", (event) => {
@@ -1568,6 +1829,31 @@
     $("prefixSearch").addEventListener("input", renderPrefixes);
     $("addEmployeeBtn").addEventListener("click", () => openEmployeeModal());
     $("addPrefixBtn").addEventListener("click", () => openPrefixModal());
+    $("addSbertrackRouteBtn").addEventListener("click", () => {
+      state.config = currentFormConfig();
+      state.config.automation.email_to_sbertrack.routes.push({
+        enabled: true,
+        name: "",
+        subject_triggers: [],
+        spaces: [],
+        suit: "task",
+        priority: "low",
+        summary_template: "Письмо: {subject}"
+      });
+      renderSberTrack(state.config);
+      markDirty();
+    });
+    $("addSbertrackUserBtn").addEventListener("click", () => {
+      state.config = currentFormConfig();
+      state.config.sbertrack_users.push({
+        enabled: true,
+        email: "",
+        name: "",
+        sbertrack_user_id: ""
+      });
+      renderSberTrack(state.config);
+      markDirty();
+    });
     $("modalCloseBtn").addEventListener("click", closeModal);
     $("modalCancelBtn").addEventListener("click", closeModal);
     $("modalSaveBtn").addEventListener("click", saveModal);

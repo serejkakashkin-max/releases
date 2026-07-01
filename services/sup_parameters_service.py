@@ -128,6 +128,86 @@ def _admin_prefix_rows(raw_value: Any) -> List[Dict[str, Any]]:
     return rows
 
 
+def _admin_sbertrack_user_rows(raw_value: Any) -> List[Dict[str, Any]]:
+    if not isinstance(raw_value, dict):
+        return []
+    rows = []
+    for email, raw_config in raw_value.items():
+        clean_email = str(email or "").strip().lower()
+        if not clean_email:
+            continue
+        if isinstance(raw_config, dict):
+            rows.append(
+                {
+                    "email": clean_email,
+                    "name": str(raw_config.get("name") or "").strip(),
+                    "sbertrack_user_id": str(
+                        raw_config.get("sbertrack_user_id") or ""
+                    ).strip(),
+                    "enabled": _coerce_bool(raw_config.get("enabled"), True),
+                }
+            )
+        else:
+            rows.append(
+                {
+                    "email": clean_email,
+                    "name": "",
+                    "sbertrack_user_id": str(raw_config or "").strip(),
+                    "enabled": True,
+                }
+            )
+    return sorted(rows, key=lambda row: row["email"])
+
+
+def _admin_email_to_sbertrack(raw_value: Any) -> Dict[str, Any]:
+    source = raw_value if isinstance(raw_value, dict) else {}
+    defaults = DEFAULT_FEATURE_FLAGS["automation"]["email_to_sbertrack"]
+    routes = []
+    for index, raw_route in enumerate(source.get("routes") or [], start=1):
+        if not isinstance(raw_route, dict):
+            continue
+        routes.append(
+            {
+                "enabled": _coerce_bool(raw_route.get("enabled"), True),
+                "name": str(raw_route.get("name") or f"route_{index}").strip(),
+                "subject_triggers": _normalize_string_list(
+                    raw_route.get("subject_triggers")
+                ),
+                "spaces": _normalize_string_list(raw_route.get("spaces")),
+                "suit": str(raw_route.get("suit") or "task").strip(),
+                "priority": str(raw_route.get("priority") or "low").strip(),
+                "summary_template": str(
+                    raw_route.get("summary_template") or "Письмо: {subject}"
+                ).strip(),
+            }
+        )
+    return {
+        "enabled": _coerce_bool(source.get("enabled"), defaults["enabled"]),
+        "dry_run": _coerce_bool(source.get("dry_run"), defaults["dry_run"]),
+        "poll_interval_seconds": _normalize_int(
+            source.get("poll_interval_seconds"),
+            defaults["poll_interval_seconds"],
+        ),
+        "lookback_limit": _normalize_int(
+            source.get("lookback_limit"),
+            defaults["lookback_limit"],
+        ),
+        "max_pending_per_cycle": _normalize_int(
+            source.get("max_pending_per_cycle"),
+            defaults["max_pending_per_cycle"],
+        ),
+        "body_max_chars": _normalize_int(
+            source.get("body_max_chars"),
+            defaults["body_max_chars"],
+        ),
+        "technical_mailboxes": [
+            email.lower()
+            for email in _normalize_string_list(source.get("technical_mailboxes"))
+        ],
+        "routes": routes,
+    }
+
+
 def _admin_config_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     maintenance = payload.get("maintenance") if isinstance(payload.get("maintenance"), dict) else {}
     automation = payload.get("automation") if isinstance(payload.get("automation"), dict) else {}
@@ -139,6 +219,11 @@ def _admin_config_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     responsible = (
         automation.get("release_monitor_responsible_email")
         if isinstance(automation.get("release_monitor_responsible_email"), dict)
+        else {}
+    )
+    email_to_sbertrack = (
+        automation.get("email_to_sbertrack")
+        if isinstance(automation.get("email_to_sbertrack"), dict)
         else {}
     )
     release_monitor = (
@@ -215,10 +300,12 @@ def _admin_config_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
                     responsible.get("employee_recipients")
                 ),
             },
+            "email_to_sbertrack": _admin_email_to_sbertrack(email_to_sbertrack),
         },
         "release_monitor": {
             "prefixes": _admin_prefix_rows(release_monitor.get("prefixes")),
         },
+        "sbertrack_users": _admin_sbertrack_user_rows(payload.get("sbertrack_users")),
     }
 
 
@@ -240,6 +327,17 @@ def get_sup_parameters_data() -> Dict[str, Any]:
         backup_count = len(list(BACKUP_DIR.glob("feature_flags_*.*")))
     except OSError:
         backup_count = 0
+    try:
+        from services.email_to_sbertrack_service import get_email_to_sbertrack_status
+
+        email_to_sbertrack_status = get_email_to_sbertrack_status()
+    except Exception as exc:
+        email_to_sbertrack_status = {
+            "enabled": False,
+            "dry_run": False,
+            "mode": "error",
+            "last_error": str(exc),
+        }
     return {
         "success": True,
         "title": "СУП-параметры",
@@ -262,6 +360,7 @@ def get_sup_parameters_data() -> Dict[str, Any]:
             ),
             "jira_domains": list(JIRA_DOMAIN_CONFIGS.keys()),
             "standard_systems": ["CLM", "EMRM", "АИСТ", "AI-Агенты", "Фокус"],
+            "email_to_sbertrack_status": email_to_sbertrack_status,
         },
     }
 
@@ -320,6 +419,11 @@ def _validate_managed_config(raw_config: Any) -> Dict[str, Any]:
         if isinstance(automation.get("release_monitor_responsible_email"), dict)
         else {}
     )
+    email_to_sbertrack = (
+        automation.get("email_to_sbertrack")
+        if isinstance(automation.get("email_to_sbertrack"), dict)
+        else {}
+    )
     release_monitor = (
         raw_config.get("release_monitor")
         if isinstance(raw_config.get("release_monitor"), dict)
@@ -331,8 +435,10 @@ def _validate_managed_config(raw_config: Any) -> Dict[str, Any]:
         "automation": {
             "release_monitor_unassigned_email": {},
             "release_monitor_responsible_email": {},
+            "email_to_sbertrack": {},
         },
         "release_monitor": {"prefixes": []},
+        "sbertrack_users": {},
     }
 
     for key in MAINTENANCE_KEYS:
@@ -433,6 +539,134 @@ def _validate_managed_config(raw_config: Any) -> Dict[str, Any]:
             errors.append(f"Сотрудник {name}: для включенного сотрудника нужен хотя бы один email")
         employee_map[name] = {"enabled": enabled, "emails": emails}
     responsible_target["employee_recipients"] = employee_map
+
+    email_to_sbertrack_target = normalized["automation"]["email_to_sbertrack"]
+    for key in ("enabled", "dry_run"):
+        if not isinstance(email_to_sbertrack.get(key), bool):
+            errors.append(f"Email → SberTrack/{key}: значение должно быть true или false")
+    email_to_sbertrack_target["enabled"] = _coerce_bool(email_to_sbertrack.get("enabled"))
+    email_to_sbertrack_target["dry_run"] = _coerce_bool(
+        email_to_sbertrack.get("dry_run"),
+        True,
+    )
+    email_to_sbertrack_target["poll_interval_seconds"] = _validate_non_negative_int(
+        email_to_sbertrack.get("poll_interval_seconds"),
+        "Email → SberTrack/poll_interval_seconds",
+        errors,
+    )
+    email_to_sbertrack_target["lookback_limit"] = _validate_non_negative_int(
+        email_to_sbertrack.get("lookback_limit"),
+        "Email → SberTrack/lookback_limit",
+        errors,
+    )
+    email_to_sbertrack_target["max_pending_per_cycle"] = _validate_non_negative_int(
+        email_to_sbertrack.get("max_pending_per_cycle"),
+        "Email → SberTrack/max_pending_per_cycle",
+        errors,
+    )
+    email_to_sbertrack_target["body_max_chars"] = _validate_non_negative_int(
+        email_to_sbertrack.get("body_max_chars"),
+        "Email → SberTrack/body_max_chars",
+        errors,
+    )
+    if email_to_sbertrack_target["poll_interval_seconds"] <= 0:
+        errors.append("Email → SberTrack: interval должен быть больше 0 секунд")
+        email_to_sbertrack_target["poll_interval_seconds"] = 300
+    if email_to_sbertrack_target["lookback_limit"] <= 0:
+        errors.append("Email → SberTrack: lookback должен быть больше 0")
+        email_to_sbertrack_target["lookback_limit"] = 20
+    if email_to_sbertrack_target["max_pending_per_cycle"] <= 0:
+        errors.append("Email → SberTrack: pending retry должен быть больше 0")
+        email_to_sbertrack_target["max_pending_per_cycle"] = 10
+    if email_to_sbertrack_target["body_max_chars"] < 1000:
+        errors.append("Email → SberTrack: body limit должен быть не меньше 1000")
+        email_to_sbertrack_target["body_max_chars"] = 6000
+    email_to_sbertrack_target["technical_mailboxes"] = [
+        email.lower()
+        for email in _validate_emails(
+            email_to_sbertrack.get("technical_mailboxes"),
+            "Email → SberTrack technical mailboxes",
+            errors,
+        )
+    ]
+
+    route_rows = email_to_sbertrack.get("routes")
+    route_rows = route_rows if isinstance(route_rows, list) else []
+    normalized_routes = []
+    seen_route_names = set()
+    for index, row in enumerate(route_rows, start=1):
+        if not isinstance(row, dict):
+            errors.append(f"Email → SberTrack route #{index}: некорректная запись")
+            continue
+        enabled = row.get("enabled")
+        if not isinstance(enabled, bool):
+            errors.append(f"Email → SberTrack route #{index}: enabled должен быть true или false")
+            enabled = True
+        name = str(row.get("name") or "").strip()
+        if not name:
+            errors.append(f"Email → SberTrack route #{index}: name обязателен")
+            name = f"route_{index}"
+        name_key = name.lower()
+        if name_key in seen_route_names:
+            errors.append(f"Email → SberTrack: дубль route name {name}")
+        seen_route_names.add(name_key)
+        triggers = _normalize_string_list(row.get("subject_triggers"))
+        spaces = _normalize_string_list(row.get("spaces"))
+        if enabled and not triggers:
+            errors.append(f"Email → SberTrack route {name}: нужен хотя бы один trigger")
+        if enabled and not spaces:
+            errors.append(f"Email → SberTrack route {name}: нужно хотя бы одно space")
+        suit = str(row.get("suit") or "").strip() or "task"
+        priority = str(row.get("priority") or "").strip() or "low"
+        summary_template = str(row.get("summary_template") or "").strip() or "Письмо: {subject}"
+        normalized_routes.append(
+            {
+                "enabled": enabled,
+                "name": name,
+                "subject_triggers": triggers,
+                "spaces": spaces,
+                "suit": suit,
+                "priority": priority,
+                "summary_template": summary_template,
+            }
+        )
+    email_to_sbertrack_target["routes"] = normalized_routes
+
+    raw_sbertrack_users = raw_config.get("sbertrack_users")
+    user_rows = (
+        [
+            {"email": email, **(value if isinstance(value, dict) else {"sbertrack_user_id": value})}
+            for email, value in raw_sbertrack_users.items()
+        ]
+        if isinstance(raw_sbertrack_users, dict)
+        else raw_sbertrack_users
+    )
+    user_rows = user_rows if isinstance(user_rows, list) else []
+    seen_user_emails = set()
+    for index, row in enumerate(user_rows, start=1):
+        if not isinstance(row, dict):
+            errors.append(f"SberTrack user #{index}: некорректная запись")
+            continue
+        user_email = str(row.get("email") or "").strip().lower()
+        if not user_email:
+            errors.append(f"SberTrack user #{index}: email обязателен")
+            continue
+        if not EMAIL_PATTERN.match(user_email):
+            errors.append(f"SberTrack user {user_email}: некорректный email")
+            continue
+        if user_email in seen_user_emails:
+            errors.append(f"SberTrack users: дубль email {user_email}")
+            continue
+        seen_user_emails.add(user_email)
+        enabled = row.get("enabled")
+        if not isinstance(enabled, bool):
+            errors.append(f"SberTrack user {user_email}: enabled должен быть true или false")
+            enabled = True
+        normalized["sbertrack_users"][user_email] = {
+            "enabled": enabled,
+            "name": str(row.get("name") or "").strip(),
+            "sbertrack_user_id": str(row.get("sbertrack_user_id") or "").strip(),
+        }
 
     prefixes = release_monitor.get("prefixes")
     prefix_rows = prefixes if isinstance(prefixes, list) else []
@@ -549,6 +783,12 @@ def _merge_managed_config(base_payload: Dict[str, Any], managed: Dict[str, Any])
         responsible_target = {}
     responsible_target.update(managed["automation"]["release_monitor_responsible_email"])
     automation_target["release_monitor_responsible_email"] = responsible_target
+
+    email_to_sbertrack_target = automation_target.get("email_to_sbertrack")
+    if not isinstance(email_to_sbertrack_target, dict):
+        email_to_sbertrack_target = {}
+    email_to_sbertrack_target.update(managed["automation"]["email_to_sbertrack"])
+    automation_target["email_to_sbertrack"] = email_to_sbertrack_target
     merged["automation"] = automation_target
 
     release_monitor_target = merged.get("release_monitor")
@@ -556,6 +796,8 @@ def _merge_managed_config(base_payload: Dict[str, Any], managed: Dict[str, Any])
         release_monitor_target = {}
     release_monitor_target["prefixes"] = managed["release_monitor"]["prefixes"]
     merged["release_monitor"] = release_monitor_target
+
+    merged["sbertrack_users"] = managed["sbertrack_users"]
 
     return merged
 

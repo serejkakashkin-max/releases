@@ -83,10 +83,21 @@ DEFAULT_FEATURE_FLAGS = {
             "assignment_email_delay_minutes": 6,
             "personal_email_send_interval_seconds": 5,
         },
+        "email_to_sbertrack": {
+            "enabled": False,
+            "dry_run": True,
+            "poll_interval_seconds": 300,
+            "lookback_limit": 20,
+            "max_pending_per_cycle": 10,
+            "body_max_chars": 6000,
+            "technical_mailboxes": [],
+            "routes": [],
+        },
     },
     "release_monitor": {
         "prefixes": copy.deepcopy(DEFAULT_RELEASE_PREFIX_CONFIGS),
     },
+    "sbertrack_users": {},
 }
 
 PREFIX_PATTERN = re.compile(r"^[A-Z0-9_]+$")
@@ -178,6 +189,100 @@ def _normalize_prefix_entries(value: Any) -> List[Dict[str, Any]]:
     return normalized
 
 
+def _normalize_email_to_sbertrack_config(value: Any) -> Dict[str, Any]:
+    source = value if isinstance(value, dict) else {}
+    target = copy.deepcopy(DEFAULT_FEATURE_FLAGS["automation"]["email_to_sbertrack"])
+    if isinstance(source.get("enabled"), bool):
+        target["enabled"] = source["enabled"]
+    if isinstance(source.get("dry_run"), bool):
+        target["dry_run"] = source["dry_run"]
+    target["poll_interval_seconds"] = _normalize_non_negative_int(
+        source.get("poll_interval_seconds"),
+        target["poll_interval_seconds"],
+    )
+    target["lookback_limit"] = max(
+        1,
+        _normalize_non_negative_int(
+            source.get("lookback_limit"),
+            target["lookback_limit"],
+        ),
+    )
+    target["max_pending_per_cycle"] = max(
+        1,
+        _normalize_non_negative_int(
+            source.get("max_pending_per_cycle"),
+            target["max_pending_per_cycle"],
+        ),
+    )
+    target["body_max_chars"] = max(
+        1000,
+        _normalize_non_negative_int(
+            source.get("body_max_chars"),
+            target["body_max_chars"],
+        ),
+    )
+    target["technical_mailboxes"] = [
+        value.lower() for value in _normalize_string_list(source.get("technical_mailboxes"))
+    ]
+    routes = []
+    for index, raw_route in enumerate(source.get("routes") or [], start=1):
+        if not isinstance(raw_route, dict):
+            continue
+        name = str(raw_route.get("name") or f"route_{index}").strip()
+        triggers = _normalize_string_list(raw_route.get("subject_triggers"))
+        spaces = _normalize_string_list(raw_route.get("spaces"))
+        suit = str(raw_route.get("suit") or "task").strip()
+        priority = str(raw_route.get("priority") or "low").strip()
+        summary_template = str(
+            raw_route.get("summary_template") or "Письмо: {subject}"
+        ).strip()
+        if not name or not triggers or not spaces:
+            continue
+        routes.append(
+            {
+                "enabled": raw_route.get("enabled")
+                if isinstance(raw_route.get("enabled"), bool)
+                else True,
+                "name": name,
+                "subject_triggers": triggers,
+                "spaces": spaces,
+                "suit": suit or "task",
+                "priority": priority or "low",
+                "summary_template": summary_template or "Письмо: {subject}",
+            }
+        )
+    target["routes"] = routes
+    return target
+
+
+def _normalize_sbertrack_users(value: Any, *, enabled_only: bool = False) -> Dict[str, Dict[str, Any]]:
+    normalized: Dict[str, Dict[str, Any]] = {}
+    if not isinstance(value, dict):
+        return normalized
+    for raw_email, raw_config in value.items():
+        email = str(raw_email or "").strip().lower()
+        if not email:
+            continue
+        if isinstance(raw_config, dict):
+            enabled = raw_config.get("enabled")
+            normalized[email] = {
+                "name": str(raw_config.get("name") or "").strip(),
+                "sbertrack_user_id": str(raw_config.get("sbertrack_user_id") or "").strip(),
+                "enabled": enabled if isinstance(enabled, bool) else True,
+            }
+        else:
+            normalized[email] = {
+                "name": "",
+                "sbertrack_user_id": str(raw_config or "").strip(),
+                "enabled": True,
+            }
+        if enabled_only and (
+            not normalized[email]["enabled"] or not normalized[email]["sbertrack_user_id"]
+        ):
+            normalized.pop(email, None)
+    return normalized
+
+
 def _normalize_flags(payload: Any) -> Dict[str, Dict[str, Any]]:
     payload = payload if isinstance(payload, dict) else {}
     normalized = copy.deepcopy(DEFAULT_FEATURE_FLAGS)
@@ -243,11 +348,19 @@ def _normalize_flags(payload: Any) -> Dict[str, Dict[str, Any]]:
                 ],
             )
 
+        normalized["automation"]["email_to_sbertrack"] = (
+            _normalize_email_to_sbertrack_config(automation.get("email_to_sbertrack"))
+        )
+
     release_monitor = payload.get("release_monitor")
     if isinstance(release_monitor, dict) and "prefixes" in release_monitor:
         normalized["release_monitor"]["prefixes"] = _normalize_prefix_entries(
             release_monitor.get("prefixes")
         )
+
+    normalized["sbertrack_users"] = _normalize_sbertrack_users(
+        payload.get("sbertrack_users")
+    )
 
     return normalized
 
@@ -372,3 +485,11 @@ def get_jira_domain_config(domain_key: Any) -> Optional[Dict[str, str]]:
     key = str(domain_key or "").strip().lower()
     config = JIRA_DOMAIN_CONFIGS.get(key)
     return copy.deepcopy(config) if config else None
+
+
+def get_sbertrack_users_config(*, enabled_only: bool = True) -> Dict[str, Dict[str, Any]]:
+    flags = get_feature_flags()
+    return _normalize_sbertrack_users(
+        flags.get("sbertrack_users"),
+        enabled_only=enabled_only,
+    )

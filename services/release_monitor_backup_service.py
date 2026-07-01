@@ -31,6 +31,7 @@ from services.release_monitor_email_service import NOTIFY_STATE_FILE
 from services.release_monitor_responsible_email_service import (
     RESPONSIBLE_NOTIFY_STATE_FILE,
 )
+from services.email_to_sbertrack_service import STATE_FILE as EMAIL_TO_SBERTRACK_STATE_FILE
 
 
 REPORTS_DIR = Path(__file__).resolve().parent.parent / "reports" / "release_monitor_backups"
@@ -52,6 +53,7 @@ BACKUP_FILES = (
     REVISION_FILE,
     NOTIFY_STATE_FILE,
     RESPONSIBLE_NOTIFY_STATE_FILE,
+    EMAIL_TO_SBERTRACK_STATE_FILE,
 )
 
 

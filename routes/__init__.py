@@ -18,6 +18,15 @@ def register_routes(app):
     app.register_blueprint(chatbot_bp)
     app.register_blueprint(sup_parameters_bp)
 
+    try:
+        from services.email_to_sbertrack_service import (
+            ensure_email_to_sbertrack_worker_started,
+        )
+
+        ensure_email_to_sbertrack_worker_started()
+    except Exception as exc:
+        app.logger.warning("Email to SberTrack worker was not started: %s", exc)
+
     @app.after_request
     def add_header(response):
         if not request.path.startswith("/static"):
