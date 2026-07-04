@@ -293,6 +293,12 @@ def _sbertrack_settings() -> Dict[str, Any]:
             os.getenv("SBERTRACK_TENANT") or TOKENS.get("sbertrack_tenant") or "default"
         ).strip()
         or "default",
+        "reporter_id": str(
+            os.getenv("SBERTRACK_REPORTER_ID")
+            or TOKENS.get("sbertrack_reporter_id")
+            or TOKENS.get("sbertrack_reporter")
+            or ""
+        ).strip(),
         "ssl_verify": _as_bool(
             os.getenv("SBERTRACK_SSL_VERIFY"),
             default=_as_bool(TOKENS.get("sbertrack_ssl_verify"), default=False),
@@ -313,7 +319,7 @@ def _ensure_imap_settings(settings: Dict[str, Any]) -> None:
 def _ensure_sbertrack_settings(settings: Dict[str, Any]) -> None:
     missing = [
         key
-        for key in ("username", "password", "api_base_url", "tenant")
+        for key in ("username", "password", "api_base_url", "tenant", "reporter_id")
         if not settings.get(key)
     ]
     if missing:
@@ -701,6 +707,7 @@ def _create_sbertrack_task(event: Dict[str, Any], settings: Dict[str, Any]) -> D
     attributes = {
         "priority": route.get("priority") or "low",
         "workflow_status": WORKFLOW_STATUS_NEW,
+        "reporter": settings["reporter_id"],
     }
     assigned_to = str(event.get("assigned_to") or "").strip()
     if assigned_to:
