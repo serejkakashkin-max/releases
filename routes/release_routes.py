@@ -3,7 +3,7 @@ import re
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
-from flask import Blueprint, render_template, request, send_file, jsonify
+from flask import Blueprint, request, send_file, jsonify
 from zipfile import ZipFile
 from io import BytesIO
 import tempfile
@@ -23,9 +23,7 @@ from services.release_monitor_service import (
 )
 from services.docx_service import replace_keys_in_doc
 from services.counter_service import increment_counter  # НОВОЕ: импорт счетчика
-from services.template_constructor_service import (
-    build_template_candidate,
-    analyze_template_package,
+from services.template_catalog_service import (
     find_template_entries_by_ke,
     get_catalog_release_structure,
     is_ai_agents_template_category,
@@ -423,97 +421,6 @@ def auto_detect():
 
     jira_snapshot = get_release_jira_snapshot(release_id)
     return jsonify(detect_release_template(release_id, jira_snapshot=jira_snapshot))
-
-
-def _read_constructor_uploads(files):
-    uploaded_docs = []
-
-    def append_upload(upload):
-        if not upload or not upload.filename:
-            return
-        upload_bytes = upload.read()
-        filename = upload.filename
-        filename_lower = filename.lower()
-        if filename_lower.endswith(".zip"):
-            try:
-                with ZipFile(BytesIO(upload_bytes)) as archive:
-                    for info in archive.infolist():
-                        if info.is_dir() or not info.filename.lower().endswith(".docx"):
-                            continue
-                        if info.file_size <= 0:
-                            continue
-                        uploaded_docs.append({
-                            "filename": Path(info.filename.replace("\\", "/")).name,
-                            "data": archive.read(info),
-                        })
-            except Exception as exc:
-                raise ValueError(f"Не удалось прочитать ZIP: {exc}")
-        elif filename_lower.endswith(".docx"):
-            uploaded_docs.append({"filename": filename, "data": upload_bytes})
-
-    for package in files.getlist("package"):
-        append_upload(package)
-
-    for document in files.getlist("documents"):
-        append_upload(document)
-
-    if len(uploaded_docs) > 10:
-        raise ValueError("Слишком много DOCX-файлов. Загрузите ZIP с 3 документами или ровно 3 DOCX.")
-    if not uploaded_docs:
-        raise ValueError("Загрузите ZIP с шаблонами или 3 DOCX-документа.")
-    return uploaded_docs
-
-
-def _constructor_metadata_from_request(form):
-    return {
-        "category": (form.get("category") or "").strip(),
-        "name": (form.get("name") or "").strip(),
-        "ke": (form.get("ke") or "").strip(),
-        "variant": (form.get("variant") or "").strip(),
-        "aliases": (form.get("aliases") or "").strip(),
-        "requires_playbooks": form.get("requires_playbooks"),
-        "requires_instruction": form.get("requires_instruction"),
-        "replacements": (form.get("replacements") or "").strip(),
-        "enhancements": form.getlist("enhancements") if hasattr(form, "getlist") else [],
-    }
-
-
-@release_bp.route('/release/template-constructor')
-def release_template_constructor():
-    return render_template(
-        'template_constructor.html',
-        basepath=BASE_PATH,
-        categories=["CLM", "EMRM", "AIST", "AI-agents"],
-    )
-
-
-@release_bp.route('/release/template-constructor/analyze', methods=['POST'])
-def release_template_constructor_analyze():
-    try:
-        uploaded_docs = _read_constructor_uploads(request.files)
-        analysis = analyze_template_package(uploaded_docs, _constructor_metadata_from_request(request.form))
-        return jsonify({"success": True, "analysis": analysis})
-    except ValueError as exc:
-        return jsonify({"success": False, "error": str(exc)}), 400
-    except Exception as exc:
-        logging.error("Ошибка анализа пакета шаблонов: %s", exc)
-        return jsonify({"success": False, "error": "Не удалось проанализировать пакет шаблонов"}), 500
-
-
-@release_bp.route('/release/template-constructor/build', methods=['POST'])
-def release_template_constructor_build():
-    try:
-        uploaded_docs = _read_constructor_uploads(request.files)
-        metadata = _constructor_metadata_from_request(request.form)
-        zip_buffer = build_template_candidate(uploaded_docs, metadata)
-        filename = f"template_candidate_{metadata.get('category') or 'release'}_{metadata.get('ke') or 'new'}.zip"
-        return send_file(zip_buffer, as_attachment=True, download_name=filename)
-    except ValueError as exc:
-        return jsonify({"success": False, "error": str(exc)}), 400
-    except Exception as exc:
-        logging.error("Ошибка сборки кандидата шаблона: %s", exc)
-        return jsonify({"success": False, "error": "Не удалось собрать кандидат шаблона"}), 500
-
 
 @release_bp.route('/release/monitor-init', methods=['POST'])
 def release_monitor_init():

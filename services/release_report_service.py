@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from config import OPLOT_VALUES
 from services.feature_flags_service import get_release_prefix_system
-from services.template_constructor_service import is_ai_agents_template_category
+from services.template_catalog_service import is_ai_agents_template_category
 
 
 EM_DASH = "\u2014"
