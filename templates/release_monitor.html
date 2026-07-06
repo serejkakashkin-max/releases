@@ -276,35 +276,21 @@
             background: rgba(245, 158, 11, 0.9);
         }
 
-        .hero-week-report-btn.docs {
-            border-color: transparent;
-            background: transparent;
-        }
-
-        .hero-week-report-btn.docs i {
-            color: #fff;
-            background: rgba(34, 197, 94, 0.92);
-        }
-
         .hero-week-report-btn.templates i {
             color: #fff;
             background: linear-gradient(135deg, #2f81f7, #21c55d);
         }
 
-        #releaseMonitorDocsBtn {
+        #releaseMonitorTemplateConstructorBtn {
             order: 1;
         }
 
-        #releaseMonitorTemplateConstructorBtn {
+        #releaseMonitorAssignmentCenterBtn {
             order: 2;
         }
 
-        #releaseMonitorAssignmentCenterBtn {
-            order: 3;
-        }
-
         #releaseMonitorCurrentWeekReportBtn {
-            order: 4;
+            order: 3;
         }
 
         .release-monitor-section {
@@ -3615,10 +3601,6 @@
                         </div>
                     </div>
                     <div class="hero-action-stack">
-                    <button id="releaseMonitorDocsBtn" class="hero-week-report-btn docs" onclick="openReleaseDocumentsPage()">
-                        <i class="bi bi-file-earmark-text"></i>
-                        Сформировать документы
-                    </button>
                     <a id="releaseMonitorTemplateConstructorBtn" class="hero-week-report-btn templates" href="{{basepath}}/release/template-constructor">
                         <i class="bi bi-tools"></i>
                         Конструктор шаблонов
@@ -10093,7 +10075,7 @@
             if (effectiveLoading) {
                 closeReleaseManualRefreshMenu();
             }
-            ['releaseManualRefreshMenuBtn', 'releaseMonitorQuickRefreshBtn', 'releaseMonitorRefreshBtn', 'releaseMonitorReliableRefreshBtn', 'releaseMonitorConfluenceSyncBtn', 'releaseMonitorDutyUploadBtn', 'releaseMonitorCurrentWeekReportBtn', 'releaseMonitorAssignmentCenterBtn', 'releaseMonitorDocsBtn', 'releaseManualCreateBtn'].forEach(id => {
+            ['releaseManualRefreshMenuBtn', 'releaseMonitorQuickRefreshBtn', 'releaseMonitorRefreshBtn', 'releaseMonitorReliableRefreshBtn', 'releaseMonitorConfluenceSyncBtn', 'releaseMonitorDutyUploadBtn', 'releaseMonitorCurrentWeekReportBtn', 'releaseMonitorAssignmentCenterBtn', 'releaseManualCreateBtn'].forEach(id => {
                 const btn = document.getElementById(id);
                 if (!btn) {
                     return;
@@ -10201,10 +10183,6 @@
 
         function openReleaseAssignmentCenter() {
             window.open(BASE_PATH + '/dashboard/release-monitor/assignment-center', '_blank', 'noopener');
-        }
-
-        function openReleaseDocumentsPage() {
-            window.location.href = BASE_PATH + '/release';
         }
 
         async function refreshReleaseMonitor(mode = 'full') {
