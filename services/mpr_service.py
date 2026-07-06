@@ -16,10 +16,17 @@ from config import MPR_TEMPLATES_ROOT
 
 
 APPENDIX_PLACEHOLDER = "{{APPENDIX_1_TABLE}}"
+APPENDIX_2_PLACEHOLDER = "{{APPENDIX_2_TABLE}}"
 LOCATION_PLACEHOLDER = "{{MPR_LOCATION}}"
+APPENDIX_1_SUFFIX_PLACEHOLDER = "{{APPENDIX_1_SUFFIX}}"
+APPENDIX_2_SUFFIX_PLACEHOLDER = "{{APPENDIX_2_SUFFIX}}"
+MCOD_VAVILOVA_PACKAGE_CODE = "mcod_vavilova"
+MCOD_DATACENTERS = ("МегаЦОД",)
+VAVILOVA_DATACENTERS = ("Вавилова", "Вавилова (observer)")
+DB_HOST_KEYWORDS = ("postgres", "postgre", "_db_", "pangolin")
 HOST_PLACEHOLDERS = {
     "{{MPR_SOWA_HOSTS}}": ("sowa",),
-    "{{MPR_POSTGRES_HOSTS}}": ("postgres", "postgre", "pgsql", "pgbouncer", "pangolin"),
+    "{{MPR_POSTGRES_HOSTS}}": DB_HOST_KEYWORDS,
     "{{MPR_SYNGX_HOSTS}}": ("syngx", "syng"),
 }
 MPR_PACKAGES = {
@@ -302,25 +309,41 @@ def select_mpr_package_rows(rows, package_codes):
     return {code: grouped[code] for code in codes}
 
 
-def generate_mpr_docx(template_path, rows, location_label=None):
+def generate_mpr_docx(template_path, rows, location_label=None, package_code=None):
     try:
         document = Document(template_path)
     except Exception as exc:
         raise MprError("Не удалось открыть DOCX-шаблон") from exc
 
-    replacements = _build_host_placeholder_values(rows)
+    is_mcod_vavilova = _is_mcod_vavilova_package(package_code, location_label)
+    replacements = _build_host_placeholder_values(rows, package_code=package_code)
+    replacements[APPENDIX_1_SUFFIX_PLACEHOLDER] = (
+        " — Вавилова (observer)" if is_mcod_vavilova else ""
+    )
+    replacements[APPENDIX_2_SUFFIX_PLACEHOLDER] = " — МЦОД" if is_mcod_vavilova else ""
     if location_label is not None:
         if not _document_contains_placeholder(document, LOCATION_PLACEHOLDER):
             raise MprError(f"Плейсхолдер {LOCATION_PLACEHOLDER} не найден в DOCX-шаблоне")
         replacements[LOCATION_PLACEHOLDER] = location_label
     _replace_host_placeholders(document, replacements)
 
-    paragraph = _find_placeholder_paragraph(document)
-    if paragraph is None:
-        raise MprError(f"Плейсхолдер {APPENDIX_PLACEHOLDER} не найден в DOCX-шаблоне")
-
-    table = _build_appendix_table(document, rows)
-    _insert_table_at_placeholder(paragraph, table)
+    if is_mcod_vavilova:
+        appendix_rows = _build_mcod_vavilova_appendix_rows(rows)
+        _insert_appendix_table(
+            document,
+            APPENDIX_PLACEHOLDER,
+            appendix_rows["vavilova"],
+            required=True,
+        )
+        _insert_appendix_table(
+            document,
+            APPENDIX_2_PLACEHOLDER,
+            appendix_rows["mcod"],
+            required=True,
+        )
+    else:
+        _insert_appendix_table(document, APPENDIX_PLACEHOLDER, rows, required=True)
+        _remove_optional_appendix_section(document, APPENDIX_2_PLACEHOLDER)
 
     output = BytesIO()
     document.save(output)
@@ -369,15 +392,26 @@ def _normalize_datacenter(value):
     return re.sub(r"\s+", " ", str(value or "").strip()).casefold()
 
 
-def _build_host_placeholder_values(rows):
+def _is_mcod_vavilova_package(package_code, location_label):
+    if str(package_code or "").strip() == MCOD_VAVILOVA_PACKAGE_CODE:
+        return True
+    return str(location_label or "").strip() == MPR_PACKAGES[MCOD_VAVILOVA_PACKAGE_CODE]["label"]
+
+
+def _build_host_placeholder_values(rows, package_code=None):
     values = {}
     for placeholder, keywords in HOST_PLACEHOLDERS.items():
         hosts = []
         seen = set()
-        for item in rows:
+        source_rows = rows
+        if (
+            package_code == MCOD_VAVILOVA_PACKAGE_CODE
+            and placeholder == "{{MPR_POSTGRES_HOSTS}}"
+        ):
+            source_rows = _filter_mpr_rows(rows, datacenters=MCOD_DATACENTERS)
+        for item in source_rows:
             name = item.get("КТС", "")
-            haystack = f"{item.get('Наименование', '')} {name}".casefold()
-            if not name or not any(keyword in haystack for keyword in keywords):
+            if not name or not _row_matches_keywords(item, keywords):
                 continue
             marker = name.casefold()
             if marker in seen:
@@ -386,6 +420,42 @@ def _build_host_placeholder_values(rows):
             hosts.append(name)
         values[placeholder] = "\n".join(hosts) if hosts else "—"
     return values
+
+
+def _build_mcod_vavilova_appendix_rows(rows):
+    return {
+        "vavilova": _filter_mpr_rows(
+            rows,
+            datacenters=VAVILOVA_DATACENTERS,
+        ),
+        "mcod": _filter_mpr_rows(
+            rows,
+            datacenters=MCOD_DATACENTERS,
+        ),
+    }
+
+
+def _filter_mpr_rows(rows, datacenters=None, keywords=None):
+    datacenter_markers = {
+        _normalize_datacenter(value)
+        for value in (datacenters or [])
+        if str(value or "").strip()
+    }
+    result = []
+    for item in rows:
+        if datacenter_markers:
+            datacenter = _normalize_datacenter(item.get("ЦОД", ""))
+            if datacenter not in datacenter_markers:
+                continue
+        if keywords and not _row_matches_keywords(item, keywords):
+            continue
+        result.append(item)
+    return result
+
+
+def _row_matches_keywords(item, keywords):
+    haystack = f"{item.get('Наименование', '')} {item.get('КТС', '')}".casefold()
+    return any(str(keyword or "").casefold() in haystack for keyword in keywords)
 
 
 def _replace_host_placeholders(document, values):
@@ -466,11 +536,49 @@ def _copy_run_style(source, target):
         target.font.color.rgb = source.font.color.rgb
 
 
-def _find_placeholder_paragraph(document):
+def _find_placeholder_paragraph(document, placeholder=APPENDIX_PLACEHOLDER):
     for paragraph in document.paragraphs:
-        if APPENDIX_PLACEHOLDER in paragraph.text:
+        if placeholder in paragraph.text:
             return paragraph
     return None
+
+
+def _insert_appendix_table(document, placeholder, rows, required=True):
+    paragraph = _find_placeholder_paragraph(document, placeholder)
+    if paragraph is None:
+        if required:
+            raise MprError(f"Плейсхолдер {placeholder} не найден в DOCX-шаблоне")
+        return False
+    table = _build_appendix_table(document, rows)
+    _insert_table_at_placeholder(paragraph, table, placeholder=placeholder)
+    return True
+
+
+def _remove_optional_appendix_section(document, placeholder):
+    paragraphs = list(document.paragraphs)
+    target_index = None
+    for index, paragraph in enumerate(paragraphs):
+        if placeholder in paragraph.text:
+            target_index = index
+            break
+    if target_index is None:
+        return
+
+    indexes_to_remove = {target_index}
+    for index in range(target_index - 1, -1, -1):
+        text = paragraphs[index].text.strip()
+        if not text:
+            indexes_to_remove.add(index)
+            continue
+        if text.startswith("ПРИЛОЖЕНИЕ 2"):
+            indexes_to_remove.add(index)
+        break
+
+    for index in sorted(indexes_to_remove, reverse=True):
+        element = paragraphs[index]._element
+        parent = element.getparent()
+        if parent is not None:
+            parent.remove(element)
 
 
 def _build_appendix_table(document, rows):
@@ -516,8 +624,8 @@ def _build_appendix_table(document, rows):
     return table
 
 
-def _insert_table_at_placeholder(paragraph, table):
-    remaining_text = paragraph.text.replace(APPENDIX_PLACEHOLDER, "").strip()
+def _insert_table_at_placeholder(paragraph, table, placeholder=APPENDIX_PLACEHOLDER):
+    remaining_text = paragraph.text.replace(placeholder, "").strip()
     paragraph._p.addnext(table._tbl)
     if remaining_text:
         _replace_paragraph_text(paragraph, remaining_text)

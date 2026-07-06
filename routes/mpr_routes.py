@@ -53,6 +53,7 @@ def mpr_generate():
                 template_path,
                 selected_rows[code],
                 location_label=package["label"],
+                package_code=code,
             )
             filename = build_output_filename(
                 template_info,
