@@ -620,7 +620,7 @@
         <button type="button" class="tab-btn" data-tab="employees">Сотрудники</button>
         <button type="button" class="tab-btn" data-tab="prefixes">Префиксы релизов</button>
         <button type="button" class="tab-btn" data-tab="automation">Автоматизация</button>
-        <button type="button" class="tab-btn" data-tab="sbertrack">Email → SberTrack</button>
+        <button type="button" class="tab-btn" data-tab="sbertrack">Email → SberTrack / Jira</button>
         <button type="button" class="tab-btn" data-tab="diagnostics">Диагностика</button>
       </nav>
 
@@ -894,7 +894,7 @@
                 <button type="button" class="ghost" data-open-tab="mail" data-focus-card="mail-personal-card">Редактировать в почте</button>
               </div>
               <div class="zone-card">
-                <h3>Email → SberTrack</h3>
+                <h3>Email → SberTrack / Jira</h3>
                 <p class="muted" id="automationSberTrackText">-</p>
                 <button type="button" class="ghost" data-open-tab="sbertrack">Открыть настройки</button>
               </div>
@@ -912,7 +912,7 @@
         <div class="grid-2">
           <section class="card">
             <div class="card-header">
-              <h2>Email → SberTrack</h2>
+            <h2>Email → SberTrack / Jira</h2>
               <p class="muted">Чтение входящей почты техучетки и создание задач в SberTrack по ключевым словам в теме письма.</p>
             </div>
             <div class="card-body stack">
@@ -968,8 +968,8 @@
                     <th class="check-cell">Вкл.</th>
                     <th>Правило</th>
                     <th>Триггеры</th>
-                    <th>Spaces</th>
-                    <th>Suit / Priority</th>
+                    <th>Система / назначения</th>
+                    <th>Параметры задачи</th>
                     <th class="action-cell">Действия</th>
                   </tr>
                 </thead>
@@ -1037,7 +1037,7 @@
           </section>
           <section class="card">
             <div class="card-header">
-              <h2>Email → SberTrack</h2>
+            <h2>Email → SberTrack / Jira</h2>
               <p class="muted">Служебный статус чтения почты и создания задач. Секреты здесь не отображаются.</p>
             </div>
             <div class="card-body">
@@ -1176,8 +1176,19 @@
         rows.push({
           enabled: row.querySelector("[data-route-enabled]")?.checked || false,
           name: row.querySelector("[data-route-name]")?.value.trim() || "",
+          target_system: row.querySelector("[data-route-target]")?.value || "sbertrack",
           subject_triggers: splitLines(row.querySelector("[data-route-triggers]")?.value || ""),
           spaces: splitLines(row.querySelector("[data-route-spaces]")?.value || ""),
+          jira_projects: splitLines(row.querySelector("[data-route-projects]")?.value || ""),
+          jira_domain: row.querySelector("[data-route-domain]")?.value || "sberbank",
+          jira_issue_type: row.querySelector("[data-route-type]")?.value.trim() || "Story",
+          jira_priority: row.querySelector("[data-route-jira-priority]")?.value.trim() || "Minor",
+          jira_labels: splitLines(row.querySelector("[data-route-labels]")?.value || ""),
+          jira_team: {
+            field_id: row.querySelector("[data-route-team-field]")?.value.trim() || "",
+            value_id: row.querySelector("[data-route-team-value]")?.value.trim() || "",
+            name: row.querySelector("[data-route-team-name]")?.value.trim() || ""
+          },
           suit: row.querySelector("[data-route-suit]")?.value.trim() || "task",
           priority: row.querySelector("[data-route-priority]")?.value.trim() || "low",
           summary_template: row.querySelector("[data-route-summary]")?.value.trim() || "Письмо: {subject}"
@@ -1394,10 +1405,31 @@
             <input data-route-summary data-dirty-field value="${escapeAttr(route.summary_template || "Письмо: {subject}")}" placeholder="Письмо: {subject}" style="margin-top:6px;">
           </td>
           <td><textarea data-route-triggers data-dirty-field placeholder="Амбассадор&#10;ЗНИ">${escapeHtml(lines(route.subject_triggers || []))}</textarea></td>
-          <td><textarea data-route-spaces data-dirty-field placeholder="TSTM&#10;OPLOT">${escapeHtml(lines(route.spaces || []))}</textarea></td>
           <td>
-            <input data-route-suit data-dirty-field value="${escapeAttr(route.suit || "task")}" placeholder="task">
-            <input data-route-priority data-dirty-field value="${escapeAttr(route.priority || "low")}" placeholder="low" style="margin-top:6px;">
+            <select data-route-target data-dirty-field>
+              <option value="sbertrack" ${route.target_system === "jira" ? "" : "selected"}>SberTrack</option>
+              <option value="jira" ${route.target_system === "jira" ? "selected" : ""}>Jira</option>
+            </select>
+            <select data-route-domain data-dirty-field style="margin-top:6px;">
+              <option value="sberbank" ${route.jira_domain === "delta" ? "" : "selected"}>sberbank</option>
+              <option value="delta" ${route.jira_domain === "delta" ? "selected" : ""}>delta</option>
+            </select>
+             <small class="muted">Spaces SberTrack</small>
+             <textarea data-route-spaces data-dirty-field placeholder="TSTM&#10;OPLOT" style="margin-top:6px;">${escapeHtml(lines(route.spaces || []))}</textarea>
+             <small class="muted" data-route-projects-label style="display:block;margin-top:6px;">Jira projects</small>
+             <textarea data-route-projects data-dirty-field placeholder="EMRM" style="margin-top:6px;">${escapeHtml(lines(route.jira_projects || []))}</textarea>
+          </td>
+          <td>
+             <small class="muted" data-route-sbertrack-fields>Suit / priority</small>
+             <input data-route-suit data-dirty-field value="${escapeAttr(route.suit || "task")}" placeholder="task">
+             <input data-route-priority data-dirty-field value="${escapeAttr(route.priority || "low")}" placeholder="low" style="margin-top:6px;">
+             <small class="muted" data-route-jira-fields style="display:block;margin-top:6px;">Jira issue / priority / labels / team</small>
+            <input data-route-type data-dirty-field value="${escapeAttr(route.jira_issue_type || "Story")}" placeholder="Story" style="margin-top:6px;">
+            <input data-route-jira-priority data-dirty-field value="${escapeAttr(route.jira_priority || "Minor")}" placeholder="Minor" style="margin-top:6px;">
+            <input data-route-labels data-dirty-field value="${escapeAttr((route.jira_labels || []).join("\n"))}" placeholder="MPR" style="margin-top:6px;">
+            <input data-route-team-field data-dirty-field value="${escapeAttr(route.jira_team?.field_id || "customfield_11902")}" placeholder="customfield_11902" style="margin-top:6px;">
+            <input data-route-team-value data-dirty-field value="${escapeAttr(route.jira_team?.value_id || "4681")}" placeholder="4681" style="margin-top:6px;">
+            <input data-route-team-name data-dirty-field value="${escapeAttr(route.jira_team?.name || "ОПЛОТ")}" placeholder="ОПЛОТ" style="margin-top:6px;">
           </td>
           <td class="action-cell">
             <button type="button" class="icon-btn danger" data-remove-sbertrack-route="${index}">Удал.</button>
@@ -1405,6 +1437,29 @@
         </tr>
       `).join("");
       $("sbertrackRouteEmpty").classList.toggle("hidden", Boolean((routes || []).length));
+      refreshEmailRouteFields();
+    }
+
+    function refreshEmailRouteFields() {
+      document.querySelectorAll("[data-sbertrack-route-row]").forEach((row) => {
+        const isJira = row.querySelector("[data-route-target]")?.value === "jira";
+        const setVisible = (selector, visible) => {
+          const element = row.querySelector(selector);
+          if (element) element.style.display = visible ? "" : "none";
+        };
+        setVisible("[data-route-domain]", isJira);
+        setVisible("[data-route-projects-label]", isJira);
+        setVisible("[data-route-projects]", isJira);
+        setVisible("[data-route-sbertrack-fields]", !isJira);
+        setVisible("[data-route-suit]", !isJira);
+        setVisible("[data-route-priority]", !isJira);
+        setVisible("[data-route-jira-fields]", isJira);
+        ["[data-route-type]", "[data-route-jira-priority]", "[data-route-labels]", "[data-route-team-field]", "[data-route-team-value]", "[data-route-team-name]"]
+          .forEach((selector) => setVisible(selector, isJira));
+        setVisible("[data-route-spaces]", !isJira);
+        const spacesLabel = row.querySelector("[data-route-spaces]")?.previousElementSibling;
+        if (spacesLabel) spacesLabel.style.display = isJira ? "none" : "";
+      });
     }
 
     function renderSberTrackUsers(users) {
@@ -1664,7 +1719,7 @@
         ["mail", /Письма|Weekly|digest|Получатели|персональн|email/i],
         ["employees", /Сотрудник|ФИО/i],
         ["prefixes", /Prefix|Release prefixes|jira_domain|system/i],
-        ["sbertrack", /SberTrack|Email → SberTrack|route|technical mailboxes/i],
+        ["sbertrack", /SberTrack|Jira|Email → SberTrack|route|technical mailboxes/i],
       ];
       rules.forEach(([tab, pattern]) => {
         if (pattern.test(message)) {
@@ -1816,6 +1871,11 @@
         markDirty();
         return;
       }
+      if (event.target.matches("[data-route-target]")) {
+        refreshEmailRouteFields();
+        markDirty();
+        return;
+      }
       if (event.target.matches("[data-dirty-field]")) {
         markDirty();
       }
@@ -1834,8 +1894,15 @@
       state.config.automation.email_to_sbertrack.routes.push({
         enabled: true,
         name: "",
+        target_system: "sbertrack",
         subject_triggers: [],
         spaces: [],
+        jira_projects: [],
+        jira_domain: "sberbank",
+        jira_issue_type: "Story",
+        jira_priority: "Minor",
+        jira_labels: ["MPR"],
+        jira_team: { field_id: "customfield_11902", value_id: "4681", name: "ОПЛОТ" },
         suit: "task",
         priority: "low",
         summary_template: "Письмо: {subject}"

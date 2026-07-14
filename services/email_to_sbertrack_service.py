@@ -10,7 +10,7 @@ import ssl
 import threading
 import time
 import base64
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from email.header import decode_header, make_header
 from email.message import Message
 from email.utils import getaddresses, parsedate_to_datetime
@@ -37,6 +37,7 @@ SUMMARY_MAX_CHARS = 220
 DESCRIPTION_BODY_FALLBACK_LIMIT = 6000
 MAX_STORED_KEYS = 2000
 MAX_DRY_RUN_MATCHES = 500
+MAX_MESSAGE_AGE = timedelta(hours=24)
 WORKFLOW_STATUS_NEW = {"command": "NEW"}
 
 _process_lock = threading.Lock()
@@ -217,7 +218,12 @@ def _automation_settings() -> Dict[str, Any]:
         if not isinstance(raw_route, dict):
             continue
         triggers = _normalize_string_list(raw_route.get("subject_triggers"))
-        spaces = _normalize_string_list(raw_route.get("spaces"))
+        target_system = str(raw_route.get("target_system") or "sbertrack").strip().lower()
+        if target_system not in {"sbertrack", "jira"}:
+            target_system = "sbertrack"
+        spaces = _normalize_string_list(
+            raw_route.get("jira_projects") if target_system == "jira" else raw_route.get("spaces")
+        )
         name = str(raw_route.get("name") or f"route_{index}").strip()
         if not name or not triggers or not spaces:
             continue
@@ -226,7 +232,13 @@ def _automation_settings() -> Dict[str, Any]:
                 "enabled": _as_bool(raw_route.get("enabled"), True),
                 "name": name,
                 "subject_triggers": triggers,
+                "target_system": target_system,
                 "spaces": spaces,
+                "jira_domain": str(raw_route.get("jira_domain") or "sberbank").strip().lower(),
+                "jira_issue_type": str(raw_route.get("jira_issue_type") or "Story").strip() or "Story",
+                "jira_priority": str(raw_route.get("jira_priority") or "Minor").strip() or "Minor",
+                "jira_labels": _normalize_string_list(raw_route.get("jira_labels") or ["MPR"]),
+                "jira_team": raw_route.get("jira_team") if isinstance(raw_route.get("jira_team"), dict) else {},
                 "suit": str(raw_route.get("suit") or "task").strip() or "task",
                 "priority": str(raw_route.get("priority") or "low").strip() or "low",
                 "summary_template": str(
@@ -376,6 +388,23 @@ def _message_date(value: Any) -> str:
         return raw_value
 
 
+def _is_recent_message_date(value: Any) -> bool:
+    raw_value = str(value or "").strip()
+    if not raw_value:
+        return False
+    try:
+        message_datetime = datetime.fromisoformat(raw_value.replace("Z", "+00:00"))
+    except ValueError:
+        try:
+            message_datetime = parsedate_to_datetime(raw_value)
+        except (TypeError, ValueError, OverflowError):
+            return False
+    if message_datetime.tzinfo is None:
+        message_datetime = message_datetime.replace(tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
+    return now - message_datetime.astimezone(timezone.utc) <= MAX_MESSAGE_AGE
+
+
 def _message_body(message: Message, limit: int) -> Tuple[str, bool]:
     plain_parts = []
     html_parts = []
@@ -486,7 +515,10 @@ def _route_key(route: Dict[str, Any]) -> str:
 
 
 def _dedupe_key(message_id: str, route: Dict[str, Any], space: str) -> str:
-    source = f"{message_id}|{_route_key(route)}|{space}".lower()
+    source = (
+        f"{message_id}|{_route_key(route)}|{route.get('target_system', 'sbertrack')}|"
+        f"{route.get('jira_domain', '')}|{space}"
+    ).lower()
     return hashlib.sha256(source.encode("utf-8")).hexdigest()
 
 
@@ -581,9 +613,16 @@ def _event_from_match(
             "suit": route["suit"],
             "priority": route["priority"],
             "summary_template": route["summary_template"],
+            "target_system": route.get("target_system", "sbertrack"),
+            "jira_domain": route.get("jira_domain", "sberbank"),
+            "jira_issue_type": route.get("jira_issue_type", "Story"),
+            "jira_priority": route.get("jira_priority", "Minor"),
+            "jira_labels": route.get("jira_labels", []),
+            "jira_team": route.get("jira_team", {}),
         },
         "space": space,
         "summary": _build_summary(route, message_data),
+        "description": "",
         "assigned_to": assigned_to,
         "assignee_candidates": assignee_candidates,
         "created_at": _format_timestamp(),
@@ -637,7 +676,9 @@ def _fetch_new_messages(
                     break
             if not raw_bytes:
                 continue
-            messages.append(_parse_email_message(uid, raw_bytes, body_limit))
+            parsed_message = _parse_email_message(uid, raw_bytes, body_limit)
+            if _is_recent_message_date(parsed_message.get("date")):
+                messages.append(parsed_message)
             last_seen = max(last_seen, uid)
         return messages, last_seen
     finally:
@@ -662,7 +703,7 @@ def _match_messages(
     matches = []
     for message_data in messages:
         subject = str(message_data.get("subject") or "")
-        matched_spaces = set()
+        matched_destinations = set()
         assigned_to, candidates = _resolve_assignee(
             message_data.get("to") or [],
             settings.get("technical_mailboxes") or [],
@@ -675,7 +716,14 @@ def _match_messages(
                 normalized_space = str(space or "").strip()
                 if not normalized_space:
                     continue
-                if normalized_space.lower() in matched_spaces:
+                destination_key = "|".join(
+                    (
+                        str(route.get("target_system") or "sbertrack").strip().lower(),
+                        str(route.get("jira_domain") or "").strip().lower(),
+                        normalized_space.lower(),
+                    )
+                )
+                if destination_key in matched_destinations:
                     continue
                 event = _event_from_match(
                     message_data,
@@ -684,11 +732,12 @@ def _match_messages(
                     assigned_to,
                     candidates,
                 )
+                event["description"] = _build_description(event)
                 if event["dedupe_key"] in created or event["dedupe_key"] in pending:
-                    matched_spaces.add(normalized_space.lower())
+                    matched_destinations.add(destination_key)
                     continue
                 matches.append(event)
-                matched_spaces.add(normalized_space.lower())
+                matched_destinations.add(destination_key)
     return matches
 
 
@@ -773,6 +822,15 @@ def _create_sbertrack_task(event: Dict[str, Any], settings: Dict[str, Any]) -> D
     }
 
 
+def _create_task(event: Dict[str, Any], sbertrack_settings: Dict[str, Any]) -> Dict[str, Any]:
+    target_system = str((event.get("route") or {}).get("target_system") or "sbertrack").lower()
+    if target_system == "jira":
+        from services.email_to_jira_service import create_email_jira_task
+
+        return create_email_jira_task(event)
+    return _create_sbertrack_task(event, sbertrack_settings)
+
+
 def _retry_pending(
     state: Dict[str, Any],
     settings: Dict[str, Any],
@@ -783,11 +841,15 @@ def _retry_pending(
         return 0
     created_count = 0
     for dedupe_key, event in list(pending.items())[: settings["max_pending_per_cycle"]]:
+        mail = event.get("mail") if isinstance(event.get("mail"), dict) else {}
+        if not _is_recent_message_date(mail.get("date")):
+            pending.pop(dedupe_key, None)
+            continue
         if dedupe_key in state.get("created_keys", {}):
             pending.pop(dedupe_key, None)
             continue
         try:
-            result = _create_sbertrack_task(event, sbertrack_settings)
+            result = _create_task(event, sbertrack_settings)
             state.setdefault("created_keys", {})[dedupe_key] = result
             state.setdefault("processed_message_ids", []).append(str(event.get("message_id") or ""))
             pending.pop(dedupe_key, None)

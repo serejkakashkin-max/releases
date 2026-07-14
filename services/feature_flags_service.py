@@ -230,7 +230,12 @@ def _normalize_email_to_sbertrack_config(value: Any) -> Dict[str, Any]:
             continue
         name = str(raw_route.get("name") or f"route_{index}").strip()
         triggers = _normalize_string_list(raw_route.get("subject_triggers"))
-        spaces = _normalize_string_list(raw_route.get("spaces"))
+        target_system = str(raw_route.get("target_system") or "sbertrack").strip().lower()
+        if target_system not in {"sbertrack", "jira"}:
+            target_system = "sbertrack"
+        spaces = _normalize_string_list(
+            raw_route.get("jira_projects") if target_system == "jira" else raw_route.get("spaces")
+        )
         suit = str(raw_route.get("suit") or "task").strip()
         priority = str(raw_route.get("priority") or "low").strip()
         summary_template = str(
@@ -244,8 +249,15 @@ def _normalize_email_to_sbertrack_config(value: Any) -> Dict[str, Any]:
                 if isinstance(raw_route.get("enabled"), bool)
                 else True,
                 "name": name,
+                "target_system": target_system,
                 "subject_triggers": triggers,
                 "spaces": spaces,
+                "jira_projects": spaces if target_system == "jira" else [],
+                "jira_domain": str(raw_route.get("jira_domain") or "sberbank").strip().lower(),
+                "jira_issue_type": str(raw_route.get("jira_issue_type") or "Story").strip() or "Story",
+                "jira_priority": str(raw_route.get("jira_priority") or "Minor").strip() or "Minor",
+                "jira_labels": _normalize_string_list(raw_route.get("jira_labels")),
+                "jira_team": copy.deepcopy(raw_route.get("jira_team")) if isinstance(raw_route.get("jira_team"), dict) else {},
                 "suit": suit or "task",
                 "priority": priority or "low",
                 "summary_template": summary_template or "Письмо: {subject}",

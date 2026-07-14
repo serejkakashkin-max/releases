@@ -170,10 +170,21 @@ def _admin_email_to_sbertrack(raw_value: Any) -> Dict[str, Any]:
             {
                 "enabled": _coerce_bool(raw_route.get("enabled"), True),
                 "name": str(raw_route.get("name") or f"route_{index}").strip(),
+                "target_system": (
+                    str(raw_route.get("target_system") or "sbertrack").strip().lower()
+                    if str(raw_route.get("target_system") or "sbertrack").strip().lower() in {"jira", "sbertrack"}
+                    else "sbertrack"
+                ),
                 "subject_triggers": _normalize_string_list(
                     raw_route.get("subject_triggers")
                 ),
                 "spaces": _normalize_string_list(raw_route.get("spaces")),
+                "jira_projects": _normalize_string_list(raw_route.get("jira_projects")),
+                "jira_domain": str(raw_route.get("jira_domain") or "sberbank").strip().lower(),
+                "jira_issue_type": str(raw_route.get("jira_issue_type") or "Story").strip(),
+                "jira_priority": str(raw_route.get("jira_priority") or "Minor").strip(),
+                "jira_labels": _normalize_string_list(raw_route.get("jira_labels")),
+                "jira_team": raw_route.get("jira_team") if isinstance(raw_route.get("jira_team"), dict) else {},
                 "suit": str(raw_route.get("suit") or "task").strip(),
                 "priority": str(raw_route.get("priority") or "low").strip(),
                 "summary_template": str(
@@ -611,11 +622,36 @@ def _validate_managed_config(raw_config: Any) -> Dict[str, Any]:
             errors.append(f"Email → SberTrack: дубль route name {name}")
         seen_route_names.add(name_key)
         triggers = _normalize_string_list(row.get("subject_triggers"))
-        spaces = _normalize_string_list(row.get("spaces"))
+        target_system = str(row.get("target_system") or "sbertrack").strip().lower()
+        if target_system not in {"jira", "sbertrack"}:
+            errors.append(f"Email route {name}: target_system must be jira or sbertrack")
+            target_system = "sbertrack"
+        spaces = _normalize_string_list(
+            row.get("jira_projects") if target_system == "jira" else row.get("spaces")
+        )
         if enabled and not triggers:
             errors.append(f"Email → SberTrack route {name}: нужен хотя бы один trigger")
         if enabled and not spaces:
             errors.append(f"Email → SberTrack route {name}: нужно хотя бы одно space")
+        jira_domain = str(row.get("jira_domain") or "sberbank").strip().lower()
+        if target_system == "jira" and jira_domain not in JIRA_DOMAIN_CONFIGS:
+            errors.append(f"Email route {name}: unknown Jira domain")
+            jira_domain = "sberbank"
+        jira_issue_type = str(row.get("jira_issue_type") or "").strip()
+        jira_priority = str(row.get("jira_priority") or "").strip()
+        if target_system == "jira" and not jira_issue_type:
+            errors.append(f"Email route {name}: jira_issue_type is required")
+        if target_system == "jira" and not jira_priority:
+            errors.append(f"Email route {name}: jira_priority is required")
+        raw_team = row.get("jira_team") if isinstance(row.get("jira_team"), dict) else {}
+        jira_team = {
+            "field_id": str(raw_team.get("field_id") or "").strip(),
+            "value_id": str(raw_team.get("value_id") or "").strip(),
+            "name": str(raw_team.get("name") or "").strip(),
+        }
+        for team_key, team_value in jira_team.items():
+            if len(team_value) > 200 or any(ord(char) < 32 for char in team_value):
+                errors.append(f"Email route {name}: jira_team.{team_key} contains unsafe value")
         suit = str(row.get("suit") or "").strip() or "task"
         priority = str(row.get("priority") or "").strip() or "low"
         summary_template = str(row.get("summary_template") or "").strip() or "Письмо: {subject}"
@@ -623,8 +659,15 @@ def _validate_managed_config(raw_config: Any) -> Dict[str, Any]:
             {
                 "enabled": enabled,
                 "name": name,
+                "target_system": target_system,
                 "subject_triggers": triggers,
-                "spaces": spaces,
+                "spaces": spaces if target_system == "sbertrack" else [],
+                "jira_projects": spaces if target_system == "jira" else [],
+                "jira_domain": jira_domain,
+                "jira_issue_type": jira_issue_type or "Story",
+                "jira_priority": jira_priority or "Minor",
+                "jira_labels": _normalize_string_list(row.get("jira_labels")),
+                "jira_team": jira_team,
                 "suit": suit,
                 "priority": priority,
                 "summary_template": summary_template,
