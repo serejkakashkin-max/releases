@@ -107,16 +107,17 @@ def create_email_jira_task(event: Dict[str, Any]) -> Dict[str, Any]:
     if not reporter:
         raise EmailToJiraError("Unable to resolve Jira technical reporter")
 
-    description = str(event.get("description") or "").replace("SberTrack", "Jira")
+    description = str(mail.get("body") or "")
     description += (
         f"\n\nJira domain: {domain}\n"
         f"Jira project: {project}"
     )
+    subject = str(mail.get("subject") or event.get("summary") or "Email task").strip()
     fields: Dict[str, Any] = {
         "project": {"key": project},
         "issuetype": {"name": str(route.get("jira_issue_type") or "Story")},
         "priority": {"name": str(route.get("jira_priority") or "Minor")},
-        "summary": str(event.get("summary") or "Email task")[:220],
+        "summary": subject[:220],
         "description": description[:12000],
         "labels": list(route.get("jira_labels") or []),
         "reporter": {"name": reporter},
