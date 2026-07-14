@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>РЎРЈРџ-РїР°СЂР°РјРµС‚СЂС‹</title>
+  <title>СУП-параметры</title>
   <style>
     :root {
       color-scheme: dark;
@@ -566,107 +566,107 @@
   <main class="page">
     <section class="topbar">
       <div class="topbar-main">
-        <h1>РЎРЈРџ-РїР°СЂР°РјРµС‚СЂС‹</h1>
-        <p class="muted">Р›РѕРєР°Р»СЊРЅС‹Рµ РЅР°СЃС‚СЂРѕР№РєРё РїСЂРёР»РѕР¶РµРЅРёСЏ: СЂРµР¶РёРј РѕР±СЃР»СѓР¶РёРІР°РЅРёСЏ, РїРѕС‡С‚РѕРІС‹Рµ СЂР°СЃСЃС‹Р»РєРё, СЃРѕС‚СЂСѓРґРЅРёРєРё Рё РїСЂРµС„РёРєСЃС‹ СЂРµР»РёР·РѕРІ.</p>
+        <h1>СУП-параметры</h1>
+        <p class="muted">Локальные настройки приложения: режим обслуживания, почтовые рассылки, сотрудники и префиксы релизов.</p>
       </div>
       <div class="topbar-side">
         <div class="file-card">
           <div class="file-title">
-            <span>Р¤Р°Р№Р» РєРѕРЅС„РёРіСѓСЂР°С†РёРё</span>
-            <span id="fileStateBadge" class="badge">РЅРµ Р·Р°РіСЂСѓР¶РµРЅ</span>
+            <span>Файл конфигурации</span>
+            <span id="fileStateBadge" class="badge">не загружен</span>
           </div>
           <div class="file-meta">
-            <span>Р¤Р°Р№Р»</span><strong id="fileName">feature_flags.json</strong>
-            <span>РР·РјРµРЅРµРЅ</span><strong id="fileMtime">-</strong>
-            <span>РҐРµС€</span><strong id="fileHash">-</strong>
+            <span>Файл</span><strong id="fileName">feature_flags.json</strong>
+            <span>Изменен</span><strong id="fileMtime">-</strong>
+            <span>Хеш</span><strong id="fileHash">-</strong>
           </div>
         </div>
         <div class="button-stack">
-          <button type="button" class="ghost" id="reloadBtn">РћР±РЅРѕРІРёС‚СЊ</button>
-          <button type="button" class="primary" id="saveBtn" disabled>РЎРѕС…СЂР°РЅРёС‚СЊ</button>
-          <button type="button" class="ghost wide" id="resetBtn" disabled>РЎР±СЂРѕСЃРёС‚СЊ РёР·РјРµРЅРµРЅРёСЏ</button>
+          <button type="button" class="ghost" id="reloadBtn">Обновить</button>
+          <button type="button" class="primary" id="saveBtn" disabled>Сохранить</button>
+          <button type="button" class="ghost wide" id="resetBtn" disabled>Сбросить изменения</button>
         </div>
       </div>
     </section>
 
-    <div id="statusBox" class="status">Р’РІРµРґРёС‚Рµ С‚РѕРєРµРЅ РґР»СЏ Р·Р°РіСЂСѓР·РєРё РЎРЈРџ-РїР°СЂР°РјРµС‚СЂРѕРІ.</div>
+    <div id="statusBox" class="status">Введите токен для загрузки СУП-параметров.</div>
 
     <section id="tokenBox" class="card token-box">
       <div class="card-header">
-        <h2>Р”РѕСЃС‚СѓРї</h2>
-        <p class="muted">РўРѕРєРµРЅ СЃРѕС…СЂР°РЅСЏРµС‚СЃСЏ С‚РѕР»СЊРєРѕ РІ С‚РµРєСѓС‰РµРј Р±СЂР°СѓР·РµСЂРµ Рё РЅРµ РїРѕРєР°Р·С‹РІР°РµС‚СЃСЏ РїРѕСЃР»Рµ РІС…РѕРґР°.</p>
+        <h2>Доступ</h2>
+        <p class="muted">Токен сохраняется только в текущем браузере и не показывается после входа.</p>
       </div>
       <div class="card-body stack">
         {% if token_configured %}
         <div>
-          <label for="tokenInput">РўРѕРєРµРЅ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂР°</label>
-          <input id="tokenInput" type="password" autocomplete="off" placeholder="Р’РІРµРґРёС‚Рµ С‚РѕРєРµРЅ">
+          <label for="tokenInput">Токен администратора</label>
+          <input id="tokenInput" type="password" autocomplete="off" placeholder="Введите токен">
         </div>
         <div class="button-stack">
-          <button type="button" class="primary" id="unlockBtn">РћС‚РєСЂС‹С‚СЊ</button>
-          <button type="button" class="ghost" id="clearTokenBtn">РЎР±СЂРѕСЃРёС‚СЊ С‚РѕРєРµРЅ</button>
+          <button type="button" class="primary" id="unlockBtn">Открыть</button>
+          <button type="button" class="ghost" id="clearTokenBtn">Сбросить токен</button>
         </div>
         {% else %}
-        <div class="status error">РўРѕРєРµРЅ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂР° РЅРµ Р·Р°РґР°РЅ РІ РєРѕРЅС„РёРіСѓСЂР°С†РёРё. Р§С‚РµРЅРёРµ Рё СЃРѕС…СЂР°РЅРµРЅРёРµ РЎРЈРџ-РїР°СЂР°РјРµС‚СЂРѕРІ Р·Р°РєСЂС‹С‚С‹.</div>
+        <div class="status error">Токен администратора не задан в конфигурации. Чтение и сохранение СУП-параметров закрыты.</div>
         {% endif %}
       </div>
     </section>
 
     <section id="appBox" class="hidden">
-      <nav class="tabs" aria-label="Р Р°Р·РґРµР»С‹ РЎРЈРџ-РїР°СЂР°РјРµС‚СЂРѕРІ">
-        <button type="button" class="tab-btn active" data-tab="overview">РћР±Р·РѕСЂ</button>
-        <button type="button" class="tab-btn" data-tab="maintenance">Р РµР¶РёРј РѕР±СЃР»СѓР¶РёРІР°РЅРёСЏ</button>
-        <button type="button" class="tab-btn" data-tab="mail">РџРѕС‡С‚РѕРІС‹Рµ СѓРІРµРґРѕРјР»РµРЅРёСЏ</button>
-        <button type="button" class="tab-btn" data-tab="employees">РЎРѕС‚СЂСѓРґРЅРёРєРё</button>
-        <button type="button" class="tab-btn" data-tab="prefixes">РџСЂРµС„РёРєСЃС‹ СЂРµР»РёР·РѕРІ</button>
-        <button type="button" class="tab-btn" data-tab="automation">РђРІС‚РѕРјР°С‚РёР·Р°С†РёСЏ</button>
-        <button type="button" class="tab-btn" data-tab="sbertrack">Email в†’ SberTrack / Jira</button>
-        <button type="button" class="tab-btn" data-tab="diagnostics">Р”РёР°РіРЅРѕСЃС‚РёРєР°</button>
+      <nav class="tabs" aria-label="Разделы СУП-параметров">
+        <button type="button" class="tab-btn active" data-tab="overview">Обзор</button>
+        <button type="button" class="tab-btn" data-tab="maintenance">Режим обслуживания</button>
+        <button type="button" class="tab-btn" data-tab="mail">Почтовые уведомления</button>
+        <button type="button" class="tab-btn" data-tab="employees">Сотрудники</button>
+        <button type="button" class="tab-btn" data-tab="prefixes">Префиксы релизов</button>
+        <button type="button" class="tab-btn" data-tab="automation">Автоматизация</button>
+        <button type="button" class="tab-btn" data-tab="sbertrack">Email → SberTrack / Jira</button>
+        <button type="button" class="tab-btn" data-tab="diagnostics">Диагностика</button>
       </nav>
 
       <section class="panel active" data-panel="overview">
         <div class="grid-4">
           <div class="summary-card">
-            <div class="summary-label">Р’РєР»СЋС‡РµРЅРЅС‹Рµ СЂР°СЃСЃС‹Р»РєРё</div>
+            <div class="summary-label">Включенные рассылки</div>
             <div class="summary-value" id="summaryMail">0</div>
-            <div class="summary-note">РёР· 5 С‚РёРїРѕРІ Р°РІС‚РѕРјР°С‚РёР·Р°С†РёРё</div>
+            <div class="summary-note">из 5 типов автоматизации</div>
           </div>
           <div class="summary-card">
-            <div class="summary-label">РђРєС‚РёРІРЅС‹Рµ СЃРѕС‚СЂСѓРґРЅРёРєРё</div>
+            <div class="summary-label">Активные сотрудники</div>
             <div class="summary-value" id="summaryEmployees">0</div>
-            <div class="summary-note" id="summaryEmployeeEmails">0 email-Р°РґСЂРµСЃРѕРІ</div>
+            <div class="summary-note" id="summaryEmployeeEmails">0 email-адресов</div>
           </div>
           <div class="summary-card">
-            <div class="summary-label">Р’РєР»СЋС‡РµРЅРЅС‹Рµ prefix-Рё</div>
+            <div class="summary-label">Включенные prefix-и</div>
             <div class="summary-value" id="summaryPrefixes">0</div>
-            <div class="summary-note">СѓС‡Р°СЃС‚РІСѓСЋС‚ РІ РїРѕРёСЃРєРµ СЂРµР»РёР·РѕРІ</div>
+            <div class="summary-note">участвуют в поиске релизов</div>
           </div>
           <div class="summary-card">
-            <div class="summary-label">Р—Р°РґРµСЂР¶РєР° Р»РёС‡РЅС‹С… РїРёСЃРµРј</div>
-            <div class="summary-value" id="summaryDelay">0 РјРёРЅ</div>
-            <div class="summary-note">Р°РЅС‚РёСЃРїР°Рј-РѕРєРЅРѕ РїРѕСЃР»Рµ РЅР°Р·РЅР°С‡РµРЅРёСЏ</div>
+            <div class="summary-label">Задержка личных писем</div>
+            <div class="summary-value" id="summaryDelay">0 мин</div>
+            <div class="summary-note">антиспам-окно после назначения</div>
           </div>
         </div>
         <div class="grid-4" style="margin-top:16px;">
           <button type="button" class="zone-card" data-open-tab="mail">
-            <h3>РџРѕС‡С‚Р°</h3>
-            <p class="muted">РћРїРµСЂР°С‚РёРІРЅС‹Рµ РїРёСЃСЊРјР°, РїСЂРµРґРІР°СЂРёС‚РµР»СЊРЅС‹Р№ СЃРїРёСЃРѕРє РЅРµРґРµР»Рё Рё Р»РёС‡РЅС‹Рµ СѓРІРµРґРѕРјР»РµРЅРёСЏ.</p>
-            <span class="badge blue">РџРµСЂРµР№С‚Рё</span>
+            <h3>Почта</h3>
+            <p class="muted">Оперативные письма, предварительный список недели и личные уведомления.</p>
+            <span class="badge blue">Перейти</span>
           </button>
           <button type="button" class="zone-card" data-open-tab="maintenance">
-            <h3>Р РµР¶РёРј РѕР±СЃР»СѓР¶РёРІР°РЅРёСЏ</h3>
-            <p class="muted">Р—Р°РєСЂС‹С‚РёРµ СЂР°Р·РґРµР»РѕРІ РґР»СЏ РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№ СЃ bypass-РґРѕСЃС‚СѓРїРѕРј Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂР°.</p>
-            <span class="badge yellow" id="overviewMaintenanceBadge">0 Р·Р°РєСЂС‹С‚Рѕ</span>
+            <h3>Режим обслуживания</h3>
+            <p class="muted">Закрытие разделов для пользователей с bypass-доступом администратора.</p>
+            <span class="badge yellow" id="overviewMaintenanceBadge">0 закрыто</span>
           </button>
           <button type="button" class="zone-card" data-open-tab="employees">
-            <h3>РЎРѕС‚СЂСѓРґРЅРёРєРё</h3>
-            <p class="muted">РЎРїСЂР°РІРѕС‡РЅРёРє Р¤РРћ Рё email РґР»СЏ РїРµСЂСЃРѕРЅР°Р»СЊРЅС‹С… СѓРІРµРґРѕРјР»РµРЅРёР№.</p>
-            <span class="badge green" id="overviewEmployeesBadge">0 Р°РєС‚РёРІРЅС‹С…</span>
+            <h3>Сотрудники</h3>
+            <p class="muted">Справочник ФИО и email для персональных уведомлений.</p>
+            <span class="badge green" id="overviewEmployeesBadge">0 активных</span>
           </button>
           <button type="button" class="zone-card" data-open-tab="prefixes">
-            <h3>РџСЂРµС„РёРєСЃС‹ СЂРµР»РёР·РѕРІ</h3>
-            <p class="muted">РЈРїСЂР°РІР»РµРЅРёРµ prefix-Р°РјРё, Jira-РґРѕРјРµРЅР°РјРё Рё СЃРёСЃС‚РµРјР°РјРё.</p>
-            <span class="badge blue" id="overviewPrefixesBadge">0 РІРєР»СЋС‡РµРЅРѕ</span>
+            <h3>Префиксы релизов</h3>
+            <p class="muted">Управление prefix-ами, Jira-доменами и системами.</p>
+            <span class="badge blue" id="overviewPrefixesBadge">0 включено</span>
           </button>
         </div>
       </section>
@@ -674,16 +674,16 @@
       <section class="panel" data-panel="maintenance">
         <section class="card">
           <div class="card-header">
-            <h2>Р РµР¶РёРј РѕР±СЃР»СѓР¶РёРІР°РЅРёСЏ</h2>
-            <p class="muted">Р’РєР»СЋС‡РµРЅРЅС‹Р№ РїРµСЂРµРєР»СЋС‡Р°С‚РµР»СЊ Р·Р°РєСЂС‹РІР°РµС‚ РІС‹Р±СЂР°РЅРЅС‹Р№ СЂР°Р·РґРµР» РґР»СЏ РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№. РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РјРѕР¶РµС‚ РІРѕР№С‚Рё С‡РµСЂРµР· maintenance bypass.</p>
+            <h2>Режим обслуживания</h2>
+            <p class="muted">Включенный переключатель закрывает выбранный раздел для пользователей. Администратор может войти через maintenance bypass.</p>
           </div>
           <div class="card-body stack">
             <details class="help-box">
-              <summary>РљР°Рє Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂСѓ Р·Р°Р№С‚Рё РІ Р·Р°РєСЂС‹С‚С‹Р№ СЂР°Р·РґРµР»</summary>
+              <summary>Как администратору зайти в закрытый раздел</summary>
               <div class="help-content">
-                Р”РѕР±Р°РІСЊС‚Рµ Рє Р°РґСЂРµСЃСѓ СЃС‚СЂР°РЅРёС†С‹ <span class="code-pill">?maintenance_bypass=1</span>.
-                Р”Р»СЏ С‡Р°С‚-Р±РѕС‚Р° РЅР° РіР»Р°РІРЅРѕР№ СЃС‚СЂР°РЅРёС†Рµ РёСЃРїРѕР»СЊР·СѓР№С‚Рµ <span class="code-pill">?chatbot_maintenance_bypass=1</span>.
-                Р§С‚РѕР±С‹ СЃР±СЂРѕСЃРёС‚СЊ РґРѕСЃС‚СѓРї РІ С‚РµРєСѓС‰РµРј Р±СЂР°СѓР·РµСЂРµ, РѕС‚РєСЂРѕР№С‚Рµ СЃС‚СЂР°РЅРёС†Сѓ СЃ <span class="code-pill">?maintenance_bypass=0</span>.
+                Добавьте к адресу страницы <span class="code-pill">?maintenance_bypass=1</span>.
+                Для чат-бота на главной странице используйте <span class="code-pill">?chatbot_maintenance_bypass=1</span>.
+                Чтобы сбросить доступ в текущем браузере, откройте страницу с <span class="code-pill">?maintenance_bypass=0</span>.
               </div>
             </details>
             <div class="stack" id="maintenanceToggles"></div>
@@ -696,44 +696,44 @@
           <section class="feature-card blue" id="mail-unassigned-card">
             <div class="feature-head">
               <div class="feature-title">
-                <strong>РџРёСЃСЊРјР° вЂњР±РµР· РѕС‚РІРµС‚СЃС‚РІРµРЅРЅРѕРіРѕвЂќ</strong>
-                <span class="muted">РћРїРµСЂР°С‚РёРІРЅС‹Рµ СѓРІРµРґРѕРјР»РµРЅРёСЏ РїРѕ СЂРµР»РёР·Р°Рј Р±РµР· РЅР°Р·РЅР°С‡РµРЅРЅРѕРіРѕ РѕС‚РІРµС‚СЃС‚РІРµРЅРЅРѕРіРѕ.</span>
+                <strong>Письма “без ответственного”</strong>
+                <span class="muted">Оперативные уведомления по релизам без назначенного ответственного.</span>
               </div>
-              <label class="switch" title="Р’РєР»СЋС‡РёС‚СЊ РїРёСЃСЊРјР° Р±РµР· РѕС‚РІРµС‚СЃС‚РІРµРЅРЅРѕРіРѕ">
+              <label class="switch" title="Включить письма без ответственного">
                 <input type="checkbox" id="unassignedEnabled" data-dirty-field>
                 <span></span>
               </label>
             </div>
             <div>
-              <label for="unassignedRecipientsInput">РџРѕР»СѓС‡Р°С‚РµР»Рё</label>
+              <label for="unassignedRecipientsInput">Получатели</label>
               <textarea id="unassignedRecipientsInput" data-dirty-field placeholder="one.mail@sberbank.ru&#10;second.mail@sberbank.ru"></textarea>
             </div>
-            <p class="muted">РџРёСЃСЊРјРѕ СѓС…РѕРґРёС‚ РїРѕ РЅРѕРІС‹Рј РїСЂРѕР±Р»РµРјРЅС‹Рј СЂРµР»РёР·Р°Рј Рё СЃРѕР±С‹С‚РёСЏРј СЃРЅСЏС‚РёСЏ РѕС‚РІРµС‚СЃС‚РІРµРЅРЅРѕРіРѕ.</p>
+            <p class="muted">Письмо уходит по новым проблемным релизам и событиям снятия ответственного.</p>
           </section>
 
           <section class="feature-card amber" id="mail-unassigned-weekly-card">
             <div class="feature-head">
               <div class="feature-title">
-                <strong>РџРѕРЅРµРґРµР»СЊРЅРёРє Р±РµР· РЅР°Р·РЅР°С‡РµРЅРёР№</strong>
-                <span class="muted">РћРґРёРЅ РѕР±С‰РёР№ СЃРїРёСЃРѕРє СЂРµР»РёР·РѕРІ Р±РµР· РѕС‚РІРµС‚СЃС‚РІРµРЅРЅРѕРіРѕ РїРѕСЃР»Рµ СЃРјРµРЅС‹ РЅРµРґРµР»Рё.</span>
+                <strong>Понедельник без назначений</strong>
+                <span class="muted">Один общий список релизов без ответственного после смены недели.</span>
               </div>
-              <label class="switch" title="Р’РєР»СЋС‡РёС‚СЊ РїРѕРЅРµРґРµР»СЊРЅРёС‡РЅРѕРµ РїРёСЃСЊРјРѕ Р±РµР· РЅР°Р·РЅР°С‡РµРЅРёР№">
+              <label class="switch" title="Включить понедельничное письмо без назначений">
                 <input type="checkbox" id="weeklyReminderEnabled" data-dirty-field>
                 <span></span>
               </label>
             </div>
             <div class="field-row">
               <div>
-                <label for="weeklyReminderTimeInput">Р’СЂРµРјСЏ РїСЂРѕРІРµСЂРєРё</label>
+                <label for="weeklyReminderTimeInput">Время проверки</label>
                 <input id="weeklyReminderTimeInput" type="time" value="09:00" data-dirty-field>
               </div>
               <div>
-                <label>Р”РµРЅСЊ РїСЂРѕРІРµСЂРєРё</label>
-                <input value="РџРѕРЅРµРґРµР»СЊРЅРёРє" disabled>
+                <label>День проверки</label>
+                <input value="Понедельник" disabled>
               </div>
             </div>
             <div>
-              <label for="weeklyReminderRecipientsInput">РџРѕР»СѓС‡Р°С‚РµР»Рё</label>
+              <label for="weeklyReminderRecipientsInput">Получатели</label>
               <textarea id="weeklyReminderRecipientsInput" data-dirty-field placeholder="one.mail@sberbank.ru&#10;second.mail@sberbank.ru"></textarea>
               <p class="muted" id="weeklyReminderFallbackHint" style="margin-top:8px;"></p>
             </div>
@@ -742,26 +742,26 @@
           <section class="feature-card green" id="mail-weekly-card">
             <div class="feature-head">
               <div class="feature-title">
-                <strong>РџСЂРµРґРІР°СЂРёС‚РµР»СЊРЅС‹Р№ СЃРїРёСЃРѕРє СЂРµР»РёР·РѕРІ РЅР° РЅРµРґРµР»СЋ</strong>
-                <span class="muted">РћР±С‰Р°СЏ СЃРІРѕРґРєР° РїРѕ СЂРµР»РёР·Р°Рј С‚РµРєСѓС‰РµР№ РЅРµРґРµР»Рё. РћС‚РїСЂР°РІР»СЏРµС‚СЃСЏ РїРѕ РїРѕРЅРµРґРµР»СЊРЅРёРєР°Рј.</span>
+                <strong>Предварительный список релизов на неделю</strong>
+                <span class="muted">Общая сводка по релизам текущей недели. Отправляется по понедельникам.</span>
               </div>
-              <label class="switch" title="Р’РєР»СЋС‡РёС‚СЊ РЅРµРґРµР»СЊРЅСѓСЋ СЃРІРѕРґРєСѓ">
+              <label class="switch" title="Включить недельную сводку">
                 <input type="checkbox" id="weeklyEnabled" data-dirty-field>
                 <span></span>
               </label>
             </div>
             <div class="field-row">
               <div>
-                <label for="weeklyTimeInput">Р’СЂРµРјСЏ РѕС‚РїСЂР°РІРєРё</label>
+                <label for="weeklyTimeInput">Время отправки</label>
                 <input id="weeklyTimeInput" type="time" value="16:00" data-dirty-field>
               </div>
               <div>
-                <label>Р”РµРЅСЊ РѕС‚РїСЂР°РІРєРё</label>
-                <input value="РџРѕРЅРµРґРµР»СЊРЅРёРє" disabled>
+                <label>День отправки</label>
+                <input value="Понедельник" disabled>
               </div>
             </div>
             <div>
-              <label for="weeklyRecipientsInput">РџРѕР»СѓС‡Р°С‚РµР»Рё</label>
+              <label for="weeklyRecipientsInput">Получатели</label>
               <textarea id="weeklyRecipientsInput" data-dirty-field placeholder="one.mail@sberbank.ru&#10;second.mail@sberbank.ru"></textarea>
               <p class="muted" id="weeklyFallbackHint" style="margin-top:8px;"></p>
             </div>
@@ -770,35 +770,35 @@
           <section class="feature-card purple" id="mail-personal-card">
             <div class="feature-head">
               <div class="feature-title">
-                <strong>Р›РёС‡РЅС‹Рµ РїРёСЃСЊРјР° РѕС‚РІРµС‚СЃС‚РІРµРЅРЅС‹Рј</strong>
-                <span class="muted">РЈРІРµРґРѕРјР»РµРЅРёСЏ СЃРѕС‚СЂСѓРґРЅРёРєР°Рј Рѕ РЅР°Р·РЅР°С‡РµРЅРёРё Р°РєС‚СѓР°Р»СЊРЅС‹Рј РѕС‚РІРµС‚СЃС‚РІРµРЅРЅС‹Рј РїРѕ СЂРµР»РёР·Сѓ.</span>
+                <strong>Личные письма ответственным</strong>
+                <span class="muted">Уведомления сотрудникам о назначении актуальным ответственным по релизу.</span>
               </div>
-              <label class="switch" title="Р’РєР»СЋС‡РёС‚СЊ Р»РёС‡РЅС‹Рµ РїРёСЃСЊРјР°">
+              <label class="switch" title="Включить личные письма">
                 <input type="checkbox" id="responsibleEnabled" data-dirty-field>
                 <span></span>
               </label>
             </div>
             <div class="field-row">
               <div>
-                <label for="assignmentDelayInput">Р—Р°РґРµСЂР¶РєР° РїРѕСЃР»Рµ РЅР°Р·РЅР°С‡РµРЅРёСЏ, РјРёРЅ</label>
+                <label for="assignmentDelayInput">Задержка после назначения, мин</label>
                 <input id="assignmentDelayInput" type="number" min="0" step="1" value="6" data-dirty-field>
               </div>
               <div>
-                <label for="sendIntervalInput">РџР°СѓР·Р° РјРµР¶РґСѓ РїРёСЃСЊРјР°РјРё, СЃРµРє</label>
+                <label for="sendIntervalInput">Пауза между письмами, сек</label>
                 <input id="sendIntervalInput" type="number" min="0" step="1" value="5" data-dirty-field>
               </div>
             </div>
             <div class="grid-2">
               <div>
-                <div class="summary-label">РђРєС‚РёРІРЅС‹С… СЃРѕС‚СЂСѓРґРЅРёРєРѕРІ</div>
+                <div class="summary-label">Активных сотрудников</div>
                 <div class="summary-value" id="personalActiveEmployees">0</div>
               </div>
               <div>
-                <div class="summary-label">РџРѕР»СѓС‡Р°С‚РµР»РµР№ email</div>
+                <div class="summary-label">Получателей email</div>
                 <div class="summary-value" id="personalEmailCount">0</div>
               </div>
             </div>
-            <button type="button" class="ghost" data-open-tab="employees">РћС‚РєСЂС‹С‚СЊ СЃРѕС‚СЂСѓРґРЅРёРєРѕРІ</button>
+            <button type="button" class="ghost" data-open-tab="employees">Открыть сотрудников</button>
           </section>
         </div>
       </section>
@@ -806,33 +806,33 @@
       <section class="panel" data-panel="employees">
         <section class="card">
           <div class="card-header">
-            <h2>РЎРѕС‚СЂСѓРґРЅРёРєРё Рё email</h2>
-            <p class="muted">РћС‚РєР»СЋС‡РµРЅРЅС‹Р№ СЃРѕС‚СЂСѓРґРЅРёРє РѕСЃС‚Р°РµС‚СЃСЏ РІ СЃРїСЂР°РІРѕС‡РЅРёРєРµ, РЅРѕ РїРµСЂСЃРѕРЅР°Р»СЊРЅС‹Рµ РїРёСЃСЊРјР° РµРјСѓ РЅРµ РѕС‚РїСЂР°РІР»СЏСЋС‚СЃСЏ.</p>
+            <h2>Сотрудники и email</h2>
+            <p class="muted">Отключенный сотрудник остается в справочнике, но персональные письма ему не отправляются.</p>
           </div>
           <div class="card-body">
             <div class="table-toolbar">
-              <input id="employeeSearch" type="search" placeholder="РџРѕРёСЃРє РїРѕ Р¤РРћ РёР»Рё email">
+              <input id="employeeSearch" type="search" placeholder="Поиск по ФИО или email">
               <div class="filter-tabs" id="employeeFilters">
-                <button type="button" class="active" data-employee-filter="all">Р’СЃРµ</button>
-                <button type="button" data-employee-filter="enabled">Р’РєР»СЋС‡РµРЅРЅС‹Рµ</button>
-                <button type="button" data-employee-filter="disabled">Р’С‹РєР»СЋС‡РµРЅРЅС‹Рµ</button>
-                <button type="button" data-employee-filter="without_email">Р‘РµР· email</button>
-                <button type="button" class="primary" id="addEmployeeBtn">Р”РѕР±Р°РІРёС‚СЊ СЃРѕС‚СЂСѓРґРЅРёРєР°</button>
+                <button type="button" class="active" data-employee-filter="all">Все</button>
+                <button type="button" data-employee-filter="enabled">Включенные</button>
+                <button type="button" data-employee-filter="disabled">Выключенные</button>
+                <button type="button" data-employee-filter="without_email">Без email</button>
+                <button type="button" class="primary" id="addEmployeeBtn">Добавить сотрудника</button>
               </div>
             </div>
             <table>
               <thead>
                 <tr>
-                  <th class="check-cell">Р’РєР».</th>
-                  <th>Р¤РРћ</th>
+                  <th class="check-cell">Вкл.</th>
+                  <th>ФИО</th>
                   <th class="count-cell">Email</th>
-                  <th>Email-Р°РґСЂРµСЃР°</th>
-                  <th class="action-cell">Р”РµР№СЃС‚РІРёСЏ</th>
+                  <th>Email-адреса</th>
+                  <th class="action-cell">Действия</th>
                 </tr>
               </thead>
               <tbody id="employeeRows"></tbody>
             </table>
-            <div id="employeeEmpty" class="empty-state hidden">РЎРѕС‚СЂСѓРґРЅРёРєРё РїРѕ С‚РµРєСѓС‰РµРјСѓ С„РёР»СЊС‚СЂСѓ РЅРµ РЅР°Р№РґРµРЅС‹.</div>
+            <div id="employeeEmpty" class="empty-state hidden">Сотрудники по текущему фильтру не найдены.</div>
           </div>
         </section>
       </section>
@@ -840,32 +840,32 @@
       <section class="panel" data-panel="prefixes">
         <section class="card">
           <div class="card-header">
-            <h2>РџСЂРµС„РёРєСЃС‹ СЂРµР»РёР·РѕРІ</h2>
-            <p class="muted">Р’РєР»СЋС‡РµРЅРЅС‹Рµ prefix-Рё СѓС‡Р°СЃС‚РІСѓСЋС‚ РІ РїРѕРёСЃРєРµ СЂРµР»РёР·РѕРІ. РћС‚РєР»СЋС‡РµРЅРЅС‹Р№ prefix РѕСЃС‚Р°РµС‚СЃСЏ РІ СЃРїРёСЃРєРµ, РЅРѕ РІСЂРµРјРµРЅРЅРѕ РЅРµ РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ.</p>
+            <h2>Префиксы релизов</h2>
+            <p class="muted">Включенные prefix-и участвуют в поиске релизов. Отключенный prefix остается в списке, но временно не используется.</p>
           </div>
           <div class="card-body">
             <div class="table-toolbar">
-              <input id="prefixSearch" type="search" placeholder="РџРѕРёСЃРє РїРѕ prefix, СЃРёСЃС‚РµРјРµ РёР»Рё Jira-РґРѕРјРµРЅСѓ">
+              <input id="prefixSearch" type="search" placeholder="Поиск по prefix, системе или Jira-домену">
               <div class="filter-tabs" id="prefixFilters">
-                <button type="button" class="active" data-prefix-filter="all">Р’СЃРµ</button>
-                <button type="button" data-prefix-filter="enabled">Р’РєР»СЋС‡РµРЅРЅС‹Рµ</button>
-                <button type="button" data-prefix-filter="disabled">Р’С‹РєР»СЋС‡РµРЅРЅС‹Рµ</button>
-                <button type="button" class="primary" id="addPrefixBtn">Р”РѕР±Р°РІРёС‚СЊ prefix</button>
+                <button type="button" class="active" data-prefix-filter="all">Все</button>
+                <button type="button" data-prefix-filter="enabled">Включенные</button>
+                <button type="button" data-prefix-filter="disabled">Выключенные</button>
+                <button type="button" class="primary" id="addPrefixBtn">Добавить prefix</button>
               </div>
             </div>
             <table>
               <thead>
                 <tr>
-                  <th class="check-cell">Р’РєР».</th>
+                  <th class="check-cell">Вкл.</th>
                   <th class="prefix-cell">Prefix</th>
-                  <th class="domain-cell">Jira-РґРѕРјРµРЅ</th>
-                  <th>РЎРёСЃС‚РµРјР°</th>
-                  <th class="action-cell">Р”РµР№СЃС‚РІРёСЏ</th>
+                  <th class="domain-cell">Jira-домен</th>
+                  <th>Система</th>
+                  <th class="action-cell">Действия</th>
                 </tr>
               </thead>
               <tbody id="prefixRows"></tbody>
             </table>
-            <div id="prefixEmpty" class="empty-state hidden">Prefix-Рё РїРѕ С‚РµРєСѓС‰РµРјСѓ С„РёР»СЊС‚СЂСѓ РЅРµ РЅР°Р№РґРµРЅС‹.</div>
+            <div id="prefixEmpty" class="empty-state hidden">Prefix-и по текущему фильтру не найдены.</div>
           </div>
         </section>
       </section>
@@ -873,35 +873,35 @@
       <section class="panel" data-panel="automation">
         <section class="card">
           <div class="card-header">
-            <h2>РђРІС‚РѕРјР°С‚РёР·Р°С†РёСЏ</h2>
-            <p class="muted">РћР±Р·РѕСЂ СЂР°СЃРїРёСЃР°РЅРёР№ Рё Р°РЅС‚РёСЃРїР°Рј-РЅР°СЃС‚СЂРѕРµРє. Р РµРґР°РєС‚РёСЂРѕРІР°РЅРёРµ РІС‹РїРѕР»РЅСЏРµС‚СЃСЏ РІ РєР°СЂС‚РѕС‡РєР°С… РїРѕС‡С‚РѕРІС‹С… СѓРІРµРґРѕРјР»РµРЅРёР№.</p>
+            <h2>Автоматизация</h2>
+            <p class="muted">Обзор расписаний и антиспам-настроек. Редактирование выполняется в карточках почтовых уведомлений.</p>
           </div>
           <div class="card-body">
             <div class="grid-3">
               <div class="zone-card">
-                <h3>РџСЂРµРґРІР°СЂРёС‚РµР»СЊРЅС‹Р№ СЃРїРёСЃРѕРє</h3>
+                <h3>Предварительный список</h3>
                 <p class="muted" id="automationWeeklyText">-</p>
-                <button type="button" class="ghost" data-open-tab="mail" data-focus-card="mail-weekly-card">Р РµРґР°РєС‚РёСЂРѕРІР°С‚СЊ РІ РїРѕС‡С‚Рµ</button>
+                <button type="button" class="ghost" data-open-tab="mail" data-focus-card="mail-weekly-card">Редактировать в почте</button>
               </div>
               <div class="zone-card">
-                <h3>РџРѕРЅРµРґРµР»СЊРЅРёРє Р±РµР· РЅР°Р·РЅР°С‡РµРЅРёР№</h3>
+                <h3>Понедельник без назначений</h3>
                 <p class="muted" id="automationReminderText">-</p>
-                <button type="button" class="ghost" data-open-tab="mail" data-focus-card="mail-unassigned-weekly-card">Р РµРґР°РєС‚РёСЂРѕРІР°С‚СЊ РІ РїРѕС‡С‚Рµ</button>
+                <button type="button" class="ghost" data-open-tab="mail" data-focus-card="mail-unassigned-weekly-card">Редактировать в почте</button>
               </div>
               <div class="zone-card">
-                <h3>Р›РёС‡РЅС‹Рµ РїРёСЃСЊРјР°</h3>
+                <h3>Личные письма</h3>
                 <p class="muted" id="automationPersonalText">-</p>
-                <button type="button" class="ghost" data-open-tab="mail" data-focus-card="mail-personal-card">Р РµРґР°РєС‚РёСЂРѕРІР°С‚СЊ РІ РїРѕС‡С‚Рµ</button>
+                <button type="button" class="ghost" data-open-tab="mail" data-focus-card="mail-personal-card">Редактировать в почте</button>
               </div>
               <div class="zone-card">
-                <h3>Email в†’ SberTrack / Jira</h3>
+                <h3>Email → SberTrack / Jira</h3>
                 <p class="muted" id="automationSberTrackText">-</p>
-                <button type="button" class="ghost" data-open-tab="sbertrack">РћС‚РєСЂС‹С‚СЊ РЅР°СЃС‚СЂРѕР№РєРё</button>
+                <button type="button" class="ghost" data-open-tab="sbertrack">Открыть настройки</button>
               </div>
               <div class="zone-card">
-                <h3>Р—Р°С‰РёС‚Р° РѕС‚ СЃРїР°РјР°</h3>
-                <p class="muted">Р—Р°РґРµСЂР¶РєР° Рё РїР°СѓР·Р° РїСЂРёРјРµРЅСЏСЋС‚СЃСЏ С‚РѕР»СЊРєРѕ Рє РїРµСЂСЃРѕРЅР°Р»СЊРЅС‹Рј РїРёСЃСЊРјР°Рј РѕС‚РІРµС‚СЃС‚РІРµРЅРЅС‹Рј.</p>
-                <span class="badge blue">Р‘РµР· РґСѓР±Р»РµР№ РЅР°СЃС‚СЂРѕРµРє</span>
+                <h3>Защита от спама</h3>
+                <p class="muted">Задержка и пауза применяются только к персональным письмам ответственным.</p>
+                <span class="badge blue">Без дублей настроек</span>
               </div>
             </div>
           </div>
@@ -912,94 +912,94 @@
         <div class="grid-2">
           <section class="card">
             <div class="card-header">
-            <h2>Email в†’ SberTrack / Jira</h2>
-              <p class="muted">Р§С‚РµРЅРёРµ РІС…РѕРґСЏС‰РµР№ РїРѕС‡С‚С‹ С‚РµС…СѓС‡РµС‚РєРё Рё СЃРѕР·РґР°РЅРёРµ Р·Р°РґР°С‡ РІ SberTrack РїРѕ РєР»СЋС‡РµРІС‹Рј СЃР»РѕРІР°Рј РІ С‚РµРјРµ РїРёСЃСЊРјР°.</p>
+            <h2>Email → SberTrack / Jira</h2>
+              <p class="muted">Чтение входящей почты техучетки и создание задач в SberTrack по ключевым словам в теме письма.</p>
             </div>
             <div class="card-body stack">
               <div class="grid-2">
                 <label class="switch-line">
                   <span class="switch"><input type="checkbox" id="sbertrackEnabled" data-dirty-field><span></span></span>
-                  <span>Р’РєР»СЋС‡РёС‚СЊ СЃРµСЂРІРёСЃ</span>
+                  <span>Включить сервис</span>
                 </label>
                 <label class="switch-line">
                   <span class="switch"><input type="checkbox" id="sbertrackDryRun" data-dirty-field><span></span></span>
-                  <span>Dry-run: Р·Р°РґР°С‡Рё РЅРµ СЃРѕР·РґР°СЋС‚СЃСЏ</span>
+                  <span>Dry-run: задачи не создаются</span>
                 </label>
               </div>
               <div class="field-row">
                 <div>
-                  <label for="sbertrackPollIntervalInput">РРЅС‚РµСЂРІР°Р» РїСЂРѕРІРµСЂРєРё, СЃРµРє</label>
+                  <label for="sbertrackPollIntervalInput">Интервал проверки, сек</label>
                   <input id="sbertrackPollIntervalInput" type="number" min="1" step="1" value="300" data-dirty-field>
                 </div>
                 <div>
-                  <label for="sbertrackLookbackInput">РќРѕРІС‹С… РїРёСЃРµРј Р·Р° С†РёРєР»</label>
+                  <label for="sbertrackLookbackInput">Новых писем за цикл</label>
                   <input id="sbertrackLookbackInput" type="number" min="1" step="1" value="20" data-dirty-field>
                 </div>
               </div>
               <div class="field-row">
                 <div>
-                  <label for="sbertrackPendingInput">Pending retry Р·Р° С†РёРєР»</label>
+                  <label for="sbertrackPendingInput">Pending retry за цикл</label>
                   <input id="sbertrackPendingInput" type="number" min="1" step="1" value="10" data-dirty-field>
                 </div>
                 <div>
-                  <label for="sbertrackBodyLimitInput">Р›РёРјРёС‚ С‚РµРєСЃС‚Р° РїРёСЃСЊРјР°, СЃРёРјРІРѕР»РѕРІ</label>
+                  <label for="sbertrackBodyLimitInput">Лимит текста письма, символов</label>
                   <input id="sbertrackBodyLimitInput" type="number" min="1000" step="100" value="6000" data-dirty-field>
                 </div>
               </div>
               <div>
-                <label for="sbertrackTechnicalMailboxesInput">РўРµС…РЅРёС‡РµСЃРєРёРµ СЏС‰РёРєРё Рё Р°Р»РёР°СЃС‹</label>
+                <label for="sbertrackTechnicalMailboxesInput">Технические ящики и алиасы</label>
                 <textarea id="sbertrackTechnicalMailboxesInput" data-dirty-field placeholder="SA-S00000013655@sberbank.ru&#10;alias@sberbank.ru"></textarea>
-                <p class="muted" style="margin-top:8px;">Р­С‚Рё Р°РґСЂРµСЃР° РёРіРЅРѕСЂРёСЂСѓСЋС‚СЃСЏ РїСЂРё РІС‹Р±РѕСЂРµ РёСЃРїРѕР»РЅРёС‚РµР»СЏ РёР· РїРѕР»СЏ вЂњРљРѕРјСѓвЂќ.</p>
+                <p class="muted" style="margin-top:8px;">Эти адреса игнорируются при выборе исполнителя из поля “Кому”.</p>
               </div>
-              <div class="status" id="sbertrackRuntimeStatus">РЎС‚Р°С‚СѓСЃ Р±СѓРґРµС‚ РїРѕРєР°Р·Р°РЅ РїРѕСЃР»Рµ Р·Р°РіСЂСѓР·РєРё SUP-РїР°СЂР°РјРµС‚СЂРѕРІ.</div>
+              <div class="status" id="sbertrackRuntimeStatus">Статус будет показан после загрузки SUP-параметров.</div>
             </div>
           </section>
 
           <section class="card">
             <div class="card-header">
-              <h2>РџСЂР°РІРёР»Р° РјР°СЂС€СЂСѓС‚РёР·Р°С†РёРё</h2>
-              <p class="muted">РћРґРЅРѕ РїРёСЃСЊРјРѕ РјРѕР¶РµС‚ СЃРѕР·РґР°С‚СЊ Р·Р°РґР°С‡Рё РІ РЅРµСЃРєРѕР»СЊРєРёС… РїСЂРѕСЃС‚СЂР°РЅСЃС‚РІР°С…. РўСЂРёРіРіРµСЂС‹ РёС‰СѓС‚СЃСЏ С‚РѕР»СЊРєРѕ РІ С‚РµРјРµ.</p>
+              <h2>Правила маршрутизации</h2>
+              <p class="muted">Одно письмо может создать задачи в нескольких пространствах. Триггеры ищутся только в теме.</p>
             </div>
             <div class="card-body stack">
-              <button type="button" class="primary" id="addSbertrackRouteBtn">Р”РѕР±Р°РІРёС‚СЊ РїСЂР°РІРёР»Рѕ</button>
+              <button type="button" class="primary" id="addSbertrackRouteBtn">Добавить правило</button>
               <table>
                 <thead>
                   <tr>
-                    <th class="check-cell">Р’РєР».</th>
-                    <th>РџСЂР°РІРёР»Рѕ</th>
-                    <th>РўСЂРёРіРіРµСЂС‹</th>
-                    <th>РЎРёСЃС‚РµРјР° / РЅР°Р·РЅР°С‡РµРЅРёСЏ</th>
-                    <th>РџР°СЂР°РјРµС‚СЂС‹ Р·Р°РґР°С‡Рё</th>
-                    <th class="action-cell">Р”РµР№СЃС‚РІРёСЏ</th>
+                    <th class="check-cell">Вкл.</th>
+                    <th>Правило</th>
+                    <th>Триггеры</th>
+                    <th>Система / назначения</th>
+                    <th>Параметры задачи</th>
+                    <th class="action-cell">Действия</th>
                   </tr>
                 </thead>
                 <tbody id="sbertrackRouteRows"></tbody>
               </table>
-              <div id="sbertrackRouteEmpty" class="empty-state hidden">РџСЂР°РІРёР»Р° РЅРµ РґРѕР±Р°РІР»РµРЅС‹.</div>
+              <div id="sbertrackRouteEmpty" class="empty-state hidden">Правила не добавлены.</div>
             </div>
           </section>
         </div>
 
         <section class="card" style="margin-top:16px;">
           <div class="card-header">
-            <h2>РџРѕР»СЊР·РѕРІР°С‚РµР»Рё SberTrack</h2>
-            <p class="muted">РЎРїСЂР°РІРѕС‡РЅРёРє РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ С‚РѕР»СЊРєРѕ РґР»СЏ РЅР°РґРµР¶РЅРѕРіРѕ РЅР°Р·РЅР°С‡РµРЅРёСЏ РёСЃРїРѕР»РЅРёС‚РµР»СЏ РїРѕ РµРґРёРЅСЃС‚РІРµРЅРЅРѕРјСѓ СЃРѕС‚СЂСѓРґРЅРёРєСѓ РІ РїРѕР»Рµ вЂњРљРѕРјСѓвЂќ.</p>
+            <h2>Пользователи SberTrack</h2>
+            <p class="muted">Справочник используется только для надежного назначения исполнителя по единственному сотруднику в поле “Кому”.</p>
           </div>
           <div class="card-body stack">
-            <button type="button" class="primary" id="addSbertrackUserBtn">Р”РѕР±Р°РІРёС‚СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ</button>
+            <button type="button" class="primary" id="addSbertrackUserBtn">Добавить пользователя</button>
             <table>
               <thead>
                 <tr>
-                  <th class="check-cell">Р’РєР».</th>
+                  <th class="check-cell">Вкл.</th>
                   <th>Email</th>
-                  <th>Р¤РРћ</th>
+                  <th>ФИО</th>
                   <th>SberTrack user id</th>
-                  <th class="action-cell">Р”РµР№СЃС‚РІРёСЏ</th>
+                  <th class="action-cell">Действия</th>
                 </tr>
               </thead>
               <tbody id="sbertrackUserRows"></tbody>
             </table>
-            <div id="sbertrackUserEmpty" class="empty-state hidden">РџРѕР»СЊР·РѕРІР°С‚РµР»Рё SberTrack РЅРµ РґРѕР±Р°РІР»РµРЅС‹.</div>
+            <div id="sbertrackUserEmpty" class="empty-state hidden">Пользователи SberTrack не добавлены.</div>
           </div>
         </section>
       </section>
@@ -1008,48 +1008,48 @@
         <div class="grid-2">
           <section class="card">
             <div class="card-header">
-              <h2>Р”РёР°РіРЅРѕСЃС‚РёРєР° С„Р°Р№Р»Р°</h2>
-              <p class="muted">РЎР»СѓР¶РµР±РЅР°СЏ РёРЅС„РѕСЂРјР°С†РёСЏ РґР»СЏ РїСЂРѕРІРµСЂРєРё Р»РѕРєР°Р»СЊРЅРѕРіРѕ SUP-РєРѕРЅС„РёРіР°.</p>
+              <h2>Диагностика файла</h2>
+              <p class="muted">Служебная информация для проверки локального SUP-конфига.</p>
             </div>
             <div class="card-body stack">
               <div class="file-meta">
-                <span>РџСѓС‚СЊ</span><strong id="diagPath">-</strong>
-                <span>Р¤Р°Р№Р»</span><strong id="diagFileName">-</strong>
-                <span>РР·РјРµРЅРµРЅ</span><strong id="diagMtime">-</strong>
-                <span>РҐРµС€</span><strong id="diagHash">-</strong>
-                <span>Backup-С„Р°Р№Р»РѕРІ</span><strong id="diagBackupCount">0</strong>
-                <span>РћС€РёР±РєР° С‡С‚РµРЅРёСЏ</span><strong id="diagReadError">-</strong>
+                <span>Путь</span><strong id="diagPath">-</strong>
+                <span>Файл</span><strong id="diagFileName">-</strong>
+                <span>Изменен</span><strong id="diagMtime">-</strong>
+                <span>Хеш</span><strong id="diagHash">-</strong>
+                <span>Backup-файлов</span><strong id="diagBackupCount">0</strong>
+                <span>Ошибка чтения</span><strong id="diagReadError">-</strong>
               </div>
-              <p class="muted">`feature_flags.json` СЏРІР»СЏРµС‚СЃСЏ Р»РѕРєР°Р»СЊРЅС‹Рј SUP-РєРѕРЅС„РёРіРѕРј РїСЂРёР»РѕР¶РµРЅРёСЏ Рё РЅРµ РєРѕРјРјРёС‚РёС‚СЃСЏ РІ СЂРµРїРѕР·РёС‚РѕСЂРёР№.</p>
+              <p class="muted">`feature_flags.json` является локальным SUP-конфигом приложения и не коммитится в репозиторий.</p>
             </div>
           </section>
           <section class="card">
             <div class="card-header">
               <h2>Raw JSON preview</h2>
-              <p class="muted">РўРѕР»СЊРєРѕ РїСЂРѕСЃРјРѕС‚СЂ С‚РµРєСѓС‰РµРіРѕ С„Р°Р№Р»Р°. Р СѓС‡РЅРѕРµ СЂРµРґР°РєС‚РёСЂРѕРІР°РЅРёРµ JSON РІ v1 РЅРµ РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ.</p>
+              <p class="muted">Только просмотр текущего файла. Ручное редактирование JSON в v1 не используется.</p>
             </div>
             <div class="card-body">
               <details class="diagnostics">
-                <summary>РџРѕРєР°Р·Р°С‚СЊ JSON</summary>
+                <summary>Показать JSON</summary>
                 <pre id="rawJsonPreview"></pre>
               </details>
             </div>
           </section>
           <section class="card">
             <div class="card-header">
-            <h2>Email в†’ SberTrack / Jira</h2>
-              <p class="muted">РЎР»СѓР¶РµР±РЅС‹Р№ СЃС‚Р°С‚СѓСЃ С‡С‚РµРЅРёСЏ РїРѕС‡С‚С‹ Рё СЃРѕР·РґР°РЅРёСЏ Р·Р°РґР°С‡. РЎРµРєСЂРµС‚С‹ Р·РґРµСЃСЊ РЅРµ РѕС‚РѕР±СЂР°Р¶Р°СЋС‚СЃСЏ.</p>
+            <h2>Email → SberTrack / Jira</h2>
+              <p class="muted">Служебный статус чтения почты и создания задач. Секреты здесь не отображаются.</p>
             </div>
             <div class="card-body">
               <div class="file-meta">
-                <span>Р РµР¶РёРј</span><strong id="diagSbertrackMode">-</strong>
-                <span>РџРѕСЃР»РµРґРЅСЏСЏ РїСЂРѕРІРµСЂРєР°</span><strong id="diagSbertrackCheckedAt">-</strong>
-                <span>РџРѕСЃР»РµРґРЅРёР№ UID</span><strong id="diagSbertrackUid">0</strong>
+                <span>Режим</span><strong id="diagSbertrackMode">-</strong>
+                <span>Последняя проверка</span><strong id="diagSbertrackCheckedAt">-</strong>
+                <span>Последний UID</span><strong id="diagSbertrackUid">0</strong>
                 <span>Pending</span><strong id="diagSbertrackPending">0</strong>
                 <span>Dry-run matches</span><strong id="diagSbertrackDryRun">0</strong>
-                <span>РЎРѕР·РґР°РЅРѕ Р·Р°РґР°С‡</span><strong id="diagSbertrackCreated">0</strong>
-                <span>РџРѕСЃР»РµРґРЅРёР№ СЂРµР·СѓР»СЊС‚Р°С‚</span><strong id="diagSbertrackResult">-</strong>
-                <span>РћС€РёР±РєР°</span><strong id="diagSbertrackError">-</strong>
+                <span>Создано задач</span><strong id="diagSbertrackCreated">0</strong>
+                <span>Последний результат</span><strong id="diagSbertrackResult">-</strong>
+                <span>Ошибка</span><strong id="diagSbertrackError">-</strong>
               </div>
             </div>
           </section>
@@ -1061,28 +1061,28 @@
   <div id="modalBackdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true">
     <section class="modal-card">
       <div class="modal-head">
-        <h2 id="modalTitle">Р РµРґР°РєС‚РёСЂРѕРІР°РЅРёРµ</h2>
-        <button type="button" class="icon-btn ghost" id="modalCloseBtn" aria-label="Р—Р°РєСЂС‹С‚СЊ">X</button>
+        <h2 id="modalTitle">Редактирование</h2>
+        <button type="button" class="icon-btn ghost" id="modalCloseBtn" aria-label="Закрыть">X</button>
       </div>
       <div class="modal-body">
         <div id="employeeForm" class="stack hidden">
           <label class="switch-line">
             <span class="switch"><input type="checkbox" id="modalEmployeeEnabled"><span></span></span>
-            <span>РЎРѕС‚СЂСѓРґРЅРёРє РІРєР»СЋС‡РµРЅ</span>
+            <span>Сотрудник включен</span>
           </label>
           <div>
-            <label for="modalEmployeeName">Р¤РРћ</label>
-            <input id="modalEmployeeName" placeholder="Р¤РёСЃР°РЅ Рљ.Р®.">
+            <label for="modalEmployeeName">ФИО</label>
+            <input id="modalEmployeeName" placeholder="Фисан К.Ю.">
           </div>
           <div>
-            <label for="modalEmployeeEmails">Email-Р°РґСЂРµСЃР°</label>
+            <label for="modalEmployeeEmails">Email-адреса</label>
             <textarea id="modalEmployeeEmails" placeholder="first@sberbank.ru&#10;second@sber.ru"></textarea>
           </div>
         </div>
         <div id="prefixForm" class="stack hidden">
           <label class="switch-line">
             <span class="switch"><input type="checkbox" id="modalPrefixEnabled"><span></span></span>
-            <span>Prefix РІРєР»СЋС‡РµРЅ</span>
+            <span>Prefix включен</span>
           </label>
           <div class="field-row">
             <div>
@@ -1090,27 +1090,27 @@
               <input id="modalPrefixCode" placeholder="SMECLM">
             </div>
             <div>
-              <label for="modalPrefixDomain">Jira-РґРѕРјРµРЅ</label>
+              <label for="modalPrefixDomain">Jira-домен</label>
               <select id="modalPrefixDomain"></select>
             </div>
           </div>
           <div>
-            <label for="modalPrefixSystem">РЎРёСЃС‚РµРјР°</label>
-            <input id="modalPrefixSystem" list="systemOptions" placeholder="CLM / EMRM / РђРРЎРў / AI-РђРіРµРЅС‚С‹">
+            <label for="modalPrefixSystem">Система</label>
+            <input id="modalPrefixSystem" list="systemOptions" placeholder="CLM / EMRM / АИСТ / AI-Агенты">
             <datalist id="systemOptions"></datalist>
           </div>
         </div>
       </div>
       <div class="modal-actions">
-        <button type="button" class="ghost" id="modalCancelBtn">РћС‚РјРµРЅР°</button>
-        <button type="button" class="primary" id="modalSaveBtn">РџСЂРёРјРµРЅРёС‚СЊ</button>
+        <button type="button" class="ghost" id="modalCancelBtn">Отмена</button>
+        <button type="button" class="primary" id="modalSaveBtn">Применить</button>
       </div>
     </section>
   </div>
 
   <script>
     const TOKEN_KEY = "supAdminToken";
-    /* Р‘Р°Р·РѕРІС‹Р№ РїСѓС‚СЊ РґР»СЏ API-Р·Р°РїСЂРѕСЃРѕРІ: Р»РѕРєР°Р»СЊРЅРѕ вЂ” Р±РµР· РїСЂРµС„РёРєСЃР°, РЅР° СЃС‚РµРЅРґРµ вЂ” /releases */
+    /* Базовый путь для API-запросов: локально — без префикса, на стенде — /releases */
     const BASE_PATH = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '' : '/releases';
     const state = {
       revision: "",
@@ -1128,16 +1128,16 @@
     };
 
     const maintenanceLabels = {
-      index: "Р“Р»Р°РІРЅР°СЏ СЃС‚СЂР°РЅРёС†Р°",
-      release_monitor: "Р‘Р»РѕРє СЂРµР»РёР·РѕРІ",
-      duty_dashboard: "Р Р°Р±РѕС‡РёР№ СЃС‚РѕР» РґРµР¶СѓСЂРЅРѕРіРѕ",
-      chatbot: "Р§Р°С‚-Р±РѕС‚"
+      index: "Главная страница",
+      release_monitor: "Блок релизов",
+      duty_dashboard: "Рабочий стол дежурного",
+      chatbot: "Чат-бот"
     };
     const maintenanceDescriptions = {
-      index: "Р—Р°РєСЂС‹РІР°РµС‚ РіР»Р°РІРЅСѓСЋ СЃС‚СЂР°РЅРёС†Сѓ РїСЂРѕРµРєС‚Р°.",
-      release_monitor: "Р—Р°РєСЂС‹РІР°РµС‚ Р‘Р»РѕРє СЂРµР»РёР·РѕРІ, Р¦РµРЅС‚СЂ РЅР°Р·РЅР°С‡РµРЅРёР№ Рё СЃРІСЏР·Р°РЅРЅС‹Рµ СЌРєСЂР°РЅС‹.",
-      duty_dashboard: "Р—Р°РєСЂС‹РІР°РµС‚ СЂР°Р±РѕС‡РёР№ СЃС‚РѕР» РґРµР¶СѓСЂРЅРѕРіРѕ.",
-      chatbot: "РћС‚РєР»СЋС‡Р°РµС‚ РѕР±СЂР°С‰РµРЅРёСЏ Рє С‡Р°С‚-Р±РѕС‚Сѓ РґР»СЏ РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№."
+      index: "Закрывает главную страницу проекта.",
+      release_monitor: "Закрывает Блок релизов, Центр назначений и связанные экраны.",
+      duty_dashboard: "Закрывает рабочий стол дежурного.",
+      chatbot: "Отключает обращения к чат-боту для пользователей."
     };
     const maintenanceCodes = {
       index: "MAIN",
@@ -1308,7 +1308,7 @@
       state.dirty = true;
       $("saveBtn").disabled = false;
       $("resetBtn").disabled = false;
-      $("fileStateBadge").textContent = "РµСЃС‚СЊ РёР·РјРµРЅРµРЅРёСЏ";
+      $("fileStateBadge").textContent = "есть изменения";
       $("fileStateBadge").className = "badge yellow";
       refreshDerived();
     }
@@ -1336,7 +1336,7 @@
       $("diagBackupCount").textContent = String(state.metadata.backup_count ?? 0);
       $("diagReadError").textContent = state.readError || "-";
       renderSberTrackRuntimeStatus(state.metadata.email_to_sbertrack_status || {});
-      $("fileStateBadge").textContent = state.readError ? "РѕС€РёР±РєР° С‡С‚РµРЅРёСЏ" : "С„Р°Р№Р» РєРѕСЂСЂРµРєС‚РµРЅ";
+      $("fileStateBadge").textContent = state.readError ? "ошибка чтения" : "файл корректен";
       $("fileStateBadge").className = state.readError ? "badge red" : "badge green";
     }
 
@@ -1351,7 +1351,7 @@
               <span class="muted" style="display:block;margin-top:3px;">${maintenanceDescriptions[key] || ""}</span>
             </span>
             <span style="display:flex;align-items:center;gap:10px;">
-              <span class="badge ${checked ? "yellow" : "green"}">${checked ? "Р—Р°РєСЂС‹С‚" : "РћС‚РєСЂС‹С‚"}</span>
+              <span class="badge ${checked ? "yellow" : "green"}">${checked ? "Закрыт" : "Открыт"}</span>
               <span class="switch"><input type="checkbox" data-maintenance="${key}" ${checked ? "checked" : ""}><span></span></span>
             </span>
           </label>
@@ -1377,11 +1377,11 @@
       $("assignmentDelayInput").value = responsible.assignment_email_delay_minutes ?? 6;
       $("sendIntervalInput").value = responsible.personal_email_send_interval_seconds ?? 5;
       $("weeklyFallbackHint").textContent = weeklyRecipients.length
-        ? "РСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ РѕС‚РґРµР»СЊРЅС‹Р№ СЃРїРёСЃРѕРє РїРѕР»СѓС‡Р°С‚РµР»РµР№ РЅРµРґРµР»СЊРЅРѕР№ СЃРІРѕРґРєРё."
-        : "РЎРµР№С‡Р°СЃ РїРѕРєР°Р·Р°РЅ СЃРїРёСЃРѕРє РїРёСЃРµРј вЂњР±РµР· РѕС‚РІРµС‚СЃС‚РІРµРЅРЅРѕРіРѕвЂќ; РµРіРѕ РјРѕР¶РЅРѕ РѕС‚СЂРµРґР°РєС‚РёСЂРѕРІР°С‚СЊ РѕС‚РґРµР»СЊРЅРѕ РґР»СЏ РЅРµРґРµР»СЊРЅРѕР№ СЃРІРѕРґРєРё.";
+        ? "Используется отдельный список получателей недельной сводки."
+        : "Сейчас показан список писем “без ответственного”; его можно отредактировать отдельно для недельной сводки.";
       $("weeklyReminderFallbackHint").textContent = reminderRecipients.length
-        ? "РСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ РѕС‚РґРµР»СЊРЅС‹Р№ СЃРїРёСЃРѕРє РїРѕР»СѓС‡Р°С‚РµР»РµР№ РїРѕРЅРµРґРµР»СЊРЅРёС‡РЅРѕРіРѕ РїРёСЃСЊРјР°."
-        : "РЎРµР№С‡Р°СЃ РїРѕРєР°Р·Р°РЅ РѕР±С‰РёР№ СЃРїРёСЃРѕРє РїРёСЃРµРј вЂњР±РµР· РѕС‚РІРµС‚СЃС‚РІРµРЅРЅРѕРіРѕвЂќ; РµРіРѕ РјРѕР¶РЅРѕ РѕС‚СЂРµРґР°РєС‚РёСЂРѕРІР°С‚СЊ РѕС‚РґРµР»СЊРЅРѕ РґР»СЏ РїРѕРЅРµРґРµР»СЊРЅРёРєР°.";
+        ? "Используется отдельный список получателей понедельничного письма."
+        : "Сейчас показан общий список писем “без ответственного”; его можно отредактировать отдельно для понедельника.";
     }
 
     function renderSberTrack(config) {
@@ -1472,7 +1472,7 @@
             <input data-route-team-name data-dirty-field value="${escapeAttr(route.jira_team?.name || "")}" placeholder="ForREST" style="margin-top:6px;">
           </td>
           <td class="action-cell">
-            <button type="button" class="icon-btn danger" data-remove-sbertrack-route="${index}">РЈРґР°Р».</button>
+            <button type="button" class="icon-btn danger" data-remove-sbertrack-route="${index}">Удал.</button>
           </td>
         </tr>
       `;
@@ -1508,10 +1508,10 @@
         <tr data-sbertrack-user-row="${index}">
           <td><input type="checkbox" data-user-enabled data-dirty-field ${user.enabled === false ? "" : "checked"}></td>
           <td><input data-user-email data-dirty-field value="${escapeAttr(user.email || "")}" placeholder="ivanov.ii@sberbank.ru"></td>
-          <td><input data-user-name data-dirty-field value="${escapeAttr(user.name || "")}" placeholder="РРІР°РЅРѕРІ Р.Р."></td>
+          <td><input data-user-name data-dirty-field value="${escapeAttr(user.name || "")}" placeholder="Иванов И.И."></td>
           <td><input data-user-id data-dirty-field value="${escapeAttr(user.sbertrack_user_id || "")}" placeholder="12345678"></td>
           <td class="action-cell">
-            <button type="button" class="icon-btn danger" data-remove-sbertrack-user="${index}">РЈРґР°Р».</button>
+            <button type="button" class="icon-btn danger" data-remove-sbertrack-user="${index}">Удал.</button>
           </td>
         </tr>
       `).join("");
@@ -1521,12 +1521,12 @@
     function renderSberTrackRuntimeStatus(status) {
       const mode = status.mode || "disabled";
       const modeText = mode === "dry_run"
-        ? "dry-run, Р·Р°РґР°С‡Рё РЅРµ СЃРѕР·РґР°СЋС‚СЃСЏ"
+        ? "dry-run, задачи не создаются"
         : mode === "active"
-          ? "Р±РѕРµРІРѕР№ СЂРµР¶РёРј"
+          ? "боевой режим"
           : mode === "error"
-            ? "РѕС€РёР±РєР°"
-            : "РІС‹РєР»СЋС‡РµРЅРѕ";
+            ? "ошибка"
+            : "выключено";
       $("diagSbertrackMode").textContent = modeText;
       $("diagSbertrackCheckedAt").textContent = status.last_checked_at || "-";
       $("diagSbertrackUid").textContent = String(status.last_checked_uid || 0);
@@ -1536,7 +1536,7 @@
       $("diagSbertrackResult").textContent = status.last_result || "-";
       $("diagSbertrackError").textContent = status.last_error || "-";
       const statusBox = $("sbertrackRuntimeStatus");
-      statusBox.textContent = `Email в†’ SberTrack: ${modeText}. UID: ${status.last_checked_uid || 0}; pending: ${status.pending_count || 0}; dry-run matches: ${status.dry_run_match_count || 0}.`;
+      statusBox.textContent = `Email → SberTrack: ${modeText}. UID: ${status.last_checked_uid || 0}; pending: ${status.pending_count || 0}; dry-run matches: ${status.dry_run_match_count || 0}.`;
       statusBox.className = `status ${status.last_error ? "error" : mode === "active" ? "success" : ""}`.trim();
     }
 
@@ -1561,8 +1561,8 @@
           <td><span class="badge ${emails && emails.length ? "blue" : "red"}">${(emails || []).length}</span></td>
           <td><div class="chips">${emailChips(emails || [])}</div></td>
           <td class="action-cell">
-            <button type="button" class="icon-btn ghost" data-edit-employee="${index}" title="Р РµРґР°РєС‚РёСЂРѕРІР°С‚СЊ">РР·Рј.</button>
-            <button type="button" class="icon-btn danger" data-remove-employee="${index}" title="РЈРґР°Р»РёС‚СЊ">РЈРґР°Р».</button>
+            <button type="button" class="icon-btn ghost" data-edit-employee="${index}" title="Редактировать">Изм.</button>
+            <button type="button" class="icon-btn danger" data-remove-employee="${index}" title="Удалить">Удал.</button>
           </td>
         </tr>
       `).join("");
@@ -1571,7 +1571,7 @@
     }
 
     function emailChips(emails) {
-      if (!emails.length) return `<span class="chip">email РЅРµ СѓРєР°Р·Р°РЅ</span>`;
+      if (!emails.length) return `<span class="chip">email не указан</span>`;
       const visible = emails.slice(0, 2).map((email) => `<span class="chip">${escapeHtml(email)}</span>`);
       if (emails.length > 2) visible.push(`<span class="chip">+${emails.length - 2}</span>`);
       return visible.join("");
@@ -1597,8 +1597,8 @@
           <td><span class="badge blue">${escapeHtml(jira_domain || "-")}</span></td>
           <td>${escapeHtml(system || "-")}</td>
           <td class="action-cell">
-            <button type="button" class="icon-btn ghost" data-edit-prefix="${index}" title="Р РµРґР°РєС‚РёСЂРѕРІР°С‚СЊ">РР·Рј.</button>
-            <button type="button" class="icon-btn danger" data-remove-prefix="${index}" title="РЈРґР°Р»РёС‚СЊ">РЈРґР°Р».</button>
+            <button type="button" class="icon-btn ghost" data-edit-prefix="${index}" title="Редактировать">Изм.</button>
+            <button type="button" class="icon-btn danger" data-remove-prefix="${index}" title="Удалить">Удал.</button>
           </td>
         </tr>
       `).join("");
@@ -1628,22 +1628,22 @@
       const closedSections = Object.values(config.maintenance || {}).filter(Boolean).length;
       $("summaryMail").textContent = String(enabledMail);
       $("summaryEmployees").textContent = String(activeEmployees);
-      $("summaryEmployeeEmails").textContent = `${totalEmployeeEmails} email-Р°РґСЂРµСЃРѕРІ`;
+      $("summaryEmployeeEmails").textContent = `${totalEmployeeEmails} email-адресов`;
       $("summaryPrefixes").textContent = String(enabledPrefixes);
-      $("summaryDelay").textContent = `${responsible.assignment_email_delay_minutes || 0} РјРёРЅ`;
-      $("overviewMaintenanceBadge").textContent = `${closedSections} Р·Р°РєСЂС‹С‚Рѕ`;
-      $("overviewEmployeesBadge").textContent = `${activeEmployees} Р°РєС‚РёРІРЅС‹С…`;
-      $("overviewPrefixesBadge").textContent = `${enabledPrefixes} РІРєР»СЋС‡РµРЅРѕ`;
+      $("summaryDelay").textContent = `${responsible.assignment_email_delay_minutes || 0} мин`;
+      $("overviewMaintenanceBadge").textContent = `${closedSections} закрыто`;
+      $("overviewEmployeesBadge").textContent = `${activeEmployees} активных`;
+      $("overviewPrefixesBadge").textContent = `${enabledPrefixes} включено`;
       $("personalActiveEmployees").textContent = String(activeEmployees);
       $("personalEmailCount").textContent = String(totalEmployeeEmails);
-      $("automationWeeklyText").textContent = `${responsible.weekly_digest_enabled ? "Р’РєР»СЋС‡РµРЅРѕ" : "Р’С‹РєР»СЋС‡РµРЅРѕ"} В· РїРѕРЅРµРґРµР»СЊРЅРёРє ${responsible.weekly_digest_time || "16:00"}`;
-      $("automationReminderText").textContent = `${unassigned.weekly_reminder_enabled ? "Р’РєР»СЋС‡РµРЅРѕ" : "Р’С‹РєР»СЋС‡РµРЅРѕ"} В· РїРѕРЅРµРґРµР»СЊРЅРёРє ${unassigned.weekly_reminder_time || "09:00"}`;
-      $("automationPersonalText").textContent = `${responsible.enabled ? "Р’РєР»СЋС‡РµРЅРѕ" : "Р’С‹РєР»СЋС‡РµРЅРѕ"} В· Р·Р°РґРµСЂР¶РєР° ${responsible.assignment_email_delay_minutes || 0} РјРёРЅ В· РїР°СѓР·Р° ${responsible.personal_email_send_interval_seconds || 0} СЃРµРє`;
-      $("automationSberTrackText").textContent = `${sbertrack.enabled ? "Р’РєР»СЋС‡РµРЅРѕ" : "Р’С‹РєР»СЋС‡РµРЅРѕ"} В· ${sbertrack.dry_run ? "dry-run" : "Р±РѕРµРІРѕР№ СЂРµР¶РёРј"} В· РїСЂР°РІРёР» ${(sbertrack.routes || []).length} В· users ${sbertrackUsers.length}`;
+      $("automationWeeklyText").textContent = `${responsible.weekly_digest_enabled ? "Включено" : "Выключено"} · понедельник ${responsible.weekly_digest_time || "16:00"}`;
+      $("automationReminderText").textContent = `${unassigned.weekly_reminder_enabled ? "Включено" : "Выключено"} · понедельник ${unassigned.weekly_reminder_time || "09:00"}`;
+      $("automationPersonalText").textContent = `${responsible.enabled ? "Включено" : "Выключено"} · задержка ${responsible.assignment_email_delay_minutes || 0} мин · пауза ${responsible.personal_email_send_interval_seconds || 0} сек`;
+      $("automationSberTrackText").textContent = `${sbertrack.enabled ? "Включено" : "Выключено"} · ${sbertrack.dry_run ? "dry-run" : "боевой режим"} · правил ${(sbertrack.routes || []).length} · users ${sbertrackUsers.length}`;
     }
 
     function renderSystemOptions() {
-      const systems = state.metadata.standard_systems || ["CLM", "EMRM", "РђРРЎРў", "AI-РђРіРµРЅС‚С‹", "Р¤РѕРєСѓСЃ"];
+      const systems = state.metadata.standard_systems || ["CLM", "EMRM", "АИСТ", "AI-Агенты", "Фокус"];
       $("systemOptions").innerHTML = systems.map((system) => `<option value="${escapeAttr(system)}"></option>`).join("");
     }
 
@@ -1671,9 +1671,9 @@
       refreshDerived();
       showTab(state.activeTab || "overview");
       if (payload.read_error) {
-        setStatus(`Р¤Р°Р№Р» feature_flags.json СЃРµР№С‡Р°СЃ РїРѕРІСЂРµР¶РґРµРЅ: ${payload.read_error}. РџРѕСЃР»Рµ СЃРѕС…СЂР°РЅРµРЅРёСЏ Р±СѓРґРµС‚ СЃРѕР·РґР°РЅР° РІР°Р»РёРґРЅР°СЏ СЃС‚СЂСѓРєС‚СѓСЂР°, СЃС‚Р°СЂРѕРµ СЃРѕРґРµСЂР¶РёРјРѕРµ СѓР№РґРµС‚ РІ backup.`, "error");
+        setStatus(`Файл feature_flags.json сейчас поврежден: ${payload.read_error}. После сохранения будет создана валидная структура, старое содержимое уйдет в backup.`, "error");
       } else {
-        setStatus("РЎРЈРџ-РїР°СЂР°РјРµС‚СЂС‹ Р·Р°РіСЂСѓР¶РµРЅС‹.", "success");
+        setStatus("СУП-параметры загружены.", "success");
       }
     }
 
@@ -1691,7 +1691,7 @@
     }
 
     async function loadData({ force = false } = {}) {
-      if (state.dirty && !force && !confirm("Р•СЃС‚СЊ РЅРµСЃРѕС…СЂР°РЅРµРЅРЅС‹Рµ РёР·РјРµРЅРµРЅРёСЏ. РћР±РЅРѕРІРёС‚СЊ РґР°РЅРЅС‹Рµ Р±РµР· СЃРѕС…СЂР°РЅРµРЅРёСЏ?")) {
+      if (state.dirty && !force && !confirm("Есть несохраненные изменения. Обновить данные без сохранения?")) {
         return;
       }
       if (!getToken()) {
@@ -1701,7 +1701,7 @@
         $("resetBtn").disabled = true;
         return;
       }
-      setStatus("Р—Р°РіСЂСѓР¶Р°СЋ РЎРЈРџ-РїР°СЂР°РјРµС‚СЂС‹...");
+      setStatus("Загружаю СУП-параметры...");
       try {
         const payload = await api(BASE_PATH + "/admin/sup-parameters/data");
         render(payload);
@@ -1715,7 +1715,7 @@
     }
 
     async function saveData() {
-      setStatus("РЎРѕС…СЂР°РЅСЏСЋ РЎРЈРџ-РїР°СЂР°РјРµС‚СЂС‹...");
+      setStatus("Сохраняю СУП-параметры...");
       $("saveBtn").disabled = true;
       clearTabErrors();
       try {
@@ -1724,7 +1724,7 @@
           body: JSON.stringify({ revision: state.revision, config: collectConfig() })
         });
         render(payload);
-        setStatus("РЎРЈРџ-РїР°СЂР°РјРµС‚СЂС‹ СЃРѕС…СЂР°РЅРµРЅС‹. РџСЂРёР»РѕР¶РµРЅРёРµ РїРµСЂРµС‡РёС‚Р°РµС‚ РёР·РјРµРЅРµРЅРёСЏ Р±РµР· РїРµСЂРµР·Р°РїСѓСЃРєР°.", "success");
+        setStatus("СУП-параметры сохранены. Приложение перечитает изменения без перезапуска.", "success");
       } catch (error) {
         const errors = error.payload && Array.isArray(error.payload.errors)
           ? error.payload.errors
@@ -1746,7 +1746,7 @@
       renderPrefixes();
       markClean();
       renderMetadata({ metadata: state.metadata, revision: state.revision, read_error: state.readError, path: state.path });
-      setStatus("РР·РјРµРЅРµРЅРёСЏ СЃР±СЂРѕС€РµРЅС‹ РґРѕ РїРѕСЃР»РµРґРЅРµР№ Р·Р°РіСЂСѓР¶РµРЅРЅРѕР№ РІРµСЂСЃРёРё.", "success");
+      setStatus("Изменения сброшены до последней загруженной версии.", "success");
     }
 
     function clearTabErrors() {
@@ -1756,11 +1756,11 @@
     function markErrorTabs(message) {
       clearTabErrors();
       const rules = [
-        ["maintenance", /Р РµР¶РёРј РѕР±СЃР»СѓР¶РёРІР°РЅРёСЏ|maintenance/i],
-        ["mail", /РџРёСЃСЊРјР°|Weekly|digest|РџРѕР»СѓС‡Р°С‚РµР»Рё|РїРµСЂСЃРѕРЅР°Р»СЊРЅ|email/i],
-        ["employees", /РЎРѕС‚СЂСѓРґРЅРёРє|Р¤РРћ/i],
+        ["maintenance", /Режим обслуживания|maintenance/i],
+        ["mail", /Письма|Weekly|digest|Получатели|персональн|email/i],
+        ["employees", /Сотрудник|ФИО/i],
         ["prefixes", /Prefix|Release prefixes|jira_domain|system/i],
-        ["sbertrack", /SberTrack|Jira|Email в†’ SberTrack|route|technical mailboxes/i],
+        ["sbertrack", /SberTrack|Jira|Email → SberTrack|route|technical mailboxes/i],
       ];
       rules.forEach(([tab, pattern]) => {
         if (pattern.test(message)) {
@@ -1773,7 +1773,7 @@
       const employees = state.config.automation.release_monitor_responsible_email.employee_recipients || [];
       const row = index >= 0 ? employees[index] : { enabled: true, name: "", emails: [] };
       state.modal = { type: "employee", index };
-      $("modalTitle").textContent = index >= 0 ? "Р РµРґР°РєС‚РёСЂРѕРІР°С‚СЊ СЃРѕС‚СЂСѓРґРЅРёРєР°" : "Р”РѕР±Р°РІРёС‚СЊ СЃРѕС‚СЂСѓРґРЅРёРєР°";
+      $("modalTitle").textContent = index >= 0 ? "Редактировать сотрудника" : "Добавить сотрудника";
       $("employeeForm").classList.remove("hidden");
       $("prefixForm").classList.add("hidden");
       $("modalEmployeeEnabled").checked = row.enabled !== false;
@@ -1787,7 +1787,7 @@
       const prefixes = state.config.release_monitor.prefixes || [];
       const row = index >= 0 ? prefixes[index] : { enabled: true, prefix: "", jira_domain: "sberbank", system: "" };
       state.modal = { type: "prefix", index };
-      $("modalTitle").textContent = index >= 0 ? "Р РµРґР°РєС‚РёСЂРѕРІР°С‚СЊ prefix" : "Р”РѕР±Р°РІРёС‚СЊ prefix";
+      $("modalTitle").textContent = index >= 0 ? "Редактировать prefix" : "Добавить prefix";
       $("employeeForm").classList.add("hidden");
       $("prefixForm").classList.remove("hidden");
       $("modalPrefixEnabled").checked = row.enabled !== false;

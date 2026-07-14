@@ -104,8 +104,6 @@ def create_email_jira_task(event: Dict[str, Any]) -> Dict[str, Any]:
     from_rows = mail.get("from") if isinstance(mail.get("from"), list) else []
     sender_email = str((from_rows[0] if from_rows else {}).get("email") or "").strip()
     reporter = _find_reporter(connection, sender_email) or _current_user(connection)
-    if not reporter:
-        raise EmailToJiraError("Unable to resolve Jira technical reporter")
 
     description = str(mail.get("body") or "")
     description += (
@@ -126,12 +124,17 @@ def create_email_jira_task(event: Dict[str, Any]) -> Dict[str, Any]:
         "summary": subject[:220],
         "description": description[:12000],
         "labels": list(route.get("jira_labels") or []),
-        "reporter": {"name": reporter},
     }
+    if reporter:
+        fields["reporter"] = {"name": reporter}
     team = route.get("jira_team") if isinstance(route.get("jira_team"), dict) else {}
     field_id = str(team.get("field_id") or "").strip()
     value_id = str(team.get("value_id") or "").strip()
     team_name = str(team.get("name") or "").strip()
+    if project.upper() == "EMRM" and issue_type.lower() == "epic":
+        field_id = field_id or "customfield_11902"
+        value_id = value_id or "6651"
+        team_name = "[Фокус] ForREST"
     if field_id and team_name:
         fields[field_id] = team_name
     elif field_id and value_id:
