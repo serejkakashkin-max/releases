@@ -191,7 +191,7 @@ def _admin_email_to_sbertrack(raw_value: Any) -> Dict[str, Any]:
             summary_template = "{subject}"
             jira_issue_type = "Epic"
             jira_issue_type_id = "10000"
-            jira_epic_name_field = "customfield_10002"
+            jira_epic_name_field = "customfield_10007"
             jira_team = {
                 "field_id": "customfield_11902",
                 "value_id": "6651",
@@ -199,7 +199,7 @@ def _admin_email_to_sbertrack(raw_value: Any) -> Dict[str, Any]:
             }
         if jira_issue_type.lower() == "epic":
             jira_issue_type_id = jira_issue_type_id or "10000"
-            jira_epic_name_field = jira_epic_name_field or "customfield_10002"
+            jira_epic_name_field = jira_epic_name_field or "customfield_10007"
         jira_labels = _normalize_string_list(raw_route.get("jira_labels"))
         if is_legacy_emrm_story and jira_labels == ["MPR"]:
             jira_labels = ["FromChannel"]
@@ -382,7 +382,7 @@ def get_sup_parameters_data() -> Dict[str, Any]:
         }
     return {
         "success": True,
-        "title": "СУП-параметры",
+        "title": "РЎРЈРџ-РїР°СЂР°РјРµС‚СЂС‹",
         "file_exists": exists,
         "path": str(FEATURE_FLAGS_FILE),
         "revision": revision,
@@ -401,7 +401,7 @@ def get_sup_parameters_data() -> Dict[str, Any]:
                 ]
             ),
             "jira_domains": list(JIRA_DOMAIN_CONFIGS.keys()),
-            "standard_systems": ["CLM", "EMRM", "АИСТ", "AI-Агенты", "Фокус"],
+            "standard_systems": ["CLM", "EMRM", "РђРРЎРў", "AI-РђРіРµРЅС‚С‹", "Р¤РѕРєСѓСЃ"],
             "email_to_sbertrack_status": email_to_sbertrack_status,
         },
     }
@@ -411,33 +411,33 @@ def _validate_emails(values: Any, label: str, errors: List[str]) -> List[str]:
     emails = _normalize_string_list(values)
     invalid = [email for email in emails if not EMAIL_PATTERN.match(email)]
     if invalid:
-        errors.append(f"{label}: некорректные email: {', '.join(invalid)}")
+        errors.append(f"{label}: РЅРµРєРѕСЂСЂРµРєС‚РЅС‹Рµ email: {', '.join(invalid)}")
     return emails
 
 
 def _validate_time(value: Any, label: str, errors: List[str]) -> str:
     raw_value = str(value or "").strip()
     if not TIME_PATTERN.match(raw_value):
-        errors.append(f"{label}: время должно быть в формате HH:MM")
+        errors.append(f"{label}: РІСЂРµРјСЏ РґРѕР»Р¶РЅРѕ Р±С‹С‚СЊ РІ С„РѕСЂРјР°С‚Рµ HH:MM")
         return "16:00"
     hours, minutes = [int(part) for part in raw_value.split(":", 1)]
     if hours > 23 or minutes > 59:
-        errors.append(f"{label}: время должно быть в диапазоне 00:00-23:59")
+        errors.append(f"{label}: РІСЂРµРјСЏ РґРѕР»Р¶РЅРѕ Р±С‹С‚СЊ РІ РґРёР°РїР°Р·РѕРЅРµ 00:00-23:59")
         return "16:00"
     return raw_value
 
 
 def _validate_non_negative_int(value: Any, label: str, errors: List[str]) -> int:
     if isinstance(value, bool):
-        errors.append(f"{label}: должно быть неотрицательное число")
+        errors.append(f"{label}: РґРѕР»Р¶РЅРѕ Р±С‹С‚СЊ РЅРµРѕС‚СЂРёС†Р°С‚РµР»СЊРЅРѕРµ С‡РёСЃР»Рѕ")
         return 0
     try:
         result = int(value)
     except (TypeError, ValueError):
-        errors.append(f"{label}: должно быть неотрицательное число")
+        errors.append(f"{label}: РґРѕР»Р¶РЅРѕ Р±С‹С‚СЊ РЅРµРѕС‚СЂРёС†Р°С‚РµР»СЊРЅРѕРµ С‡РёСЃР»Рѕ")
         return 0
     if result < 0:
-        errors.append(f"{label}: должно быть неотрицательное число")
+        errors.append(f"{label}: РґРѕР»Р¶РЅРѕ Р±С‹С‚СЊ РЅРµРѕС‚СЂРёС†Р°С‚РµР»СЊРЅРѕРµ С‡РёСЃР»Рѕ")
         return 0
     return result
 
@@ -486,40 +486,40 @@ def _validate_managed_config(raw_config: Any) -> Dict[str, Any]:
     for key in MAINTENANCE_KEYS:
         value = maintenance.get(key)
         if not isinstance(value, bool):
-            errors.append(f"Режим обслуживания/{key}: значение должно быть true или false")
+            errors.append(f"Р РµР¶РёРј РѕР±СЃР»СѓР¶РёРІР°РЅРёСЏ/{key}: Р·РЅР°С‡РµРЅРёРµ РґРѕР»Р¶РЅРѕ Р±С‹С‚СЊ true РёР»Рё false")
             value = DEFAULT_FEATURE_FLAGS["maintenance"].get(key, False)
         normalized["maintenance"][key] = value
 
     if not isinstance(unassigned.get("enabled"), bool):
-        errors.append("Письма без ответственного/enabled: значение должно быть true или false")
+        errors.append("РџРёСЃСЊРјР° Р±РµР· РѕС‚РІРµС‚СЃС‚РІРµРЅРЅРѕРіРѕ/enabled: Р·РЅР°С‡РµРЅРёРµ РґРѕР»Р¶РЅРѕ Р±С‹С‚СЊ true РёР»Рё false")
     normalized["automation"]["release_monitor_unassigned_email"]["enabled"] = _coerce_bool(
         unassigned.get("enabled")
     )
     normalized["automation"]["release_monitor_unassigned_email"]["recipients"] = _validate_emails(
         unassigned.get("recipients"),
-        "Получатели писем без ответственного",
+        "РџРѕР»СѓС‡Р°С‚РµР»Рё РїРёСЃРµРј Р±РµР· РѕС‚РІРµС‚СЃС‚РІРµРЅРЅРѕРіРѕ",
         errors,
     )
     if not isinstance(unassigned.get("weekly_reminder_enabled"), bool):
-        errors.append("Понедельничное письмо без назначений/enabled: значение должно быть true или false")
+        errors.append("РџРѕРЅРµРґРµР»СЊРЅРёС‡РЅРѕРµ РїРёСЃСЊРјРѕ Р±РµР· РЅР°Р·РЅР°С‡РµРЅРёР№/enabled: Р·РЅР°С‡РµРЅРёРµ РґРѕР»Р¶РЅРѕ Р±С‹С‚СЊ true РёР»Рё false")
     normalized["automation"]["release_monitor_unassigned_email"]["weekly_reminder_enabled"] = _coerce_bool(
         unassigned.get("weekly_reminder_enabled")
     )
     normalized["automation"]["release_monitor_unassigned_email"]["weekly_reminder_time"] = _validate_time(
         unassigned.get("weekly_reminder_time"),
-        "Понедельничное письмо без назначений/time",
+        "РџРѕРЅРµРґРµР»СЊРЅРёС‡РЅРѕРµ РїРёСЃСЊРјРѕ Р±РµР· РЅР°Р·РЅР°С‡РµРЅРёР№/time",
         errors,
     )
     normalized["automation"]["release_monitor_unassigned_email"]["weekly_reminder_recipients"] = _validate_emails(
         unassigned.get("weekly_reminder_recipients"),
-        "Получатели понедельничного письма без назначений",
+        "РџРѕР»СѓС‡Р°С‚РµР»Рё РїРѕРЅРµРґРµР»СЊРЅРёС‡РЅРѕРіРѕ РїРёСЃСЊРјР° Р±РµР· РЅР°Р·РЅР°С‡РµРЅРёР№",
         errors,
     )
 
     if not isinstance(responsible.get("enabled"), bool):
-        errors.append("Персональные письма/enabled: значение должно быть true или false")
+        errors.append("РџРµСЂСЃРѕРЅР°Р»СЊРЅС‹Рµ РїРёСЃСЊРјР°/enabled: Р·РЅР°С‡РµРЅРёРµ РґРѕР»Р¶РЅРѕ Р±С‹С‚СЊ true РёР»Рё false")
     if not isinstance(responsible.get("weekly_digest_enabled"), bool):
-        errors.append("Weekly digest/enabled: значение должно быть true или false")
+        errors.append("Weekly digest/enabled: Р·РЅР°С‡РµРЅРёРµ РґРѕР»Р¶РЅРѕ Р±С‹С‚СЊ true РёР»Рё false")
     responsible_target = normalized["automation"]["release_monitor_responsible_email"]
     responsible_target["enabled"] = _coerce_bool(responsible.get("enabled"))
     responsible_target["weekly_digest_enabled"] = _coerce_bool(
@@ -533,17 +533,17 @@ def _validate_managed_config(raw_config: Any) -> Dict[str, Any]:
     )
     responsible_target["weekly_digest_recipients"] = _validate_emails(
         responsible.get("weekly_digest_recipients"),
-        "Получатели weekly digest",
+        "РџРѕР»СѓС‡Р°С‚РµР»Рё weekly digest",
         errors,
     )
     responsible_target["assignment_email_delay_minutes"] = _validate_non_negative_int(
         responsible.get("assignment_email_delay_minutes"),
-        "Задержка персональных писем",
+        "Р—Р°РґРµСЂР¶РєР° РїРµСЂСЃРѕРЅР°Р»СЊРЅС‹С… РїРёСЃРµРј",
         errors,
     )
     responsible_target["personal_email_send_interval_seconds"] = _validate_non_negative_int(
         responsible.get("personal_email_send_interval_seconds"),
-        "Пауза между персональными письмами",
+        "РџР°СѓР·Р° РјРµР¶РґСѓ РїРµСЂСЃРѕРЅР°Р»СЊРЅС‹РјРё РїРёСЃСЊРјР°РјРё",
         errors,
     )
 
@@ -561,31 +561,31 @@ def _validate_managed_config(raw_config: Any) -> Dict[str, Any]:
     seen_employee_names = set()
     for index, row in enumerate(employee_rows, start=1):
         if not isinstance(row, dict):
-            errors.append(f"Сотрудник #{index}: некорректная запись")
+            errors.append(f"РЎРѕС‚СЂСѓРґРЅРёРє #{index}: РЅРµРєРѕСЂСЂРµРєС‚РЅР°СЏ Р·Р°РїРёСЃСЊ")
             continue
         name = str(row.get("name") or "").strip()
         if not name:
-            errors.append(f"Сотрудник #{index}: ФИО обязательно")
+            errors.append(f"РЎРѕС‚СЂСѓРґРЅРёРє #{index}: Р¤РРћ РѕР±СЏР·Р°С‚РµР»СЊРЅРѕ")
             continue
         lowered = name.lower()
         if lowered in seen_employee_names:
-            errors.append(f"Сотрудники: дубль ФИО {name}")
+            errors.append(f"РЎРѕС‚СЂСѓРґРЅРёРєРё: РґСѓР±Р»СЊ Р¤РРћ {name}")
             continue
         seen_employee_names.add(lowered)
         enabled = row.get("enabled")
         if not isinstance(enabled, bool):
-            errors.append(f"Сотрудник {name}: enabled должен быть true или false")
+            errors.append(f"РЎРѕС‚СЂСѓРґРЅРёРє {name}: enabled РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ true РёР»Рё false")
             enabled = True
-        emails = _validate_emails(row.get("emails"), f"Сотрудник {name}", errors)
+        emails = _validate_emails(row.get("emails"), f"РЎРѕС‚СЂСѓРґРЅРёРє {name}", errors)
         if enabled and not emails:
-            errors.append(f"Сотрудник {name}: для включенного сотрудника нужен хотя бы один email")
+            errors.append(f"РЎРѕС‚СЂСѓРґРЅРёРє {name}: РґР»СЏ РІРєР»СЋС‡РµРЅРЅРѕРіРѕ СЃРѕС‚СЂСѓРґРЅРёРєР° РЅСѓР¶РµРЅ С…РѕС‚СЏ Р±С‹ РѕРґРёРЅ email")
         employee_map[name] = {"enabled": enabled, "emails": emails}
     responsible_target["employee_recipients"] = employee_map
 
     email_to_sbertrack_target = normalized["automation"]["email_to_sbertrack"]
     for key in ("enabled", "dry_run"):
         if not isinstance(email_to_sbertrack.get(key), bool):
-            errors.append(f"Email → SberTrack/{key}: значение должно быть true или false")
+            errors.append(f"Email в†’ SberTrack/{key}: Р·РЅР°С‡РµРЅРёРµ РґРѕР»Р¶РЅРѕ Р±С‹С‚СЊ true РёР»Рё false")
     email_to_sbertrack_target["enabled"] = _coerce_bool(email_to_sbertrack.get("enabled"))
     email_to_sbertrack_target["dry_run"] = _coerce_bool(
         email_to_sbertrack.get("dry_run"),
@@ -593,41 +593,41 @@ def _validate_managed_config(raw_config: Any) -> Dict[str, Any]:
     )
     email_to_sbertrack_target["poll_interval_seconds"] = _validate_non_negative_int(
         email_to_sbertrack.get("poll_interval_seconds"),
-        "Email → SberTrack/poll_interval_seconds",
+        "Email в†’ SberTrack/poll_interval_seconds",
         errors,
     )
     email_to_sbertrack_target["lookback_limit"] = _validate_non_negative_int(
         email_to_sbertrack.get("lookback_limit"),
-        "Email → SberTrack/lookback_limit",
+        "Email в†’ SberTrack/lookback_limit",
         errors,
     )
     email_to_sbertrack_target["max_pending_per_cycle"] = _validate_non_negative_int(
         email_to_sbertrack.get("max_pending_per_cycle"),
-        "Email → SberTrack/max_pending_per_cycle",
+        "Email в†’ SberTrack/max_pending_per_cycle",
         errors,
     )
     email_to_sbertrack_target["body_max_chars"] = _validate_non_negative_int(
         email_to_sbertrack.get("body_max_chars"),
-        "Email → SberTrack/body_max_chars",
+        "Email в†’ SberTrack/body_max_chars",
         errors,
     )
     if email_to_sbertrack_target["poll_interval_seconds"] <= 0:
-        errors.append("Email → SberTrack: interval должен быть больше 0 секунд")
+        errors.append("Email в†’ SberTrack: interval РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ Р±РѕР»СЊС€Рµ 0 СЃРµРєСѓРЅРґ")
         email_to_sbertrack_target["poll_interval_seconds"] = 300
     if email_to_sbertrack_target["lookback_limit"] <= 0:
-        errors.append("Email → SberTrack: lookback должен быть больше 0")
+        errors.append("Email в†’ SberTrack: lookback РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ Р±РѕР»СЊС€Рµ 0")
         email_to_sbertrack_target["lookback_limit"] = 20
     if email_to_sbertrack_target["max_pending_per_cycle"] <= 0:
-        errors.append("Email → SberTrack: pending retry должен быть больше 0")
+        errors.append("Email в†’ SberTrack: pending retry РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ Р±РѕР»СЊС€Рµ 0")
         email_to_sbertrack_target["max_pending_per_cycle"] = 10
     if email_to_sbertrack_target["body_max_chars"] < 1000:
-        errors.append("Email → SberTrack: body limit должен быть не меньше 1000")
+        errors.append("Email в†’ SberTrack: body limit РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ РЅРµ РјРµРЅСЊС€Рµ 1000")
         email_to_sbertrack_target["body_max_chars"] = 6000
     email_to_sbertrack_target["technical_mailboxes"] = [
         email.lower()
         for email in _validate_emails(
             email_to_sbertrack.get("technical_mailboxes"),
-            "Email → SberTrack technical mailboxes",
+            "Email в†’ SberTrack technical mailboxes",
             errors,
         )
     ]
@@ -638,19 +638,19 @@ def _validate_managed_config(raw_config: Any) -> Dict[str, Any]:
     seen_route_names = set()
     for index, row in enumerate(route_rows, start=1):
         if not isinstance(row, dict):
-            errors.append(f"Email → SberTrack route #{index}: некорректная запись")
+            errors.append(f"Email в†’ SberTrack route #{index}: РЅРµРєРѕСЂСЂРµРєС‚РЅР°СЏ Р·Р°РїРёСЃСЊ")
             continue
         enabled = row.get("enabled")
         if not isinstance(enabled, bool):
-            errors.append(f"Email → SberTrack route #{index}: enabled должен быть true или false")
+            errors.append(f"Email в†’ SberTrack route #{index}: enabled РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ true РёР»Рё false")
             enabled = True
         name = str(row.get("name") or "").strip()
         if not name:
-            errors.append(f"Email → SberTrack route #{index}: name обязателен")
+            errors.append(f"Email в†’ SberTrack route #{index}: name РѕР±СЏР·Р°С‚РµР»РµРЅ")
             name = f"route_{index}"
         name_key = name.lower()
         if name_key in seen_route_names:
-            errors.append(f"Email → SberTrack: дубль route name {name}")
+            errors.append(f"Email в†’ SberTrack: РґСѓР±Р»СЊ route name {name}")
         seen_route_names.add(name_key)
         triggers = _normalize_string_list(row.get("subject_triggers"))
         summary_template = str(row.get("summary_template") or "").strip() or "{subject}"
@@ -662,9 +662,9 @@ def _validate_managed_config(raw_config: Any) -> Dict[str, Any]:
             row.get("jira_projects") if target_system == "jira" else row.get("spaces")
         )
         if enabled and not triggers:
-            errors.append(f"Email → SberTrack route {name}: нужен хотя бы один trigger")
+            errors.append(f"Email в†’ SberTrack route {name}: РЅСѓР¶РµРЅ С…РѕС‚СЏ Р±С‹ РѕРґРёРЅ trigger")
         if enabled and not spaces:
-            errors.append(f"Email → SberTrack route {name}: нужно хотя бы одно space")
+            errors.append(f"Email в†’ SberTrack route {name}: РЅСѓР¶РЅРѕ С…РѕС‚СЏ Р±С‹ РѕРґРЅРѕ space")
         jira_domain = str(row.get("jira_domain") or "sberbank").strip().lower()
         if target_system == "jira" and jira_domain not in JIRA_DOMAIN_CONFIGS:
             errors.append(f"Email route {name}: unknown Jira domain")
@@ -679,7 +679,7 @@ def _validate_managed_config(raw_config: Any) -> Dict[str, Any]:
             errors.append(f"Email route {name}: jira_priority is required")
         if target_system == "jira" and jira_issue_type.lower() == "epic":
             jira_issue_type_id = jira_issue_type_id or "10000"
-            jira_epic_name_field = jira_epic_name_field or "customfield_10002"
+            jira_epic_name_field = jira_epic_name_field or "customfield_10007"
         raw_team = row.get("jira_team") if isinstance(row.get("jira_team"), dict) else {}
         jira_team = {
             "field_id": str(raw_team.get("field_id") or "").strip(),
@@ -700,7 +700,7 @@ def _validate_managed_config(raw_config: Any) -> Dict[str, Any]:
             summary_template = "{subject}"
             jira_issue_type = "Epic"
             jira_issue_type_id = "10000"
-            jira_epic_name_field = "customfield_10002"
+            jira_epic_name_field = "customfield_10007"
             jira_team = {
                 "field_id": "customfield_11902",
                 "value_id": "6651",
@@ -746,22 +746,22 @@ def _validate_managed_config(raw_config: Any) -> Dict[str, Any]:
     seen_user_emails = set()
     for index, row in enumerate(user_rows, start=1):
         if not isinstance(row, dict):
-            errors.append(f"SberTrack user #{index}: некорректная запись")
+            errors.append(f"SberTrack user #{index}: РЅРµРєРѕСЂСЂРµРєС‚РЅР°СЏ Р·Р°РїРёСЃСЊ")
             continue
         user_email = str(row.get("email") or "").strip().lower()
         if not user_email:
-            errors.append(f"SberTrack user #{index}: email обязателен")
+            errors.append(f"SberTrack user #{index}: email РѕР±СЏР·Р°С‚РµР»РµРЅ")
             continue
         if not EMAIL_PATTERN.match(user_email):
-            errors.append(f"SberTrack user {user_email}: некорректный email")
+            errors.append(f"SberTrack user {user_email}: РЅРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ email")
             continue
         if user_email in seen_user_emails:
-            errors.append(f"SberTrack users: дубль email {user_email}")
+            errors.append(f"SberTrack users: РґСѓР±Р»СЊ email {user_email}")
             continue
         seen_user_emails.add(user_email)
         enabled = row.get("enabled")
         if not isinstance(enabled, bool):
-            errors.append(f"SberTrack user {user_email}: enabled должен быть true или false")
+            errors.append(f"SberTrack user {user_email}: enabled РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ true РёР»Рё false")
             enabled = True
         normalized["sbertrack_users"][user_email] = {
             "enabled": enabled,
@@ -775,31 +775,31 @@ def _validate_managed_config(raw_config: Any) -> Dict[str, Any]:
     enabled_count = 0
     for index, row in enumerate(prefix_rows, start=1):
         if not isinstance(row, dict):
-            errors.append(f"Prefix #{index}: некорректная запись")
+            errors.append(f"Prefix #{index}: РЅРµРєРѕСЂСЂРµРєС‚РЅР°СЏ Р·Р°РїРёСЃСЊ")
             continue
         prefix = str(row.get("prefix") or "").strip().upper()
         if not prefix:
-            errors.append(f"Prefix #{index}: prefix обязателен")
+            errors.append(f"Prefix #{index}: prefix РѕР±СЏР·Р°С‚РµР»РµРЅ")
             continue
         if not PREFIX_PATTERN.match(prefix):
-            errors.append(f"Prefix {prefix}: допустимы только A-Z, 0-9 и _")
+            errors.append(f"Prefix {prefix}: РґРѕРїСѓСЃС‚РёРјС‹ С‚РѕР»СЊРєРѕ A-Z, 0-9 Рё _")
             continue
         if prefix in seen_prefixes:
-            errors.append(f"Release prefixes: дубль prefix {prefix}")
+            errors.append(f"Release prefixes: РґСѓР±Р»СЊ prefix {prefix}")
             continue
         seen_prefixes.add(prefix)
         enabled = row.get("enabled")
         if not isinstance(enabled, bool):
-            errors.append(f"Prefix {prefix}: enabled должен быть true или false")
+            errors.append(f"Prefix {prefix}: enabled РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ true РёР»Рё false")
             enabled = True
         jira_domain = str(row.get("jira_domain") or "").strip().lower()
         if jira_domain not in JIRA_DOMAIN_CONFIGS:
-            errors.append(f"Prefix {prefix}: jira_domain должен быть sberbank или delta")
+            errors.append(f"Prefix {prefix}: jira_domain РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ sberbank РёР»Рё delta")
             jira_domain = "sberbank"
         system = str(row.get("system") or "").strip()
         if not system:
-            errors.append(f"Prefix {prefix}: system обязателен")
-            system = "Другое"
+            errors.append(f"Prefix {prefix}: system РѕР±СЏР·Р°С‚РµР»РµРЅ")
+            system = "Р”СЂСѓРіРѕРµ"
         normalized["release_monitor"]["prefixes"].append(
             {
                 "prefix": prefix,
@@ -811,7 +811,7 @@ def _validate_managed_config(raw_config: Any) -> Dict[str, Any]:
         if enabled:
             enabled_count += 1
     if enabled_count <= 0:
-        errors.append("Release prefixes: должен быть включен хотя бы один prefix")
+        errors.append("Release prefixes: РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ РІРєР»СЋС‡РµРЅ С…РѕС‚СЏ Р±С‹ РѕРґРёРЅ prefix")
 
     if errors:
         raise SupParametersValidationError(errors)
@@ -908,7 +908,7 @@ def save_sup_parameters(managed_config: Any, expected_revision: str) -> Dict[str
     current_revision = _file_hash(current_data)
     if expected_revision and expected_revision != current_revision:
         raise SupParametersConflictError(
-            "СУП-параметры были изменены в другом окне. Обновите страницу и повторите сохранение."
+            "РЎРЈРџ-РїР°СЂР°РјРµС‚СЂС‹ Р±С‹Р»Рё РёР·РјРµРЅРµРЅС‹ РІ РґСЂСѓРіРѕРј РѕРєРЅРµ. РћР±РЅРѕРІРёС‚Рµ СЃС‚СЂР°РЅРёС†Сѓ Рё РїРѕРІС‚РѕСЂРёС‚Рµ СЃРѕС…СЂР°РЅРµРЅРёРµ."
         )
 
     normalized = _validate_managed_config(managed_config)

@@ -37,25 +37,25 @@ DEFAULT_RELEASE_PREFIX_CONFIGS = [
         "prefix": "SMECSC",
         "enabled": True,
         "jira_domain": "delta",
-        "system": "АИСТ",
+        "system": "РђРРЎРў",
     },
     {
         "prefix": "HELPERAI",
         "enabled": True,
         "jira_domain": "delta",
-        "system": "AI-Агенты",
+        "system": "AI-РђРіРµРЅС‚С‹",
     },
     {
         "prefix": "AIGAS",
         "enabled": True,
         "jira_domain": "delta",
-        "system": "AI-Агенты",
+        "system": "AI-РђРіРµРЅС‚С‹",
     },
     {
         "prefix": "DRMMMB",
         "enabled": True,
         "jira_domain": "sberbank",
-        "system": "AI-Агенты",
+        "system": "AI-РђРіРµРЅС‚С‹",
     },
 ]
 
@@ -259,7 +259,7 @@ def _normalize_email_to_sbertrack_config(value: Any) -> Dict[str, Any]:
             summary_template = "{subject}"
             jira_issue_type = "Epic"
             jira_issue_type_id = "10000"
-            jira_epic_name_field = "customfield_10002"
+            jira_epic_name_field = "customfield_10007"
             raw_team = {
                 "field_id": "customfield_11902",
                 "value_id": "6651",
@@ -267,7 +267,7 @@ def _normalize_email_to_sbertrack_config(value: Any) -> Dict[str, Any]:
             }
         if jira_issue_type.lower() == "epic":
             jira_issue_type_id = jira_issue_type_id or "10000"
-            jira_epic_name_field = jira_epic_name_field or "customfield_10002"
+            jira_epic_name_field = jira_epic_name_field or "customfield_10007"
         jira_labels = _normalize_string_list(raw_route.get("jira_labels"))
         if is_legacy_emrm_story and jira_labels == ["MPR"]:
             jira_labels = ["FromChannel"]

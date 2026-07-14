@@ -243,7 +243,7 @@ def _automation_settings() -> Dict[str, Any]:
             triggers = ["EMRM"]
             jira_issue_type = "Epic"
             jira_issue_type_id = "10000"
-            jira_epic_name_field = "customfield_10002"
+            jira_epic_name_field = "customfield_10007"
             raw_team = {
                 "field_id": "customfield_11902",
                 "value_id": "6651",
@@ -251,7 +251,7 @@ def _automation_settings() -> Dict[str, Any]:
             }
         if jira_issue_type.lower() == "epic":
             jira_issue_type_id = jira_issue_type_id or "10000"
-            jira_epic_name_field = jira_epic_name_field or "customfield_10002"
+            jira_epic_name_field = jira_epic_name_field or "customfield_10007"
         jira_labels = _normalize_string_list(raw_route.get("jira_labels") or ["MPR"])
         if is_emrm_route and jira_issue_type.lower() == "epic" and jira_labels == ["MPR"]:
             jira_labels = ["FromChannel"]
@@ -350,10 +350,10 @@ def _ensure_imap_settings(settings: Dict[str, Any]) -> None:
     missing = [key for key in ("host", "username", "password") if not settings.get(key)]
     if missing:
         raise EmailToSberTrackError(
-            "Не заполнены IMAP-настройки для Email → SberTrack: " + ", ".join(missing)
+            "РќРµ Р·Р°РїРѕР»РЅРµРЅС‹ IMAP-РЅР°СЃС‚СЂРѕР№РєРё РґР»СЏ Email в†’ SberTrack: " + ", ".join(missing)
         )
     if not 1 <= int(settings.get("port") or 0) <= 65535:
-        raise EmailToSberTrackError("Некорректный IMAP-порт для Email → SberTrack.")
+        raise EmailToSberTrackError("РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ IMAP-РїРѕСЂС‚ РґР»СЏ Email в†’ SberTrack.")
 
 
 def _ensure_sbertrack_settings(settings: Dict[str, Any]) -> None:
@@ -364,7 +364,7 @@ def _ensure_sbertrack_settings(settings: Dict[str, Any]) -> None:
     ]
     if missing:
         raise EmailToSberTrackError(
-            "Не заполнены настройки SberTrack: " + ", ".join(missing)
+            "РќРµ Р·Р°РїРѕР»РЅРµРЅС‹ РЅР°СЃС‚СЂРѕР№РєРё SberTrack: " + ", ".join(missing)
         )
 
 
@@ -473,7 +473,7 @@ def _message_body(message: Message, limit: int) -> Tuple[str, bool]:
     body = _normalize_body_text(body)
     truncated = False
     if len(body) > limit:
-        body = body[:limit].rstrip() + "\n\n[Текст письма сокращен]"
+        body = body[:limit].rstrip() + "\n\n[РўРµРєСЃС‚ РїРёСЃСЊРјР° СЃРѕРєСЂР°С‰РµРЅ]"
         truncated = True
     return body, truncated
 
@@ -539,7 +539,7 @@ def _subject_matches(subject: str, route: Dict[str, Any]) -> bool:
 
 def _route_key(route: Dict[str, Any]) -> str:
     raw = str(route.get("name") or "").strip().lower()
-    return re.sub(r"[^a-zа-я0-9_-]+", "_", raw, flags=re.IGNORECASE).strip("_") or "route"
+    return re.sub(r"[^a-zР°-СЏ0-9_-]+", "_", raw, flags=re.IGNORECASE).strip("_") or "route"
 
 
 def _dedupe_key(message_id: str, route: Dict[str, Any], space: str) -> str:
@@ -592,22 +592,22 @@ def _build_summary(route: Dict[str, Any], message_data: Dict[str, Any]) -> str:
         summary = subject
     summary = re.sub(r"\s+", " ", summary).strip()
     if len(summary) > SUMMARY_MAX_CHARS:
-        summary = summary[: SUMMARY_MAX_CHARS - 1].rstrip() + "…"
-    return summary or "Без темы"
+        summary = summary[: SUMMARY_MAX_CHARS - 1].rstrip() + "вЂ¦"
+    return summary or "Р‘РµР· С‚РµРјС‹"
 
 
 def _build_description(event: Dict[str, Any]) -> str:
     mail = event.get("mail") if isinstance(event.get("mail"), dict) else {}
     route = event.get("route") if isinstance(event.get("route"), dict) else {}
     lines = [
-        f"*От:* {_addresses_display(mail.get('from') or []) or 'не указано'}",
-        f"*Кому:* {_addresses_display(mail.get('to') or []) or 'не указано'}",
-        f"*Копия:* {_addresses_display(mail.get('cc') or []) or 'не указано'}",
-        f"*Тема:* {mail.get('subject') or 'без темы'}",
-        f"*Дата:* {mail.get('date') or 'не указано'}",
-        "*Источник:* email",
-        f"*Сработавшее правило:* {route.get('name') or '-'}",
-        f"*Пространство SberTrack:* {event.get('space') or '-'}",
+        f"*РћС‚:* {_addresses_display(mail.get('from') or []) or 'РЅРµ СѓРєР°Р·Р°РЅРѕ'}",
+        f"*РљРѕРјСѓ:* {_addresses_display(mail.get('to') or []) or 'РЅРµ СѓРєР°Р·Р°РЅРѕ'}",
+        f"*РљРѕРїРёСЏ:* {_addresses_display(mail.get('cc') or []) or 'РЅРµ СѓРєР°Р·Р°РЅРѕ'}",
+        f"*РўРµРјР°:* {mail.get('subject') or 'Р±РµР· С‚РµРјС‹'}",
+        f"*Р”Р°С‚Р°:* {mail.get('date') or 'РЅРµ СѓРєР°Р·Р°РЅРѕ'}",
+        "*РСЃС‚РѕС‡РЅРёРє:* email",
+        f"*РЎСЂР°Р±РѕС‚Р°РІС€РµРµ РїСЂР°РІРёР»Рѕ:* {route.get('name') or '-'}",
+        f"*РџСЂРѕСЃС‚СЂР°РЅСЃС‚РІРѕ SberTrack:* {event.get('space') or '-'}",
     ]
     candidates = event.get("assignee_candidates") or []
     if candidates and not event.get("assigned_to"):
@@ -615,11 +615,11 @@ def _build_description(event: Dict[str, Any]) -> str:
             f"{candidate.get('name') or candidate.get('email')} <{candidate.get('email')}>"
             for candidate in candidates
         )
-        lines.append(f"*Кандидаты в исполнители:* {rendered}")
+        lines.append(f"*РљР°РЅРґРёРґР°С‚С‹ РІ РёСЃРїРѕР»РЅРёС‚РµР»Рё:* {rendered}")
     if mail.get("body_truncated"):
-        lines.append("*Примечание:* Текст письма сокращен.")
+        lines.append("*РџСЂРёРјРµС‡Р°РЅРёРµ:* РўРµРєСЃС‚ РїРёСЃСЊРјР° СЃРѕРєСЂР°С‰РµРЅ.")
     lines.append("")
-    lines.append("*Текст письма:*")
+    lines.append("*РўРµРєСЃС‚ РїРёСЃСЊРјР°:*")
     lines.append(mail.get("body") or "")
     return "\n".join(lines).strip()
 
@@ -793,7 +793,7 @@ def _create_sbertrack_task(event: Dict[str, Any], settings: Dict[str, Any]) -> D
         attributes["assigned_to"] = assigned_to
     payload = {
         "suit": route.get("suit") or "task",
-        "summary": event.get("summary") or "Письмо без темы",
+        "summary": event.get("summary") or "РџРёСЃСЊРјРѕ Р±РµР· С‚РµРјС‹",
         "description": _build_description(event),
         "space": event.get("space") or "",
         "attributes": attributes,
