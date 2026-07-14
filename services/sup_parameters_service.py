@@ -166,30 +166,61 @@ def _admin_email_to_sbertrack(raw_value: Any) -> Dict[str, Any]:
     for index, raw_route in enumerate(source.get("routes") or [], start=1):
         if not isinstance(raw_route, dict):
             continue
+        target_system = str(raw_route.get("target_system") or "sbertrack").strip().lower()
+        if target_system not in {"jira", "sbertrack"}:
+            target_system = "sbertrack"
+        route_name = str(raw_route.get("name") or f"route_{index}").strip()
+        subject_triggers = _normalize_string_list(raw_route.get("subject_triggers"))
+        summary_template = str(raw_route.get("summary_template") or "{subject}").strip()
+        spaces = _normalize_string_list(
+            raw_route.get("jira_projects") if target_system == "jira" else raw_route.get("spaces")
+        )
+        jira_issue_type = str(raw_route.get("jira_issue_type") or "Story").strip() or "Story"
+        jira_issue_type_id = str(raw_route.get("jira_issue_type_id") or "").strip()
+        jira_epic_name_field = str(raw_route.get("jira_epic_name_field") or "").strip()
+        jira_team = raw_route.get("jira_team") if isinstance(raw_route.get("jira_team"), dict) else {}
+        is_legacy_emrm_story = (
+            target_system == "jira"
+            and any(str(item).strip().upper() == "EMRM" for item in spaces)
+            and jira_issue_type.lower() == "story"
+            and str(jira_team.get("value_id") or "").strip() == "4681"
+        )
+        if is_legacy_emrm_story:
+            route_name = "EMRM"
+            subject_triggers = ["EMRM"]
+            summary_template = "{subject}"
+            jira_issue_type = "Epic"
+            jira_issue_type_id = "10000"
+            jira_epic_name_field = "customfield_10002"
+            jira_team = {
+                "field_id": "customfield_11902",
+                "value_id": "6651",
+                "name": "[\u0424\u043e\u043a\u0443\u0441] ForREST",
+            }
+        if jira_issue_type.lower() == "epic":
+            jira_issue_type_id = jira_issue_type_id or "10000"
+            jira_epic_name_field = jira_epic_name_field or "customfield_10002"
+        jira_labels = _normalize_string_list(raw_route.get("jira_labels"))
+        if is_legacy_emrm_story and jira_labels == ["MPR"]:
+            jira_labels = ["FromChannel"]
         routes.append(
             {
                 "enabled": _coerce_bool(raw_route.get("enabled"), True),
-                "name": str(raw_route.get("name") or f"route_{index}").strip(),
-                "target_system": (
-                    str(raw_route.get("target_system") or "sbertrack").strip().lower()
-                    if str(raw_route.get("target_system") or "sbertrack").strip().lower() in {"jira", "sbertrack"}
-                    else "sbertrack"
-                ),
-                "subject_triggers": _normalize_string_list(
-                    raw_route.get("subject_triggers")
-                ),
-                "spaces": _normalize_string_list(raw_route.get("spaces")),
-                "jira_projects": _normalize_string_list(raw_route.get("jira_projects")),
+                "name": route_name,
+                "target_system": target_system,
+                "subject_triggers": subject_triggers,
+                "spaces": spaces if target_system == "sbertrack" else [],
+                "jira_projects": spaces if target_system == "jira" else [],
                 "jira_domain": str(raw_route.get("jira_domain") or "sberbank").strip().lower(),
-                "jira_issue_type": str(raw_route.get("jira_issue_type") or "Story").strip(),
+                "jira_issue_type": jira_issue_type,
+                "jira_issue_type_id": jira_issue_type_id,
+                "jira_epic_name_field": jira_epic_name_field,
                 "jira_priority": str(raw_route.get("jira_priority") or "Minor").strip(),
-                "jira_labels": _normalize_string_list(raw_route.get("jira_labels")),
-                "jira_team": raw_route.get("jira_team") if isinstance(raw_route.get("jira_team"), dict) else {},
+                "jira_labels": jira_labels,
+                "jira_team": jira_team,
                 "suit": str(raw_route.get("suit") or "task").strip(),
                 "priority": str(raw_route.get("priority") or "low").strip(),
-                "summary_template": str(
-                    raw_route.get("summary_template") or "Письмо: {subject}"
-                ).strip(),
+                "summary_template": summary_template,
             }
         )
     return {
@@ -622,6 +653,7 @@ def _validate_managed_config(raw_config: Any) -> Dict[str, Any]:
             errors.append(f"Email → SberTrack: дубль route name {name}")
         seen_route_names.add(name_key)
         triggers = _normalize_string_list(row.get("subject_triggers"))
+        summary_template = str(row.get("summary_template") or "").strip() or "{subject}"
         target_system = str(row.get("target_system") or "sbertrack").strip().lower()
         if target_system not in {"jira", "sbertrack"}:
             errors.append(f"Email route {name}: target_system must be jira or sbertrack")
@@ -638,23 +670,47 @@ def _validate_managed_config(raw_config: Any) -> Dict[str, Any]:
             errors.append(f"Email route {name}: unknown Jira domain")
             jira_domain = "sberbank"
         jira_issue_type = str(row.get("jira_issue_type") or "").strip()
+        jira_issue_type_id = str(row.get("jira_issue_type_id") or "").strip()
+        jira_epic_name_field = str(row.get("jira_epic_name_field") or "").strip()
         jira_priority = str(row.get("jira_priority") or "").strip()
         if target_system == "jira" and not jira_issue_type:
             errors.append(f"Email route {name}: jira_issue_type is required")
         if target_system == "jira" and not jira_priority:
             errors.append(f"Email route {name}: jira_priority is required")
+        if target_system == "jira" and jira_issue_type.lower() == "epic":
+            jira_issue_type_id = jira_issue_type_id or "10000"
+            jira_epic_name_field = jira_epic_name_field or "customfield_10002"
         raw_team = row.get("jira_team") if isinstance(row.get("jira_team"), dict) else {}
         jira_team = {
             "field_id": str(raw_team.get("field_id") or "").strip(),
             "value_id": str(raw_team.get("value_id") or "").strip(),
             "name": str(raw_team.get("name") or "").strip(),
         }
+        is_emrm_route = target_system == "jira" and any(
+            str(item).strip().upper() == "EMRM" for item in spaces
+        )
+        is_legacy_emrm_story = (
+            is_emrm_route
+            and jira_issue_type.lower() == "story"
+            and jira_team["value_id"] == "4681"
+        )
+        if is_legacy_emrm_story:
+            name = "EMRM"
+            triggers = ["EMRM"]
+            summary_template = "{subject}"
+            jira_issue_type = "Epic"
+            jira_issue_type_id = "10000"
+            jira_epic_name_field = "customfield_10002"
+            jira_team = {
+                "field_id": "customfield_11902",
+                "value_id": "6651",
+                "name": "[\u0424\u043e\u043a\u0443\u0441] ForREST",
+            }
         for team_key, team_value in jira_team.items():
             if len(team_value) > 200 or any(ord(char) < 32 for char in team_value):
                 errors.append(f"Email route {name}: jira_team.{team_key} contains unsafe value")
         suit = str(row.get("suit") or "").strip() or "task"
         priority = str(row.get("priority") or "").strip() or "low"
-        summary_template = str(row.get("summary_template") or "").strip() or "Письмо: {subject}"
         normalized_routes.append(
             {
                 "enabled": enabled,
@@ -665,6 +721,8 @@ def _validate_managed_config(raw_config: Any) -> Dict[str, Any]:
                 "jira_projects": spaces if target_system == "jira" else [],
                 "jira_domain": jira_domain,
                 "jira_issue_type": jira_issue_type or "Story",
+                "jira_issue_type_id": jira_issue_type_id,
+                "jira_epic_name_field": jira_epic_name_field,
                 "jira_priority": jira_priority or "Minor",
                 "jira_labels": _normalize_string_list(row.get("jira_labels")),
                 "jira_team": jira_team,

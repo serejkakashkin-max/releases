@@ -238,11 +238,39 @@ def _normalize_email_to_sbertrack_config(value: Any) -> Dict[str, Any]:
         )
         suit = str(raw_route.get("suit") or "task").strip()
         priority = str(raw_route.get("priority") or "low").strip()
-        summary_template = str(
-            raw_route.get("summary_template") or "Письмо: {subject}"
-        ).strip()
+        summary_template = str(raw_route.get("summary_template") or "{subject}").strip()
         if not name or not triggers or not spaces:
             continue
+        jira_issue_type = str(raw_route.get("jira_issue_type") or "Story").strip() or "Story"
+        jira_issue_type_id = str(raw_route.get("jira_issue_type_id") or "").strip()
+        jira_epic_name_field = str(raw_route.get("jira_epic_name_field") or "").strip()
+        raw_team = raw_route.get("jira_team") if isinstance(raw_route.get("jira_team"), dict) else {}
+        is_emrm_route = target_system == "jira" and any(
+            str(item).strip().upper() == "EMRM" for item in spaces
+        )
+        is_legacy_emrm_story = (
+            is_emrm_route
+            and jira_issue_type.lower() == "story"
+            and str(raw_team.get("value_id") or "").strip() == "4681"
+        )
+        if is_legacy_emrm_story:
+            name = "EMRM"
+            triggers = ["EMRM"]
+            summary_template = "{subject}"
+            jira_issue_type = "Epic"
+            jira_issue_type_id = "10000"
+            jira_epic_name_field = "customfield_10002"
+            raw_team = {
+                "field_id": "customfield_11902",
+                "value_id": "6651",
+                "name": "[\u0424\u043e\u043a\u0443\u0441] ForREST",
+            }
+        if jira_issue_type.lower() == "epic":
+            jira_issue_type_id = jira_issue_type_id or "10000"
+            jira_epic_name_field = jira_epic_name_field or "customfield_10002"
+        jira_labels = _normalize_string_list(raw_route.get("jira_labels"))
+        if is_legacy_emrm_story and jira_labels == ["MPR"]:
+            jira_labels = ["FromChannel"]
         routes.append(
             {
                 "enabled": raw_route.get("enabled")
@@ -254,13 +282,15 @@ def _normalize_email_to_sbertrack_config(value: Any) -> Dict[str, Any]:
                 "spaces": spaces,
                 "jira_projects": spaces if target_system == "jira" else [],
                 "jira_domain": str(raw_route.get("jira_domain") or "sberbank").strip().lower(),
-                "jira_issue_type": str(raw_route.get("jira_issue_type") or "Story").strip() or "Story",
+                "jira_issue_type": jira_issue_type,
+                "jira_issue_type_id": jira_issue_type_id,
+                "jira_epic_name_field": jira_epic_name_field,
                 "jira_priority": str(raw_route.get("jira_priority") or "Minor").strip() or "Minor",
-                "jira_labels": _normalize_string_list(raw_route.get("jira_labels")),
-                "jira_team": copy.deepcopy(raw_route.get("jira_team")) if isinstance(raw_route.get("jira_team"), dict) else {},
+                "jira_labels": jira_labels,
+                "jira_team": copy.deepcopy(raw_team),
                 "suit": suit or "task",
                 "priority": priority or "low",
-                "summary_template": summary_template or "Письмо: {subject}",
+                "summary_template": summary_template or "{subject}",
             }
         )
     target["routes"] = routes

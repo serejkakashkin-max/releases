@@ -113,9 +113,12 @@ def create_email_jira_task(event: Dict[str, Any]) -> Dict[str, Any]:
         f"Jira project: {project}"
     )
     subject = str(mail.get("subject") or event.get("summary") or "Email task").strip()
+    issue_type = str(route.get("jira_issue_type") or "Story").strip() or "Story"
+    issue_type_id = str(route.get("jira_issue_type_id") or "").strip()
+    epic_name_field = str(route.get("jira_epic_name_field") or "").strip()
     fields: Dict[str, Any] = {
         "project": {"key": project},
-        "issuetype": {"name": str(route.get("jira_issue_type") or "Story")},
+        "issuetype": ({"id": issue_type_id} if issue_type_id else {"name": issue_type}),
         "priority": {"name": str(route.get("jira_priority") or "Minor")},
         "summary": subject[:220],
         "description": description[:12000],
@@ -127,6 +130,9 @@ def create_email_jira_task(event: Dict[str, Any]) -> Dict[str, Any]:
     value_id = str(team.get("value_id") or "").strip()
     if field_id and value_id:
         fields[field_id] = {"id": value_id}
+    if issue_type.lower() == "epic":
+        epic_name_field = epic_name_field or "customfield_10002"
+        fields[epic_name_field] = subject[:255]
 
     response = requests.post(
         f"{connection['url']}/rest/api/2/issue",

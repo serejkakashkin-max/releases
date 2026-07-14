@@ -227,6 +227,34 @@ def _automation_settings() -> Dict[str, Any]:
         name = str(raw_route.get("name") or f"route_{index}").strip()
         if not name or not triggers or not spaces:
             continue
+        jira_issue_type = str(raw_route.get("jira_issue_type") or "Story").strip() or "Story"
+        jira_issue_type_id = str(raw_route.get("jira_issue_type_id") or "").strip()
+        jira_epic_name_field = str(raw_route.get("jira_epic_name_field") or "").strip()
+        raw_team = raw_route.get("jira_team") if isinstance(raw_route.get("jira_team"), dict) else {}
+        is_emrm_route = target_system == "jira" and any(
+            str(item).strip().upper() == "EMRM" for item in spaces
+        )
+        if (
+            is_emrm_route
+            and jira_issue_type.lower() == "story"
+            and str(raw_team.get("value_id") or "").strip() == "4681"
+        ):
+            name = "EMRM"
+            triggers = ["EMRM"]
+            jira_issue_type = "Epic"
+            jira_issue_type_id = "10000"
+            jira_epic_name_field = "customfield_10002"
+            raw_team = {
+                "field_id": "customfield_11902",
+                "value_id": "6651",
+                "name": "[\u0424\u043e\u043a\u0443\u0441] ForREST",
+            }
+        if jira_issue_type.lower() == "epic":
+            jira_issue_type_id = jira_issue_type_id or "10000"
+            jira_epic_name_field = jira_epic_name_field or "customfield_10002"
+        jira_labels = _normalize_string_list(raw_route.get("jira_labels") or ["MPR"])
+        if is_emrm_route and jira_issue_type.lower() == "epic" and jira_labels == ["MPR"]:
+            jira_labels = ["FromChannel"]
         normalized_routes.append(
             {
                 "enabled": _as_bool(raw_route.get("enabled"), True),
@@ -235,16 +263,16 @@ def _automation_settings() -> Dict[str, Any]:
                 "target_system": target_system,
                 "spaces": spaces,
                 "jira_domain": str(raw_route.get("jira_domain") or "sberbank").strip().lower(),
-                "jira_issue_type": str(raw_route.get("jira_issue_type") or "Story").strip() or "Story",
+                "jira_issue_type": jira_issue_type,
+                "jira_issue_type_id": jira_issue_type_id,
+                "jira_epic_name_field": jira_epic_name_field,
                 "jira_priority": str(raw_route.get("jira_priority") or "Minor").strip() or "Minor",
-                "jira_labels": _normalize_string_list(raw_route.get("jira_labels") or ["MPR"]),
-                "jira_team": raw_route.get("jira_team") if isinstance(raw_route.get("jira_team"), dict) else {},
+                "jira_labels": jira_labels,
+                "jira_team": raw_team,
                 "suit": str(raw_route.get("suit") or "task").strip() or "task",
                 "priority": str(raw_route.get("priority") or "low").strip() or "low",
-                "summary_template": str(
-                    raw_route.get("summary_template") or "Письмо: {subject}"
-                ).strip()
-                or "Письмо: {subject}",
+                "summary_template": str(raw_route.get("summary_template") or "{subject}").strip()
+                or "{subject}",
             }
         )
     return {
@@ -557,15 +585,15 @@ def _resolve_assignee(
 
 def _build_summary(route: Dict[str, Any], message_data: Dict[str, Any]) -> str:
     subject = str(message_data.get("subject") or "").strip()
-    template = str(route.get("summary_template") or "Письмо: {subject}")
+    template = str(route.get("summary_template") or "{subject}")
     try:
         summary = template.format(subject=subject, route=route.get("name") or "")
     except Exception:
-        summary = f"Письмо: {subject}"
+        summary = subject
     summary = re.sub(r"\s+", " ", summary).strip()
     if len(summary) > SUMMARY_MAX_CHARS:
         summary = summary[: SUMMARY_MAX_CHARS - 1].rstrip() + "…"
-    return summary or "Письмо без темы"
+    return summary or "Без темы"
 
 
 def _build_description(event: Dict[str, Any]) -> str:
@@ -616,6 +644,8 @@ def _event_from_match(
             "target_system": route.get("target_system", "sbertrack"),
             "jira_domain": route.get("jira_domain", "sberbank"),
             "jira_issue_type": route.get("jira_issue_type", "Story"),
+            "jira_issue_type_id": route.get("jira_issue_type_id", ""),
+            "jira_epic_name_field": route.get("jira_epic_name_field", ""),
             "jira_priority": route.get("jira_priority", "Minor"),
             "jira_labels": route.get("jira_labels", []),
             "jira_team": route.get("jira_team", {}),

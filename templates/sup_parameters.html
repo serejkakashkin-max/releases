@@ -1181,7 +1181,9 @@
           spaces: splitLines(row.querySelector("[data-route-spaces]")?.value || ""),
           jira_projects: splitLines(row.querySelector("[data-route-projects]")?.value || ""),
           jira_domain: row.querySelector("[data-route-domain]")?.value || "sberbank",
-          jira_issue_type: row.querySelector("[data-route-type]")?.value.trim() || "Story",
+          jira_issue_type: row.querySelector("[data-route-type]")?.value.trim() || "Epic",
+          jira_issue_type_id: row.querySelector("[data-route-type-id]")?.value.trim() || "",
+          jira_epic_name_field: row.querySelector("[data-route-epic-name-field]")?.value.trim() || "",
           jira_priority: row.querySelector("[data-route-jira-priority]")?.value.trim() || "Minor",
           jira_labels: splitLines(row.querySelector("[data-route-labels]")?.value || ""),
           jira_team: {
@@ -1191,7 +1193,7 @@
           },
           suit: row.querySelector("[data-route-suit]")?.value.trim() || "task",
           priority: row.querySelector("[data-route-priority]")?.value.trim() || "low",
-          summary_template: row.querySelector("[data-route-summary]")?.value.trim() || "Письмо: {subject}"
+          summary_template: row.querySelector("[data-route-summary]")?.value.trim() || "{subject}"
         });
       });
       return rows;
@@ -1396,15 +1398,51 @@
       renderSberTrackUsers(config.sbertrack_users || []);
     }
 
+    function normalizeEmailRouteForUi(route) {
+      const next = { ...(route || {}) };
+      const target = String(next.target_system || "sbertrack").toLowerCase();
+      const projects = Array.isArray(next.jira_projects) ? next.jira_projects : [];
+      const issueType = String(next.jira_issue_type || "").toLowerCase();
+      const labels = Array.isArray(next.jira_labels) ? next.jira_labels : [];
+      const team = next.jira_team && typeof next.jira_team === "object" ? next.jira_team : {};
+      const isLegacyEmrm = target === "jira"
+        && projects.some((item) => String(item || "").trim().toUpperCase() === "EMRM")
+        && (issueType === "story" || !issueType)
+        && String(team.value_id || "").trim() === "4681";
+
+      if (isLegacyEmrm) {
+        next.name = "EMRM";
+        next.subject_triggers = ["EMRM"];
+        next.summary_template = "{subject}";
+        next.jira_issue_type = "Epic";
+        next.jira_issue_type_id = "10000";
+        next.jira_epic_name_field = "customfield_10002";
+        next.jira_labels = labels.length === 1 && labels[0] === "MPR" ? ["FromChannel"] : labels;
+        next.jira_team = {
+          field_id: "customfield_11902",
+          value_id: "6651",
+          name: "[\u0424\u043e\u043a\u0443\u0441] ForREST"
+        };
+      }
+
+      if (target === "jira" && String(next.jira_issue_type || "").toLowerCase() === "epic") {
+        next.jira_issue_type_id = next.jira_issue_type_id || "10000";
+        next.jira_epic_name_field = next.jira_epic_name_field || "customfield_10002";
+      }
+      return next;
+    }
+
     function renderSberTrackRoutes(routes) {
-      $("sbertrackRouteRows").innerHTML = (routes || []).map((route, index) => `
+      $("sbertrackRouteRows").innerHTML = (routes || []).map((rawRoute, index) => {
+        const route = normalizeEmailRouteForUi(rawRoute);
+        return `
         <tr data-sbertrack-route-row="${index}">
           <td><input type="checkbox" data-route-enabled data-dirty-field ${route.enabled === false ? "" : "checked"}></td>
           <td>
-            <input data-route-name data-dirty-field value="${escapeAttr(route.name || "")}" placeholder="Амбассадор">
-            <input data-route-summary data-dirty-field value="${escapeAttr(route.summary_template || "Письмо: {subject}")}" placeholder="Письмо: {subject}" style="margin-top:6px;">
+            <input data-route-name data-dirty-field value="${escapeAttr(route.name || "")}" placeholder="EMRM">
+            <input data-route-summary data-dirty-field value="${escapeAttr(route.summary_template || "{subject}")}" placeholder="{subject}" style="margin-top:6px;">
           </td>
-          <td><textarea data-route-triggers data-dirty-field placeholder="Амбассадор&#10;ЗНИ">${escapeHtml(lines(route.subject_triggers || []))}</textarea></td>
+          <td><textarea data-route-triggers data-dirty-field placeholder="EMRM">${escapeHtml(lines(route.subject_triggers || []))}</textarea></td>
           <td>
             <select data-route-target data-dirty-field>
               <option value="sbertrack" ${route.target_system === "jira" ? "" : "selected"}>SberTrack</option>
@@ -1424,18 +1462,21 @@
              <input data-route-suit data-dirty-field value="${escapeAttr(route.suit || "task")}" placeholder="task">
              <input data-route-priority data-dirty-field value="${escapeAttr(route.priority || "low")}" placeholder="low" style="margin-top:6px;">
              <small class="muted" data-route-jira-fields style="display:block;margin-top:6px;">Jira issue / priority / labels / team</small>
-            <input data-route-type data-dirty-field value="${escapeAttr(route.jira_issue_type || "Story")}" placeholder="Story" style="margin-top:6px;">
+            <input data-route-type data-dirty-field value="${escapeAttr(route.jira_issue_type || "Epic")}" placeholder="Epic" style="margin-top:6px;">
+            <input data-route-type-id data-dirty-field value="${escapeAttr(route.jira_issue_type_id || "10000")}" placeholder="10000" style="margin-top:6px;">
+            <input data-route-epic-name-field data-dirty-field value="${escapeAttr(route.jira_epic_name_field || "customfield_10002")}" placeholder="customfield_10002" style="margin-top:6px;">
             <input data-route-jira-priority data-dirty-field value="${escapeAttr(route.jira_priority || "Minor")}" placeholder="Minor" style="margin-top:6px;">
-            <input data-route-labels data-dirty-field value="${escapeAttr((route.jira_labels || []).join("\n"))}" placeholder="MPR" style="margin-top:6px;">
+            <input data-route-labels data-dirty-field value="${escapeAttr((route.jira_labels || ["FromChannel"]).join("\n"))}" placeholder="FromChannel" style="margin-top:6px;">
             <input data-route-team-field data-dirty-field value="${escapeAttr(route.jira_team?.field_id || "")}" placeholder="customfield_11902" style="margin-top:6px;">
-            <input data-route-team-value data-dirty-field value="${escapeAttr(route.jira_team?.value_id || "")}" placeholder="4681" style="margin-top:6px;">
-            <input data-route-team-name data-dirty-field value="${escapeAttr(route.jira_team?.name || "")}" placeholder="ОПЛОТ" style="margin-top:6px;">
+            <input data-route-team-value data-dirty-field value="${escapeAttr(route.jira_team?.value_id || "")}" placeholder="6651" style="margin-top:6px;">
+            <input data-route-team-name data-dirty-field value="${escapeAttr(route.jira_team?.name || "")}" placeholder="ForREST" style="margin-top:6px;">
           </td>
           <td class="action-cell">
             <button type="button" class="icon-btn danger" data-remove-sbertrack-route="${index}">Удал.</button>
           </td>
         </tr>
-      `).join("");
+      `;
+      }).join("");
       $("sbertrackRouteEmpty").classList.toggle("hidden", Boolean((routes || []).length));
       refreshEmailRouteFields();
     }
@@ -1893,19 +1934,21 @@
       state.config = currentFormConfig();
       state.config.automation.email_to_sbertrack.routes.push({
         enabled: true,
-        name: "",
-        target_system: "sbertrack",
-        subject_triggers: [],
+        name: "EMRM",
+        target_system: "jira",
+        subject_triggers: ["EMRM"],
         spaces: [],
-        jira_projects: [],
+        jira_projects: ["EMRM"],
         jira_domain: "sberbank",
-        jira_issue_type: "Story",
+        jira_issue_type: "Epic",
+        jira_issue_type_id: "10000",
+        jira_epic_name_field: "customfield_10002",
         jira_priority: "Minor",
-        jira_labels: ["MPR"],
-        jira_team: { field_id: "customfield_11902", value_id: "4681", name: "ОПЛОТ" },
+        jira_labels: ["FromChannel"],
+        jira_team: { field_id: "customfield_11902", value_id: "6651", name: "[\u0424\u043e\u043a\u0443\u0441] ForREST" },
         suit: "task",
         priority: "low",
-        summary_template: "Письмо: {subject}"
+        summary_template: "{subject}"
       });
       renderSberTrack(state.config);
       markDirty();
