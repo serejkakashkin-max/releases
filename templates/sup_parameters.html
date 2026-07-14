@@ -1427,9 +1427,9 @@
             <input data-route-type data-dirty-field value="${escapeAttr(route.jira_issue_type || "Story")}" placeholder="Story" style="margin-top:6px;">
             <input data-route-jira-priority data-dirty-field value="${escapeAttr(route.jira_priority || "Minor")}" placeholder="Minor" style="margin-top:6px;">
             <input data-route-labels data-dirty-field value="${escapeAttr((route.jira_labels || []).join("\n"))}" placeholder="MPR" style="margin-top:6px;">
-            <input data-route-team-field data-dirty-field value="${escapeAttr(route.jira_team?.field_id || "customfield_11902")}" placeholder="customfield_11902" style="margin-top:6px;">
-            <input data-route-team-value data-dirty-field value="${escapeAttr(route.jira_team?.value_id || "4681")}" placeholder="4681" style="margin-top:6px;">
-            <input data-route-team-name data-dirty-field value="${escapeAttr(route.jira_team?.name || "ОПЛОТ")}" placeholder="ОПЛОТ" style="margin-top:6px;">
+            <input data-route-team-field data-dirty-field value="${escapeAttr(route.jira_team?.field_id || "")}" placeholder="customfield_11902" style="margin-top:6px;">
+            <input data-route-team-value data-dirty-field value="${escapeAttr(route.jira_team?.value_id || "")}" placeholder="4681" style="margin-top:6px;">
+            <input data-route-team-name data-dirty-field value="${escapeAttr(route.jira_team?.name || "")}" placeholder="ОПЛОТ" style="margin-top:6px;">
           </td>
           <td class="action-cell">
             <button type="button" class="icon-btn danger" data-remove-sbertrack-route="${index}">Удал.</button>
