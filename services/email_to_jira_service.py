@@ -142,6 +142,9 @@ def create_email_jira_task(event: Dict[str, Any]) -> Dict[str, Any]:
     if issue_type.lower() == "epic":
         epic_name_field = epic_name_field or "customfield_10007"
         fields[epic_name_field] = subject[:255]
+    if project.upper() == "EMRM" and issue_type.lower() == "epic":
+        # Required by EMRM Epic screen: "Тип Epic".
+        fields["customfield_19100"] = {"id": "30300"}
 
     response = requests.post(
         f"{connection['url']}/rest/api/2/issue",
