@@ -1,0 +1,304 @@
+{% extends "va_schedule_manager/base.html" %}
+{% from "va_schedule_manager/components/ui.html" import modal, section_header %}
+{% set active_page = "employees" %}
+
+{% block title %}Настройки · Сотрудники{% endblock %}
+{% block page_title %}Настройки АС{% endblock %}
+{% block page_subtitle %}Справочник сотрудников{% endblock %}
+
+{% block content %}
+  <section class="panel table-panel employee-table-panel">
+    {% call section_header("Список сотрудников", none) %}
+      <div class="section-meta">
+        <span class="meta-pill">Активных {{ active_count }}</span>
+        <span class="meta-pill">Всего {{ employees|length }}</span>
+      </div>
+      <a class="button button-light button-add-compact" href="{{ url_for('va_schedule_manager.settings.employees', add='1') }}" data-modal-trigger data-focus-key="employee-add">+</a>
+    {% endcall %}
+
+    <div class="table-wrap settings-table-wrap employees-table-wrap">
+      <table class="data-table settings-table employees-table">
+        <thead>
+          <tr>
+            <th>ФИО</th>
+            <th>Компетенция</th>
+            <th>Email</th>
+            <th>Телефон</th>
+            <th>Статус</th>
+            <th>Локация</th>
+            <th>Сверхурочка</th>
+            <th>Действия</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for employee in employees %}
+            {% set row_location = employee.location or "moscow" %}
+            <tr>
+              <td>
+                <form class="inline-edit-form" method="post" action="{{ url_for('va_schedule_manager.settings.quick_update_employee') }}" data-auto-submit-form>
+                  <input type="hidden" name="original_name" value="{{ employee.name }}">
+                  <input class="inline-field inline-name-field" name="name" required value="{{ employee.name }}" data-auto-submit-control>
+                  <input type="hidden" name="email" value="{{ employee.email }}">
+                  <input type="hidden" name="phone" value="{{ employee.phone }}">
+                  <input type="hidden" name="status" value="{{ employee.status }}">
+                  <input type="hidden" name="location" value="{{ row_location }}">
+                  <input type="hidden" name="overtime_ready" value="{{ '1' if employee.overtime_ready else '0' }}">
+                  {% for competency_code in employee.competencies %}
+                    <input type="hidden" name="competencies" value="{{ competency_code }}">
+                  {% endfor %}
+                </form>
+              </td>
+              <td>
+                <form class="inline-edit-form" method="post" action="{{ url_for('va_schedule_manager.settings.quick_update_employee') }}" data-auto-submit-form>
+                  <input type="hidden" name="original_name" value="{{ employee.name }}">
+                  <input type="hidden" name="name" value="{{ employee.name }}">
+                  <input type="hidden" name="email" value="{{ employee.email }}">
+                  <input type="hidden" name="phone" value="{{ employee.phone }}">
+                  <input type="hidden" name="status" value="{{ employee.status }}">
+                  <input type="hidden" name="location" value="{{ row_location }}">
+                  <input type="hidden" name="overtime_ready" value="{{ '1' if employee.overtime_ready else '0' }}">
+                  <div class="multi-select-field inline-multi-select" data-multi-select>
+                    <button class="multi-select-toggle" type="button" data-multi-select-toggle aria-haspopup="listbox" aria-expanded="false">
+                      <span class="multi-select-placeholder" data-multi-select-placeholder>Не задана</span>
+                      <span class="multi-select-value" data-multi-select-value></span>
+                    </button>
+                    <div class="multi-select-menu" data-multi-select-menu role="listbox" aria-multiselectable="true">
+                      <div class="multi-select-search">
+                        <input type="search" placeholder="Найти компетенцию" data-multi-select-search>
+                      </div>
+                      <div class="multi-select-tabs" role="tablist" aria-label="Фильтр компетенций">
+                        <button class="active" type="button" data-multi-select-filter="all">Все</button>
+                        <button type="button" data-multi-select-filter="selected">Выбранные</button>
+                      </div>
+                      <div class="multi-select-options">
+                        {% for competency in competencies %}
+                          <label class="multi-select-option" data-multi-select-option-row role="option" aria-selected="false">
+                            <input
+                              type="checkbox"
+                              name="competencies"
+                              value="{{ competency.code }}"
+                              data-multi-select-option
+                              data-auto-submit-control
+                              {% if competency.code in employee.competencies %}checked{% endif %}
+                            >
+                            <span class="multi-select-option-title" data-multi-select-label>{{ competency.name }}</span>
+                          </label>
+                        {% endfor %}
+                      </div>
+                      <div class="multi-select-empty" data-multi-select-empty hidden>Ничего не найдено</div>
+                    </div>
+                  </div>
+                </form>
+              </td>
+              <td>
+                <form class="inline-edit-form" method="post" action="{{ url_for('va_schedule_manager.settings.quick_update_employee') }}" data-auto-submit-form>
+                  <input type="hidden" name="original_name" value="{{ employee.name }}">
+                  <input type="hidden" name="name" value="{{ employee.name }}">
+                  <input class="inline-field" name="email" type="email" value="{{ employee.email }}" data-auto-submit-control>
+                  <input type="hidden" name="phone" value="{{ employee.phone }}">
+                  <input type="hidden" name="status" value="{{ employee.status }}">
+                  <input type="hidden" name="location" value="{{ row_location }}">
+                  <input type="hidden" name="overtime_ready" value="{{ '1' if employee.overtime_ready else '0' }}">
+                  {% for competency_code in employee.competencies %}
+                    <input type="hidden" name="competencies" value="{{ competency_code }}">
+                  {% endfor %}
+                </form>
+              </td>
+              <td>
+                <form class="inline-edit-form" method="post" action="{{ url_for('va_schedule_manager.settings.quick_update_employee') }}" data-auto-submit-form>
+                  <input type="hidden" name="original_name" value="{{ employee.name }}">
+                  <input type="hidden" name="name" value="{{ employee.name }}">
+                  <input type="hidden" name="email" value="{{ employee.email }}">
+                  <input class="inline-field" name="phone" value="{{ employee.phone }}" data-auto-submit-control>
+                  <input type="hidden" name="status" value="{{ employee.status }}">
+                  <input type="hidden" name="location" value="{{ row_location }}">
+                  <input type="hidden" name="overtime_ready" value="{{ '1' if employee.overtime_ready else '0' }}">
+                  {% for competency_code in employee.competencies %}
+                    <input type="hidden" name="competencies" value="{{ competency_code }}">
+                  {% endfor %}
+                </form>
+              </td>
+              <td>
+                <form class="inline-edit-form" method="post" action="{{ url_for('va_schedule_manager.settings.quick_update_employee') }}" data-auto-submit-form>
+                  <input type="hidden" name="original_name" value="{{ employee.name }}">
+                  <input type="hidden" name="name" value="{{ employee.name }}">
+                  <input type="hidden" name="email" value="{{ employee.email }}">
+                  <input type="hidden" name="phone" value="{{ employee.phone }}">
+                  <select name="status" data-auto-submit-control>
+                    {% for code, title in statuses.items() %}
+                      <option value="{{ code }}" {% if employee.status == code %}selected{% endif %}>{{ title }}</option>
+                    {% endfor %}
+                  </select>
+                  <input type="hidden" name="location" value="{{ row_location }}">
+                  <input type="hidden" name="overtime_ready" value="{{ '1' if employee.overtime_ready else '0' }}">
+                  {% for competency_code in employee.competencies %}
+                    <input type="hidden" name="competencies" value="{{ competency_code }}">
+                  {% endfor %}
+                </form>
+              </td>
+              <td>
+                <form class="inline-edit-form" method="post" action="{{ url_for('va_schedule_manager.settings.quick_update_employee') }}" data-auto-submit-form>
+                  <input type="hidden" name="original_name" value="{{ employee.name }}">
+                  <input type="hidden" name="name" value="{{ employee.name }}">
+                  <input type="hidden" name="email" value="{{ employee.email }}">
+                  <input type="hidden" name="phone" value="{{ employee.phone }}">
+                  <input type="hidden" name="status" value="{{ employee.status }}">
+                  <select name="location" data-auto-submit-control>
+                    {% for code, title in locations.items() %}
+                      <option value="{{ code }}" {% if row_location == code %}selected{% endif %}>{{ title }}</option>
+                    {% endfor %}
+                  </select>
+                  <input type="hidden" name="overtime_ready" value="{{ '1' if employee.overtime_ready else '0' }}">
+                  {% for competency_code in employee.competencies %}
+                    <input type="hidden" name="competencies" value="{{ competency_code }}">
+                  {% endfor %}
+                </form>
+              </td>
+              <td>
+                <form class="inline-edit-form" method="post" action="{{ url_for('va_schedule_manager.settings.quick_update_employee') }}" data-auto-submit-form>
+                  <input type="hidden" name="original_name" value="{{ employee.name }}">
+                  <input type="hidden" name="name" value="{{ employee.name }}">
+                  <input type="hidden" name="email" value="{{ employee.email }}">
+                  <input type="hidden" name="phone" value="{{ employee.phone }}">
+                  <input type="hidden" name="status" value="{{ employee.status }}">
+                  <input type="hidden" name="location" value="{{ row_location }}">
+                  <select name="overtime_ready" data-auto-submit-control>
+                    {% for code, title in overtime_ready_options.items() %}
+                      <option value="{{ code }}" {% if (employee.overtime_ready and code == "1") or ((not employee.overtime_ready) and code == "0") %}selected{% endif %}>{{ title }}</option>
+                    {% endfor %}
+                  </select>
+                  {% for competency_code in employee.competencies %}
+                    <input type="hidden" name="competencies" value="{{ competency_code }}">
+                  {% endfor %}
+                </form>
+              </td>
+              <td>
+                <div class="row-actions">
+                  <a class="button button-danger-soft button-icon" href="{{ url_for('va_schedule_manager.settings.employees', delete=employee.name) }}" data-modal-trigger data-focus-key="employee-delete-{{ loop.index }}">Удалить</a>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}
+
+{% block dialogs %}
+  {% if show_add_employee %}
+    {% call modal("Добавление сотрудника", "", url_for("va_schedule_manager.settings.employees"), "add-employee-title", "employee-add-modal") %}
+      <form class="employee-form modal-employee-form" method="post" action="{{ url_for('va_schedule_manager.settings.add_employee') }}">
+        <label>
+          <span>ФИО</span>
+          <input name="name" required>
+        </label>
+        <div class="multi-select-field employee-competency-field" data-multi-select>
+          <span class="field-label">Компетенция</span>
+          <button class="multi-select-toggle" type="button" data-multi-select-toggle aria-haspopup="listbox" aria-expanded="false">
+            <span class="multi-select-placeholder" data-multi-select-placeholder>Выберите компетенции</span>
+            <span class="multi-select-value" data-multi-select-value></span>
+          </button>
+          <div class="multi-select-menu" data-multi-select-menu role="listbox" aria-multiselectable="true">
+            <div class="multi-select-search">
+              <input type="search" placeholder="Найти компетенцию" data-multi-select-search>
+            </div>
+            <div class="multi-select-tabs" role="tablist" aria-label="Фильтр компетенций">
+              <button class="active" type="button" data-multi-select-filter="all">Все</button>
+              <button type="button" data-multi-select-filter="selected">Выбранные</button>
+            </div>
+            <div class="multi-select-options">
+              {% for competency in competencies %}
+                <label class="multi-select-option" data-multi-select-option-row role="option" aria-selected="false">
+                  <input
+                    type="checkbox"
+                    name="competencies"
+                    value="{{ competency.code }}"
+                    data-multi-select-option
+                    {% if competency.code == "support" %}checked{% endif %}
+                  >
+                  <span class="multi-select-option-title" data-multi-select-label>{{ competency.name }}</span>
+                </label>
+              {% endfor %}
+            </div>
+            <div class="multi-select-empty" data-multi-select-empty hidden>Ничего не найдено</div>
+          </div>
+        </div>
+        <label>
+          <span>Email</span>
+          <input name="email" type="email">
+        </label>
+        <label>
+          <span>Телефон</span>
+          <input name="phone">
+        </label>
+        <label>
+          <span>Статус</span>
+          <select name="status">
+            {% for code, title in statuses.items() %}
+              <option value="{{ code }}" {% if code == "active" %}selected{% endif %}>{{ title }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          <span>Локация</span>
+          <select name="location">
+            {% for code, title in locations.items() %}
+              <option value="{{ code }}" {% if code == "moscow" %}selected{% endif %}>{{ title }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          <span>Готов к сверхурочке</span>
+          <select name="overtime_ready">
+            {% for code, title in overtime_ready_options.items() %}
+              <option value="{{ code }}" {% if code == "1" %}selected{% endif %}>{{ title }}</option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <div class="actions modal-actions">
+          <button class="button button-primary" type="submit">Добавить</button>
+          <a class="button button-light" href="{{ url_for('va_schedule_manager.settings.employees') }}">Отмена</a>
+        </div>
+      </form>
+    {% endcall %}
+  {% endif %}
+
+  {% if delete_employee %}
+    {% call modal("Удаление сотрудника", delete_employee.name, url_for("va_schedule_manager.settings.employees"), "delete-employee-title") %}
+        {% if delete_usage %}
+          <p class="decision-text">Сотрудник найден в графиках. Выберите, что сделать с ним дальше.</p>
+          <ul class="usage-list">
+            {% for usage in delete_usage %}
+              <li>{{ usage.title }}: {{ usage.assigned_days }} заполненных дней</li>
+            {% endfor %}
+          </ul>
+
+          <div class="decision-actions modal-actions">
+            <form method="post" action="{{ url_for('va_schedule_manager.settings.change_status') }}">
+              <input type="hidden" name="name" value="{{ delete_employee.name }}">
+              <input type="hidden" name="status" value="dismissed">
+              <button class="button button-secondary" type="submit">Пометить уволенным</button>
+            </form>
+
+            <form method="post" action="{{ url_for('va_schedule_manager.settings.delete_employee_from_schedules') }}">
+              <input type="hidden" name="name" value="{{ delete_employee.name }}">
+              <button class="button button-danger" type="submit">Создать копию графика без сотрудника и удалить</button>
+            </form>
+
+            <a class="button button-light" href="{{ url_for('va_schedule_manager.settings.employees') }}">Отмена</a>
+          </div>
+        {% else %}
+          <p class="decision-text">В графиках сотрудник не найден. Можно удалить его из справочника.</p>
+          <div class="decision-actions modal-actions">
+            <form method="post" action="{{ url_for('va_schedule_manager.settings.delete_employee') }}">
+              <input type="hidden" name="name" value="{{ delete_employee.name }}">
+              <button class="button button-danger" type="submit">Удалить из справочника</button>
+            </form>
+            <a class="button button-light" href="{{ url_for('va_schedule_manager.settings.employees') }}">Отмена</a>
+          </div>
+        {% endif %}
+    {% endcall %}
+  {% endif %}
+{% endblock %}

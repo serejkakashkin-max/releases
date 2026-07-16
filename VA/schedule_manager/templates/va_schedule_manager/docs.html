@@ -1,0 +1,41 @@
+{% extends "va_schedule_manager/base.html" %}
+
+{% block title %}Документация{% endblock %}
+{% block page_title %}Документация{% endblock %}
+{% block page_subtitle %}Требования, руководство пользователя, API и журнал изменений{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <div class="section-header">
+      <div>
+        <h2>Источники и результаты</h2>
+        <p>Эти материалы нужно держать в актуальном состоянии при каждой доработке АС.</p>
+      </div>
+      <div class="section-actions">
+        <a class="button button-secondary" href="{{ url_for('va_schedule_manager.web.docs_file', filename=source_html_path) }}" target="_blank" rel="noreferrer">Открыть требования</a>
+      </div>
+    </div>
+
+    <div class="docs-grid">
+      {% for item in docs_files %}
+        <article class="docs-card">
+          <h3>{{ item.title }}</h3>
+          <p>{{ item.description }}</p>
+          <div class="docs-card-actions">
+            <a href="{{ url_for('va_schedule_manager.web.docs_file', filename=item.path) }}">Открыть</a>
+            <a href="{{ url_for('va_schedule_manager.web.docs_download', filename=item.path) }}">Скачать</a>
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="section-header compact">
+      <div>
+        <h2>Правило сопровождения</h2>
+        <p>Любое изменение функционала должно сопровождаться обновлением документации: руководства, API или журнала изменений.</p>
+      </div>
+    </div>
+  </section>
+{% endblock %}

@@ -1,0 +1,23 @@
+{% macro render_user_messages(messages) %}
+  {% if messages %}
+    <div class="message-layer" role="status" aria-live="polite">
+      {% for item in messages %}
+        <section class="message-frame message-frame-{{ item.kind }}">
+          <div class="message-mark" aria-hidden="true"></div>
+          <div class="message-content">
+            <strong>{{ item.resolved_title }}</strong>
+            <span>{{ item.text }}</span>
+            {% if item.details %}
+              <ul>
+                {% for detail in item.details %}
+                  <li>{{ detail }}</li>
+                {% endfor %}
+              </ul>
+            {% endif %}
+          </div>
+          <button class="message-close" type="button" aria-label="Закрыть сообщение" onclick="this.closest('.message-frame').remove()">×</button>
+        </section>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endmacro %}

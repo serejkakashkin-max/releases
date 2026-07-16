@@ -1,0 +1,37 @@
+{% macro section_header(title, subtitle=None, class_name="section-header", actions_class="section-actions", caller=None) %}
+  <div class="{{ class_name }}">
+    <div>
+      <h2>{{ title }}</h2>
+      {% if subtitle %}
+        <p>{{ subtitle }}</p>
+      {% endif %}
+    </div>
+    {% if caller %}
+      <div class="{{ actions_class }}">
+        {{ caller() }}
+      </div>
+    {% endif %}
+  </div>
+{% endmacro %}
+
+{% macro status_badge(text, kind="success") %}
+  <span class="badge badge-{{ kind }}">{{ text }}</span>
+{% endmacro %}
+
+{% macro modal(title, subtitle, close_href, title_id, class_name="", caller=None) %}
+  <div class="modal-backdrop" role="presentation" data-modal-backdrop data-close-href="{{ close_href }}">
+    <section class="modal-dialog {{ class_name }}" role="dialog" aria-modal="true" aria-labelledby="{{ title_id }}" tabindex="-1" data-modal>
+      <div class="modal-header">
+        <div>
+          <h2 id="{{ title_id }}">{{ title }}</h2>
+          {% if subtitle %}
+            <p>{{ subtitle }}</p>
+          {% endif %}
+        </div>
+        <a class="modal-close" href="{{ close_href }}" aria-label="Закрыть окно" data-modal-close>×</a>
+      </div>
+
+      {{ caller() }}
+    </section>
+  </div>
+{% endmacro %}

@@ -1,0 +1,123 @@
+{% extends "va_schedule_manager/base.html" %}
+{% from "va_schedule_manager/components/ui.html" import modal, section_header %}
+{% set active_page = "competencies" %}
+
+{% block title %}Настройки · Компетенции{% endblock %}
+{% block page_title %}Настройки АС{% endblock %}
+{% block page_subtitle %}Справочник компетенций сотрудников{% endblock %}
+
+{% block content %}
+  <section class="panel table-panel">
+    {% call section_header("Список компетенций", none) %}
+      <div class="section-meta">
+        <span class="meta-pill">Всего {{ competencies|length }}</span>
+      </div>
+      <a class="button button-light button-add-compact" href="{{ url_for('va_schedule_manager.settings.competencies', add='1') }}" data-modal-trigger data-focus-key="competency-add">+</a>
+    {% endcall %}
+
+    <div class="table-wrap settings-table-wrap">
+      <table class="data-table settings-table competencies-table">
+        <thead>
+          <tr>
+            <th>Код</th>
+            <th>Название</th>
+            <th>Описание</th>
+            <th>Тип</th>
+            <th>Действия</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for competency in competencies %}
+            <tr>
+              <td>
+                <form class="inline-edit-form" method="post" action="{{ url_for('va_schedule_manager.settings.update_competency') }}" data-auto-submit-form>
+                  <input type="hidden" name="original_code" value="{{ competency.code }}">
+                  <input class="inline-field" name="code" required value="{{ competency.code }}" data-auto-submit-control {% if competency.is_system %}readonly{% endif %}>
+                  <input type="hidden" name="name" value="{{ competency.name }}">
+                  <input type="hidden" name="description" value="{{ competency.description }}">
+                </form>
+              </td>
+              <td>
+                <form class="inline-edit-form" method="post" action="{{ url_for('va_schedule_manager.settings.update_competency') }}" data-auto-submit-form>
+                  <input type="hidden" name="original_code" value="{{ competency.code }}">
+                  <input type="hidden" name="code" value="{{ competency.code }}">
+                  <input class="inline-field" name="name" required value="{{ competency.name }}" data-auto-submit-control>
+                  <input type="hidden" name="description" value="{{ competency.description }}">
+                </form>
+              </td>
+              <td>
+                <form class="inline-edit-form" method="post" action="{{ url_for('va_schedule_manager.settings.update_competency') }}" data-auto-submit-form>
+                  <input type="hidden" name="original_code" value="{{ competency.code }}">
+                  <input type="hidden" name="code" value="{{ competency.code }}">
+                  <input type="hidden" name="name" value="{{ competency.name }}">
+                  <input class="inline-field" name="description" value="{{ competency.description }}" data-auto-submit-control>
+                </form>
+              </td>
+              <td>{{ "Системная" if competency.is_system else "Пользовательская" }}</td>
+              <td>
+                <div class="row-actions">
+                  <a class="button button-danger-soft button-icon" href="{{ url_for('va_schedule_manager.settings.competencies', delete=competency.code) }}" data-modal-trigger data-focus-key="competency-delete-{{ loop.index }}">Удалить</a>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}
+
+{% block dialogs %}
+  {% if show_add_competency %}
+    {% call modal("Добавление компетенции", "", url_for("va_schedule_manager.settings.competencies"), "add-competency-title") %}
+      <form class="competency-form modal-shift-form" method="post" action="{{ url_for('va_schedule_manager.settings.add_competency') }}">
+        <label>
+          <span>Код</span>
+          <input name="code" placeholder="mpr_backup" required>
+        </label>
+        <label>
+          <span>Название</span>
+          <input name="name" placeholder="МПР-резерв" required>
+        </label>
+        <label>
+          <span>Описание</span>
+          <input name="description" placeholder="Для правил формирования графика">
+        </label>
+        <div class="decision-actions modal-actions">
+          <button class="button button-primary" type="submit">Добавить</button>
+          <a class="button button-light" href="{{ url_for('va_schedule_manager.settings.competencies') }}">Отмена</a>
+        </div>
+      </form>
+    {% endcall %}
+  {% endif %}
+
+  {% if delete_competency %}
+    {% call modal("Удаление компетенции", delete_competency.name, url_for("va_schedule_manager.settings.competencies"), "delete-competency-title") %}
+      {% if delete_competency.is_system %}
+        <p class="decision-text">Системную компетенцию удалить нельзя.</p>
+        <div class="decision-actions modal-actions">
+          <a class="button button-light" href="{{ url_for('va_schedule_manager.settings.competencies') }}">Понятно</a>
+        </div>
+      {% elif delete_usage %}
+        <p class="decision-text">Компетенция назначена сотрудникам. Сначала снимите ее в справочнике сотрудников.</p>
+        <ul class="usage-list">
+          {% for employee_name in delete_usage %}
+            <li>{{ employee_name }}</li>
+          {% endfor %}
+        </ul>
+        <div class="decision-actions modal-actions">
+          <a class="button button-light" href="{{ url_for('va_schedule_manager.settings.competencies') }}">Понятно</a>
+        </div>
+      {% else %}
+        <p class="decision-text">Компетенция не назначена сотрудникам. Можно удалить ее из справочника.</p>
+        <div class="decision-actions modal-actions">
+          <form method="post" action="{{ url_for('va_schedule_manager.settings.delete_competency') }}">
+            <input type="hidden" name="code" value="{{ delete_competency.code }}">
+            <button class="button button-danger" type="submit">Удалить компетенцию</button>
+          </form>
+          <a class="button button-light" href="{{ url_for('va_schedule_manager.settings.competencies') }}">Отмена</a>
+        </div>
+      {% endif %}
+    {% endcall %}
+  {% endif %}
+{% endblock %}

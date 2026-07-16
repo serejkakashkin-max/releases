@@ -1,0 +1,81 @@
+<!doctype html>
+{% from "va_schedule_manager/components/user_messages.html" import render_user_messages %}
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ va_admin_csrf_token }}">
+    <title>{% block title %}График дежурств{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('va_schedule_manager.static', filename='va_schedule_manager/style.css') }}?v=20260714-30">
+    {% block head_extra %}{% endblock %}
+  </head>
+  <body>
+    {{ render_user_messages(user_messages) }}
+    <main class="layout {% block layout_class %}{% endblock %}">
+      <header class="app-header">
+        <div>
+          <nav class="va-breadcrumb" aria-label="breadcrumb">
+            <a href="{{ va_admin_panel_url }}">СУП-параметры</a>
+            <span>/</span>
+            <span>Инструменты</span>
+            <span>/</span>
+            <strong>Графики дежурств</strong>
+          </nav>
+          <h1>{% block page_title %}График дежурств{% endblock %}</h1>
+          <p>{% block page_subtitle %}Система управления графиком дежурств сотрудников{% endblock %}</p>
+        </div>
+        {% block header_actions %}{% endblock %}
+      </header>
+
+      <nav class="top-nav" aria-label="Основная навигация">
+        <a class="{% if active_page == 'schedule' %}active{% endif %}" href="{{ url_for('va_schedule_manager.web.index') }}">График</a>
+        <a class="{% if active_page == 'employees' %}active{% endif %}" href="{{ url_for('va_schedule_manager.settings.employees') }}">Сотрудники</a>
+        <a class="{% if active_page == 'competencies' %}active{% endif %}" href="{{ url_for('va_schedule_manager.settings.competencies') }}">Компетенции</a>
+        <a class="{% if active_page == 'shifts' %}active{% endif %}" href="{{ url_for('va_schedule_manager.settings.shifts') }}">Смены</a>
+        <a class="{% if active_page == 'integrations' %}active{% endif %}" href="{{ url_for('va_schedule_manager.settings.integrations') }}">Интеграции</a>
+        <a class="top-nav-docs {% if active_page == 'docs' %}active{% endif %}" href="{{ url_for('va_schedule_manager.web.docs_index') }}">Документация</a>
+      </nav>
+
+      {% block content %}{% endblock %}
+    </main>
+
+    {% block dialogs %}{% endblock %}
+    <script>
+      (function () {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || "";
+        const originalFetch = window.fetch.bind(window);
+        window.fetch = function (input, init = {}) {
+          const method = String(init.method || "GET").toUpperCase();
+          const headers = new Headers(init.headers || {});
+          if (csrfToken && !["GET", "HEAD", "OPTIONS", "TRACE"].includes(method)) {
+            headers.set("X-CSRF-Token", csrfToken);
+          }
+          return originalFetch(input, { ...init, headers });
+        };
+        document.addEventListener("submit", async (event) => {
+          const form = event.target;
+          if (!(form instanceof HTMLFormElement)) return;
+          const method = String(form.method || "GET").toUpperCase();
+          if (method === "GET" || !csrfToken) return;
+          event.preventDefault();
+          const response = await fetch(form.action || window.location.href, {
+            method,
+            body: new FormData(form),
+            headers: { "X-CSRF-Token": csrfToken },
+            redirect: "follow"
+          });
+          if (response.redirected) {
+            window.location.assign(response.url);
+            return;
+          }
+          const html = await response.text();
+          document.open();
+          document.write(html);
+          document.close();
+        });
+      })();
+    </script>
+    <script src="{{ url_for('va_schedule_manager.static', filename='va_schedule_manager/app.js') }}?v=20260714-30"></script>
+    {% block scripts %}{% endblock %}
+  </body>
+</html>

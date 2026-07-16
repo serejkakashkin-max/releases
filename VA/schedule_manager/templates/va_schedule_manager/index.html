@@ -1,0 +1,543 @@
+{% extends "va_schedule_manager/base.html" %}
+{% from "va_schedule_manager/components/ui.html" import modal, section_header, status_badge %}
+{% set active_page = "schedule" %}
+
+{% block title %}График дежурств{% endblock %}
+{% block page_title %}График дежурств{% endblock %}
+{% block page_subtitle %}Система управления графиком дежурств сотрудников{% endblock %}
+{% block header_actions %}
+  <div class="header-actions">
+    {% if schedule_grid and selected_sheet_name %}
+      <a
+        class="button button-header"
+        href="{{ url_for('va_schedule_manager.web.export_schedule', sheet_name=selected_sheet_name) }}"
+      >Экспорт</a>
+    {% endif %}
+    <button class="button button-header" type="button" data-file-panel-trigger>Импорт</button>
+  </div>
+{% endblock %}
+
+{% block content %}
+  <section class="panel today-panel">
+    {% if today_state.has_data %}
+      <div class="today-summary">
+        <div class="today-label">
+          <strong>Сегодня</strong>
+          <span>{{ today_state.date_label or today_state.date }}</span>
+        </div>
+        {% set primary = namespace(name="") %}
+        {% for shift in today_state.shifts %}
+          {% if shift.code == today_state.primary_shift or shift.display_code == today_state.primary_shift %}
+            {% set primary.name = shift.name %}
+          {% endif %}
+        {% endfor %}
+        <div class="today-duty">
+          {% if today_state.primary_shift %}
+            <em>{{ today_state.primary_shift }}</em>
+          {% endif %}
+          <strong>{{ today_state.primary_duty_employee or "Не определен" }}</strong>
+          <span>{{ primary.name or "Основной дежурный сейчас" }}</span>
+        </div>
+
+        <div class="today-shifts">
+          {% for shift in today_state.shifts %}
+            {% if shift.display_code != "8" and shift.code != "8" %}
+              <div class="today-shift-card">
+                <span
+                  class="today-shift-code"
+                  {% if shift.color %}
+                    style="background-color: {{ shift.color }}; color: {{ shift.text_color }};"
+                  {% endif %}
+                >{{ shift.display_code }}</span>
+                <div>
+                  <strong>{{ shift.name }}</strong>
+                  <p>{{ shift.employees|join(", ") }}</p>
+                </div>
+              </div>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+    {% else %}
+      <div class="today-summary">
+        <div class="today-label">
+          <strong>Сегодня</strong>
+          <span>{{ today_state.date_label or today_state.date }}</span>
+        </div>
+        <div class="empty-inline">На сегодняшнюю дату график не найден.</div>
+      </div>
+    {% endif %}
+  </section>
+
+  <div class="inline-modal" data-file-panel-modal hidden>
+    <div class="modal-backdrop inline-modal-backdrop" role="presentation" data-file-panel-backdrop>
+      <section class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="file-panel-title" tabindex="-1">
+        <div class="modal-header">
+          <div>
+            <h2 id="file-panel-title">Файл графика</h2>
+            <p>{{ snapshot.original_filename if snapshot else "Файл не загружен" }}</p>
+          </div>
+          <button class="modal-close" type="button" aria-label="Закрыть окно" data-file-panel-close>×</button>
+        </div>
+
+        <form class="upload-form modal-form" method="post" action="{{ url_for('va_schedule_manager.web.upload') }}" enctype="multipart/form-data">
+          <input name="file" type="file" accept=".xlsx,.xls" required>
+          <div class="decision-actions modal-actions">
+            <button class="button button-primary" type="submit">
+              {% if snapshot %}Загрузить другой файл{% else %}Загрузить график{% endif %}
+            </button>
+            <button class="button button-light" type="button" data-file-panel-close>Отмена</button>
+          </div>
+        </form>
+
+        {% if snapshot %}
+          <form method="post" action="{{ url_for('va_schedule_manager.web.clear') }}">
+            <button class="button button-danger-soft" type="submit">Сбросить файл</button>
+          </form>
+        {% endif %}
+      </section>
+    </div>
+  </div>
+
+  <div class="inline-modal" data-create-month-modal hidden>
+      <div class="modal-backdrop inline-modal-backdrop" role="presentation" data-create-month-backdrop>
+        <section class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="create-month-title" tabindex="-1">
+          <div class="modal-header">
+            <div>
+              <h2 id="create-month-title">Создание графика</h2>
+              <p>Новый месяц будет сохранен в данных АС.</p>
+            </div>
+            <button class="modal-close" type="button" aria-label="Закрыть окно" data-create-month-close>×</button>
+          </div>
+
+          <form class="modal-form create-month-form" method="post" action="{{ url_for('va_schedule_manager.web.create_schedule_month') }}">
+            <div class="modal-form-row">
+              <label>
+                <span>Год</span>
+                <select name="year" required>
+                  {% for year in create_year_options %}
+                    <option value="{{ year }}" {% if year == default_create_year %}selected{% endif %}>{{ year }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+
+              <label>
+                <span>Месяц</span>
+                <select name="month" required>
+                  {% for option in create_month_options %}
+                    <option value="{{ option.number }}" {% if option.number == default_create_month %}selected{% endif %}>
+                      {{ option.name }}
+                    </option>
+                  {% endfor %}
+                </select>
+              </label>
+            </div>
+
+            <label>
+              <span>Сотрудники</span>
+              <select name="employee_source">
+                <option value="last_schedule">Из последнего графика</option>
+                <option value="directory">Из справочника активных сотрудников</option>
+              </select>
+            </label>
+
+            <div class="notice notice-info compact">
+              Если производственный календарь не настроен или недоступен, график создастся только с датами, днями недели и сотрудниками.
+            </div>
+
+            <div class="decision-actions modal-actions">
+              <button class="button button-primary" type="submit">Создать</button>
+              <button class="button button-light" type="button" data-create-month-close>Отмена</button>
+            </div>
+          </form>
+        </section>
+      </div>
+  </div>
+
+  {% if month_sheet_options %}
+    <div class="inline-modal" data-copy-month-modal hidden>
+        <div class="modal-backdrop inline-modal-backdrop" role="presentation" data-copy-month-backdrop>
+          <section class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="copy-month-title" tabindex="-1">
+            <div class="modal-header">
+              <div>
+                <h2 id="copy-month-title">Копирование графика</h2>
+                <p>Данные будут перенесены в выбранный месяц с учетом его календаря.</p>
+              </div>
+              <button class="modal-close" type="button" aria-label="Закрыть окно" data-copy-month-close>×</button>
+            </div>
+
+            <form class="modal-form create-month-form" method="post" action="{{ url_for('va_schedule_manager.web.copy_schedule_month') }}">
+              <label>
+                <span>Месяц-источник</span>
+                <select name="source_sheet_name" required>
+                  {% for option in month_sheet_options %}
+                    <option value="{{ option.sheet_name }}" {% if option.sheet_name == selected_sheet_name %}selected{% endif %}>
+                      {{ option.label }}
+                    </option>
+                  {% endfor %}
+                </select>
+              </label>
+
+              <div class="modal-form-row">
+                <label>
+                  <span>Год назначения</span>
+                  <select name="target_year" required>
+                    {% for year in create_year_options %}
+                      <option value="{{ year }}" {% if year == default_create_year %}selected{% endif %}>{{ year }}</option>
+                    {% endfor %}
+                  </select>
+                </label>
+
+                <label>
+                  <span>Месяц назначения</span>
+                  <select name="target_month" required>
+                    {% for option in create_month_options %}
+                      <option value="{{ option.number }}" {% if option.number == default_create_month %}selected{% endif %}>
+                        {{ option.name }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                </label>
+              </div>
+
+              <label class="checkbox-row">
+                <input name="overwrite" type="checkbox">
+                <span>Перезаписать целевой месяц, если он уже существует</span>
+              </label>
+
+              <div class="notice notice-info compact">
+                Если производственный календарь недоступен, АС скопирует график без праздничных отметок целевого месяца и предложит сверить праздники вручную.
+              </div>
+
+              <div class="decision-actions modal-actions">
+                <button class="button button-primary" type="submit">Скопировать</button>
+                <button class="button button-light" type="button" data-copy-month-close>Отмена</button>
+              </div>
+            </form>
+          </section>
+        </div>
+    </div>
+  {% endif %}
+
+  {% if snapshot and month_sheet_options %}
+    {% if schedule_error %}
+      <section class="panel empty-panel">
+        <h2>Не удалось прочитать график</h2>
+        <p>{{ schedule_error }}</p>
+      </section>
+    {% endif %}
+  {% elif snapshot and schedule_error %}
+    <section class="panel empty-panel">
+      <h2>Файл не готов к отображению</h2>
+      <p>{{ schedule_error }}</p>
+    </section>
+  {% endif %}
+
+  {% if schedule_grid %}
+    <section
+      class="panel schedule-panel"
+      data-schedule-editor
+      data-update-url="{{ url_for('va_schedule_manager.api.update_schedule_cell') }}"
+      data-bulk-fill-url="{{ url_for('va_schedule_manager.api.bulk_fill_schedule_cells') }}"
+      data-add-employee-url="{{ url_for('va_schedule_manager.api.add_schedule_employee') }}"
+      data-delete-employee-url="{{ url_for('va_schedule_manager.api.delete_schedule_employee') }}"
+      data-sheet-name="{{ selected_sheet_name }}"
+    >
+      <div class="section-header schedule-header">
+        <div class="schedule-title-line">
+          <h2>График</h2>
+          <span>{{ schedule_grid.title }}</span>
+          {% if schedule_violations %}
+            <span data-violation-badge>{{ status_badge("Нарушений: " ~ schedule_violations|length, "warning") }}</span>
+          {% else %}
+            <span data-violation-badge>{{ status_badge("Проверено", "success") }}</span>
+          {% endif %}
+        </div>
+      </div>
+
+      <script type="application/json" data-shift-options-json>
+        {{ shift_options_payload|tojson }}
+      </script>
+      <script type="application/json" data-schedule-days-json>
+        {{ schedule_days_payload|tojson }}
+      </script>
+      <div class="schedule-control-bar">
+        <form class="schedule-period-form" method="get" action="{{ url_for('va_schedule_manager.web.index') }}" data-auto-submit-form>
+          <label>
+            <span>Год</span>
+            <select name="year" data-auto-submit-control>
+              {% for year in year_options %}
+                <option value="{{ year }}" {% if year == selected_year %}selected{% endif %}>{{ year }}</option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <label>
+            <span>Месяц</span>
+            <select name="month" data-auto-submit-control>
+              {% for option in month_options %}
+                <option value="{{ option.month }}" {% if option.month == selected_month %}selected{% endif %}>
+                  {{ option.month_name }}
+                </option>
+              {% endfor %}
+            </select>
+          </label>
+        </form>
+
+        <div class="bulk-fill-toolbar" data-bulk-fill-toolbar hidden>
+          <span data-selection-count>Выбрано: 0</span>
+          <button class="button button-light button-compact" type="button" data-clear-selection>Снять выделение</button>
+        </div>
+
+        <div class="schedule-toolbar">
+          <button class="button button-primary button-compact" type="button" data-create-month-trigger>
+            Создать график
+          </button>
+          {% if month_sheet_options %}
+            <button class="button button-secondary button-compact" type="button" data-copy-month-trigger>
+              Копировать из...
+            </button>
+          {% endif %}
+          {% if active_employees %}
+            <button class="button button-primary button-compact" type="button" data-add-employee-trigger>
+              Добавить сотрудника
+            </button>
+          {% endif %}
+          {% if autoplan_availability and autoplan_availability.can_autoplan %}
+            <a
+              class="button button-secondary button-compact"
+              href="{{ url_for('va_schedule_manager.web.index', year=selected_year, month=selected_month, autoplan=selected_sheet_name) }}"
+              data-modal-trigger
+              data-focus-key="schedule-autoplan"
+            >Автоплан</a>
+          {% endif %}
+          <a
+            class="button button-danger-soft button-compact"
+            href="{{ url_for('va_schedule_manager.web.index', year=selected_year, month=selected_month, delete_month=selected_sheet_name) }}"
+            data-modal-trigger
+            data-focus-key="schedule-delete-month"
+          >Удалить график</a>
+        </div>
+      </div>
+      <div class="schedule-edit-status" role="status" aria-live="polite" data-schedule-edit-status></div>
+
+      <div class="inline-modal" data-add-employee-modal hidden>
+        <div class="modal-backdrop inline-modal-backdrop" role="presentation" data-add-employee-backdrop>
+          <section class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="add-schedule-employee-title" tabindex="-1">
+            <div class="modal-header">
+              <div>
+                <h2 id="add-schedule-employee-title">Добавление сотрудника</h2>
+                <p>{{ schedule_grid.title }}</p>
+              </div>
+              <button class="modal-close" type="button" aria-label="Закрыть окно" data-add-employee-close>×</button>
+            </div>
+
+            <form class="modal-form" data-add-employee-form>
+              <label>
+                <span>Сотрудник</span>
+                <select name="employee_name" required>
+                  {% for employee in active_employees %}
+                    {% if not schedule_grid.employees|selectattr("employee_name", "equalto", employee.name)|list %}
+                      <option value="{{ employee.name }}">{{ employee.name }}</option>
+                    {% endif %}
+                  {% endfor %}
+                </select>
+              </label>
+
+              <label>
+                <span>Заполнение</span>
+                <select name="fill_mode">
+                  <option value="empty">Пустые ячейки</option>
+                  <option value="workdays_8">8 по рабочим дням</option>
+                </select>
+              </label>
+
+              <div class="decision-actions modal-actions">
+                <button class="button button-primary" type="submit">Добавить</button>
+                <button class="button button-light" type="button" data-add-employee-close>Отмена</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      </div>
+
+      <div class="schedule-table-wrap">
+        <table class="schedule-table">
+          <thead>
+            <tr>
+              <th class="sticky-col employee-col">Сотрудник</th>
+              <th class="hours-col">Часы</th>
+              <th class="row-action-col">Действия</th>
+              {% for day in schedule_grid.days %}
+                <th class="day-col {% if day.weekday in ['сб', 'вс'] %}weekend-col{% endif %}">
+                  <span>{{ day.weekday }}</span>
+                  <strong>{{ day.day }}</strong>
+                </th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody data-schedule-body>
+            {% for row in schedule_grid.employees %}
+              <tr>
+                <th class="sticky-col employee-col">{{ row.employee_name }}</th>
+                <td class="hours-col" data-hours-cell data-employee-name="{{ row.employee_name }}">{{ row.hours|int if row.hours is not none else '' }}</td>
+                <td class="row-action-col">
+                  <button
+                    class="button button-danger-soft button-compact"
+                    type="button"
+                    data-delete-schedule-employee
+                    data-employee-name="{{ row.employee_name }}"
+                  >Удалить</button>
+                </td>
+                {% for day in schedule_grid.days %}
+                  {% set code = row.assignments.get(day.day, '') %}
+                  {% set shift = shift_lookup.get(code) or shift_lookup.get(code|lower) %}
+                  {% set autoplan_hint = (autoplan_hints|default({})).get(row.employee_name ~ "|" ~ day.day) %}
+                  <td
+                    class="shift-cell {% if code %}shift-{{ code|lower }} {% endif %}editable-shift-cell{% if autoplan_hint %} has-autoplan-hint{% endif %}"
+                    tabindex="0"
+                    role="button"
+                    aria-label="Изменить смену {{ row.employee_name }} на {{ day.day }} число"
+                    data-schedule-cell
+                    data-employee-name="{{ row.employee_name }}"
+                    data-day="{{ day.day }}"
+                    data-shift-code="{{ code }}"
+                    {% if autoplan_hint %}
+                      data-autoplan-hint="{{ autoplan_hint }}"
+                    {% endif %}
+                    {% if shift %}
+                      style="background-color: {{ shift.color }}; color: {{ shift.text_color }};"
+                      title="{% if autoplan_hint %}{{ autoplan_hint }}{% else %}{{ shift.name }}{% if shift.time_range %} · {{ shift.time_range }}{% endif %} · {{ shift.timezone }} · {{ shift.hours }} ч.{% endif %}"
+                    {% endif %}
+                  >
+                    {{ shift.display_code if shift else code }}
+                  </td>
+                {% endfor %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% if autoplan_artifact %}
+        <div class="notice notice-info compact-notice autoplan-artifact" data-autoplan-artifact>
+          <strong>{{ autoplan_artifact.title or "График сформирован автопланировщиком" }}</strong>
+          <span>{{ autoplan_artifact.summary }}</span>
+          {% if autoplan_artifact.created_at %}
+            <small>Сформировано: {{ autoplan_artifact.created_at }}</small>
+          {% endif %}
+          {% if autoplan_artifact.reasons %}
+            <ul>
+              {% for reason in autoplan_artifact.reasons %}
+                <li>{{ reason }}</li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+          {% if autoplan_artifact.assignment_explanations %}
+            <details class="autoplan-details">
+              <summary>Пояснения по назначениям</summary>
+              <div class="autoplan-explanations">
+                {% for explanation in autoplan_artifact.assignment_explanations %}
+                  <article>
+                    <strong>{{ explanation.shift_code }} · {{ explanation.employee_name }}</strong>
+                    <span>{{ explanation.period }}{% if explanation.shift_name %} · {{ explanation.shift_name }}{% endif %}</span>
+                    <p>{{ explanation.reason }}</p>
+                    <small>Кандидатов: {{ explanation.candidate_count }} · нагрузка до назначения: {{ explanation.load_before }}</small>
+                  </article>
+                {% endfor %}
+              </div>
+            </details>
+          {% endif %}
+        </div>
+      {% endif %}
+
+      {% if schedule_violations %}
+        <div class="notice notice-warning compact-notice">
+          <strong>Нужна проверка правил</strong>
+          <span>Первые найденные замечания показаны ниже.</span>
+        </div>
+        <ul class="violations-list" data-violations-list>
+          {% for violation in schedule_violations[:8] %}
+            <li>
+              {{ violation.day }} число, {{ violation.shift }}:
+              {% if violation.employee_name %}{{ violation.employee_name }} — {% endif %}
+              {{ violation.message }}
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <ul class="violations-list" data-violations-list hidden></ul>
+      {% endif %}
+    </section>
+  {% elif not snapshot %}
+    <section class="panel empty-panel">
+      <h2>График не загружен</h2>
+      <p>Выберите Excel-файл с графиком, после загрузки здесь появятся фильтры по году и месяцу.</p>
+      <div>
+        <button class="button button-primary" type="button" data-file-panel-trigger>Загрузить график</button>
+      </div>
+    </section>
+  {% endif %}
+{% endblock %}
+
+{% block dialogs %}
+  {% if delete_month_usage %}
+    {% call modal("Удаление графика", delete_month_usage.title, url_for("va_schedule_manager.web.index", year=selected_year, month=selected_month), "delete-month-title") %}
+      {% if delete_month_usage.is_empty %}
+        <p class="decision-text">В графике нет заполненных смен, кроме `Праздник` и `Отпуск`. Можно удалить месяц из данных АС.</p>
+        <div class="decision-actions modal-actions">
+          <form method="post" action="{{ url_for('va_schedule_manager.web.delete_schedule_month', year=selected_year, month=selected_month) }}">
+            <input type="hidden" name="sheet_name" value="{{ delete_month_usage.sheet_name }}">
+            <input type="hidden" name="action" value="delete_empty">
+            <button class="button button-danger" type="submit">Удалить график</button>
+          </form>
+          <a class="button button-light" href="{{ url_for('va_schedule_manager.web.index', year=selected_year, month=selected_month) }}">Отмена</a>
+        </div>
+      {% else %}
+        <p class="decision-text">В графике есть заполненные смены: {{ delete_month_usage.filled_cells_count }}. Перед удалением нужно явно выбрать действие.</p>
+        <div class="notice notice-warning">
+          <strong>Подтверждение обязательно</strong>
+          <span>`Праздник` и `Отпуск` будут сохранены при очистке. При удалении будет удален весь месяц.</span>
+        </div>
+        <div class="decision-actions modal-actions">
+          <form method="post" action="{{ url_for('va_schedule_manager.web.delete_schedule_month', year=selected_year, month=selected_month) }}">
+            <input type="hidden" name="sheet_name" value="{{ delete_month_usage.sheet_name }}">
+            <input type="hidden" name="action" value="clear_filled">
+            <button class="button button-warning" type="submit">Сделать пустым</button>
+          </form>
+          <form method="post" action="{{ url_for('va_schedule_manager.web.delete_schedule_month', year=selected_year, month=selected_month) }}">
+            <input type="hidden" name="sheet_name" value="{{ delete_month_usage.sheet_name }}">
+            <input type="hidden" name="action" value="delete_any">
+            <button class="button button-danger" type="submit">Удалить график</button>
+          </form>
+          <a class="button button-light" href="{{ url_for('va_schedule_manager.web.index', year=selected_year, month=selected_month) }}">Отмена</a>
+        </div>
+      {% endif %}
+    {% endcall %}
+  {% endif %}
+
+  {% if show_autoplan_confirm %}
+    {% call modal("Автопланирование графика", schedule_grid.title, url_for("va_schedule_manager.web.index", year=selected_year, month=selected_month), "autoplan-title") %}
+      <p class="decision-text">
+        Автопланировщик дозаполнит график по текущим правилам смен. Уже внесенные вручную смены не будут изменены. Перед запуском нужно подтвердить, что все отпуска и праздничные дни на планируемый месяц уже внесены.
+      </p>
+      <div class="notice notice-warning">
+        <strong>Подтверждение обязательно</strong>
+        <span>Если отпуск или праздник не внесен заранее, график может быть сформирован некорректно.</span>
+      </div>
+      <form class="modal-form" method="post" action="{{ url_for('va_schedule_manager.web.autoplan_schedule_month') }}">
+        <input type="hidden" name="sheet_name" value="{{ selected_sheet_name }}">
+        <input type="hidden" name="year" value="{{ selected_year }}">
+        <input type="hidden" name="month" value="{{ selected_month }}">
+        <label class="checkbox-row">
+          <input type="checkbox" name="vacations_confirmed" required>
+          <span>Подтверждаю, что все отпуска и праздничные дни на планируемый месяц внесены.</span>
+        </label>
+        <div class="decision-actions modal-actions">
+          <button class="button button-primary" type="submit">Запустить автоплан</button>
+          <a class="button button-light" href="{{ url_for('va_schedule_manager.web.index', year=selected_year, month=selected_month) }}">Отмена</a>
+        </div>
+      </form>
+    {% endcall %}
+  {% endif %}
+{% endblock %}

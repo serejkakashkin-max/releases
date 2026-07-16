@@ -97,6 +97,11 @@ DEFAULT_FEATURE_FLAGS = {
     "release_monitor": {
         "prefixes": copy.deepcopy(DEFAULT_RELEASE_PREFIX_CONFIGS),
     },
+    "modules": {
+        "va_schedule_manager": {
+            "enabled": False,
+        },
+    },
     "sbertrack_users": {},
 }
 
@@ -412,6 +417,15 @@ def _normalize_flags(payload: Any) -> Dict[str, Dict[str, Any]]:
             release_monitor.get("prefixes")
         )
 
+    modules = payload.get("modules")
+    if isinstance(modules, dict):
+        for module_name, defaults in DEFAULT_FEATURE_FLAGS["modules"].items():
+            raw_module = modules.get(module_name)
+            if isinstance(raw_module, dict):
+                enabled = raw_module.get("enabled")
+                if isinstance(enabled, bool):
+                    normalized["modules"][module_name]["enabled"] = enabled
+
     normalized["sbertrack_users"] = _normalize_sbertrack_users(
         payload.get("sbertrack_users")
     )
@@ -487,6 +501,16 @@ def is_automation_enabled(name: str) -> bool:
     if isinstance(config, dict):
         return bool(config.get("enabled", False))
     return bool(config)
+
+
+def is_module_enabled(name: str, *, default: bool = False) -> bool:
+    flags = get_feature_flags()
+    module_config = (flags.get("modules") or {}).get(name)
+    if isinstance(module_config, dict):
+        enabled = module_config.get("enabled")
+        if isinstance(enabled, bool):
+            return enabled
+    return default
 
 
 def get_automation_config(name: str) -> Any:

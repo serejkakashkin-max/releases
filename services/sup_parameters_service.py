@@ -280,6 +280,12 @@ def _admin_config_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     release_monitor = (
         payload.get("release_monitor") if isinstance(payload.get("release_monitor"), dict) else {}
     )
+    modules = payload.get("modules") if isinstance(payload.get("modules"), dict) else {}
+    va_module = (
+        modules.get("va_schedule_manager")
+        if isinstance(modules.get("va_schedule_manager"), dict)
+        else {}
+    )
     return {
         "maintenance": {
             key: _coerce_bool(
@@ -356,6 +362,14 @@ def _admin_config_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "release_monitor": {
             "prefixes": _admin_prefix_rows(release_monitor.get("prefixes")),
         },
+        "modules": {
+            "va_schedule_manager": {
+                "enabled": _coerce_bool(
+                    va_module.get("enabled"),
+                    DEFAULT_FEATURE_FLAGS["modules"]["va_schedule_manager"]["enabled"],
+                )
+            }
+        },
         "sbertrack_users": _admin_sbertrack_user_rows(payload.get("sbertrack_users")),
     }
 
@@ -389,6 +403,20 @@ def get_sup_parameters_data() -> Dict[str, Any]:
             "mode": "error",
             "last_error": str(exc),
         }
+    try:
+        from services.va_schedule_manager_registry import get_va_schedule_manager_metadata
+
+        va_schedule_manager = get_va_schedule_manager_metadata()
+    except Exception:
+        va_schedule_manager = {
+            "configured": False,
+            "package_present": False,
+            "enabled": False,
+            "loaded": False,
+            "status": "metadata_error",
+            "error": "?? ??????? ???????? ?????? Schedule Manager.",
+            "url": None,
+        }
     return {
         "success": True,
         "title": "РЎРЈРџ-РїР°СЂР°РјРµС‚СЂС‹",
@@ -412,6 +440,7 @@ def get_sup_parameters_data() -> Dict[str, Any]:
             "jira_domains": list(JIRA_DOMAIN_CONFIGS.keys()),
             "standard_systems": ["CLM", "EMRM", "РђРРЎРў", "AI-РђРіРµРЅС‚С‹", "Р¤РѕРєСѓСЃ"],
             "email_to_sbertrack_status": email_to_sbertrack_status,
+            "va_schedule_manager": va_schedule_manager,
         },
     }
 
@@ -480,6 +509,12 @@ def _validate_managed_config(raw_config: Any) -> Dict[str, Any]:
         if isinstance(raw_config.get("release_monitor"), dict)
         else {}
     )
+    modules = raw_config.get("modules") if isinstance(raw_config.get("modules"), dict) else {}
+    va_module = (
+        modules.get("va_schedule_manager")
+        if isinstance(modules.get("va_schedule_manager"), dict)
+        else {}
+    )
 
     normalized = {
         "maintenance": {},
@@ -489,6 +524,7 @@ def _validate_managed_config(raw_config: Any) -> Dict[str, Any]:
             "email_to_sbertrack": {},
         },
         "release_monitor": {"prefixes": []},
+        "modules": {"va_schedule_manager": {"enabled": False}},
         "sbertrack_users": {},
     }
 
@@ -498,6 +534,11 @@ def _validate_managed_config(raw_config: Any) -> Dict[str, Any]:
             errors.append(f"Р РµР¶РёРј РѕР±СЃР»СѓР¶РёРІР°РЅРёСЏ/{key}: Р·РЅР°С‡РµРЅРёРµ РґРѕР»Р¶РЅРѕ Р±С‹С‚СЊ true РёР»Рё false")
             value = DEFAULT_FEATURE_FLAGS["maintenance"].get(key, False)
         normalized["maintenance"][key] = value
+
+    va_enabled = va_module.get("enabled")
+    if not isinstance(va_enabled, bool):
+        va_enabled = DEFAULT_FEATURE_FLAGS["modules"]["va_schedule_manager"]["enabled"]
+    normalized["modules"]["va_schedule_manager"]["enabled"] = va_enabled
 
     if not isinstance(unassigned.get("enabled"), bool):
         errors.append("РџРёСЃСЊРјР° Р±РµР· РѕС‚РІРµС‚СЃС‚РІРµРЅРЅРѕРіРѕ/enabled: Р·РЅР°С‡РµРЅРёРµ РґРѕР»Р¶РЅРѕ Р±С‹С‚СЊ true РёР»Рё false")
@@ -920,6 +961,16 @@ def _merge_managed_config(base_payload: Dict[str, Any], managed: Dict[str, Any])
     merged["release_monitor"] = release_monitor_target
 
     merged["sbertrack_users"] = managed["sbertrack_users"]
+
+    modules_target = merged.get("modules")
+    if not isinstance(modules_target, dict):
+        modules_target = {}
+    va_module_target = modules_target.get("va_schedule_manager")
+    if not isinstance(va_module_target, dict):
+        va_module_target = {}
+    va_module_target["enabled"] = managed["modules"]["va_schedule_manager"]["enabled"]
+    modules_target["va_schedule_manager"] = va_module_target
+    merged["modules"] = modules_target
 
     return merged
 

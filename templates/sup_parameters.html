@@ -187,7 +187,7 @@
     .badge.yellow { color: #fff0c4; border-color: rgba(255, 196, 61, 0.32); background: rgba(255, 196, 61, 0.13); }
     .tabs {
       display: grid;
-      grid-template-columns: repeat(8, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
       gap: 8px;
       margin-top: 16px;
       padding: 8px;
@@ -621,6 +621,7 @@
         <button type="button" class="tab-btn" data-tab="prefixes">Префиксы релизов</button>
         <button type="button" class="tab-btn" data-tab="automation">Автоматизация</button>
         <button type="button" class="tab-btn" data-tab="sbertrack">Email → SberTrack / Jira</button>
+        <button type="button" class="tab-btn" data-tab="tools">Инструменты</button>
         <button type="button" class="tab-btn" data-tab="diagnostics">Диагностика</button>
       </nav>
 
@@ -1004,6 +1005,42 @@
         </section>
       </section>
 
+      <section class="panel" data-panel="tools">
+        <section class="card">
+          <div class="card-header">
+            <h2>Инструменты</h2>
+            <p class="muted">Закрытые административные инструменты. Ссылки не добавляются на публичную главную страницу.</p>
+          </div>
+          <div class="card-body stack">
+            <div class="notice compact" id="vaScheduleManagerStatusBox">
+              <strong>Графики дежурств</strong>
+              <span id="vaScheduleManagerStatusText">Статус не получен.</span>
+            </div>
+            <div class="toggle-line">
+              <div>
+                <strong>Schedule Manager</strong>
+                <p class="muted">Рабочий модуль коллеги для работы с графиками дежурств.</p>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="vaScheduleManagerEnabled">
+                <span></span>
+              </label>
+            </div>
+            <div class="file-meta">
+              <span>Версия</span><strong id="vaScheduleManagerVersion">-</strong>
+              <span>Пакет</span><strong id="vaScheduleManagerPackage">-</strong>
+              <span>Загрузка</span><strong id="vaScheduleManagerLoaded">-</strong>
+              <span>Runtime</span><strong id="vaScheduleManagerRuntime">-</strong>
+            </div>
+            <div class="button-stack">
+              <button type="button" class="button primary" id="openVaScheduleManagerBtn" disabled>Открыть</button>
+              <button type="button" class="button" id="loginAdminSessionBtn">Войти в admin-session</button>
+            </div>
+            <p class="muted">Включение или отключение маршрутов Schedule Manager применяется после перезапуска Flask.</p>
+          </div>
+        </section>
+      </section>
+
       <section class="panel" data-panel="diagnostics">
         <div class="grid-2">
           <section class="card">
@@ -1273,6 +1310,9 @@
       sbertrack.routes = Array.isArray(sbertrack.routes) ? sbertrack.routes : [];
       config.release_monitor = config.release_monitor || {};
       config.release_monitor.prefixes = Array.isArray(config.release_monitor.prefixes) ? config.release_monitor.prefixes : [];
+      config.modules = config.modules || {};
+      config.modules.va_schedule_manager = config.modules.va_schedule_manager || { enabled: false };
+      config.modules.va_schedule_manager.enabled = Boolean(config.modules.va_schedule_manager.enabled);
       config.sbertrack_users = Array.isArray(config.sbertrack_users) ? config.sbertrack_users : [];
       return config;
     }
@@ -1305,6 +1345,9 @@
       sbertrack.technical_mailboxes = splitLines($("sbertrackTechnicalMailboxesInput").value);
       sbertrack.routes = collectSbertrackRoutesFromDom();
       config.sbertrack_users = collectSbertrackUsersFromDom();
+      config.modules = config.modules || {};
+      config.modules.va_schedule_manager = config.modules.va_schedule_manager || {};
+      config.modules.va_schedule_manager.enabled = Boolean($("vaScheduleManagerEnabled")?.checked);
       return config;
     }
 
@@ -1340,6 +1383,7 @@
       $("diagBackupCount").textContent = String(state.metadata.backup_count ?? 0);
       $("diagReadError").textContent = state.readError || "-";
       renderSberTrackRuntimeStatus(state.metadata.email_to_sbertrack_status || {});
+      renderVaScheduleManager(state.metadata.va_schedule_manager || {});
       $("fileStateBadge").textContent = state.readError ? "ошибка чтения" : "файл корректен";
       $("fileStateBadge").className = state.readError ? "badge red" : "badge green";
     }
@@ -1535,6 +1579,55 @@
       $("sbertrackUserEmpty").classList.toggle("hidden", Boolean((users || []).length));
     }
 
+
+    function renderVaScheduleManager(metadata) {
+      const moduleConfig = state.config?.modules?.va_schedule_manager || { enabled: false };
+      const enabledInput = $("vaScheduleManagerEnabled");
+      if (enabledInput) enabledInput.checked = Boolean(moduleConfig.enabled);
+      const status = metadata.status || "unknown";
+      const loaded = Boolean(metadata.loaded);
+      const packageText = metadata.package_present ? "найден" : "отсутствует";
+      const loadedText = loaded ? "загружен" : "не загружен";
+      const runtime = metadata.runtime || {};
+      const runtimeText = Object.keys(runtime).length
+        ? Object.entries(runtime).map(([key, value]) => `${key}: ${value.exists ? "ok" : "нет"}`).join(" · ")
+        : "-";
+      $("vaScheduleManagerVersion").textContent = metadata.version || "-";
+      $("vaScheduleManagerPackage").textContent = packageText;
+      $("vaScheduleManagerLoaded").textContent = loadedText;
+      $("vaScheduleManagerRuntime").textContent = runtimeText;
+      const statusText = metadata.error
+        ? metadata.error
+        : loaded
+          ? "Модуль загружен."
+          : status === "disabled"
+            ? "Модуль выключен в СУП-параметрах. После включения нужен перезапуск Flask."
+            : status === "missing"
+              ? "Папка VA/schedule_manager отсутствует. Основное приложение продолжает работать."
+              : "Модуль пока не зарегистрирован.";
+      $("vaScheduleManagerStatusText").textContent = statusText;
+      $("vaScheduleManagerStatusBox").className = `notice compact ${loaded ? "notice-success" : metadata.error ? "notice-error" : "notice-warning"}`;
+      const openBtn = $("openVaScheduleManagerBtn");
+      openBtn.disabled = !loaded || !metadata.url;
+      openBtn.dataset.url = metadata.url || "";
+    }
+
+    async function ensureAdminSession() {
+      const token = getToken();
+      if (!token) throw new Error("Введите SUP token.");
+      const response = await fetch(BASE_PATH + "/admin/session/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.success === false) {
+        throw new Error(payload.error || "Административный вход не выполнен.");
+      }
+      sessionStorage.setItem("sup_admin_csrf_token", payload.csrf_token || "");
+      return payload;
+    }
+
     function renderSberTrackRuntimeStatus(status) {
       const mode = status.mode || "disabled";
       const modeText = mode === "dry_run"
@@ -1681,6 +1774,7 @@
       renderSberTrack(state.config);
       renderEmployees();
       renderPrefixes();
+      renderVaScheduleManager(state.metadata.va_schedule_manager || {});
       $("rawJsonPreview").textContent = state.rawJson;
       $("tokenBox").classList.add("hidden");
       $("appBox").classList.remove("hidden");
@@ -1761,6 +1855,7 @@
       renderSberTrack(state.config);
       renderEmployees();
       renderPrefixes();
+      renderVaScheduleManager(state.metadata.va_schedule_manager || {});
       markClean();
       renderMetadata({ metadata: state.metadata, revision: state.revision, read_error: state.readError, path: state.path });
       setStatus("Изменения сброшены до последней загруженной версии.", "success");
@@ -1991,6 +2086,25 @@
     $("saveBtn").addEventListener("click", saveData);
     $("reloadBtn").addEventListener("click", () => loadData());
     $("resetBtn").addEventListener("click", resetChanges);
+    $("vaScheduleManagerEnabled").addEventListener("change", markDirty);
+    $("loginAdminSessionBtn").addEventListener("click", async () => {
+      try {
+        await ensureAdminSession();
+        setStatus("Admin-session активна.", "success");
+      } catch (error) {
+        setStatus(error.message, "error");
+      }
+    });
+    $("openVaScheduleManagerBtn").addEventListener("click", async () => {
+      const targetUrl = $("openVaScheduleManagerBtn").dataset.url;
+      if (!targetUrl) return;
+      try {
+        await ensureAdminSession();
+        window.location.assign(BASE_PATH + targetUrl);
+      } catch (error) {
+        setStatus(error.message, "error");
+      }
+    });
 
     const unlockBtn = $("unlockBtn");
     if (unlockBtn) {

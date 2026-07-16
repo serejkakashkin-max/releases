@@ -5,6 +5,7 @@ from urllib3.exceptions import InsecureRequestWarning
 from collections import defaultdict
 import re
 from config import DOC_TEMPLATES_ROOT
+from services.sup_admin_auth_service import configure_sup_admin_session
 
 # Отключаем предупреждения о небезопасных запросах
 urllib3.disable_warnings(InsecureRequestWarning)
@@ -13,6 +14,7 @@ app = Flask(__name__)
 app.secret_key = 'super_secret_key'
 app.config['SESSION_TYPE'] = 'filesystem'
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
+configure_sup_admin_session(app)
 
 # Инициализация структуры релизов (глобально)
 def get_release_structure():

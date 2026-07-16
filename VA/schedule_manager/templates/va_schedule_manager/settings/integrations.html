@@ -1,0 +1,73 @@
+{% extends "va_schedule_manager/base.html" %}
+{% from "va_schedule_manager/components/ui.html" import section_header %}
+{% set active_page = "integrations" %}
+
+{% block title %}Настройки · Интеграции{% endblock %}
+{% block page_title %}Настройки АС{% endblock %}
+{% block page_subtitle %}Интеграции с внешними источниками{% endblock %}
+
+{% block content %}
+  <section class="panel page-control-panel">
+    {% call section_header("Производственный календарь", "Используется при создании новых графиков.") %}
+      <a class="button button-light button-compact" href="{{ url_for('va_schedule_manager.settings.integrations') }}">Обновить</a>
+    {% endcall %}
+
+    <div class="notice notice-info">
+      <strong>Безопасный режим</strong>
+      <span>Если внешний календарь не настроен или недоступен, новый график все равно создается: с датами, днями недели и списком сотрудников.</span>
+    </div>
+
+    <form class="integration-form" method="post" action="{{ url_for('va_schedule_manager.settings.save_calendar_integration') }}">
+      <label class="checkbox-row">
+        <input name="enabled" type="checkbox" {% if settings.enabled %}checked{% endif %}>
+        <span>Использовать внешний производственный календарь</span>
+      </label>
+
+      <div class="modal-form-row">
+        <label>
+          <span>Провайдер</span>
+          <select name="provider">
+            <option value="consultant" {% if settings.provider == "consultant" %}selected{% endif %}>КонсультантПлюс</option>
+            <option value="isdayoff" {% if settings.provider == "isdayoff" %}selected{% endif %}>isDayOff API</option>
+            <option value="custom" {% if settings.provider == "custom" %}selected{% endif %}>Другой JSON API</option>
+          </select>
+        </label>
+
+        <label>
+          <span>Таймаут, сек.</span>
+          <input name="timeout_seconds" type="number" min="1" max="30" value="{{ settings.timeout_seconds }}">
+        </label>
+      </div>
+
+      <label>
+        <span>URL источника календаря</span>
+        <input name="api_url" value="{{ settings.api_url }}" placeholder="https://www.consultant.ru/law/ref/calendar/proizvodstvennye/">
+      </label>
+
+      <label>
+        <span>Токен API</span>
+        <input name="api_token" type="password" value="{{ settings.api_token }}" autocomplete="new-password">
+      </label>
+
+      <div class="modal-form-row">
+        <label>
+          <span>URL конфига из GitHub/ветки</span>
+          <input name="github_config_url" value="{{ settings.github_config_url }}" placeholder="https://raw.githubusercontent.com/.../calendar.json">
+        </label>
+
+        <label>
+          <span>Ветка</span>
+          <input name="github_branch" value="{{ settings.github_branch }}" placeholder="main">
+        </label>
+      </div>
+
+      <div class="notice compact">
+        Для `КонсультантПлюс` используется страница года вида `/proizvodstvennye/2027/`; АС читает таблицы календаря и берет дни с классом `holiday`. Для `isDayOff API` используется строковый ответ по дням месяца. Для `Другой JSON API` ожидается JSON с массивами `holidays` и `workdays`.
+      </div>
+
+      <div class="actions">
+        <button class="button button-primary" type="submit">Сохранить настройки</button>
+      </div>
+    </form>
+  </section>
+{% endblock %}

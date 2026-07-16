@@ -142,7 +142,10 @@ data/
 logs/
 certificates/
 cache/
+/cache/va_schedule_manager/
 sms_templates/
+/VA/schedule_manager/**/__pycache__/
+*.pyc
 
 # Config with sensitive data
 config.json
