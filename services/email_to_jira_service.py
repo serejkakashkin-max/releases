@@ -101,9 +101,6 @@ def create_email_jira_task(event: Dict[str, Any]) -> Dict[str, Any]:
         raise EmailToJiraError("Jira project is not configured for the email route")
     connection = _connection(domain)
     mail = event.get("mail") if isinstance(event.get("mail"), dict) else {}
-    from_rows = mail.get("from") if isinstance(mail.get("from"), list) else []
-    sender_email = str((from_rows[0] if from_rows else {}).get("email") or "").strip()
-    reporter = _find_reporter(connection, sender_email) or _current_user(connection)
 
     description = str(mail.get("body") or "")
     description += (
@@ -122,8 +119,6 @@ def create_email_jira_task(event: Dict[str, Any]) -> Dict[str, Any]:
         "description": description[:12000],
         "labels": list(route.get("jira_labels") or []),
     }
-    if reporter:
-        fields["reporter"] = {"name": reporter}
     team = route.get("jira_team") if isinstance(route.get("jira_team"), dict) else {}
     field_id = str(team.get("field_id") or "").strip()
     value_id = str(team.get("value_id") or "").strip()
@@ -142,6 +137,9 @@ def create_email_jira_task(event: Dict[str, Any]) -> Dict[str, Any]:
     epic_link = route.get("jira_epic_link") if isinstance(route.get("jira_epic_link"), dict) else {}
     epic_link_field = str(epic_link.get("field_id") or "").strip()
     epic_link_key = str(epic_link.get("key") or "").strip()
+    if project.upper() == "EMRM" and issue_type.lower() == "task":
+        epic_link_field = epic_link_field or "customfield_10006"
+        epic_link_key = epic_link_key or "EMRM-40162"
     if epic_link_field and epic_link_key:
         fields[epic_link_field] = epic_link_key
 
