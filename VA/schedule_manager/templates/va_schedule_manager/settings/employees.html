@@ -13,7 +13,7 @@
         <span class="meta-pill">Активных {{ active_count }}</span>
         <span class="meta-pill">Всего {{ employees|length }}</span>
       </div>
-      <a class="button button-light button-add-compact" href="{{ url_for('va_schedule_manager.settings.employees', add='1') }}" data-modal-trigger data-focus-key="employee-add">+</a>
+      <a class="button button-light button-add-compact" href="{{ va_url_for('va_schedule_manager.settings.employees', add='1') }}" data-modal-trigger data-focus-key="employee-add">+</a>
     {% endcall %}
 
     <div class="table-wrap settings-table-wrap employees-table-wrap">
@@ -35,7 +35,7 @@
             {% set row_location = employee.location or "moscow" %}
             <tr>
               <td>
-                <form class="inline-edit-form" method="post" action="{{ url_for('va_schedule_manager.settings.quick_update_employee') }}" data-auto-submit-form>
+                <form class="inline-edit-form" method="post" action="{{ va_url_for('va_schedule_manager.settings.quick_update_employee') }}" data-auto-submit-form>
                   <input type="hidden" name="original_name" value="{{ employee.name }}">
                   <input class="inline-field inline-name-field" name="name" required value="{{ employee.name }}" data-auto-submit-control>
                   <input type="hidden" name="email" value="{{ employee.email }}">
@@ -49,7 +49,7 @@
                 </form>
               </td>
               <td>
-                <form class="inline-edit-form" method="post" action="{{ url_for('va_schedule_manager.settings.quick_update_employee') }}" data-auto-submit-form>
+                <form class="inline-edit-form" method="post" action="{{ va_url_for('va_schedule_manager.settings.quick_update_employee') }}" data-auto-submit-form>
                   <input type="hidden" name="original_name" value="{{ employee.name }}">
                   <input type="hidden" name="name" value="{{ employee.name }}">
                   <input type="hidden" name="email" value="{{ employee.email }}">
@@ -91,7 +91,7 @@
                 </form>
               </td>
               <td>
-                <form class="inline-edit-form" method="post" action="{{ url_for('va_schedule_manager.settings.quick_update_employee') }}" data-auto-submit-form>
+                <form class="inline-edit-form" method="post" action="{{ va_url_for('va_schedule_manager.settings.quick_update_employee') }}" data-auto-submit-form>
                   <input type="hidden" name="original_name" value="{{ employee.name }}">
                   <input type="hidden" name="name" value="{{ employee.name }}">
                   <input class="inline-field" name="email" type="email" value="{{ employee.email }}" data-auto-submit-control>
@@ -105,7 +105,7 @@
                 </form>
               </td>
               <td>
-                <form class="inline-edit-form" method="post" action="{{ url_for('va_schedule_manager.settings.quick_update_employee') }}" data-auto-submit-form>
+                <form class="inline-edit-form" method="post" action="{{ va_url_for('va_schedule_manager.settings.quick_update_employee') }}" data-auto-submit-form>
                   <input type="hidden" name="original_name" value="{{ employee.name }}">
                   <input type="hidden" name="name" value="{{ employee.name }}">
                   <input type="hidden" name="email" value="{{ employee.email }}">
@@ -119,7 +119,7 @@
                 </form>
               </td>
               <td>
-                <form class="inline-edit-form" method="post" action="{{ url_for('va_schedule_manager.settings.quick_update_employee') }}" data-auto-submit-form>
+                <form class="inline-edit-form" method="post" action="{{ va_url_for('va_schedule_manager.settings.quick_update_employee') }}" data-auto-submit-form>
                   <input type="hidden" name="original_name" value="{{ employee.name }}">
                   <input type="hidden" name="name" value="{{ employee.name }}">
                   <input type="hidden" name="email" value="{{ employee.email }}">
@@ -137,7 +137,7 @@
                 </form>
               </td>
               <td>
-                <form class="inline-edit-form" method="post" action="{{ url_for('va_schedule_manager.settings.quick_update_employee') }}" data-auto-submit-form>
+                <form class="inline-edit-form" method="post" action="{{ va_url_for('va_schedule_manager.settings.quick_update_employee') }}" data-auto-submit-form>
                   <input type="hidden" name="original_name" value="{{ employee.name }}">
                   <input type="hidden" name="name" value="{{ employee.name }}">
                   <input type="hidden" name="email" value="{{ employee.email }}">
@@ -155,7 +155,7 @@
                 </form>
               </td>
               <td>
-                <form class="inline-edit-form" method="post" action="{{ url_for('va_schedule_manager.settings.quick_update_employee') }}" data-auto-submit-form>
+                <form class="inline-edit-form" method="post" action="{{ va_url_for('va_schedule_manager.settings.quick_update_employee') }}" data-auto-submit-form>
                   <input type="hidden" name="original_name" value="{{ employee.name }}">
                   <input type="hidden" name="name" value="{{ employee.name }}">
                   <input type="hidden" name="email" value="{{ employee.email }}">
@@ -174,7 +174,7 @@
               </td>
               <td>
                 <div class="row-actions">
-                  <a class="button button-danger-soft button-icon" href="{{ url_for('va_schedule_manager.settings.employees', delete=employee.name) }}" data-modal-trigger data-focus-key="employee-delete-{{ loop.index }}">Удалить</a>
+                  <a class="button button-danger-soft button-icon" href="{{ va_url_for('va_schedule_manager.settings.employees', delete=employee.name) }}" data-modal-trigger data-focus-key="employee-delete-{{ loop.index }}">Удалить</a>
                 </div>
               </td>
             </tr>
@@ -187,8 +187,8 @@
 
 {% block dialogs %}
   {% if show_add_employee %}
-    {% call modal("Добавление сотрудника", "", url_for("va_schedule_manager.settings.employees"), "add-employee-title", "employee-add-modal") %}
-      <form class="employee-form modal-employee-form" method="post" action="{{ url_for('va_schedule_manager.settings.add_employee') }}">
+    {% call modal("Добавление сотрудника", "", va_url_for("va_schedule_manager.settings.employees"), "add-employee-title", "employee-add-modal") %}
+      <form class="employee-form modal-employee-form" method="post" action="{{ va_url_for('va_schedule_manager.settings.add_employee') }}">
         <label>
           <span>ФИО</span>
           <input name="name" required>
@@ -259,14 +259,14 @@
 
         <div class="actions modal-actions">
           <button class="button button-primary" type="submit">Добавить</button>
-          <a class="button button-light" href="{{ url_for('va_schedule_manager.settings.employees') }}">Отмена</a>
+          <a class="button button-light" href="{{ va_url_for('va_schedule_manager.settings.employees') }}">Отмена</a>
         </div>
       </form>
     {% endcall %}
   {% endif %}
 
   {% if delete_employee %}
-    {% call modal("Удаление сотрудника", delete_employee.name, url_for("va_schedule_manager.settings.employees"), "delete-employee-title") %}
+    {% call modal("Удаление сотрудника", delete_employee.name, va_url_for("va_schedule_manager.settings.employees"), "delete-employee-title") %}
         {% if delete_usage %}
           <p class="decision-text">Сотрудник найден в графиках. Выберите, что сделать с ним дальше.</p>
           <ul class="usage-list">
@@ -276,27 +276,27 @@
           </ul>
 
           <div class="decision-actions modal-actions">
-            <form method="post" action="{{ url_for('va_schedule_manager.settings.change_status') }}">
+            <form method="post" action="{{ va_url_for('va_schedule_manager.settings.change_status') }}">
               <input type="hidden" name="name" value="{{ delete_employee.name }}">
               <input type="hidden" name="status" value="dismissed">
               <button class="button button-secondary" type="submit">Пометить уволенным</button>
             </form>
 
-            <form method="post" action="{{ url_for('va_schedule_manager.settings.delete_employee_from_schedules') }}">
+            <form method="post" action="{{ va_url_for('va_schedule_manager.settings.delete_employee_from_schedules') }}">
               <input type="hidden" name="name" value="{{ delete_employee.name }}">
               <button class="button button-danger" type="submit">Создать копию графика без сотрудника и удалить</button>
             </form>
 
-            <a class="button button-light" href="{{ url_for('va_schedule_manager.settings.employees') }}">Отмена</a>
+            <a class="button button-light" href="{{ va_url_for('va_schedule_manager.settings.employees') }}">Отмена</a>
           </div>
         {% else %}
           <p class="decision-text">В графиках сотрудник не найден. Можно удалить его из справочника.</p>
           <div class="decision-actions modal-actions">
-            <form method="post" action="{{ url_for('va_schedule_manager.settings.delete_employee') }}">
+            <form method="post" action="{{ va_url_for('va_schedule_manager.settings.delete_employee') }}">
               <input type="hidden" name="name" value="{{ delete_employee.name }}">
               <button class="button button-danger" type="submit">Удалить из справочника</button>
             </form>
-            <a class="button button-light" href="{{ url_for('va_schedule_manager.settings.employees') }}">Отмена</a>
+            <a class="button button-light" href="{{ va_url_for('va_schedule_manager.settings.employees') }}">Отмена</a>
           </div>
         {% endif %}
     {% endcall %}

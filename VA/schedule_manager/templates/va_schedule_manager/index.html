@@ -10,7 +10,7 @@
     {% if schedule_grid and selected_sheet_name %}
       <a
         class="button button-header"
-        href="{{ url_for('va_schedule_manager.web.export_schedule', sheet_name=selected_sheet_name) }}"
+        href="{{ va_url_for('va_schedule_manager.web.export_schedule', sheet_name=selected_sheet_name) }}"
       >Экспорт</a>
     {% endif %}
     <button class="button button-header" type="button" data-file-panel-trigger>Импорт</button>
@@ -80,7 +80,7 @@
           <button class="modal-close" type="button" aria-label="Закрыть окно" data-file-panel-close>×</button>
         </div>
 
-        <form class="upload-form modal-form" method="post" action="{{ url_for('va_schedule_manager.web.upload') }}" enctype="multipart/form-data">
+        <form class="upload-form modal-form" method="post" action="{{ va_url_for('va_schedule_manager.web.upload') }}" enctype="multipart/form-data">
           <input name="file" type="file" accept=".xlsx,.xls" required>
           <div class="decision-actions modal-actions">
             <button class="button button-primary" type="submit">
@@ -91,7 +91,7 @@
         </form>
 
         {% if snapshot %}
-          <form method="post" action="{{ url_for('va_schedule_manager.web.clear') }}">
+          <form method="post" action="{{ va_url_for('va_schedule_manager.web.clear') }}">
             <button class="button button-danger-soft" type="submit">Сбросить файл</button>
           </form>
         {% endif %}
@@ -110,7 +110,7 @@
             <button class="modal-close" type="button" aria-label="Закрыть окно" data-create-month-close>×</button>
           </div>
 
-          <form class="modal-form create-month-form" method="post" action="{{ url_for('va_schedule_manager.web.create_schedule_month') }}">
+          <form class="modal-form create-month-form" method="post" action="{{ va_url_for('va_schedule_manager.web.create_schedule_month') }}">
             <div class="modal-form-row">
               <label>
                 <span>Год</span>
@@ -166,7 +166,7 @@
               <button class="modal-close" type="button" aria-label="Закрыть окно" data-copy-month-close>×</button>
             </div>
 
-            <form class="modal-form create-month-form" method="post" action="{{ url_for('va_schedule_manager.web.copy_schedule_month') }}">
+            <form class="modal-form create-month-form" method="post" action="{{ va_url_for('va_schedule_manager.web.copy_schedule_month') }}">
               <label>
                 <span>Месяц-источник</span>
                 <select name="source_sheet_name" required>
@@ -237,10 +237,10 @@
     <section
       class="panel schedule-panel"
       data-schedule-editor
-      data-update-url="{{ url_for('va_schedule_manager.api.update_schedule_cell') }}"
-      data-bulk-fill-url="{{ url_for('va_schedule_manager.api.bulk_fill_schedule_cells') }}"
-      data-add-employee-url="{{ url_for('va_schedule_manager.api.add_schedule_employee') }}"
-      data-delete-employee-url="{{ url_for('va_schedule_manager.api.delete_schedule_employee') }}"
+      data-update-url="{{ va_url_for('va_schedule_manager.api.update_schedule_cell') }}"
+      data-bulk-fill-url="{{ va_url_for('va_schedule_manager.api.bulk_fill_schedule_cells') }}"
+      data-add-employee-url="{{ va_url_for('va_schedule_manager.api.add_schedule_employee') }}"
+      data-delete-employee-url="{{ va_url_for('va_schedule_manager.api.delete_schedule_employee') }}"
       data-sheet-name="{{ selected_sheet_name }}"
     >
       <div class="section-header schedule-header">
@@ -262,7 +262,7 @@
         {{ schedule_days_payload|tojson }}
       </script>
       <div class="schedule-control-bar">
-        <form class="schedule-period-form" method="get" action="{{ url_for('va_schedule_manager.web.index') }}" data-auto-submit-form>
+        <form class="schedule-period-form" method="get" action="{{ va_url_for('va_schedule_manager.web.index') }}" data-auto-submit-form>
           <label>
             <span>Год</span>
             <select name="year" data-auto-submit-control>
@@ -306,14 +306,14 @@
           {% if autoplan_availability and autoplan_availability.can_autoplan %}
             <a
               class="button button-secondary button-compact"
-              href="{{ url_for('va_schedule_manager.web.index', year=selected_year, month=selected_month, autoplan=selected_sheet_name) }}"
+              href="{{ va_url_for('va_schedule_manager.web.index', year=selected_year, month=selected_month, autoplan=selected_sheet_name) }}"
               data-modal-trigger
               data-focus-key="schedule-autoplan"
             >Автоплан</a>
           {% endif %}
           <a
             class="button button-danger-soft button-compact"
-            href="{{ url_for('va_schedule_manager.web.index', year=selected_year, month=selected_month, delete_month=selected_sheet_name) }}"
+            href="{{ va_url_for('va_schedule_manager.web.index', year=selected_year, month=selected_month, delete_month=selected_sheet_name) }}"
             data-modal-trigger
             data-focus-key="schedule-delete-month"
           >Удалить график</a>
@@ -482,16 +482,16 @@
 
 {% block dialogs %}
   {% if delete_month_usage %}
-    {% call modal("Удаление графика", delete_month_usage.title, url_for("va_schedule_manager.web.index", year=selected_year, month=selected_month), "delete-month-title") %}
+    {% call modal("Удаление графика", delete_month_usage.title, va_url_for("va_schedule_manager.web.index", year=selected_year, month=selected_month), "delete-month-title") %}
       {% if delete_month_usage.is_empty %}
         <p class="decision-text">В графике нет заполненных смен, кроме `Праздник` и `Отпуск`. Можно удалить месяц из данных АС.</p>
         <div class="decision-actions modal-actions">
-          <form method="post" action="{{ url_for('va_schedule_manager.web.delete_schedule_month', year=selected_year, month=selected_month) }}">
+          <form method="post" action="{{ va_url_for('va_schedule_manager.web.delete_schedule_month', year=selected_year, month=selected_month) }}">
             <input type="hidden" name="sheet_name" value="{{ delete_month_usage.sheet_name }}">
             <input type="hidden" name="action" value="delete_empty">
             <button class="button button-danger" type="submit">Удалить график</button>
           </form>
-          <a class="button button-light" href="{{ url_for('va_schedule_manager.web.index', year=selected_year, month=selected_month) }}">Отмена</a>
+          <a class="button button-light" href="{{ va_url_for('va_schedule_manager.web.index', year=selected_year, month=selected_month) }}">Отмена</a>
         </div>
       {% else %}
         <p class="decision-text">В графике есть заполненные смены: {{ delete_month_usage.filled_cells_count }}. Перед удалением нужно явно выбрать действие.</p>
@@ -500,24 +500,24 @@
           <span>`Праздник` и `Отпуск` будут сохранены при очистке. При удалении будет удален весь месяц.</span>
         </div>
         <div class="decision-actions modal-actions">
-          <form method="post" action="{{ url_for('va_schedule_manager.web.delete_schedule_month', year=selected_year, month=selected_month) }}">
+          <form method="post" action="{{ va_url_for('va_schedule_manager.web.delete_schedule_month', year=selected_year, month=selected_month) }}">
             <input type="hidden" name="sheet_name" value="{{ delete_month_usage.sheet_name }}">
             <input type="hidden" name="action" value="clear_filled">
             <button class="button button-warning" type="submit">Сделать пустым</button>
           </form>
-          <form method="post" action="{{ url_for('va_schedule_manager.web.delete_schedule_month', year=selected_year, month=selected_month) }}">
+          <form method="post" action="{{ va_url_for('va_schedule_manager.web.delete_schedule_month', year=selected_year, month=selected_month) }}">
             <input type="hidden" name="sheet_name" value="{{ delete_month_usage.sheet_name }}">
             <input type="hidden" name="action" value="delete_any">
             <button class="button button-danger" type="submit">Удалить график</button>
           </form>
-          <a class="button button-light" href="{{ url_for('va_schedule_manager.web.index', year=selected_year, month=selected_month) }}">Отмена</a>
+          <a class="button button-light" href="{{ va_url_for('va_schedule_manager.web.index', year=selected_year, month=selected_month) }}">Отмена</a>
         </div>
       {% endif %}
     {% endcall %}
   {% endif %}
 
   {% if show_autoplan_confirm %}
-    {% call modal("Автопланирование графика", schedule_grid.title, url_for("va_schedule_manager.web.index", year=selected_year, month=selected_month), "autoplan-title") %}
+    {% call modal("Автопланирование графика", schedule_grid.title, va_url_for("va_schedule_manager.web.index", year=selected_year, month=selected_month), "autoplan-title") %}
       <p class="decision-text">
         Автопланировщик дозаполнит график по текущим правилам смен. Уже внесенные вручную смены не будут изменены. Перед запуском нужно подтвердить, что все отпуска и праздничные дни на планируемый месяц уже внесены.
       </p>
@@ -525,7 +525,7 @@
         <strong>Подтверждение обязательно</strong>
         <span>Если отпуск или праздник не внесен заранее, график может быть сформирован некорректно.</span>
       </div>
-      <form class="modal-form" method="post" action="{{ url_for('va_schedule_manager.web.autoplan_schedule_month') }}">
+      <form class="modal-form" method="post" action="{{ va_url_for('va_schedule_manager.web.autoplan_schedule_month') }}">
         <input type="hidden" name="sheet_name" value="{{ selected_sheet_name }}">
         <input type="hidden" name="year" value="{{ selected_year }}">
         <input type="hidden" name="month" value="{{ selected_month }}">
@@ -535,7 +535,7 @@
         </label>
         <div class="decision-actions modal-actions">
           <button class="button button-primary" type="submit">Запустить автоплан</button>
-          <a class="button button-light" href="{{ url_for('va_schedule_manager.web.index', year=selected_year, month=selected_month) }}">Отмена</a>
+          <a class="button button-light" href="{{ va_url_for('va_schedule_manager.web.index', year=selected_year, month=selected_month) }}">Отмена</a>
         </div>
       </form>
     {% endcall %}

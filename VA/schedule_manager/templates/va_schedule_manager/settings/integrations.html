@@ -9,7 +9,7 @@
 {% block content %}
   <section class="panel page-control-panel">
     {% call section_header("Производственный календарь", "Используется при создании новых графиков.") %}
-      <a class="button button-light button-compact" href="{{ url_for('va_schedule_manager.settings.integrations') }}">Обновить</a>
+      <a class="button button-light button-compact" href="{{ va_url_for('va_schedule_manager.settings.integrations') }}">Обновить</a>
     {% endcall %}
 
     <div class="notice notice-info">
@@ -17,7 +17,7 @@
       <span>Если внешний календарь не настроен или недоступен, новый график все равно создается: с датами, днями недели и списком сотрудников.</span>
     </div>
 
-    <form class="integration-form" method="post" action="{{ url_for('va_schedule_manager.settings.save_calendar_integration') }}">
+    <form class="integration-form" method="post" action="{{ va_url_for('va_schedule_manager.settings.save_calendar_integration') }}">
       <label class="checkbox-row">
         <input name="enabled" type="checkbox" {% if settings.enabled %}checked{% endif %}>
         <span>Использовать внешний производственный календарь</span>

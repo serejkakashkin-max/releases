@@ -12,7 +12,7 @@
         <p>Эти материалы нужно держать в актуальном состоянии при каждой доработке АС.</p>
       </div>
       <div class="section-actions">
-        <a class="button button-secondary" href="{{ url_for('va_schedule_manager.web.docs_file', filename=source_html_path) }}" target="_blank" rel="noreferrer">Открыть требования</a>
+        <a class="button button-secondary" href="{{ va_url_for('va_schedule_manager.web.docs_file', filename=source_html_path) }}" target="_blank" rel="noreferrer">Открыть требования</a>
       </div>
     </div>
 
@@ -22,8 +22,8 @@
           <h3>{{ item.title }}</h3>
           <p>{{ item.description }}</p>
           <div class="docs-card-actions">
-            <a href="{{ url_for('va_schedule_manager.web.docs_file', filename=item.path) }}">Открыть</a>
-            <a href="{{ url_for('va_schedule_manager.web.docs_download', filename=item.path) }}">Скачать</a>
+            <a href="{{ va_url_for('va_schedule_manager.web.docs_file', filename=item.path) }}">Открыть</a>
+            <a href="{{ va_url_for('va_schedule_manager.web.docs_download', filename=item.path) }}">Скачать</a>
           </div>
         </article>
       {% endfor %}

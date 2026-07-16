@@ -7,9 +7,10 @@ from markupsafe import Markup
 from pathlib import Path
 from uuid import uuid4
 
-from flask import Blueprint, abort, redirect, render_template, request, send_file, send_from_directory, url_for
+from flask import Blueprint, abort, redirect, render_template, request, send_file, send_from_directory
 from werkzeug.security import safe_join
 
+from VA.schedule_manager.url_helpers import public_url_for
 from VA.schedule_manager.parsers.excel_parser import ExcelParseError
 from VA.schedule_manager.repositories.shift_repository import ShiftRepository
 from VA.schedule_manager.repositories.employee_repository import EmployeeRepository
@@ -332,7 +333,7 @@ def update():
     schedule_service, _ = _services()
     display_service = _display_service(schedule_service)
     if schedule_service.get_current() is None:
-        return redirect(url_for("va_schedule_manager.web.index", message="Сначала загрузите Excel-файл."))
+        return redirect(public_url_for("va_schedule_manager.web.index", message="Сначала загрузите Excel-файл."))
     return render_template(
         "va_schedule_manager/index.html",
         snapshot=schedule_service.get_current(),
@@ -354,7 +355,7 @@ def update():
 def clear():
     schedule_service, _ = _services()
     schedule_service.clear_current()
-    return redirect(url_for("va_schedule_manager.web.index"))
+    return redirect(public_url_for("va_schedule_manager.web.index"))
 
 
 @web_bp.post("/schedule/create-month")
@@ -366,14 +367,14 @@ def create_schedule_month():
             employee_source=str(request.form.get("employee_source", "last_schedule")),
         )
     except (TypeError, ValueError):
-        return redirect(url_for("va_schedule_manager.web.index", error="Некорректный месяц или год."))
+        return redirect(public_url_for("va_schedule_manager.web.index", error="Некорректный месяц или год."))
     except ScheduleMonthValidationError as exc:
-        return redirect(url_for("va_schedule_manager.web.index", error=str(exc)))
+        return redirect(public_url_for("va_schedule_manager.web.index", error=str(exc)))
 
     message = f"График {result.title} создан. Сотрудников: {result.employee_count}."
     if result.calendar_warning:
         message = f"{message} {result.calendar_warning}"
-    return redirect(url_for("va_schedule_manager.web.index", year=result.year, month=result.month, message=message))
+    return redirect(public_url_for("va_schedule_manager.web.index", year=result.year, month=result.month, message=message))
 
 
 @web_bp.post("/schedule/delete-month")
@@ -386,18 +387,18 @@ def delete_schedule_month():
     try:
         result = _schedule_month_service().delete_month(sheet_name, action)
     except ScheduleMonthValidationError as exc:
-        return redirect(url_for("va_schedule_manager.web.index", year=selected_year, month=selected_month, delete_month=sheet_name, error=str(exc)))
+        return redirect(public_url_for("va_schedule_manager.web.index", year=selected_year, month=selected_month, delete_month=sheet_name, error=str(exc)))
 
     if result.action == "clear_filled":
         return redirect(
-            url_for(
+            public_url_for(
                 "va_schedule_manager.web.index",
                 year=selected_year,
                 month=selected_month,
                 message=f"Из графика {result.title} очищены заполненные смены: {result.filled_cells_count}.",
             )
         )
-    return redirect(url_for("va_schedule_manager.web.index", message=f"График {result.title} удален."))
+    return redirect(public_url_for("va_schedule_manager.web.index", message=f"График {result.title} удален."))
 
 
 @web_bp.post("/schedule/copy-month")
@@ -410,9 +411,9 @@ def copy_schedule_month():
             overwrite=request.form.get("overwrite") == "on",
         )
     except (TypeError, ValueError):
-        return redirect(url_for("va_schedule_manager.web.index", error="Некорректный месяц или год."))
+        return redirect(public_url_for("va_schedule_manager.web.index", error="Некорректный месяц или год."))
     except ScheduleMonthValidationError as exc:
-        return redirect(url_for("va_schedule_manager.web.index", error=str(exc)))
+        return redirect(public_url_for("va_schedule_manager.web.index", error=str(exc)))
 
     message = f"График {result.title} скопирован из {result.source_sheet_name}."
     if result.overwritten:
@@ -422,7 +423,7 @@ def copy_schedule_month():
             f"{message} {result.calendar_warning} "
             "Рекомендуется свериться с производственным календарем и вручную проставить праздничные дни."
         )
-    return redirect(url_for("va_schedule_manager.web.index", year=result.year, month=result.month, message=message))
+    return redirect(public_url_for("va_schedule_manager.web.index", year=result.year, month=result.month, message=message))
 
 
 @web_bp.post("/schedule/autoplan")
@@ -436,12 +437,12 @@ def autoplan_schedule_month():
             vacations_confirmed=request.form.get("vacations_confirmed") == "on",
         )
     except ScheduleAutoplanValidationError as exc:
-        return redirect(url_for("va_schedule_manager.web.index", year=selected_year, month=selected_month, autoplan=sheet_name, error=str(exc)))
+        return redirect(public_url_for("va_schedule_manager.web.index", year=selected_year, month=selected_month, autoplan=sheet_name, error=str(exc)))
 
     message = f"Автопланирование {result.title} выполнено. Заполнено ячеек: {result.assigned_cells_count}."
     if result.violation_count:
         message = f"{message} Остались замечания проверки: {result.violation_count}."
-    return redirect(url_for("va_schedule_manager.web.index", year=selected_year, month=selected_month, message=message))
+    return redirect(public_url_for("va_schedule_manager.web.index", year=selected_year, month=selected_month, message=message))
 
 
 @web_bp.get("/schedule/export")
@@ -451,7 +452,7 @@ def export_schedule():
     try:
         filename, stream = _schedule_export_service(schedule_service).export_month(sheet_name)
     except ScheduleExportError as exc:
-        return redirect(url_for("va_schedule_manager.web.index", error=str(exc)))
+        return redirect(public_url_for("va_schedule_manager.web.index", error=str(exc)))
     safe_name = Path(filename).name or "schedule.xlsx"
     export_name = f"{uuid4().hex}_{safe_name}"
     EXPORT_DIR.mkdir(parents=True, exist_ok=True)

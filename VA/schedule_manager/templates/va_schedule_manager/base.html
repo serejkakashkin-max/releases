@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ va_admin_csrf_token }}">
     <title>{% block title %}График дежурств{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('va_schedule_manager.static', filename='va_schedule_manager/style.css') }}?v=20260714-30">
+    <link rel="stylesheet" href="{{ va_url_for('va_schedule_manager.static', filename='va_schedule_manager/style.css') }}?v=20260714-30">
     {% block head_extra %}{% endblock %}
   </head>
   <body>
@@ -28,12 +28,12 @@
       </header>
 
       <nav class="top-nav" aria-label="Основная навигация">
-        <a class="{% if active_page == 'schedule' %}active{% endif %}" href="{{ url_for('va_schedule_manager.web.index') }}">График</a>
-        <a class="{% if active_page == 'employees' %}active{% endif %}" href="{{ url_for('va_schedule_manager.settings.employees') }}">Сотрудники</a>
-        <a class="{% if active_page == 'competencies' %}active{% endif %}" href="{{ url_for('va_schedule_manager.settings.competencies') }}">Компетенции</a>
-        <a class="{% if active_page == 'shifts' %}active{% endif %}" href="{{ url_for('va_schedule_manager.settings.shifts') }}">Смены</a>
-        <a class="{% if active_page == 'integrations' %}active{% endif %}" href="{{ url_for('va_schedule_manager.settings.integrations') }}">Интеграции</a>
-        <a class="top-nav-docs {% if active_page == 'docs' %}active{% endif %}" href="{{ url_for('va_schedule_manager.web.docs_index') }}">Документация</a>
+        <a class="{% if active_page == 'schedule' %}active{% endif %}" href="{{ va_url_for('va_schedule_manager.web.index') }}">График</a>
+        <a class="{% if active_page == 'employees' %}active{% endif %}" href="{{ va_url_for('va_schedule_manager.settings.employees') }}">Сотрудники</a>
+        <a class="{% if active_page == 'competencies' %}active{% endif %}" href="{{ va_url_for('va_schedule_manager.settings.competencies') }}">Компетенции</a>
+        <a class="{% if active_page == 'shifts' %}active{% endif %}" href="{{ va_url_for('va_schedule_manager.settings.shifts') }}">Смены</a>
+        <a class="{% if active_page == 'integrations' %}active{% endif %}" href="{{ va_url_for('va_schedule_manager.settings.integrations') }}">Интеграции</a>
+        <a class="top-nav-docs {% if active_page == 'docs' %}active{% endif %}" href="{{ va_url_for('va_schedule_manager.web.docs_index') }}">Документация</a>
       </nav>
 
       {% block content %}{% endblock %}
@@ -75,7 +75,7 @@
         });
       })();
     </script>
-    <script src="{{ url_for('va_schedule_manager.static', filename='va_schedule_manager/app.js') }}?v=20260714-30"></script>
+    <script src="{{ va_url_for('va_schedule_manager.static', filename='va_schedule_manager/app.js') }}?v=20260714-30"></script>
     {% block scripts %}{% endblock %}
   </body>
 </html>

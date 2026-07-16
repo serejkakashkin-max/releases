@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from flask import Blueprint, abort, request, url_for
+from flask import Blueprint, abort, request
 
 from services.sup_admin_auth_service import (
     csrf_protect_request,
@@ -15,6 +15,7 @@ from .routes.api import api_bp
 from .routes.integration import integration_bp
 from .routes.settings import settings_bp
 from .routes.web import web_bp
+from .url_helpers import public_url_for
 
 
 logger = logging.getLogger(__name__)
@@ -50,7 +51,8 @@ def create_schedule_manager_blueprint() -> Blueprint:
     def _inject_schedule_manager_context():
         return {
             "va_admin_csrf_token": get_sup_admin_csrf_token(),
-            "va_admin_panel_url": url_for("sup_parameters.sup_parameters_page"),
+            "va_admin_panel_url": public_url_for("sup_parameters.sup_parameters_page"),
+            "va_url_for": public_url_for,
             "va_schedule_manager_version": APP_VERSION,
         }
 

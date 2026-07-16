@@ -12,8 +12,8 @@
         <p>{{ filename }}</p>
       </div>
       <div class="section-actions">
-        <a class="button button-light" href="{{ url_for('va_schedule_manager.web.docs_index') }}">К списку</a>
-        <a class="button button-secondary" href="{{ url_for('va_schedule_manager.web.docs_download', filename=filename) }}">Скачать</a>
+        <a class="button button-light" href="{{ va_url_for('va_schedule_manager.web.docs_index') }}">К списку</a>
+        <a class="button button-secondary" href="{{ va_url_for('va_schedule_manager.web.docs_download', filename=filename) }}">Скачать</a>
       </div>
     </div>
 

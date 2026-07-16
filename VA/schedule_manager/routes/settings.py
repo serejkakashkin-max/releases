@@ -1,4 +1,6 @@
-from flask import Blueprint, redirect, render_template, request, url_for
+from flask import Blueprint, redirect, render_template, request
+
+from VA.schedule_manager.url_helpers import public_url_for
 
 from VA.schedule_manager.repositories.competency_repository import CompetencyRepository
 from VA.schedule_manager.repositories.employee_repository import EmployeeRepository
@@ -49,7 +51,7 @@ def _calendar_integration_service() -> CalendarIntegrationService:
 
 @settings_bp.get("/")
 def index():
-    return redirect(url_for("va_schedule_manager.settings.employees"))
+    return redirect(public_url_for("va_schedule_manager.settings.employees"))
 
 
 @settings_bp.get("/employees")
@@ -93,8 +95,8 @@ def add_employee():
             request.form.get("overtime_ready", "1") == "1",
         )
     except EmployeeValidationError as exc:
-        return redirect(url_for("va_schedule_manager.settings.employees", error=str(exc)))
-    return redirect(url_for("va_schedule_manager.settings.employees", message="Сотрудник добавлен."))
+        return redirect(public_url_for("va_schedule_manager.settings.employees", error=str(exc)))
+    return redirect(public_url_for("va_schedule_manager.settings.employees", message="Сотрудник добавлен."))
 
 
 @settings_bp.post("/employees/update")
@@ -112,8 +114,8 @@ def update_employee():
             request.form.get("overtime_ready", "1") == "1",
         )
     except EmployeeValidationError as exc:
-        return redirect(url_for("va_schedule_manager.settings.employees", error=str(exc)))
-    return redirect(url_for("va_schedule_manager.settings.employees", message="Сотрудник обновлен."))
+        return redirect(public_url_for("va_schedule_manager.settings.employees", error=str(exc)))
+    return redirect(public_url_for("va_schedule_manager.settings.employees", message="Сотрудник обновлен."))
 
 
 @settings_bp.get("/competencies")
@@ -142,8 +144,8 @@ def add_competency():
     try:
         service.add_competency(request.form)
     except CompetencyValidationError as exc:
-        return redirect(url_for("va_schedule_manager.settings.competencies", error=str(exc)))
-    return redirect(url_for("va_schedule_manager.settings.competencies", message="Компетенция добавлена."))
+        return redirect(public_url_for("va_schedule_manager.settings.competencies", error=str(exc)))
+    return redirect(public_url_for("va_schedule_manager.settings.competencies", message="Компетенция добавлена."))
 
 
 @settings_bp.post("/competencies/update")
@@ -152,8 +154,8 @@ def update_competency():
     try:
         service.update_competency(request.form.get("original_code", ""), request.form)
     except CompetencyValidationError as exc:
-        return redirect(url_for("va_schedule_manager.settings.competencies", error=str(exc)))
-    return redirect(url_for("va_schedule_manager.settings.competencies", message="Компетенция обновлена."))
+        return redirect(public_url_for("va_schedule_manager.settings.competencies", error=str(exc)))
+    return redirect(public_url_for("va_schedule_manager.settings.competencies", message="Компетенция обновлена."))
 
 
 @settings_bp.post("/competencies/delete")
@@ -163,8 +165,8 @@ def delete_competency():
     try:
         service.delete_competency(code)
     except (CompetencyValidationError, CompetencyInUseError) as exc:
-        return redirect(url_for("va_schedule_manager.settings.competencies", delete=code, error=str(exc)))
-    return redirect(url_for("va_schedule_manager.settings.competencies", message="Компетенция удалена."))
+        return redirect(public_url_for("va_schedule_manager.settings.competencies", delete=code, error=str(exc)))
+    return redirect(public_url_for("va_schedule_manager.settings.competencies", message="Компетенция удалена."))
 
 
 @settings_bp.post("/employees/status")
@@ -173,8 +175,8 @@ def change_status():
     try:
         service.change_status(request.form.get("name", ""), request.form.get("status", "active"))
     except EmployeeValidationError as exc:
-        return redirect(url_for("va_schedule_manager.settings.employees", error=str(exc)))
-    return redirect(url_for("va_schedule_manager.settings.employees", message="Статус обновлен."))
+        return redirect(public_url_for("va_schedule_manager.settings.employees", error=str(exc)))
+    return redirect(public_url_for("va_schedule_manager.settings.employees", message="Статус обновлен."))
 
 
 @settings_bp.post("/employees/quick-update")
@@ -192,8 +194,8 @@ def quick_update_employee():
             request.form.get("overtime_ready", "1") == "1",
         )
     except EmployeeValidationError as exc:
-        return redirect(url_for("va_schedule_manager.settings.employees", error=str(exc)))
-    return redirect(url_for("va_schedule_manager.settings.employees", message="Сотрудник обновлен."))
+        return redirect(public_url_for("va_schedule_manager.settings.employees", error=str(exc)))
+    return redirect(public_url_for("va_schedule_manager.settings.employees", message="Сотрудник обновлен."))
 
 
 @settings_bp.post("/employees/delete")
@@ -203,8 +205,8 @@ def delete_employee():
     try:
         service.delete_employee(name)
     except (EmployeeValidationError, EmployeeInUseError) as exc:
-        return redirect(url_for("va_schedule_manager.settings.employees", delete=name, error=str(exc)))
-    return redirect(url_for("va_schedule_manager.settings.employees", message="Сотрудник удален."))
+        return redirect(public_url_for("va_schedule_manager.settings.employees", delete=name, error=str(exc)))
+    return redirect(public_url_for("va_schedule_manager.settings.employees", message="Сотрудник удален."))
 
 
 @settings_bp.post("/employees/delete-from-schedules")
@@ -214,10 +216,10 @@ def delete_employee_from_schedules():
     try:
         output_path = service.delete_employee_with_schedule_cleanup(name)
     except (EmployeeValidationError, EmployeeInUseError) as exc:
-        return redirect(url_for("va_schedule_manager.settings.employees", delete=name, error=str(exc)))
+        return redirect(public_url_for("va_schedule_manager.settings.employees", delete=name, error=str(exc)))
     return redirect(
-        url_for(
-            "settings.employees",
+        public_url_for(
+            "va_schedule_manager.settings.employees",
             message=f"Сотрудник удален из справочника. Копия графика сохранена: {output_path}",
         )
     )
@@ -249,8 +251,8 @@ def add_shift():
     try:
         service.add_shift(request.form)
     except ShiftValidationError as exc:
-        return redirect(url_for("va_schedule_manager.settings.shifts", error=str(exc)))
-    return redirect(url_for("va_schedule_manager.settings.shifts", message="Смена добавлена."))
+        return redirect(public_url_for("va_schedule_manager.settings.shifts", error=str(exc)))
+    return redirect(public_url_for("va_schedule_manager.settings.shifts", message="Смена добавлена."))
 
 
 @settings_bp.post("/shifts/update")
@@ -259,8 +261,8 @@ def update_shift():
     try:
         service.update_shift(request.form.get("original_code", ""), request.form)
     except ShiftValidationError as exc:
-        return redirect(url_for("va_schedule_manager.settings.shifts", error=str(exc)))
-    return redirect(url_for("va_schedule_manager.settings.shifts", message="Смена обновлена."))
+        return redirect(public_url_for("va_schedule_manager.settings.shifts", error=str(exc)))
+    return redirect(public_url_for("va_schedule_manager.settings.shifts", message="Смена обновлена."))
 
 
 @settings_bp.post("/shifts/delete")
@@ -270,15 +272,15 @@ def delete_shift():
     try:
         service.delete_shift(code)
     except (ShiftValidationError, ShiftInUseError) as exc:
-        return redirect(url_for("va_schedule_manager.settings.shifts", delete=code, error=str(exc)))
-    return redirect(url_for("va_schedule_manager.settings.shifts", message="Смена удалена."))
+        return redirect(public_url_for("va_schedule_manager.settings.shifts", delete=code, error=str(exc)))
+    return redirect(public_url_for("va_schedule_manager.settings.shifts", message="Смена удалена."))
 
 
 @settings_bp.post("/shifts/reset")
 def reset_shifts():
     service = _shift_service()
     service.reset_defaults()
-    return redirect(url_for("va_schedule_manager.settings.shifts", message="Настройки смен сброшены к заводским."))
+    return redirect(public_url_for("va_schedule_manager.settings.shifts", message="Настройки смен сброшены к заводским."))
 
 
 @settings_bp.get("/integrations")
@@ -298,4 +300,4 @@ def integrations():
 def save_calendar_integration():
     service = _calendar_integration_service()
     service.save_settings(request.form)
-    return redirect(url_for("va_schedule_manager.settings.integrations", message="Настройки интеграции сохранены."))
+    return redirect(public_url_for("va_schedule_manager.settings.integrations", message="Настройки интеграции сохранены."))

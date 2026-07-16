@@ -10,8 +10,8 @@
 {% block content %}
   <section class="panel page-control-panel">
     {% call section_header("Настройка смен", "Цвет, подпись, часы и часовой пояс сразу используются в графике.") %}
-        <a class="button button-light button-compact" href="{{ url_for('va_schedule_manager.settings.shifts') }}">Обновить</a>
-        <form method="post" action="{{ url_for('va_schedule_manager.settings.reset_shifts') }}" onsubmit="return confirm('Сбросить все настройки смен к заводским?')">
+        <a class="button button-light button-compact" href="{{ va_url_for('va_schedule_manager.settings.shifts') }}">Обновить</a>
+        <form method="post" action="{{ va_url_for('va_schedule_manager.settings.reset_shifts') }}" onsubmit="return confirm('Сбросить все настройки смен к заводским?')">
           <button class="button button-warning button-compact" type="submit">Сбросить настройки</button>
         </form>
     {% endcall %}
@@ -22,7 +22,7 @@
       <div class="section-meta">
         <span class="meta-pill">Всего {{ shifts|length }}</span>
       </div>
-      <a class="button button-light button-add-compact" href="{{ url_for('va_schedule_manager.settings.shifts', add='1') }}" data-modal-trigger data-focus-key="shift-add">+</a>
+      <a class="button button-light button-add-compact" href="{{ va_url_for('va_schedule_manager.settings.shifts', add='1') }}" data-modal-trigger data-focus-key="shift-add">+</a>
     {% endcall %}
     <div class="table-wrap settings-table-wrap shifts-table-wrap">
       <table class="data-table shift-table settings-table">
@@ -42,7 +42,7 @@
           {% for shift in shifts %}
             <tr>
               <td>
-                <form class="inline-edit-form" method="post" action="{{ url_for('va_schedule_manager.settings.update_shift') }}" data-auto-submit-form>
+                <form class="inline-edit-form" method="post" action="{{ va_url_for('va_schedule_manager.settings.update_shift') }}" data-auto-submit-form>
                   <input type="hidden" name="original_code" value="{{ shift.code }}">
                   <input type="hidden" name="code" value="{{ shift.code }}">
                   <input type="hidden" name="name" value="{{ shift.name }}">
@@ -56,7 +56,7 @@
                 </form>
               </td>
               <td>
-                <form class="inline-edit-form" method="post" action="{{ url_for('va_schedule_manager.settings.update_shift') }}" data-auto-submit-form>
+                <form class="inline-edit-form" method="post" action="{{ va_url_for('va_schedule_manager.settings.update_shift') }}" data-auto-submit-form>
                   <input type="hidden" name="original_code" value="{{ shift.code }}">
                   <input type="hidden" name="code" value="{{ shift.code }}">
                   <input class="inline-field" name="name" required value="{{ shift.name }}" data-auto-submit-control>
@@ -70,7 +70,7 @@
                 </form>
               </td>
               <td>
-                <form class="inline-edit-form" method="post" action="{{ url_for('va_schedule_manager.settings.update_shift') }}" data-auto-submit-form>
+                <form class="inline-edit-form" method="post" action="{{ va_url_for('va_schedule_manager.settings.update_shift') }}" data-auto-submit-form>
                   <input type="hidden" name="original_code" value="{{ shift.code }}">
                   <input type="hidden" name="code" value="{{ shift.code }}">
                   <input type="hidden" name="name" value="{{ shift.name }}">
@@ -84,7 +84,7 @@
                 </form>
               </td>
               <td>
-                <form class="inline-edit-form inline-time-form" method="post" action="{{ url_for('va_schedule_manager.settings.update_shift') }}" data-auto-submit-form>
+                <form class="inline-edit-form inline-time-form" method="post" action="{{ va_url_for('va_schedule_manager.settings.update_shift') }}" data-auto-submit-form>
                   <input type="hidden" name="original_code" value="{{ shift.code }}">
                   <input type="hidden" name="code" value="{{ shift.code }}">
                   <input type="hidden" name="name" value="{{ shift.name }}">
@@ -99,7 +99,7 @@
                 </form>
               </td>
               <td>
-                <form class="inline-edit-form" method="post" action="{{ url_for('va_schedule_manager.settings.update_shift') }}" data-auto-submit-form>
+                <form class="inline-edit-form" method="post" action="{{ va_url_for('va_schedule_manager.settings.update_shift') }}" data-auto-submit-form>
                   <input type="hidden" name="original_code" value="{{ shift.code }}">
                   <input type="hidden" name="code" value="{{ shift.code }}">
                   <input type="hidden" name="name" value="{{ shift.name }}">
@@ -113,7 +113,7 @@
                 </form>
               </td>
               <td>
-                <form class="inline-edit-form" method="post" action="{{ url_for('va_schedule_manager.settings.update_shift') }}" data-auto-submit-form>
+                <form class="inline-edit-form" method="post" action="{{ va_url_for('va_schedule_manager.settings.update_shift') }}" data-auto-submit-form>
                   <input type="hidden" name="original_code" value="{{ shift.code }}">
                   <input type="hidden" name="code" value="{{ shift.code }}">
                   <input type="hidden" name="name" value="{{ shift.name }}">
@@ -127,7 +127,7 @@
                 </form>
               </td>
               <td>
-                <form class="inline-edit-form" method="post" action="{{ url_for('va_schedule_manager.settings.update_shift') }}" data-auto-submit-form>
+                <form class="inline-edit-form" method="post" action="{{ va_url_for('va_schedule_manager.settings.update_shift') }}" data-auto-submit-form>
                   <input type="hidden" name="original_code" value="{{ shift.code }}">
                   <input type="hidden" name="code" value="{{ shift.code }}">
                   <input type="hidden" name="name" value="{{ shift.name }}">
@@ -142,7 +142,7 @@
               </td>
               <td>
                 <div class="row-actions">
-                  <a class="button button-danger-soft button-icon" href="{{ url_for('va_schedule_manager.settings.shifts', delete=shift.code) }}" title="Удалить" data-modal-trigger data-focus-key="shift-delete-{{ loop.index }}">Удалить</a>
+                  <a class="button button-danger-soft button-icon" href="{{ va_url_for('va_schedule_manager.settings.shifts', delete=shift.code) }}" title="Удалить" data-modal-trigger data-focus-key="shift-delete-{{ loop.index }}">Удалить</a>
                 </div>
               </td>
             </tr>
@@ -155,8 +155,8 @@
 
 {% block dialogs %}
   {% if show_add_shift %}
-    {% call modal("Добавление смены", "", url_for("va_schedule_manager.settings.shifts"), "add-shift-title", "shift-edit-modal") %}
-        <form class="modal-shift-form" method="post" action="{{ url_for('va_schedule_manager.settings.add_shift') }}">
+    {% call modal("Добавление смены", "", va_url_for("va_schedule_manager.settings.shifts"), "add-shift-title", "shift-edit-modal") %}
+        <form class="modal-shift-form" method="post" action="{{ va_url_for('va_schedule_manager.settings.add_shift') }}">
           <label>
             <span>Название</span>
             <input name="name" placeholder="Ночная смена" required>
@@ -195,14 +195,14 @@
           </label>
           <div class="decision-actions modal-actions">
             <button class="button button-primary" type="submit">Добавить</button>
-            <a class="button button-light" href="{{ url_for('va_schedule_manager.settings.shifts') }}">Отмена</a>
+            <a class="button button-light" href="{{ va_url_for('va_schedule_manager.settings.shifts') }}">Отмена</a>
           </div>
         </form>
     {% endcall %}
   {% endif %}
 
   {% if delete_shift %}
-    {% call modal("Удаление смены", delete_shift.display_code ~ " · " ~ delete_shift.name, url_for("va_schedule_manager.settings.shifts"), "delete-shift-title") %}
+    {% call modal("Удаление смены", delete_shift.display_code ~ " · " ~ delete_shift.name, va_url_for("va_schedule_manager.settings.shifts"), "delete-shift-title") %}
         {% if delete_usage %}
           <p class="decision-text">Смена используется в графиках. Удаление заблокировано.</p>
           <ul class="usage-list">
@@ -211,16 +211,16 @@
             {% endfor %}
           </ul>
           <div class="decision-actions modal-actions">
-            <a class="button button-light" href="{{ url_for('va_schedule_manager.settings.shifts') }}">Понятно</a>
+            <a class="button button-light" href="{{ va_url_for('va_schedule_manager.settings.shifts') }}">Понятно</a>
           </div>
         {% else %}
           <p class="decision-text">В графиках смена не найдена. Можно удалить ее из справочника.</p>
           <div class="decision-actions modal-actions">
-            <form method="post" action="{{ url_for('va_schedule_manager.settings.delete_shift') }}">
+            <form method="post" action="{{ va_url_for('va_schedule_manager.settings.delete_shift') }}">
               <input type="hidden" name="code" value="{{ delete_shift.code }}">
               <button class="button button-danger" type="submit">Удалить смену</button>
             </form>
-            <a class="button button-light" href="{{ url_for('va_schedule_manager.settings.shifts') }}">Отмена</a>
+            <a class="button button-light" href="{{ va_url_for('va_schedule_manager.settings.shifts') }}">Отмена</a>
           </div>
         {% endif %}
     {% endcall %}
