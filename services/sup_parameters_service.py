@@ -189,9 +189,9 @@ def _admin_email_to_sbertrack(raw_value: Any) -> Dict[str, Any]:
             route_name = "EMRM"
             subject_triggers = ["EMRM"]
             summary_template = "{subject}"
-            jira_issue_type = "Epic"
-            jira_issue_type_id = "10000"
-            jira_epic_name_field = "customfield_10007"
+            jira_issue_type = "Task"
+            jira_issue_type_id = "3"
+            jira_epic_name_field = ""
             jira_team = {
                 "field_id": "customfield_11902",
                 "value_id": "6651",
@@ -203,6 +203,14 @@ def _admin_email_to_sbertrack(raw_value: Any) -> Dict[str, Any]:
         jira_labels = _normalize_string_list(raw_route.get("jira_labels"))
         if is_legacy_emrm_story and jira_labels == ["MPR"]:
             jira_labels = ["FromChannel"]
+        raw_epic_link = raw_route.get("jira_epic_link") if isinstance(raw_route.get("jira_epic_link"), dict) else {}
+        jira_epic_link = {
+            "field_id": str(raw_epic_link.get("field_id") or "").strip(),
+            "key": str(raw_epic_link.get("key") or "").strip(),
+        }
+        if target_system == "jira" and any(str(item).strip().upper() == "EMRM" for item in spaces):
+            jira_epic_link["field_id"] = jira_epic_link["field_id"] or "customfield_10006"
+            jira_epic_link["key"] = jira_epic_link["key"] or "EMRM-40162"
         routes.append(
             {
                 "enabled": _coerce_bool(raw_route.get("enabled"), True),
@@ -215,6 +223,7 @@ def _admin_email_to_sbertrack(raw_value: Any) -> Dict[str, Any]:
                 "jira_issue_type": jira_issue_type,
                 "jira_issue_type_id": jira_issue_type_id,
                 "jira_epic_name_field": jira_epic_name_field,
+                "jira_epic_link": jira_epic_link,
                 "jira_priority": str(raw_route.get("jira_priority") or "Minor").strip(),
                 "jira_labels": jira_labels,
                 "jira_team": jira_team,
@@ -698,9 +707,9 @@ def _validate_managed_config(raw_config: Any) -> Dict[str, Any]:
             name = "EMRM"
             triggers = ["EMRM"]
             summary_template = "{subject}"
-            jira_issue_type = "Epic"
-            jira_issue_type_id = "10000"
-            jira_epic_name_field = "customfield_10007"
+            jira_issue_type = "Task"
+            jira_issue_type_id = "3"
+            jira_epic_name_field = ""
             jira_team = {
                 "field_id": "customfield_11902",
                 "value_id": "6651",
@@ -709,6 +718,17 @@ def _validate_managed_config(raw_config: Any) -> Dict[str, Any]:
         for team_key, team_value in jira_team.items():
             if len(team_value) > 200 or any(ord(char) < 32 for char in team_value):
                 errors.append(f"Email route {name}: jira_team.{team_key} contains unsafe value")
+        raw_epic_link = row.get("jira_epic_link") if isinstance(row.get("jira_epic_link"), dict) else {}
+        jira_epic_link = {
+            "field_id": str(raw_epic_link.get("field_id") or "").strip(),
+            "key": str(raw_epic_link.get("key") or "").strip(),
+        }
+        if is_emrm_route and target_system == "jira":
+            jira_epic_link["field_id"] = jira_epic_link["field_id"] or "customfield_10006"
+            jira_epic_link["key"] = jira_epic_link["key"] or "EMRM-40162"
+        for link_key, link_value in jira_epic_link.items():
+            if len(link_value) > 200 or any(ord(char) < 32 for char in link_value):
+                errors.append(f"Email route {name}: jira_epic_link.{link_key} contains unsafe value")
         suit = str(row.get("suit") or "").strip() or "task"
         priority = str(row.get("priority") or "").strip() or "low"
         normalized_routes.append(
@@ -723,6 +743,7 @@ def _validate_managed_config(raw_config: Any) -> Dict[str, Any]:
                 "jira_issue_type": jira_issue_type or "Story",
                 "jira_issue_type_id": jira_issue_type_id,
                 "jira_epic_name_field": jira_epic_name_field,
+                "jira_epic_link": jira_epic_link,
                 "jira_priority": jira_priority or "Minor",
                 "jira_labels": _normalize_string_list(row.get("jira_labels")),
                 "jira_team": jira_team,

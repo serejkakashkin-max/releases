@@ -257,9 +257,9 @@ def _normalize_email_to_sbertrack_config(value: Any) -> Dict[str, Any]:
             name = "EMRM"
             triggers = ["EMRM"]
             summary_template = "{subject}"
-            jira_issue_type = "Epic"
-            jira_issue_type_id = "10000"
-            jira_epic_name_field = "customfield_10007"
+            jira_issue_type = "Task"
+            jira_issue_type_id = "3"
+            jira_epic_name_field = ""
             raw_team = {
                 "field_id": "customfield_11902",
                 "value_id": "6651",
@@ -271,6 +271,17 @@ def _normalize_email_to_sbertrack_config(value: Any) -> Dict[str, Any]:
         jira_labels = _normalize_string_list(raw_route.get("jira_labels"))
         if is_legacy_emrm_story and jira_labels == ["MPR"]:
             jira_labels = ["FromChannel"]
+        jira_epic_link = raw_route.get("jira_epic_link") if isinstance(raw_route.get("jira_epic_link"), dict) else {}
+        if is_emrm_route and target_system == "jira":
+            jira_epic_link = {
+                "field_id": str(jira_epic_link.get("field_id") or "customfield_10006").strip(),
+                "key": str(jira_epic_link.get("key") or "EMRM-40162").strip(),
+            }
+        else:
+            jira_epic_link = {
+                "field_id": str(jira_epic_link.get("field_id") or "").strip(),
+                "key": str(jira_epic_link.get("key") or "").strip(),
+            }
         routes.append(
             {
                 "enabled": raw_route.get("enabled")
@@ -285,6 +296,7 @@ def _normalize_email_to_sbertrack_config(value: Any) -> Dict[str, Any]:
                 "jira_issue_type": jira_issue_type,
                 "jira_issue_type_id": jira_issue_type_id,
                 "jira_epic_name_field": jira_epic_name_field,
+                "jira_epic_link": jira_epic_link,
                 "jira_priority": str(raw_route.get("jira_priority") or "Minor").strip() or "Minor",
                 "jira_labels": jira_labels,
                 "jira_team": copy.deepcopy(raw_team),

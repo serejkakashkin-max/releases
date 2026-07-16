@@ -114,9 +114,6 @@ def create_email_jira_task(event: Dict[str, Any]) -> Dict[str, Any]:
     issue_type = str(route.get("jira_issue_type") or "Story").strip() or "Story"
     issue_type_id = str(route.get("jira_issue_type_id") or "").strip()
     epic_name_field = str(route.get("jira_epic_name_field") or "").strip()
-    if project.upper() == "EMRM" and issue_type.lower() == "epic":
-        # EMRM Epic uses customfield_10007 as Epic Name. customfield_10002 is numeric there.
-        epic_name_field = "customfield_10007"
     fields: Dict[str, Any] = {
         "project": {"key": project},
         "issuetype": ({"id": issue_type_id} if issue_type_id else {"name": issue_type}),
@@ -142,9 +139,11 @@ def create_email_jira_task(event: Dict[str, Any]) -> Dict[str, Any]:
     if issue_type.lower() == "epic":
         epic_name_field = epic_name_field or "customfield_10007"
         fields[epic_name_field] = subject[:255]
-    if project.upper() == "EMRM" and issue_type.lower() == "epic":
-        # Required by EMRM Epic screen: "Тип Epic".
-        fields["customfield_19100"] = {"id": "30300"}
+    epic_link = route.get("jira_epic_link") if isinstance(route.get("jira_epic_link"), dict) else {}
+    epic_link_field = str(epic_link.get("field_id") or "").strip()
+    epic_link_key = str(epic_link.get("key") or "").strip()
+    if epic_link_field and epic_link_key:
+        fields[epic_link_field] = epic_link_key
 
     response = requests.post(
         f"{connection['url']}/rest/api/2/issue",

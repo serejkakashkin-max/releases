@@ -1181,9 +1181,13 @@
           spaces: splitLines(row.querySelector("[data-route-spaces]")?.value || ""),
           jira_projects: splitLines(row.querySelector("[data-route-projects]")?.value || ""),
           jira_domain: row.querySelector("[data-route-domain]")?.value || "sberbank",
-          jira_issue_type: row.querySelector("[data-route-type]")?.value.trim() || "Epic",
+          jira_issue_type: row.querySelector("[data-route-type]")?.value.trim() || "Task",
           jira_issue_type_id: row.querySelector("[data-route-type-id]")?.value.trim() || "",
           jira_epic_name_field: row.querySelector("[data-route-epic-name-field]")?.value.trim() || "",
+          jira_epic_link: {
+            field_id: row.querySelector("[data-route-epic-link-field]")?.value.trim() || "",
+            key: row.querySelector("[data-route-epic-link-key]")?.value.trim() || ""
+          },
           jira_priority: row.querySelector("[data-route-jira-priority]")?.value.trim() || "Minor",
           jira_labels: splitLines(row.querySelector("[data-route-labels]")?.value || ""),
           jira_team: {
@@ -1414,9 +1418,13 @@
         next.name = "EMRM";
         next.subject_triggers = ["EMRM"];
         next.summary_template = "{subject}";
-        next.jira_issue_type = "Epic";
-        next.jira_issue_type_id = "10000";
-        next.jira_epic_name_field = "customfield_10007";
+        next.jira_issue_type = "Task";
+        next.jira_issue_type_id = "3";
+        next.jira_epic_name_field = "";
+        next.jira_epic_link = {
+          field_id: "customfield_10006",
+          key: "EMRM-40162"
+        };
         next.jira_labels = labels.length === 1 && labels[0] === "MPR" ? ["FromChannel"] : labels;
         next.jira_team = {
           field_id: "customfield_11902",
@@ -1428,6 +1436,13 @@
       if (target === "jira" && String(next.jira_issue_type || "").toLowerCase() === "epic") {
         next.jira_issue_type_id = next.jira_issue_type_id || "10000";
         next.jira_epic_name_field = next.jira_epic_name_field || "customfield_10007";
+      }
+      if (target === "jira" && projects.some((item) => String(item || "").trim().toUpperCase() === "EMRM")) {
+        const epicLink = next.jira_epic_link && typeof next.jira_epic_link === "object" ? next.jira_epic_link : {};
+        next.jira_epic_link = {
+          field_id: epicLink.field_id || "customfield_10006",
+          key: epicLink.key || "EMRM-40162"
+        };
       }
       return next;
     }
@@ -1462,11 +1477,13 @@
              <input data-route-suit data-dirty-field value="${escapeAttr(route.suit || "task")}" placeholder="task">
              <input data-route-priority data-dirty-field value="${escapeAttr(route.priority || "low")}" placeholder="low" style="margin-top:6px;">
              <small class="muted" data-route-jira-fields style="display:block;margin-top:6px;">Jira issue / priority / labels / team</small>
-            <input data-route-type data-dirty-field value="${escapeAttr(route.jira_issue_type || "Epic")}" placeholder="Epic" style="margin-top:6px;">
-            <input data-route-type-id data-dirty-field value="${escapeAttr(route.jira_issue_type_id || "10000")}" placeholder="10000" style="margin-top:6px;">
-            <input data-route-epic-name-field data-dirty-field value="${escapeAttr(route.jira_epic_name_field || "customfield_10007")}" placeholder="customfield_10007" style="margin-top:6px;">
+            <input data-route-type data-dirty-field value="${escapeAttr(route.jira_issue_type || "Task")}" placeholder="Task" style="margin-top:6px;">
+            <input data-route-type-id data-dirty-field value="${escapeAttr(route.jira_issue_type_id || "3")}" placeholder="3" style="margin-top:6px;">
+            <input data-route-epic-name-field data-dirty-field value="${escapeAttr(route.jira_epic_name_field || "")}" placeholder="Epic Name field, only for Epic" style="margin-top:6px;">
             <input data-route-jira-priority data-dirty-field value="${escapeAttr(route.jira_priority || "Minor")}" placeholder="Minor" style="margin-top:6px;">
             <input data-route-labels data-dirty-field value="${escapeAttr((route.jira_labels || ["FromChannel"]).join("\n"))}" placeholder="FromChannel" style="margin-top:6px;">
+            <input data-route-epic-link-field data-dirty-field value="${escapeAttr(route.jira_epic_link?.field_id || "")}" placeholder="Epic Link field: customfield_10006" style="margin-top:6px;">
+            <input data-route-epic-link-key data-dirty-field value="${escapeAttr(route.jira_epic_link?.key || "")}" placeholder="Epic Link key: EMRM-40162" style="margin-top:6px;">
             <input data-route-team-field data-dirty-field value="${escapeAttr(route.jira_team?.field_id || "")}" placeholder="customfield_11902" style="margin-top:6px;">
             <input data-route-team-value data-dirty-field value="${escapeAttr(route.jira_team?.value_id || "")}" placeholder="6651" style="margin-top:6px;">
             <input data-route-team-name data-dirty-field value="${escapeAttr(route.jira_team?.name || "")}" placeholder="ForREST" style="margin-top:6px;">
@@ -1940,9 +1957,10 @@
         spaces: [],
         jira_projects: ["EMRM"],
         jira_domain: "sberbank",
-        jira_issue_type: "Epic",
-        jira_issue_type_id: "10000",
-        jira_epic_name_field: "customfield_10007",
+        jira_issue_type: "Task",
+        jira_issue_type_id: "3",
+        jira_epic_name_field: "",
+        jira_epic_link: { field_id: "customfield_10006", key: "EMRM-40162" },
         jira_priority: "Minor",
         jira_labels: ["FromChannel"],
         jira_team: { field_id: "customfield_11902", value_id: "6651", name: "[\u0424\u043e\u043a\u0443\u0441] ForREST" },
