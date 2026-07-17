@@ -10,6 +10,7 @@ def register_routes(app):
     from routes.chatbot_routes import chatbot_bp
     from routes.sup_admin_session_routes import sup_admin_session_bp
     from routes.sup_parameters_routes import sup_parameters_bp
+    from routes.sandbox_routes import sandbox_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(release_bp)
@@ -19,6 +20,7 @@ def register_routes(app):
     app.register_blueprint(chatbot_bp)
     app.register_blueprint(sup_admin_session_bp)
     app.register_blueprint(sup_parameters_bp)
+    app.register_blueprint(sandbox_bp)
 
     try:
         from services.va_schedule_manager_registry import register_va_schedule_manager
@@ -26,6 +28,13 @@ def register_routes(app):
         register_va_schedule_manager(app)
     except Exception:
         app.logger.exception("VA Schedule Manager optional registration failed.")
+
+    try:
+        from services.ta_incident_auditor_registry import register_ta_incident_auditor
+
+        register_ta_incident_auditor(app)
+    except Exception:
+        app.logger.exception("TA Incident Auditor optional registration failed.")
 
     try:
         from services.email_to_sbertrack_service import (

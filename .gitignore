@@ -143,8 +143,10 @@ logs/
 certificates/
 cache/
 /cache/va_schedule_manager/
+/cache/ta_incident_auditor/
 sms_templates/
 /VA/schedule_manager/**/__pycache__/
+/TA/incident_auditor/**/__pycache__/
 *.pyc
 
 # Config with sensitive data

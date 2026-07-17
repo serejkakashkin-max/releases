@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <link rel="stylesheet" href="{{ ta_url_for('ta_incident_auditor.static', filename='ta_incident_auditor/incident_auditor.css') }}">
+</head>
+<body class="ta-body">
+<main class="ta-page">
+    <section class="ta-hero">
+        <div class="ta-breadcrumbs">
+            <a href="{{ ta_url_for('main.index') }}">Главная</a> / <a href="{{ ta_url_for('sandbox.sandbox_index') }}">Песочница</a> /
+            <a href="{{ ta_url_for('ta_incident_auditor.index') }}">TA · Аудитор инцидентов</a>
+        </div>
+        <h1 class="ta-title">{{ title }}</h1>
+        <p class="ta-subtitle">{{ message }}</p>
+        <div class="ta-actions" style="margin-top: 18px;">
+            <a class="ta-link-button secondary" href="{{ ta_url_for('ta_incident_auditor.index') }}">Вернуться к аудитору</a>
+        </div>
+    </section>
+</main>
+</body>
+</html>

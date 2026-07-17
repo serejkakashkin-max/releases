@@ -239,11 +239,18 @@
             white-space: normal;
         }
 
-        .usage-chip {
+        .utility-stack {
             position: fixed;
             right: 1.25rem;
             top: 5.25rem;
             z-index: 980;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 0.65rem;
+        }
+
+        .usage-chip {
             border: 1px solid var(--border-color);
             background: var(--bg-card);
             color: var(--text-secondary);
@@ -263,6 +270,56 @@
             border-color: rgba(13, 110, 253, 0.45);
         }
 
+        .sandbox-entry {
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .sandbox-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.48rem;
+            padding: 0.48rem 0.78rem;
+            border: 1px solid rgba(96, 165, 250, 0.34);
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.62);
+            color: #bfdbfe;
+            font-size: 0.86rem;
+            font-weight: 700;
+            text-decoration: none;
+            box-shadow: 0 14px 36px rgba(15, 23, 42, 0.16);
+            transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+        }
+
+        .sandbox-pill:hover {
+            color: #ffffff;
+            border-color: rgba(96, 165, 250, 0.66);
+            background: rgba(37, 99, 235, 0.16);
+            transform: translateY(-1px);
+        }
+
+        .sandbox-pill-badge {
+            padding: 0.12rem 0.44rem;
+            border-radius: 999px;
+            background: rgba(20, 184, 166, 0.16);
+            color: #99f6e4;
+            font-size: 0.72rem;
+            text-transform: uppercase;
+        }
+
+        @media (max-width: 768px) {
+            .utility-stack {
+                position: static;
+                margin: 0.85rem auto 0;
+                align-items: center;
+                gap: 0.55rem;
+            }
+
+            .sandbox-entry {
+                justify-content: center;
+            }
+        }
+
         .usage-panel {
             position: fixed;
             right: 1.25rem;
@@ -278,6 +335,10 @@
             visibility: hidden;
             transform: translateY(-8px);
             transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease;
+        }
+
+        .utility-stack.has-sandbox + .usage-panel {
+            top: 11rem;
         }
 
         .usage-panel.open {
@@ -373,13 +434,18 @@
                 gap: 0.55rem;
             }
 
-            .usage-chip {
-                right: 0.75rem;
-                top: 4.75rem;
+            .utility-stack {
+                position: static;
+                margin: 0.85rem auto 0;
+                align-items: center;
             }
 
             .usage-panel {
                 right: 0.75rem;
+                top: 7.75rem;
+            }
+
+            .utility-stack.has-sandbox + .usage-panel {
                 top: 7.75rem;
             }
         }
@@ -482,6 +548,10 @@
             document.getElementById('link-mpr').href = BASE_PATH + '/mpr';
             document.getElementById('link-release-monitor').href = BASE_PATH + '/release-monitor';
             document.getElementById('link-help').href = BASE_PATH + '/help';
+            const sandboxLink = document.getElementById('link-sandbox');
+            if (sandboxLink) {
+                sandboxLink.href = BASE_PATH + '/sandbox';
+            }
             // Дашборд теперь через onclick
         };
 
@@ -591,11 +661,22 @@
         </div>
     </div>
 
-    <button class="usage-chip" type="button" onclick="toggleUsagePanel()" title="Показать статистику использования">
-        <i class="bi bi-bar-chart-line"></i>
-        <span>Статистика</span>
-        <span class="badge bg-secondary">{{ stats.total_combined }}</span>
-    </button>
+    <div class="utility-stack{% if sandbox_modules %} has-sandbox{% endif %}">
+        {% if sandbox_modules %}
+        <div class="sandbox-entry">
+            <a id="link-sandbox" class="sandbox-pill" href="/sandbox">
+                <i class="bi bi-grid-3x3-gap"></i>
+                <span>Песочница</span>
+                <span class="sandbox-pill-badge">Эксперименты</span>
+            </a>
+        </div>
+        {% endif %}
+        <button class="usage-chip" type="button" onclick="toggleUsagePanel()" title="Показать статистику использования">
+            <i class="bi bi-bar-chart-line"></i>
+            <span>Статистика</span>
+            <span class="badge bg-secondary">{{ stats.total_combined }}</span>
+        </button>
+    </div>
 
     <aside class="usage-panel" id="usagePanel" aria-label="Статистика использования">
         <div class="usage-panel-head">

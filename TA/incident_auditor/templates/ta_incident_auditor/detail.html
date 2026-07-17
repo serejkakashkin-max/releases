@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Инцидент {{ inc.get('ID инцидента', '') }}</title>
+    <link rel="stylesheet" href="{{ ta_url_for('ta_incident_auditor.static', filename='ta_incident_auditor/incident_auditor.css') }}">
+</head>
+<body class="ta-body">
+<main class="ta-page">
+    <section class="ta-hero">
+        <div class="ta-breadcrumbs">
+            <a href="{{ ta_url_for('main.index') }}">Главная</a> / <a href="{{ ta_url_for('sandbox.sandbox_index') }}">Песочница</a> /
+            <a href="{{ ta_url_for('ta_incident_auditor.index') }}">TA · Аудитор инцидентов</a> / {{ inc.get('ID инцидента', '') }}
+        </div>
+        <div class="ta-title-row">
+            <div>
+                <h1 class="ta-title">Инцидент {{ inc.get('ID инцидента', '') }}</h1>
+                <p class="ta-subtitle">Исполнитель: {{ inc.get('Исполнитель', '') or 'не указан' }}</p>
+            </div>
+            <div class="ta-badges">
+                <span class="ta-badge">Эксперимент</span>
+                <span class="ta-badge">TA · Тутов Артём</span>
+            </div>
+        </div>
+    </section>
+
+    <section class="ta-detail-grid">
+        <article class="ta-card">
+            <h2>{{ inc['analysis'].get('Статус', '') }}</h2>
+            <h3>Что произошло</h3>
+            <p>{{ inc['analysis'].get('Что произошло', '') }}</p>
+
+            <h3>Почему произошло</h3>
+            <p>{{ inc['analysis'].get('Почему произошло', '') }}</p>
+
+            <h3>Привлечённые компетенции</h3>
+            <p>{{ inc['analysis'].get('Привлечённые компетенции', '') }}</p>
+
+            <h3>Ход устранения</h3>
+            <p>{{ inc['analysis'].get('Ход устранения', '') }}</p>
+
+            <h3>Дата начала / окончания</h3>
+            <p>{{ inc['analysis'].get('Дата начала', '') }} / {{ inc['analysis'].get('Дата окончания', '') }}</p>
+
+            {% if inc['analysis'].get('Замечания') %}
+            <h3>Замечания</h3>
+            <ul class="ta-list">
+                {% for remark in inc['analysis'].get('Замечания', []) %}
+                <li>{{ remark }}</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+        </article>
+
+        <aside class="ta-card">
+            {% if inc['analysis'].get('Jira_links') %}
+            <h3>Связанные задачи</h3>
+            <ul class="ta-list">
+                {% for key, url in inc['analysis']['Jira_links'].items() %}
+                <li><a href="{{ url }}" target="_blank" rel="noopener">{{ key }}</a></li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+
+            {% if inc['analysis'].get('Affected_systems') %}
+            <h3>Затронутые системы</h3>
+            <p>{{ ', '.join(inc['analysis']['Affected_systems']) }}</p>
+            {% endif %}
+
+            {% if inc['analysis'].get('Problem_types') %}
+            <h3>Тип проблемы</h3>
+            <p>{{ ', '.join(inc['analysis']['Problem_types']) }}</p>
+            {% endif %}
+
+            <div class="ta-actions" style="margin-top: 18px;">
+                <a class="ta-link-button secondary" href="{{ ta_url_for('ta_incident_auditor.index') }}">Назад к списку</a>
+            </div>
+        </aside>
+    </section>
+
+    <section class="ta-detail-grid">
+        <article class="ta-card">
+            <h3>Описание</h3>
+            <pre class="ta-pre">{{ inc.get('Описание', '') }}</pre>
+        </article>
+        <article class="ta-card">
+            <h3>Решение</h3>
+            <pre class="ta-pre">{{ inc.get('Решение', '') }}</pre>
+        </article>
+    </section>
+</main>
+</body>
+</html>

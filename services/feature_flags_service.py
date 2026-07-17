@@ -101,6 +101,9 @@ DEFAULT_FEATURE_FLAGS = {
         "va_schedule_manager": {
             "enabled": False,
         },
+        "ta_incident_auditor": {
+            "enabled": False,
+        },
     },
     "sbertrack_users": {},
 }

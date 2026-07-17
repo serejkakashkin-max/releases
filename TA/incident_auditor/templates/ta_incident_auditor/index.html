@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Аудитор инцидентов</title>
+    <link rel="stylesheet" href="{{ ta_url_for('ta_incident_auditor.static', filename='ta_incident_auditor/incident_auditor.css') }}">
+</head>
+<body class="ta-body">
+<main class="ta-page">
+    <section class="ta-hero">
+        <div class="ta-breadcrumbs">
+            <a href="{{ ta_url_for('main.index') }}">Главная</a> / <a href="{{ ta_url_for('sandbox.sandbox_index') }}">Песочница</a> / TA · Аудитор инцидентов
+        </div>
+        <div class="ta-title-row">
+            <div>
+                <h1 class="ta-title">Аудитор инцидентов</h1>
+                <p class="ta-subtitle">Экспериментальный инструмент анализа закрытия ИТ-инцидентов по загруженному Excel-файлу.</p>
+            </div>
+            <div class="ta-badges">
+                <span class="ta-badge">Эксперимент</span>
+                <span class="ta-badge">TA · Тутов Артём</span>
+                <span class="ta-badge">v{{ app_version }}</span>
+            </div>
+        </div>
+    </section>
+
+    <section class="ta-layout">
+        <aside class="ta-panel">
+            <div class="ta-panel-head">
+                <h2 class="ta-panel-title">Загрузка данных</h2>
+                <p class="ta-panel-subtitle">Поддерживается текущий формат исходного приложения: Excel `.xlsx`.</p>
+            </div>
+            <div class="ta-panel-body">
+                {% if error %}
+                <div class="ta-alert">{{ error }}</div>
+                {% endif %}
+                <form method="post" enctype="multipart/form-data">
+                    <label class="ta-field">
+                        <span class="ta-label">Excel-файл</span>
+                        <input class="ta-input" type="file" name="file" accept=".xlsx" required>
+                    </label>
+                    <div class="ta-actions">
+                        <button class="ta-button" type="submit">Загрузить</button>
+                        <a class="ta-link-button secondary" href="{{ ta_url_for('ta_incident_auditor.export') }}">Выгрузить в Excel</a>
+                    </div>
+                </form>
+                <div class="ta-note" style="margin-top: 16px;">
+                    Логика анализа сохранена из исходного приложения TA. Текущая версия использует общее состояние процесса, поэтому параллельные загрузки могут заменять данные друг друга.
+                </div>
+            </div>
+        </aside>
+
+        <section class="ta-panel">
+            <div class="ta-panel-head">
+                <h2 class="ta-panel-title">Результаты анализа</h2>
+                <p class="ta-panel-subtitle">Сводка формируется по последнему загруженному файлу.</p>
+            </div>
+            <div class="ta-panel-body">
+                {% if has_data %}
+                <div class="ta-stats">
+                    <div class="ta-stat">
+                        <div class="ta-stat-label">Корректно</div>
+                        <div class="ta-stat-value">{{ correct|length }}</div>
+                    </div>
+                    <div class="ta-stat">
+                        <div class="ta-stat-label">Замечания</div>
+                        <div class="ta-stat-value">{{ remarks|length }}</div>
+                    </div>
+                    <div class="ta-stat">
+                        <div class="ta-stat-label">В работе</div>
+                        <div class="ta-stat-value">{{ in_work|length }}</div>
+                    </div>
+                    <div class="ta-stat">
+                        <div class="ta-stat-label">Тестовые</div>
+                        <div class="ta-stat-value">{{ test|length }}</div>
+                    </div>
+                </div>
+
+                {% if problem_stats %}
+                <div class="ta-note" style="margin-bottom: 16px;">
+                    <strong>Типы проблем:</strong>
+                    {% for ptype, count in problem_stats %}
+                    {{ ptype }} — {{ count }}{% if not loop.last %}; {% endif %}
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                <div class="ta-field">
+                    <span class="ta-label">Поиск по текущему списку</span>
+                    <input class="ta-input" id="taSearch" type="text" placeholder="ID инцидента или исполнитель">
+                </div>
+
+                <div class="ta-tabs" role="tablist">
+                    <button class="ta-tab active" type="button" data-tab="correct">Корректно ({{ correct|length }})</button>
+                    <button class="ta-tab" type="button" data-tab="remarks">Есть замечания ({{ remarks|length }})</button>
+                    <button class="ta-tab" type="button" data-tab="inwork">В работе ({{ in_work|length }})</button>
+                    <button class="ta-tab" type="button" data-tab="test">Тестовые ({{ test|length }})</button>
+                </div>
+
+                {% set categories = [
+                    ('correct', correct),
+                    ('remarks', remarks),
+                    ('inwork', in_work),
+                    ('test', test)
+                ] %}
+                {% for category, data in categories %}
+                <div class="ta-tab-panel {% if category == 'correct' %}active{% endif %}" data-panel="{{ category }}">
+                    {% if data %}
+                    {% for inc in data %}
+                    {% set incident_id = inc.get('ID инцидента', '') %}
+                    {% set analysis = inc.get('analysis') or {} %}
+                    {% set status = analysis.get('Статус', 'Анализ не проводится') %}
+                    {% set status_class = 'ok' if 'корректно' in status.lower() else 'warn' if 'замечания' in status.lower() else 'neutral' %}
+                    <a class="ta-incident-card" data-search="{{ incident_id }} {{ inc.get('Исполнитель', '') }}" href="{{ ta_url_for('ta_incident_auditor.incident_detail', inc_id=incident_id, tab=category) }}">
+                        <span class="ta-incident-id">{{ incident_id }}</span>
+                        <span>{{ inc.get('Исполнитель', '') or 'Исполнитель не указан' }}</span>
+                        <span class="ta-status {{ status_class }}">{{ status }}</span>
+                    </a>
+                    {% endfor %}
+                    {% else %}
+                    <div class="ta-empty">Нет инцидентов в этой категории.</div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+                {% else %}
+                <div class="ta-empty">График анализа появится после загрузки Excel-файла.</div>
+                {% endif %}
+            </div>
+        </section>
+    </section>
+</main>
+
+<script>
+    const tabs = Array.from(document.querySelectorAll('.ta-tab'));
+    const panels = Array.from(document.querySelectorAll('.ta-tab-panel'));
+    tabs.forEach((tab) => {
+        tab.addEventListener('click', () => {
+            const target = tab.dataset.tab;
+            tabs.forEach((item) => item.classList.toggle('active', item === tab));
+            panels.forEach((panel) => panel.classList.toggle('active', panel.dataset.panel === target));
+        });
+    });
+
+    const search = document.getElementById('taSearch');
+    if (search) {
+        search.addEventListener('input', () => {
+            const value = search.value.toLowerCase();
+            document.querySelectorAll('.ta-incident-card').forEach((card) => {
+                card.style.display = card.dataset.search.toLowerCase().includes(value) ? '' : 'none';
+            });
+        });
+    }
+</script>
+</body>
+</html>
