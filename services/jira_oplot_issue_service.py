@@ -4,6 +4,10 @@ from typing import Any, Dict, List, Optional
 import requests
 
 from config import DASHBOARD_ASSIGNEES, TOKENS
+from services.release_zni_employee_provider import (
+    get_release_zni_adapter_readiness as _get_release_zni_adapter_readiness,
+    get_release_zni_users as _get_release_zni_users,
+)
 
 
 JIRA_DOMAIN = "https://jira.delta.sbrf.ru"
@@ -15,6 +19,14 @@ RELEASE_MONITOR_JIRA_USERS = [
     for name in DASHBOARD_ASSIGNEES
     if not name.startswith(("Сафронов ", "Андреев "))
 ]
+
+
+def get_release_zni_users() -> List[str]:
+    return _get_release_zni_users(RELEASE_MONITOR_JIRA_USERS)
+
+
+def get_release_zni_adapter_readiness() -> Dict[str, Any]:
+    return _get_release_zni_adapter_readiness(RELEASE_MONITOR_JIRA_USERS)
 
 
 def _headers() -> Dict[str, str]:
@@ -64,7 +76,8 @@ def resolve_dashboard_user_name(short_or_full_name: str) -> str:
     if not raw_name:
         return ""
 
-    if raw_name in RELEASE_MONITOR_JIRA_USERS:
+    release_zni_users = get_release_zni_users()
+    if raw_name in release_zni_users:
         return raw_name
 
     parsed = _split_short_name(raw_name)
@@ -74,7 +87,7 @@ def resolve_dashboard_user_name(short_or_full_name: str) -> str:
     surname = parsed["surname"]
     initials = parsed["initials"]
     matches: List[str] = []
-    for full_name in RELEASE_MONITOR_JIRA_USERS:
+    for full_name in release_zni_users:
         full_parts = str(full_name or "").strip().split()
         if not full_parts or full_parts[0].lower() != surname:
             continue
