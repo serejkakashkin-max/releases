@@ -18,6 +18,7 @@ from services.feature_flags_service import (  # noqa: E402
     EMPLOYEE_DIRECTORY_CONSUMERS,
     get_employee_directory_consumer_mode,
 )
+from services.sup_parameters_service import get_employee_directory_consumer_modes_data  # noqa: E402
 from tools.migrate_employee_directory import (  # noqa: E402
     read_literal_lists,
     read_raw_employee_recipients,
@@ -95,15 +96,18 @@ def main(argv: List[str] | None = None) -> int:
 
     legacy_va_names = [normalize_text(row["name"]) for row in va_rows]
     central_va_names = central_va_source_names(employees)
+    readiness = get_employee_directory_consumer_modes_data()["readiness"]
 
     consumers = {
         "release_monitor": consumer_report(
             "release_monitor",
             [sequence_check("release_names", config_lists["OPLOT_VALUES"], release_names)],
+            readiness["release_monitor"],
         ),
         "release_zni": consumer_report(
             "release_zni",
             [sequence_check("eligible_jira_users", legacy_zni, central_zni)],
+            readiness["release_zni"],
         ),
         "duty_dashboard": consumer_report(
             "duty_dashboard",
@@ -114,6 +118,7 @@ def main(argv: List[str] | None = None) -> int:
                 sequence_check("primary_display_names", legacy_primary_display, central_primary_display),
                 sequence_check("visible_display_names", legacy_visible_display, central_visible_display),
             ],
+            readiness["duty_dashboard"],
         ),
         "release_notifications": consumer_report(
             "release_notifications",
@@ -124,6 +129,7 @@ def main(argv: List[str] | None = None) -> int:
                     not bool(disabled_notification_names & active_central_notification_names),
                 ),
             ],
+            readiness["release_notifications"],
         ),
         "va_schedule_manager": consumer_report(
             "va_schedule_manager",
@@ -131,6 +137,7 @@ def main(argv: List[str] | None = None) -> int:
                 unordered_check("employee_identities", legacy_va_names, central_va_names),
                 sequence_check("employee_order", legacy_va_names, central_va_names),
             ],
+            readiness["va_schedule_manager"],
         ),
     }
     checks = [check for consumer in consumers.values() for check in consumer["checks"]]
@@ -154,6 +161,10 @@ def main(argv: List[str] | None = None) -> int:
                 get_employee_directory_consumer_mode(name) == "legacy"
                 for name in EMPLOYEE_DIRECTORY_CONSUMERS
             ),
+            "all_modes_directory": all(
+                get_employee_directory_consumer_mode(name) == "directory"
+                for name in EMPLOYEE_DIRECTORY_CONSUMERS
+            ),
         },
     }
     atomic_write_json(report_path, report)
@@ -167,6 +178,7 @@ def main(argv: List[str] | None = None) -> int:
                 "duplicates": report["duplicate_records_detected"],
                 "potential_identity_duplicates": report["potential_duplicate_identity_groups"],
                 "all_modes_legacy": report["summary"]["all_modes_legacy"],
+                "all_modes_directory": report["summary"]["all_modes_directory"],
             }
         )
     )
@@ -221,12 +233,17 @@ def central_va_source_names(employees: Sequence[Dict[str, Any]]) -> List[str]:
     return result
 
 
-def consumer_report(name: str, checks: List[Dict[str, Any]]) -> Dict[str, Any]:
+def consumer_report(
+    name: str,
+    checks: List[Dict[str, Any]],
+    readiness: Mapping[str, Any],
+) -> Dict[str, Any]:
     return {
         "mode": get_employee_directory_consumer_mode(name),
         "contract_passed": all(check["passed"] for check in checks),
-        "ready": False,
-        "readiness_reason": "consumer_adapter_not_implemented",
+        "ready": bool(readiness.get("ready")),
+        "readiness_reason": str(readiness.get("reason") or ""),
+        "allowed_modes": list(readiness.get("allowed_modes") or ["legacy"]),
         "checks": checks,
     }
 
