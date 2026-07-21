@@ -91,6 +91,22 @@ def get_employee_directory_consumer_modes_data() -> Dict[str, Any]:
             "allowed_modes": ["legacy"],
         }
 
+    try:
+        from services.release_monitor_responsible_email_service import (
+            get_release_notifications_adapter_readiness,
+        )
+
+        readiness["release_notifications"] = (
+            get_release_notifications_adapter_readiness()
+        )
+    except Exception as exc:
+        readiness["release_notifications"] = {
+            "ready": False,
+            "reason": "consumer_adapter_error",
+            "error_type": type(exc).__name__,
+            "allowed_modes": ["legacy"],
+        }
+
     return {
         "feature_flags_revision": _file_hash(data),
         "read_error": bool(read_error),

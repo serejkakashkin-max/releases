@@ -27,6 +27,10 @@ from services.release_monitor_email_service import (
     _validate_delivery_settings,
 )
 from services.release_report_service import get_release_report_service
+from services.release_notification_employee_provider import (
+    get_release_notification_adapter_readiness as _get_release_notification_adapter_readiness,
+    get_release_notification_recipients,
+)
 
 
 RESPONSIBLE_EMAIL_AUTOMATION_FLAG = "release_monitor_responsible_email"
@@ -203,18 +207,7 @@ def _atomic_write_state(state: Dict) -> None:
                 pass
 
 
-def _responsible_settings() -> Dict:
-    config = get_automation_config(RESPONSIBLE_EMAIL_AUTOMATION_FLAG)
-    if not isinstance(config, dict):
-        return {
-            "enabled": False,
-            "employee_recipients": {},
-            "weekly_digest_enabled": False,
-            "weekly_digest_time": "16:00",
-            "weekly_digest_recipients": [],
-            "assignment_email_delay_minutes": DEFAULT_ASSIGNMENT_EMAIL_DELAY_MINUTES,
-            "personal_email_send_interval_seconds": DEFAULT_PERSONAL_EMAIL_SEND_INTERVAL_SECONDS,
-        }
+def _legacy_employee_recipients(config: Dict) -> Dict[str, List[str]]:
     recipients = {}
     raw_recipients = config.get("employee_recipients")
     if isinstance(raw_recipients, dict):
@@ -228,6 +221,32 @@ def _responsible_settings() -> Dict:
             clean_addresses = _normalize_recipients(address_values, strict=False)
             if clean_name and clean_addresses:
                 recipients[clean_name] = clean_addresses
+    return recipients
+
+
+def get_release_notifications_adapter_readiness() -> Dict:
+    config = get_automation_config(RESPONSIBLE_EMAIL_AUTOMATION_FLAG)
+    config = config if isinstance(config, dict) else {}
+    return _get_release_notification_adapter_readiness(
+        _legacy_employee_recipients(config)
+    )
+
+
+def _responsible_settings() -> Dict:
+    config = get_automation_config(RESPONSIBLE_EMAIL_AUTOMATION_FLAG)
+    if not isinstance(config, dict):
+        return {
+            "enabled": False,
+            "employee_recipients": {},
+            "weekly_digest_enabled": False,
+            "weekly_digest_time": "16:00",
+            "weekly_digest_recipients": [],
+            "assignment_email_delay_minutes": DEFAULT_ASSIGNMENT_EMAIL_DELAY_MINUTES,
+            "personal_email_send_interval_seconds": DEFAULT_PERSONAL_EMAIL_SEND_INTERVAL_SECONDS,
+        }
+    recipients = get_release_notification_recipients(
+        _legacy_employee_recipients(config)
+    )
     return {
         "enabled": bool(config.get("enabled", False)),
         "employee_recipients": recipients,
