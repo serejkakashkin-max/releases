@@ -13,7 +13,11 @@ from typing import Dict, List, Any
 from collections import defaultdict
 
 import requests
-from config import DASHBOARD_ASSIGNEES, DASHBOARD_DAYS_BACK, get_dashboard_assignee_display_name
+from config import DASHBOARD_DAYS_BACK
+from services.duty_dashboard_employee_provider import (
+    get_dashboard_assignee_display_name,
+    get_dashboard_primary_jira_names,
+)
 from services.dashboard_service import get_jira_domain_and_token
 
 # Папка для хранения отчётов
@@ -24,7 +28,6 @@ class ReportService:
     """Сервис генерации отчётов по сотрудникам"""
     
     def __init__(self):
-        self.assignees = DASHBOARD_ASSIGNEES
         self.days_back = DASHBOARD_DAYS_BACK
     
     def generate_assignee_report(self, days: int = 30, quarter: int = None, year: int = None) -> Dict[str, Any]:
@@ -123,7 +126,7 @@ class ReportService:
             domain, token = get_jira_domain_and_token()
             
             # Формируем JQL запрос
-            assignees_filter = ', '.join([f'"{name}"' for name in self.assignees])
+            assignees_filter = ', '.join([f'"{name}"' for name in get_dashboard_primary_jira_names()])
             start_str = start_date.strftime('%Y-%m-%d')
             end_str = end_date.strftime('%Y-%m-%d')
             

@@ -14,7 +14,7 @@ from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 
 from services.gigachat_service import GIGA_HELPER
-from config import DASHBOARD_ASSIGNEES
+from services.duty_dashboard_employee_provider import get_dashboard_primary_jira_names
 from services.dashboard_service import (
     TAG_SUP_VARIANTS, TAG_LOGI_VARIANTS, TAG_VNEDRENIE_VARIANTS,
     TAG_PSI_VARIANTS, TAG_ROLE_VARIANTS, DB_PATTERNS, INFRA_PATTERNS, ROLE_PATTERNS,
@@ -679,7 +679,7 @@ class ChatbotSearchService:
         if query.assignee:
             jql_parts.append(f'assignee ~ "{query.assignee}"')
         elif query.assignee_scope != 'all_oplot':
-            assignees_filter = ', '.join([f'"{name}"' for name in DASHBOARD_ASSIGNEES])
+            assignees_filter = ', '.join([f'"{name}"' for name in get_dashboard_primary_jira_names()])
             jql_parts.append(f'assignee IN ({assignees_filter})')
         
         if query.label_filters:

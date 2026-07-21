@@ -44,7 +44,8 @@ from services.feature_flags_service import is_maintenance_enabled
 from services.release_monitor_email_service import get_unassigned_email_status
 from services.sms_service import get_sms_profile_availability
 from routes.release_routes import detect_release_template_from_values, get_previous_version_from_monitor_items
-from config import DASHBOARD_CACHE_TTL, DASHBOARD_ASSIGNEES_DISPLAY, DEFAULT_BH_PLAYBOOKS
+from config import DASHBOARD_CACHE_TTL, DEFAULT_BH_PLAYBOOKS
+from services.duty_dashboard_employee_provider import get_dashboard_primary_display_names
 
 BASE_PATH = os.getenv("BASE_PATH", "")
 
@@ -135,7 +136,7 @@ def dashboard():
             assignee_stats[assignee]['todo'] = filter_hidden(assignee_stats[assignee].get('todo', []))
             assignee_stats[assignee]['in_progress'] = filter_hidden(assignee_stats[assignee].get('in_progress', []))
         
-        dashboard_assignees = data.get('dashboard_assignees', DASHBOARD_ASSIGNEES_DISPLAY)
+        dashboard_assignees = data.get('dashboard_assignees', get_dashboard_primary_display_names())
         active_assignees = sum(
             1 for assignee in dashboard_assignees
             if assignee_stats.get(assignee, {}).get('todo') or assignee_stats.get(assignee, {}).get('in_progress')
@@ -176,7 +177,7 @@ def dashboard():
             vnedrenie_prom_tasks=[],
             vnedrenie_psi_tasks=[],
             assignee_stats={},
-            dashboard_assignees=DASHBOARD_ASSIGNEES_DISPLAY,
+            dashboard_assignees=get_dashboard_primary_display_names(),
             last_update=datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
             cache_ttl_minutes=DASHBOARD_CACHE_TTL // 60,
             total_sup=0,
@@ -358,7 +359,7 @@ def api_dashboard_data():
             "release_monitor_summary": data.get('release_monitor_summary', {}),
             "release_monitor_meta": data.get('release_monitor_meta', {}),
             "assignee_stats": data.get('assignee_stats', {}),
-            "dashboard_assignees": data.get('dashboard_assignees', DASHBOARD_ASSIGNEES_DISPLAY),
+            "dashboard_assignees": data.get('dashboard_assignees', get_dashboard_primary_display_names()),
             "last_update": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
             "total_sup": len(data.get('sup_tasks', [])),
             "total_logi": len(data.get('logi_tasks', [])),

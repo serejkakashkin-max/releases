@@ -37,6 +37,10 @@ def get_dashboard_display_names() -> List[str]:
     return [employee["full_name"] for employee in _dashboard_members("primary")]
 
 
+def get_dashboard_extra_display_names() -> List[str]:
+    return [employee["full_name"] for employee in _dashboard_members("extra")]
+
+
 def get_dashboard_visible_display_names() -> List[str]:
     return [employee["full_name"] for employee in _dashboard_members("primary") + _dashboard_members("extra")]
 

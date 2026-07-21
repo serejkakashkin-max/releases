@@ -17,7 +17,7 @@ from services.intent_classifier import IntentClassifier, IntentType, get_intent_
 from services.gigachat_service import GIGA_HELPER
 from services.dashboard_service import (
     get_dashboard_data, fetch_jira_tasks, process_tasks_data,
-    DASHBOARD_ASSIGNEES, DASHBOARD_DAYS_BACK, get_hidden_task_keys
+    get_hidden_task_keys
 )
 from services.jira_service import get_jira_domain_and_token
 from services.chatbot_search_service import get_search_service

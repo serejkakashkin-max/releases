@@ -10,13 +10,14 @@ from collections import defaultdict
 
 from config import (
     TOKENS,
-    DASHBOARD_ASSIGNEES,
-    DASHBOARD_ASSIGNEES_DISPLAY,
-    DASHBOARD_VISIBLE_ASSIGNEES,
-    DASHBOARD_VISIBLE_ASSIGNEES_DISPLAY,
     DASHBOARD_DAYS_BACK,
     DASHBOARD_CACHE_TTL,
+)
+from services.duty_dashboard_employee_provider import (
     get_dashboard_assignee_display_name,
+    get_dashboard_primary_display_names,
+    get_dashboard_visible_display_names,
+    get_dashboard_visible_jira_names,
 )
 from services.release_monitor_service import get_release_monitor_snapshot
 
@@ -162,7 +163,8 @@ def fetch_jira_tasks():
     excluded_statuses = ['Done', 'Closed', 'Resolved']
     statuses_filter = ', '.join([f'"{s}"' for s in excluded_statuses])
     start_date = (datetime.now() - timedelta(days=DASHBOARD_DAYS_BACK)).strftime("%Y-%m-%d")
-    assignees_filter = ', '.join([f'"{name}"' for name in DASHBOARD_VISIBLE_ASSIGNEES])
+    visible_assignees = get_dashboard_visible_jira_names()
+    assignees_filter = ', '.join([f'"{name}"' for name in visible_assignees])
     
     # === ЗАПРОС 1: СУП задачи (по всему проекту, за 30 дней) ===
     # Ищем по тегу СУП (любой регистр) или по тексту СУП в summary (любой регистр)
@@ -632,15 +634,17 @@ def process_tasks_data(issues):
     vnedrenie_prom_tasks = []
     vnedrenie_psi_tasks = []
     
+    visible_assignees = get_dashboard_visible_jira_names()
+    visible_display_names = get_dashboard_visible_display_names()
     assignee_stats = {name: {'todo': [], 'in_progress': [], 'stale_count': 0}
-                      for name in DASHBOARD_VISIBLE_ASSIGNEES_DISPLAY}
+                      for name in visible_display_names}
     
     cutoff_date = datetime.now() - timedelta(days=DASHBOARD_DAYS_BACK)
     
     for issue in issues:
         assignee_jira_name = issue.get('assignee_jira_name', issue['assignee_name'])
         assignee = get_dashboard_assignee_display_name(assignee_jira_name)
-        is_visible_assignee = assignee_jira_name in DASHBOARD_VISIBLE_ASSIGNEES
+        is_visible_assignee = assignee_jira_name in visible_assignees
         
         # === СУП ЗАДАЧИ ===
         if issue['has_sup_tag'] and is_visible_assignee:
@@ -725,7 +729,7 @@ def process_tasks_data(issues):
         'vnedrenie_prom_tasks': vnedrenie_prom_tasks,
         'vnedrenie_psi_tasks': vnedrenie_psi_tasks,
         'assignee_stats': assignee_stats,
-        'dashboard_assignees': DASHBOARD_ASSIGNEES_DISPLAY
+        'dashboard_assignees': get_dashboard_primary_display_names()
     }
 
 def get_dashboard_data():

@@ -107,6 +107,20 @@ def get_employee_directory_consumer_modes_data() -> Dict[str, Any]:
             "allowed_modes": ["legacy"],
         }
 
+    try:
+        from services.duty_dashboard_employee_provider import (
+            get_duty_dashboard_adapter_readiness,
+        )
+
+        readiness["duty_dashboard"] = get_duty_dashboard_adapter_readiness()
+    except Exception as exc:
+        readiness["duty_dashboard"] = {
+            "ready": False,
+            "reason": "consumer_adapter_error",
+            "error_type": type(exc).__name__,
+            "allowed_modes": ["legacy"],
+        }
+
     return {
         "feature_flags_revision": _file_hash(data),
         "read_error": bool(read_error),
