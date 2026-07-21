@@ -12,6 +12,13 @@ class EmployeeRepository:
         self.store = JsonFileStore(data_file, "employees")
 
     def load_all(self) -> List[Employee]:
+        from VA.schedule_manager.integrations.employee_directory_adapter import (
+            apply_employee_directory_mode,
+        )
+
+        return apply_employee_directory_mode(self.load_all_legacy())
+
+    def load_all_legacy(self) -> List[Employee]:
         data = self.store.load()
         if data is None:
             return []

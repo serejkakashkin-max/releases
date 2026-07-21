@@ -16,6 +16,7 @@ from services.feature_flags_service import (
     FEATURE_FLAGS_FILE,
     JIRA_DOMAIN_CONFIGS,
     PREFIX_PATTERN,
+    is_module_enabled,
     reload_feature_flags,
 )
 from services.cross_process_file_lock import CrossProcessFileLock
@@ -120,6 +121,34 @@ def get_employee_directory_consumer_modes_data() -> Dict[str, Any]:
             "error_type": type(exc).__name__,
             "allowed_modes": ["legacy"],
         }
+
+    if not is_module_enabled("va_schedule_manager"):
+        readiness["va_schedule_manager"] = {
+            "ready": False,
+            "reason": "va_module_disabled",
+            "allowed_modes": ["legacy"],
+        }
+    else:
+        try:
+            from VA.schedule_manager.integrations.employee_directory_adapter import (
+                get_va_schedule_manager_adapter_readiness,
+            )
+            from VA.schedule_manager.repositories.employee_repository import (
+                EmployeeRepository,
+            )
+
+            readiness["va_schedule_manager"] = (
+                get_va_schedule_manager_adapter_readiness(
+                    EmployeeRepository().load_all_legacy()
+                )
+            )
+        except Exception as exc:
+            readiness["va_schedule_manager"] = {
+                "ready": False,
+                "reason": "consumer_adapter_error",
+                "error_type": type(exc).__name__,
+                "allowed_modes": ["legacy"],
+            }
 
     return {
         "feature_flags_revision": _file_hash(data),
