@@ -85,13 +85,47 @@ def get_duty_dashboard_comparison() -> Dict[str, Any]:
 
 def get_duty_dashboard_adapter_readiness() -> Dict[str, Any]:
     comparison = get_duty_dashboard_comparison()
-    ready = bool(comparison["matches"])
+    mode = get_employee_directory_consumer_mode("duty_dashboard")
+    if comparison["status"] != "available" or comparison["directory_count"] == 0:
+        return {
+            "ready": False,
+            "reason": comparison["reason"],
+            "allowed_modes": ["legacy"],
+            "comparison": comparison,
+        }
+
+    if mode == "directory":
+        return {
+            "ready": True,
+            "reason": "directory_active",
+            "allowed_modes": ["legacy", "compare", "directory"],
+            "comparison": comparison,
+        }
+
+    exact_match = bool(comparison["matches"])
+    allowed_modes = ["legacy", "compare"]
+    reason = "compare_ready" if exact_match else comparison["reason"]
+    if mode == "compare" and exact_match:
+        allowed_modes.append("directory")
+        reason = "directory_ready"
     return {
-        "ready": ready,
-        "reason": "compare_ready" if ready else comparison["reason"],
-        "allowed_modes": ["legacy", "compare"] if ready else ["legacy"],
+        "ready": exact_match,
+        "reason": reason,
+        "allowed_modes": allowed_modes if exact_match else ["legacy"],
         "comparison": comparison,
     }
+
+
+def get_duty_dashboard_projection_token() -> str:
+    if get_employee_directory_consumer_mode("duty_dashboard") != "directory":
+        return "legacy"
+    snapshot = read_directory_snapshot()
+    if snapshot.status != "available":
+        return "legacy:fallback"
+    directory = _directory_projection()
+    if not directory["primary_jira"]:
+        return "legacy:fallback"
+    return f"directory:{snapshot.etag}"
 
 
 def _effective_projection() -> Dict[str, List[str]]:
@@ -101,8 +135,10 @@ def _effective_projection() -> Dict[str, List[str]]:
         return legacy
     comparison = get_duty_dashboard_comparison()
     _log_comparison_once(mode, comparison)
-
-    # Directory activation is a separate step after dashboard observation.
+    if mode == "directory" and comparison["status"] == "available":
+        directory = _directory_projection()
+        if directory["primary_jira"]:
+            return directory
     return legacy
 
 
@@ -128,14 +164,17 @@ def _directory_projection() -> Dict[str, List[str]]:
 
 def _log_comparison_once(mode: str, comparison: Dict[str, Any]) -> None:
     global _last_diagnostic_key
-    status = "match" if comparison["matches"] else comparison["reason"]
+    if mode == "directory" and comparison["status"] == "available":
+        status = "directory_active"
+    else:
+        status = "match" if comparison["matches"] else comparison["reason"]
     key = (mode, status)
     with _diagnostic_lock:
         if key == _last_diagnostic_key:
             return
         _last_diagnostic_key = key
 
-    log = LOGGER.info if comparison["matches"] else LOGGER.warning
+    log = LOGGER.info if comparison["matches"] or status == "directory_active" else LOGGER.warning
     log(
         "Employee directory duty_dashboard comparison: mode=%s status=%s legacy_count=%s directory_count=%s",
         mode,

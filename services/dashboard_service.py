@@ -18,6 +18,7 @@ from services.duty_dashboard_employee_provider import (
     get_dashboard_primary_display_names,
     get_dashboard_visible_display_names,
     get_dashboard_visible_jira_names,
+    get_duty_dashboard_projection_token,
 )
 from services.release_monitor_service import get_release_monitor_snapshot
 
@@ -25,6 +26,7 @@ from services.release_monitor_service import get_release_monitor_snapshot
 _cache_lock = threading.Lock()
 _cached_data = None
 _last_cache_update = None
+_cached_employee_projection_token = None
 
 # Константы для тегов (возможные варианты регистра)
 TAG_SUP_VARIANTS = ["СУП", "суп", "Суп"]
@@ -734,10 +736,18 @@ def process_tasks_data(issues):
 
 def get_dashboard_data():
     """Получает данные для дашборда с кэшированием"""
-    global _cached_data, _last_cache_update
+    global _cached_data, _last_cache_update, _cached_employee_projection_token
     
     with _cache_lock:
         now = time.time()
+        projection_token = get_duty_dashboard_projection_token()
+        if (
+            _cached_data is not None
+            and _cached_employee_projection_token != projection_token
+        ):
+            logging.info("Dashboard: employee projection changed; cache invalidated")
+            _cached_data = None
+            _last_cache_update = None
         
         if (_cached_data is not None and 
             _last_cache_update is not None and 
@@ -756,6 +766,7 @@ def get_dashboard_data():
             
             _cached_data = processed_data
             _last_cache_update = now
+            _cached_employee_projection_token = projection_token
             
             total_assignee_tasks = sum(
                 len(a['todo']) + len(a['in_progress']) 
@@ -781,11 +792,12 @@ def get_dashboard_data():
 
 def force_refresh_cache():
     """Принудительное обновление кэша"""
-    global _cached_data, _last_cache_update
+    global _cached_data, _last_cache_update, _cached_employee_projection_token
     
     with _cache_lock:
         _cached_data = None
         _last_cache_update = None
+        _cached_employee_projection_token = None
     
     return get_dashboard_data()
 
