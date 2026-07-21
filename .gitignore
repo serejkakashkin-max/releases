@@ -155,6 +155,7 @@ feature_flags.json
 /employee_directory.json
 /cache/employee_directory_backups/
 /cache/employee_directory_migration/
+/cache/employee_directory_contracts/
 
 # Local Playwright MCP artifacts
 .playwright-mcp/

@@ -12,7 +12,10 @@ def get_release_monitor_names() -> List[str]:
 def get_release_zni_users() -> List[str]:
     return [
         employee["jira_names"]["delta"]
-        for employee in _active_employees()
+        for employee in sorted(
+            _active_employees(),
+            key=lambda item: _dashboard_order(item, default=10**9),
+        )
         if employee["memberships"]["release_zni"]["enabled"]
         and employee["jira_names"]["delta"]
     ]
@@ -32,6 +35,10 @@ def get_dashboard_visible_jira_names() -> List[str]:
 
 def get_dashboard_display_names() -> List[str]:
     return [employee["full_name"] for employee in _dashboard_members("primary")]
+
+
+def get_dashboard_visible_display_names() -> List[str]:
+    return [employee["full_name"] for employee in _dashboard_members("primary") + _dashboard_members("extra")]
 
 
 def get_release_notification_recipients() -> Dict[str, List[str]]:
@@ -111,3 +118,9 @@ def _dashboard_members(role: str) -> List[Dict[str, Any]]:
         ],
         key=lambda employee: employee["memberships"]["duty_dashboard"]["order"],
     )
+
+
+def _dashboard_order(employee: Dict[str, Any], *, default: int) -> int:
+    membership = employee["memberships"]["duty_dashboard"]
+    order = membership.get("order")
+    return order if membership.get("enabled") and isinstance(order, int) else default
