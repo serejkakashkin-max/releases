@@ -535,8 +535,12 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
+      gap: 14px;
       flex-wrap: wrap;
+      padding: 12px 14px;
+      border: 1px solid var(--line-soft);
+      border-radius: 8px;
+      background: rgba(23, 34, 49, 0.72);
     }
     .notice {
       border: 1px solid var(--line-soft);
@@ -548,38 +552,247 @@
     .notice-success { border-color: rgba(16, 185, 129, 0.55); }
     .notice-error { border-color: rgba(239, 68, 68, 0.55); }
     .directory-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-    .directory-list { display: grid; gap: 12px; margin-top: 14px; }
+    .directory-health {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      flex-wrap: wrap;
+      min-width: 0;
+    }
+    .directory-workspace {
+      display: grid;
+      grid-template-columns: 290px minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+    }
+    .directory-sidebar {
+      position: sticky;
+      top: 14px;
+      min-width: 0;
+      border: 1px solid var(--line-soft);
+      border-radius: 8px;
+      background: rgba(23, 34, 49, 0.72);
+      overflow: hidden;
+    }
+    .directory-sidebar-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 13px 14px;
+      border-bottom: 1px solid var(--line-soft);
+    }
+    .directory-sidebar-tools {
+      display: grid;
+      gap: 9px;
+      padding: 12px;
+      border-bottom: 1px solid var(--line-soft);
+    }
+    .directory-sidebar-tools input { min-height: 38px; }
+    .directory-sidebar-filters {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 5px;
+    }
+    .directory-sidebar-filters button {
+      min-width: 0;
+      padding: 7px 5px;
+      border-radius: 6px;
+      color: var(--muted);
+      background: transparent;
+      font-size: 11px;
+    }
+    .directory-sidebar-filters button.active {
+      color: var(--text);
+      border-color: rgba(77, 149, 255, 0.5);
+      background: rgba(77, 149, 255, 0.14);
+    }
+    .directory-navigator {
+      display: grid;
+      gap: 3px;
+      max-height: min(68vh, 720px);
+      overflow-y: auto;
+      padding: 7px;
+      scrollbar-width: thin;
+    }
+    .directory-person {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr) auto;
+      gap: 9px;
+      align-items: center;
+      padding: 9px;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      background: transparent;
+      text-align: left;
+      font-weight: 600;
+    }
+    .directory-person:hover { background: rgba(255, 255, 255, 0.035); }
+    .directory-person.active {
+      border-color: rgba(77, 149, 255, 0.44);
+      background: rgba(77, 149, 255, 0.13);
+    }
+    .directory-person.archived { opacity: 0.58; }
+    .directory-person-avatar {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(77, 149, 255, 0.34);
+      border-radius: 50%;
+      color: #cfe1ff;
+      background: rgba(77, 149, 255, 0.12);
+      font-size: 11px;
+      font-weight: 900;
+    }
+    .directory-person-copy { min-width: 0; }
+    .directory-person-name,
+    .directory-person-detail {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .directory-person-name { color: var(--text); font-size: 12px; }
+    .directory-person-detail { margin-top: 3px; color: var(--muted); font-size: 11px; font-weight: 500; }
+    .directory-person-services {
+      display: flex;
+      gap: 3px;
+      align-items: center;
+      justify-content: flex-end;
+    }
+    .directory-service-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--line);
+    }
+    .directory-service-dot.active { background: var(--green); }
+    .directory-editor { min-width: 0; }
+    .directory-list { display: grid; }
     .directory-entry {
       border: 1px solid var(--line-soft);
       border-radius: 8px;
-      background: var(--panel-2);
-      padding: 14px;
+      background: rgba(34, 45, 59, 0.74);
+      overflow: hidden;
     }
+    .directory-entry:not(.active) { display: none; }
     .directory-entry-head {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 12px;
+      padding: 15px 16px;
+      border-bottom: 1px solid var(--line-soft);
+      background: rgba(17, 25, 38, 0.24);
+    }
+    .directory-entry-title { min-width: 0; }
+    .directory-entry-title h3 {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .directory-entry-id { margin-top: 4px; font-size: 11px; }
+    .directory-active-control {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      margin: 0;
+      color: var(--muted-2);
+      font-size: 12px;
+      text-transform: none;
+    }
+    .directory-active-control input { width: auto; }
+    .directory-section {
+      padding: 16px;
+      border-bottom: 1px solid var(--line-soft);
+    }
+    .directory-section:last-child { border-bottom: 0; }
+    .directory-section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
       margin-bottom: 12px;
     }
     .directory-fields {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 10px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
     }
+    .directory-fields .wide { grid-column: 1 / -1; }
+    .directory-fields textarea { min-height: 82px; }
+    .directory-advanced {
+      border-top: 1px solid var(--line-soft);
+      background: rgba(17, 25, 38, 0.16);
+    }
+    .directory-advanced summary,
+    .directory-system-settings summary,
+    .directory-legacy-card > summary {
+      cursor: pointer;
+      list-style: none;
+    }
+    .directory-advanced summary::-webkit-details-marker,
+    .directory-system-settings summary::-webkit-details-marker,
+    .directory-legacy-card > summary::-webkit-details-marker { display: none; }
+    .directory-advanced summary {
+      padding: 13px 16px;
+      color: var(--muted-2);
+      font-weight: 800;
+    }
+    .directory-advanced summary::after,
+    .directory-system-settings > summary::after,
+    .directory-legacy-card > summary::after {
+      content: "+";
+      float: right;
+      color: var(--muted);
+      font-size: 18px;
+      line-height: 1;
+    }
+    .directory-advanced[open] summary::after,
+    .directory-system-settings[open] > summary::after,
+    .directory-legacy-card[open] > summary::after { content: "−"; }
+    .directory-advanced-body { padding: 0 16px 16px; }
+    .directory-advanced-body textarea { min-height: 110px; }
+    .directory-system-settings {
+      border: 1px solid var(--line-soft);
+      border-radius: 8px;
+      background: rgba(23, 34, 49, 0.5);
+      overflow: hidden;
+    }
+    .directory-system-settings > summary { padding: 13px 14px; }
+    .directory-system-settings-body {
+      padding: 0 14px 14px;
+      border-top: 1px solid var(--line-soft);
+    }
+    .directory-legacy-card { margin-top: 16px; }
     .directory-memberships {
       display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
-      gap: 8px;
-      margin-top: 12px;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 9px;
     }
     .directory-membership {
       border: 1px solid var(--line-soft);
-      border-radius: 6px;
-      padding: 9px;
+      border-radius: 7px;
+      padding: 11px;
       min-width: 0;
+      background: rgba(17, 25, 38, 0.2);
     }
     .directory-membership label { margin-bottom: 6px; }
+    .directory-membership-title {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 28px;
+      margin: 0 0 8px;
+      color: var(--muted-2);
+      font-size: 12px;
+      text-transform: none;
+    }
+    .directory-membership-title input { width: auto; }
+    .directory-membership-field { margin-top: 8px; }
+    .directory-membership-field label { font-size: 10px; }
     .directory-meta { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
     .directory-mode-grid {
       display: grid;
@@ -598,9 +811,14 @@
       }
       .tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .field-row { grid-template-columns: 1fr; }
-      .directory-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .directory-workspace { grid-template-columns: 250px minmax(0, 1fr); }
       .directory-memberships,
       .directory-mode-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 880px) {
+      .directory-workspace { grid-template-columns: 1fr; }
+      .directory-sidebar { position: static; }
+      .directory-navigator { max-height: 280px; }
     }
     @media (max-width: 720px) {
       .page { width: calc(100% - 24px); margin-top: 16px; }
@@ -621,6 +839,11 @@
       .directory-fields,
       .directory-memberships,
       .directory-mode-grid { grid-template-columns: 1fr; }
+      .directory-toolbar { align-items: stretch; }
+      .directory-actions { width: 100%; }
+      .directory-actions button { flex: 1 1 auto; }
+      .directory-entry-head { align-items: flex-start; }
+      .directory-entry-head .directory-actions { width: auto; }
     }
   </style>
 </head>
@@ -869,42 +1092,63 @@
       <section class="panel" data-panel="employees">
         <section class="card" id="employeeDirectoryCard">
           <div class="card-header">
-            <h2>Центральный справочник сотрудников</h2>
-            <p class="muted">Первый этап: справочник редактируется отдельно, а рабочие сервисы продолжают использовать legacy-списки.</p>
+            <h2>Сотрудники</h2>
+            <p class="muted">Единый справочник участников рабочих сервисов.</p>
           </div>
           <div class="card-body stack">
             <div class="notice notice-warning">
               Изменения в центральном справочнике пока не изменяют раздел Email → SberTrack / Jira. Этот раздел продолжает использовать собственные legacy-настройки.
             </div>
             <div class="directory-toolbar">
-              <div>
+              <div class="directory-health">
                 <span id="directoryStatusBadge" class="badge">не загружен</span>
+                <span id="directoryEmployeeCount" class="badge blue">0 сотрудников</span>
                 <span class="muted directory-meta" id="directoryRevisionText">revision: - · etag: -</span>
               </div>
               <div class="directory-actions">
-                <button type="button" class="ghost" id="reloadDirectoryBtn">Обновить справочник</button>
+                <button type="button" class="ghost" id="reloadDirectoryBtn">Обновить</button>
                 <button type="button" class="ghost" id="addDirectoryEmployeeBtn">Добавить сотрудника</button>
-                <button type="button" class="primary" id="saveDirectoryBtn">Сохранить справочник</button>
+                <button type="button" class="primary" id="saveDirectoryBtn">Сохранить</button>
               </div>
             </div>
             <div id="directoryStatusText" class="status">Для загрузки справочника нужна активная административная session.</div>
-            <div id="directoryEmployeeList" class="directory-list"></div>
-            <div id="directoryEmployeeEmpty" class="empty-state">Справочник пока не содержит сотрудников.</div>
-            <div>
-              <h3>Режимы потребителей</h3>
-              <p class="muted">На первом этапе доступны только legacy-режимы. Compare и directory будут включаться отдельными задачами после реализации adapters.</p>
-              <div id="directoryConsumerModes" class="directory-mode-grid"></div>
-              <div class="directory-actions" style="margin-top:10px;">
-                <button type="button" class="ghost" id="saveDirectoryModesBtn">Сохранить режимы</button>
+            <div class="directory-workspace">
+              <aside class="directory-sidebar">
+                <div class="directory-sidebar-head">
+                  <h3>Список</h3>
+                  <span class="muted" id="directoryVisibleCount">0</span>
+                </div>
+                <div class="directory-sidebar-tools">
+                  <input id="directoryEmployeeSearch" type="search" placeholder="Найти сотрудника">
+                  <div class="directory-sidebar-filters" id="directoryEmployeeFilters">
+                    <button type="button" class="active" data-directory-filter="all">Все</button>
+                    <button type="button" data-directory-filter="active">Активные</button>
+                    <button type="button" data-directory-filter="archived">Архив</button>
+                  </div>
+                </div>
+                <div id="directoryEmployeeNavigator" class="directory-navigator"></div>
+              </aside>
+              <div class="directory-editor">
+                <div id="directoryEmployeeList" class="directory-list"></div>
+                <div id="directoryEmployeeEmpty" class="empty-state">Справочник пока не содержит сотрудников.</div>
               </div>
             </div>
+            <details class="directory-system-settings">
+              <summary><strong>Подключение сервисов</strong></summary>
+              <div class="directory-system-settings-body">
+                <div id="directoryConsumerModes" class="directory-mode-grid"></div>
+                <div class="directory-actions" style="margin-top:10px;">
+                  <button type="button" class="ghost" id="saveDirectoryModesBtn">Сохранить режимы</button>
+                </div>
+              </div>
+            </details>
           </div>
         </section>
-        <section class="card">
-          <div class="card-header">
-            <h2>Сотрудники и email</h2>
-            <p class="muted">Отключенный сотрудник остается в справочнике, но персональные письма ему не отправляются.</p>
-          </div>
+        <details class="card directory-legacy-card">
+          <summary class="card-header">
+            <h2>Legacy: сотрудники и email</h2>
+            <p class="muted">Отдельный список получателей старой почтовой автоматизации.</p>
+          </summary>
           <div class="card-body">
             <div class="table-toolbar">
               <input id="employeeSearch" type="search" placeholder="Поиск по ФИО или email">
@@ -930,7 +1174,7 @@
             </table>
             <div id="employeeEmpty" class="empty-state hidden">Сотрудники по текущему фильтру не найдены.</div>
           </div>
-        </section>
+        </details>
       </section>
 
       <section class="panel" data-panel="prefixes">
@@ -1261,6 +1505,8 @@
         revision: 0,
         etag: "missing",
         employees: [],
+        selectedIndex: 0,
+        filter: "all",
         featureFlagsRevision: "",
         consumers: {},
         readiness: {}
@@ -1813,11 +2059,16 @@
 
     function renderEmployeeDirectory(payload) {
       const directory = payload.directory || {};
+      const selectedEmployeeId = state.directory.employees?.[state.directory.selectedIndex]?.employee_id || "";
+      const nextEmployees = clone(directory.employees || []);
+      const selectedIndex = Math.max(0, nextEmployees.findIndex((employee) => employee.employee_id === selectedEmployeeId));
       state.directory = {
         status: payload.status || "missing",
         revision: payload.revision == null ? null : payload.revision,
         etag: payload.etag || "missing",
-        employees: clone(directory.employees || []),
+        employees: nextEmployees,
+        selectedIndex,
+        filter: state.directory.filter || "all",
         featureFlagsRevision: payload.feature_flags_revision || "",
         consumers: clone(payload.consumers || {}),
         readiness: clone(payload.readiness || {})
@@ -1837,60 +2088,149 @@
       renderDirectoryConsumerModes();
     }
 
+    function directoryInitials(name) {
+      const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+      if (!parts.length) return "+";
+      return parts.slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+    }
+
+    function directoryEmployeeMatches(employee) {
+      const query = String($("directoryEmployeeSearch")?.value || "").trim().toLowerCase();
+      const haystack = [
+        employee.full_name,
+        employee.release_name,
+        employee.jira_names?.delta,
+        employee.jira_names?.sberbank,
+        ...(employee.emails || [])
+      ].join(" ").toLowerCase();
+      if (query && !haystack.includes(query)) return false;
+      if (state.directory.filter === "active") return employee.enabled !== false;
+      if (state.directory.filter === "archived") return employee.enabled === false;
+      return true;
+    }
+
+    function directoryServiceDots(employee) {
+      const memberships = employee.memberships || {};
+      const services = [
+        [memberships.release_monitor?.enabled, "Блок релизов"],
+        [memberships.release_zni?.enabled, "Релизные ЗНИ"],
+        [memberships.duty_dashboard?.enabled, "Рабочий стол"],
+        [memberships.release_notifications?.enabled, "Релизные письма"],
+        [memberships.va_schedule_manager?.enabled, "VA Schedule Manager"]
+      ];
+      return services.map(([enabled, title]) => `<span class="directory-service-dot ${enabled ? "active" : ""}" title="${escapeAttr(title)}"></span>`).join("");
+    }
+
+    function renderDirectoryNavigator() {
+      const employees = state.directory.employees || [];
+      const visible = employees.map((employee, index) => ({ employee, index }))
+        .filter(({ employee }) => directoryEmployeeMatches(employee));
+      $("directoryVisibleCount").textContent = `${visible.length} из ${employees.length}`;
+      $("directoryEmployeeCount").textContent = `${employees.length} сотрудников`;
+      $("directoryEmployeeNavigator").innerHTML = visible.map(({ employee, index }) => {
+        const detail = employee.release_name || employee.emails?.[0] || "Без дополнительных данных";
+        return `<button type="button" class="directory-person ${index === state.directory.selectedIndex ? "active" : ""} ${employee.enabled === false ? "archived" : ""}" data-select-directory-employee="${index}">
+          <span class="directory-person-avatar">${escapeHtml(directoryInitials(employee.full_name))}</span>
+          <span class="directory-person-copy">
+            <span class="directory-person-name">${escapeHtml(employee.full_name || "Новый сотрудник")}</span>
+            <span class="directory-person-detail">${escapeHtml(detail)}</span>
+          </span>
+          <span class="directory-person-services" title="Участие в сервисах">${directoryServiceDots(employee)}</span>
+        </button>`;
+      }).join("");
+      if (!visible.length) {
+        $("directoryEmployeeNavigator").innerHTML = `<div class="empty-state">Ничего не найдено.</div>`;
+      }
+    }
+
+    function applyDirectoryNavigationFilter() {
+      const employees = state.directory.employees || [];
+      const visibleIndices = employees.map((employee, index) => directoryEmployeeMatches(employee) ? index : -1)
+        .filter((index) => index >= 0);
+      if (visibleIndices.length && !visibleIndices.includes(state.directory.selectedIndex)) {
+        state.directory.selectedIndex = visibleIndices[0];
+        renderDirectoryEmployees();
+        return;
+      }
+      renderDirectoryNavigator();
+    }
+
     function renderDirectoryEmployees() {
       const employees = state.directory.employees || [];
+      if (state.directory.selectedIndex >= employees.length) {
+        state.directory.selectedIndex = Math.max(0, employees.length - 1);
+      }
       $("directoryEmployeeList").innerHTML = employees.map((employee, index) => {
         const memberships = employee.memberships || {};
         const release = memberships.release_monitor || { enabled: false, order: null };
         const dashboard = memberships.duty_dashboard || { enabled: false, role: "none", order: null };
         return `
-          <div class="directory-entry" data-directory-employee="${index}">
+          <div class="directory-entry ${index === state.directory.selectedIndex ? "active" : ""}" data-directory-employee="${index}">
             <div class="directory-entry-head">
-              <label><input type="checkbox" data-directory-enabled ${employee.enabled === false ? "" : "checked"}> Активен</label>
+              <div class="directory-entry-title">
+                <h3>${escapeHtml(employee.full_name || "Новый сотрудник")}</h3>
+                <div class="muted directory-meta directory-entry-id">ID ${escapeHtml(String(employee.employee_id || "").slice(0, 12))}</div>
+              </div>
               <div class="directory-actions">
-                <span class="muted directory-meta">${escapeHtml(String(employee.employee_id || "").slice(0, 12))}</span>
-                <button type="button" class="icon-btn danger" data-remove-directory-employee="${index}">Удалить</button>
+                <label class="directory-active-control"><input type="checkbox" data-directory-enabled ${employee.enabled === false ? "" : "checked"}> Активен</label>
+                <button type="button" class="danger" data-remove-directory-employee="${index}">Удалить</button>
               </div>
             </div>
-            <div class="directory-fields">
+            <section class="directory-section">
+              <div class="directory-section-head"><h3>Основные данные</h3></div>
+              <div class="directory-fields">
               <div><label>Полное ФИО</label><input data-directory-full-name value="${escapeAttr(employee.full_name || "")}"></div>
               <div><label>Release name</label><input data-directory-release-name value="${escapeAttr(employee.release_name || "")}"></div>
-              <div><label>Jira Delta</label><input data-directory-jira-delta value="${escapeAttr(employee.jira_names?.delta || "")}"></div>
-              <div><label>Jira Sberbank</label><input data-directory-jira-sberbank value="${escapeAttr(employee.jira_names?.sberbank || "")}"></div>
-              <div><label>Email, по одному в строке</label><textarea data-directory-emails>${escapeHtml(lines(employee.emails || []))}</textarea></div>
-              <div><label>Телефон</label><input data-directory-phone value="${escapeAttr(employee.phone || "")}"></div>
-              <div><label>Локация</label><input data-directory-location value="${escapeAttr(employee.location || "")}"></div>
-              <div><label>Табельный номер</label><input data-directory-personnel value="${escapeAttr(employee.personnel_number || "")}"></div>
-              <div style="grid-column:1/-1"><label>Aliases: type|jira_domain|value</label><textarea data-directory-aliases>${escapeHtml(aliasesToText(employee.aliases || []))}</textarea></div>
+              </div>
+            </section>
+            <section class="directory-section">
+              <div class="directory-section-head"><h3>Jira и контакты</h3></div>
+              <div class="directory-fields">
+                <div><label>Jira Delta</label><input data-directory-jira-delta value="${escapeAttr(employee.jira_names?.delta || "")}"></div>
+                <div><label>Jira Sberbank</label><input data-directory-jira-sberbank value="${escapeAttr(employee.jira_names?.sberbank || "")}"></div>
+                <div><label>Email, по одному в строке</label><textarea data-directory-emails>${escapeHtml(lines(employee.emails || []))}</textarea></div>
+                <div><label>Телефон</label><input data-directory-phone value="${escapeAttr(employee.phone || "")}"></div>
+                <div><label>Локация</label><input data-directory-location value="${escapeAttr(employee.location || "")}"></div>
+                <div><label>Табельный номер</label><input data-directory-personnel value="${escapeAttr(employee.personnel_number || "")}"></div>
+              </div>
+            </section>
+            <section class="directory-section">
+              <div class="directory-section-head"><h3>Участие в сервисах</h3></div>
+              <div class="directory-memberships">
+              <div class="directory-membership">
+                <label class="directory-membership-title"><input type="checkbox" data-directory-release-enabled ${release.enabled ? "checked" : ""}> Блок релизов</label>
+                <div class="directory-membership-field"><label>Порядок</label><input type="number" min="0" data-directory-release-order value="${release.order == null ? "" : Number(release.order)}" placeholder="Автоматически"></div>
+              </div>
+              <div class="directory-membership">
+                <label class="directory-membership-title"><input type="checkbox" data-directory-zni-enabled ${memberships.release_zni?.enabled ? "checked" : ""}> Релизные ЗНИ</label>
+              </div>
+              <div class="directory-membership">
+                <label class="directory-membership-title"><input type="checkbox" data-directory-dashboard-enabled ${dashboard.enabled ? "checked" : ""}> Рабочий стол</label>
+                <div class="directory-membership-field"><label>Роль</label><select data-directory-dashboard-role>
+                  <option value="none" ${dashboard.role === "none" ? "selected" : ""}>Не участвует</option>
+                  <option value="primary" ${dashboard.role === "primary" ? "selected" : ""}>Основной</option>
+                  <option value="extra" ${dashboard.role === "extra" ? "selected" : ""}>Дополнительный</option>
+                </select></div>
+                <div class="directory-membership-field"><label>Порядок</label><input type="number" min="0" data-directory-dashboard-order value="${dashboard.order == null ? "" : Number(dashboard.order)}" placeholder="Автоматически"></div>
+              </div>
+              <div class="directory-membership">
+                <label class="directory-membership-title"><input type="checkbox" data-directory-notifications-enabled ${memberships.release_notifications?.enabled ? "checked" : ""}> Релизные письма</label>
+              </div>
+              <div class="directory-membership">
+                <label class="directory-membership-title"><input type="checkbox" data-directory-va-enabled ${memberships.va_schedule_manager?.enabled ? "checked" : ""}> VA Schedule Manager</label>
+                <div class="directory-membership-field"><label>Порядок</label><input type="number" min="0" data-directory-va-order value="${memberships.va_schedule_manager?.order == null ? "" : Number(memberships.va_schedule_manager.order)}" placeholder="Автоматически"></div>
+              </div>
+              </div>
+            </section>
+            <details class="directory-advanced">
+              <summary>Дополнительные идентификаторы</summary>
+              <div class="directory-advanced-body"><label>Aliases: type|jira_domain|value</label><textarea data-directory-aliases>${escapeHtml(aliasesToText(employee.aliases || []))}</textarea></div>
+            </details>
             </div>
-            <div class="directory-memberships">
-              <div class="directory-membership">
-                <label><input type="checkbox" data-directory-release-enabled ${release.enabled ? "checked" : ""}> Блок релизов</label>
-                <input type="number" min="0" data-directory-release-order value="${release.order == null ? "" : Number(release.order)}" placeholder="order">
-              </div>
-              <div class="directory-membership">
-                <label><input type="checkbox" data-directory-zni-enabled ${memberships.release_zni?.enabled ? "checked" : ""}> Релизные ЗНИ</label>
-              </div>
-              <div class="directory-membership">
-                <label><input type="checkbox" data-directory-dashboard-enabled ${dashboard.enabled ? "checked" : ""}> Рабочий стол</label>
-                <select data-directory-dashboard-role>
-                  <option value="none" ${dashboard.role === "none" ? "selected" : ""}>none</option>
-                  <option value="primary" ${dashboard.role === "primary" ? "selected" : ""}>primary</option>
-                  <option value="extra" ${dashboard.role === "extra" ? "selected" : ""}>extra</option>
-                </select>
-                <input type="number" min="0" data-directory-dashboard-order value="${dashboard.order == null ? "" : Number(dashboard.order)}" placeholder="order" style="margin-top:6px;">
-              </div>
-              <div class="directory-membership">
-                <label><input type="checkbox" data-directory-notifications-enabled ${memberships.release_notifications?.enabled ? "checked" : ""}> Релизные письма</label>
-              </div>
-              <div class="directory-membership">
-                <label><input type="checkbox" data-directory-va-enabled ${memberships.va_schedule_manager?.enabled ? "checked" : ""}> VA Schedule Manager</label>
-                <input type="number" min="0" data-directory-va-order value="${memberships.va_schedule_manager?.order == null ? "" : Number(memberships.va_schedule_manager.order)}" placeholder="order" style="margin-top:6px;">
-              </div>
-            </div>
-          </div>`;
+          `;
       }).join("");
       $("directoryEmployeeEmpty").classList.toggle("hidden", employees.length > 0);
+      renderDirectoryNavigator();
     }
 
     function collectDirectoryEmployees() {
@@ -1934,6 +2274,13 @@
           source_refs: Array.isArray(current.source_refs) ? current.source_refs : []
         };
       });
+    }
+
+    function syncDirectoryStateFromForm() {
+      const rows = document.querySelectorAll("[data-directory-employee]");
+      if (!rows.length) return;
+      state.directory.employees = collectDirectoryEmployees();
+      renderDirectoryNavigator();
     }
 
     function renderDirectoryConsumerModes() {
@@ -2346,6 +2693,21 @@
         renderEmployees();
       }
 
+      const directoryFilter = event.target.closest("[data-directory-filter]");
+      if (directoryFilter) {
+        syncDirectoryStateFromForm();
+        state.directory.filter = directoryFilter.dataset.directoryFilter;
+        document.querySelectorAll("[data-directory-filter]").forEach((button) => button.classList.toggle("active", button === directoryFilter));
+        applyDirectoryNavigationFilter();
+      }
+
+      const directoryEmployee = event.target.closest("[data-select-directory-employee]");
+      if (directoryEmployee) {
+        state.directory.employees = collectDirectoryEmployees();
+        state.directory.selectedIndex = Number(directoryEmployee.dataset.selectDirectoryEmployee);
+        renderDirectoryEmployees();
+      }
+
       const prefixFilter = event.target.closest("[data-prefix-filter]");
       if (prefixFilter) {
         state.prefixFilter = prefixFilter.dataset.prefixFilter;
@@ -2367,6 +2729,7 @@
       if (removeDirectoryEmployee) {
         state.directory.employees = collectDirectoryEmployees();
         state.directory.employees.splice(Number(removeDirectoryEmployee.dataset.removeDirectoryEmployee), 1);
+        state.directory.selectedIndex = Math.min(state.directory.selectedIndex, Math.max(0, state.directory.employees.length - 1));
         renderDirectoryEmployees();
       }
 
@@ -2409,6 +2772,7 @@
         } else if (orderInput) {
           orderInput.value = "";
         }
+        syncDirectoryStateFromForm();
         return;
       }
       if (event.target.matches("[data-directory-va-enabled]")) {
@@ -2422,6 +2786,7 @@
         } else if (orderInput) {
           orderInput.value = "";
         }
+        syncDirectoryStateFromForm();
         return;
       }
       if (event.target.matches("[data-directory-dashboard-enabled], [data-directory-dashboard-role]")) {
@@ -2441,6 +2806,11 @@
             role
           );
         }
+        syncDirectoryStateFromForm();
+        return;
+      }
+      if (event.target.closest("[data-directory-employee]")) {
+        syncDirectoryStateFromForm();
         return;
       }
       const employeeToggle = event.target.closest("[data-toggle-employee]");
@@ -2477,14 +2847,23 @@
 
     document.addEventListener("input", (event) => {
       if (event.target.matches("[data-dirty-field]")) markDirty();
+      if (event.target.closest("[data-directory-employee]")) syncDirectoryStateFromForm();
     });
 
     $("employeeSearch").addEventListener("input", renderEmployees);
     $("prefixSearch").addEventListener("input", renderPrefixes);
+    $("directoryEmployeeSearch").addEventListener("input", () => {
+      syncDirectoryStateFromForm();
+      applyDirectoryNavigationFilter();
+    });
     $("addEmployeeBtn").addEventListener("click", () => openEmployeeModal());
     $("addDirectoryEmployeeBtn").addEventListener("click", () => {
       state.directory.employees = collectDirectoryEmployees();
       state.directory.employees.push(emptyDirectoryEmployee());
+      state.directory.selectedIndex = state.directory.employees.length - 1;
+      state.directory.filter = "all";
+      $("directoryEmployeeSearch").value = "";
+      document.querySelectorAll("[data-directory-filter]").forEach((button) => button.classList.toggle("active", button.dataset.directoryFilter === "all"));
       renderDirectoryEmployees();
     });
     $("reloadDirectoryBtn").addEventListener("click", loadEmployeeDirectory);
