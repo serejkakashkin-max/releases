@@ -18,7 +18,7 @@ _last_diagnostic_key: Tuple[str, str] | None = None
 
 
 def get_release_monitor_names() -> List[str]:
-    """Return the effective release list without changing legacy behavior in compare mode."""
+    """Return the effective release list with safe legacy fallback."""
     legacy_names = list(OPLOT_VALUES)
     mode = get_employee_directory_consumer_mode("release_monitor")
     if mode == "legacy":
@@ -26,9 +26,10 @@ def get_release_monitor_names() -> List[str]:
 
     comparison = get_release_monitor_comparison()
     _log_comparison_once(mode, comparison)
-
-    # Directory activation is a separate rollout step. A manual feature flag edit
-    # must not switch production behavior before that step is implemented.
+    if mode == "directory" and comparison["status"] == "available":
+        directory_names = get_directory_release_monitor_names()
+        if directory_names:
+            return directory_names
     return legacy_names
 
 
@@ -56,25 +57,50 @@ def get_release_monitor_comparison() -> Dict[str, Any]:
 
 def get_release_monitor_adapter_readiness() -> Dict[str, Any]:
     comparison = get_release_monitor_comparison()
-    ready = bool(comparison["matches"])
+    mode = get_employee_directory_consumer_mode("release_monitor")
+    if comparison["status"] != "available" or comparison["directory_count"] == 0:
+        return {
+            "ready": False,
+            "reason": comparison["reason"],
+            "allowed_modes": ["legacy"],
+            "comparison": comparison,
+        }
+
+    if mode == "directory":
+        return {
+            "ready": True,
+            "reason": "directory_active",
+            "allowed_modes": ["legacy", "compare", "directory"],
+            "comparison": comparison,
+        }
+
+    exact_match = bool(comparison["matches"])
+    allowed_modes = ["legacy", "compare"]
+    reason = "compare_ready" if exact_match else comparison["reason"]
+    if mode == "compare" and exact_match:
+        allowed_modes.append("directory")
+        reason = "directory_ready"
     return {
-        "ready": ready,
-        "reason": "compare_ready" if ready else comparison["reason"],
-        "allowed_modes": ["legacy", "compare"] if ready else ["legacy"],
+        "ready": exact_match,
+        "reason": reason,
+        "allowed_modes": allowed_modes if exact_match else ["legacy"],
         "comparison": comparison,
     }
 
 
 def _log_comparison_once(mode: str, comparison: Dict[str, Any]) -> None:
     global _last_diagnostic_key
-    status = "match" if comparison["matches"] else comparison["reason"]
+    if mode == "directory" and comparison["status"] == "available":
+        status = "directory_active"
+    else:
+        status = "match" if comparison["matches"] else comparison["reason"]
     key = (mode, status)
     with _diagnostic_lock:
         if key == _last_diagnostic_key:
             return
         _last_diagnostic_key = key
 
-    log = LOGGER.info if comparison["matches"] else LOGGER.warning
+    log = LOGGER.info if comparison["matches"] or status == "directory_active" else LOGGER.warning
     log(
         "Employee directory release_monitor comparison: mode=%s status=%s legacy_count=%s directory_count=%s",
         mode,
