@@ -17,7 +17,7 @@ _last_diagnostic_key: Tuple[str, str] | None = None
 
 
 def get_release_zni_users(legacy_users: Sequence[str]) -> List[str]:
-    """Return legacy users while the release ZNI consumer is in compare rollout."""
+    """Return the effective release ZNI users with safe legacy fallback."""
     legacy_names = list(legacy_users)
     mode = get_employee_directory_consumer_mode("release_zni")
     if mode == "legacy":
@@ -25,8 +25,10 @@ def get_release_zni_users(legacy_users: Sequence[str]) -> List[str]:
 
     comparison = get_release_zni_comparison(legacy_names)
     _log_comparison_once(mode, comparison)
-
-    # Directory activation is deliberately a separate step after observation.
+    if mode == "directory" and comparison["status"] == "available":
+        directory_names = get_directory_release_zni_users()
+        if directory_names:
+            return directory_names
     return legacy_names
 
 
@@ -54,25 +56,50 @@ def get_release_zni_comparison(legacy_users: Sequence[str]) -> Dict[str, Any]:
 
 def get_release_zni_adapter_readiness(legacy_users: Sequence[str]) -> Dict[str, Any]:
     comparison = get_release_zni_comparison(legacy_users)
-    ready = bool(comparison["matches"])
+    mode = get_employee_directory_consumer_mode("release_zni")
+    if comparison["status"] != "available" or comparison["directory_count"] == 0:
+        return {
+            "ready": False,
+            "reason": comparison["reason"],
+            "allowed_modes": ["legacy"],
+            "comparison": comparison,
+        }
+
+    if mode == "directory":
+        return {
+            "ready": True,
+            "reason": "directory_active",
+            "allowed_modes": ["legacy", "compare", "directory"],
+            "comparison": comparison,
+        }
+
+    exact_match = bool(comparison["matches"])
+    allowed_modes = ["legacy", "compare"]
+    reason = "compare_ready" if exact_match else comparison["reason"]
+    if mode == "compare" and exact_match:
+        allowed_modes.append("directory")
+        reason = "directory_ready"
     return {
-        "ready": ready,
-        "reason": "compare_ready" if ready else comparison["reason"],
-        "allowed_modes": ["legacy", "compare"] if ready else ["legacy"],
+        "ready": exact_match,
+        "reason": reason,
+        "allowed_modes": allowed_modes if exact_match else ["legacy"],
         "comparison": comparison,
     }
 
 
 def _log_comparison_once(mode: str, comparison: Dict[str, Any]) -> None:
     global _last_diagnostic_key
-    status = "match" if comparison["matches"] else comparison["reason"]
+    if mode == "directory" and comparison["status"] == "available":
+        status = "directory_active"
+    else:
+        status = "match" if comparison["matches"] else comparison["reason"]
     key = (mode, status)
     with _diagnostic_lock:
         if key == _last_diagnostic_key:
             return
         _last_diagnostic_key = key
 
-    log = LOGGER.info if comparison["matches"] else LOGGER.warning
+    log = LOGGER.info if comparison["matches"] or status == "directory_active" else LOGGER.warning
     log(
         "Employee directory release_zni comparison: mode=%s status=%s legacy_count=%s directory_count=%s",
         mode,
