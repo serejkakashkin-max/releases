@@ -10,8 +10,8 @@ from collections import Counter
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
-from config import OPLOT_VALUES
 from services.feature_flags_service import get_release_prefix_system
+from services.release_monitor_employee_provider import get_release_monitor_names
 from services.template_constructor_service import is_ai_agents_template_category
 
 
@@ -150,7 +150,7 @@ class ReleaseReportService:
                 if responsible_name:
                     responsible_counter[responsible_name] += 1
 
-        for responsible_name in OPLOT_VALUES:
+        for responsible_name in get_release_monitor_names():
             if responsible_name not in responsible_counter:
                 responsible_counter[responsible_name] = 0
 

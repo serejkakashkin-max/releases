@@ -57,14 +57,33 @@ def get_employee_directory_consumer_modes_data() -> Dict[str, Any]:
         )
         for name in EMPLOYEE_DIRECTORY_CONSUMERS
     }
+    readiness = {
+        name: {
+            "ready": False,
+            "reason": "consumer_adapter_not_implemented",
+            "allowed_modes": ["legacy"],
+        }
+        for name in EMPLOYEE_DIRECTORY_CONSUMERS
+    }
+    try:
+        from services.release_monitor_employee_provider import (
+            get_release_monitor_adapter_readiness,
+        )
+
+        readiness["release_monitor"] = get_release_monitor_adapter_readiness()
+    except Exception as exc:
+        readiness["release_monitor"] = {
+            "ready": False,
+            "reason": "consumer_adapter_error",
+            "error_type": type(exc).__name__,
+            "allowed_modes": ["legacy"],
+        }
+
     return {
         "feature_flags_revision": _file_hash(data),
         "read_error": bool(read_error),
         "consumers": consumers,
-        "readiness": {
-            name: {"ready": False, "reason": "consumer_adapter_not_implemented"}
-            for name in EMPLOYEE_DIRECTORY_CONSUMERS
-        },
+        "readiness": readiness,
     }
 
 
@@ -81,12 +100,16 @@ def save_employee_directory_consumer_modes(
         errors.append("employee_directory.consumers contains unknown consumer names")
     if missing:
         errors.append("employee_directory.consumers must include all managed consumers")
+    readiness = get_employee_directory_consumer_modes_data()["readiness"]
     normalized = {}
     for name in EMPLOYEE_DIRECTORY_CONSUMERS:
         mode = str(raw_consumers.get(name) or "").strip().lower()
-        if mode != "legacy":
-            errors.append(f"{name}: consumer_adapter_not_implemented")
-        normalized[name] = "legacy"
+        allowed_modes = set(readiness.get(name, {}).get("allowed_modes") or ["legacy"])
+        if mode not in allowed_modes:
+            errors.append(f"{name}: {readiness.get(name, {}).get('reason') or 'consumer_adapter_not_implemented'}")
+            normalized[name] = "legacy"
+            continue
+        normalized[name] = mode
     if errors:
         raise SupParametersValidationError(errors)
 

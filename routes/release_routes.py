@@ -12,7 +12,7 @@ import tempfile
 from docx import Document  # ДОБАВЛЕНО
 
 from extensions import RELEASE_STRUCTURE, ID_MAP  # Импортируем из extensions
-from config import DOC_TEMPLATES_ROOT, DEFAULT_BH_PLAYBOOKS, OPLOT_VALUES
+from config import DOC_TEMPLATES_ROOT, DEFAULT_BH_PLAYBOOKS
 from services.jira_service import (
     get_release_version, get_issues_from_jira, get_ke_from_release, 
     get_pob_from_release, extract_sm_id_and_summary, get_distributives_info,
@@ -24,6 +24,7 @@ from services.release_monitor_service import (
     sync_release_monitor_jira_fields,
 )
 from services.docx_service import replace_keys_in_doc, check_document
+from services.release_monitor_employee_provider import get_release_monitor_names
 from services.gigachat_service import GIGA_HELPER
 from services.counter_service import increment_counter  # НОВОЕ: импорт счетчика
 from services.template_constructor_service import (
@@ -660,7 +661,7 @@ def release_monitor_generate():
 @release_bp.route('/release', methods=['GET', 'POST'])
 def release():
     categories = list(get_catalog_release_structure().keys() or RELEASE_STRUCTURE.keys())
-    oplot_values = OPLOT_VALUES
+    oplot_values = get_release_monitor_names()
     playbooks = DEFAULT_BH_PLAYBOOKS
     status = ""
     results = {}

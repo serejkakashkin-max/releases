@@ -1927,12 +1927,13 @@
       $("directoryConsumerModes").innerHTML = Object.entries(labels).map(([name, label]) => {
         const readiness = state.directory.readiness[name] || {};
         const mode = state.directory.consumers[name] || "legacy";
+        const allowedModes = Array.isArray(readiness.allowed_modes) ? readiness.allowed_modes : ["legacy"];
         return `<div class="directory-membership">
           <label>${escapeHtml(label)}</label>
           <select data-directory-consumer="${escapeAttr(name)}">
             <option value="legacy" ${mode === "legacy" ? "selected" : ""}>legacy</option>
-            <option value="compare" disabled ${mode === "compare" ? "selected" : ""}>compare</option>
-            <option value="directory" disabled ${mode === "directory" ? "selected" : ""}>directory</option>
+            <option value="compare" ${allowedModes.includes("compare") ? "" : "disabled"} ${mode === "compare" ? "selected" : ""}>compare</option>
+            <option value="directory" ${allowedModes.includes("directory") ? "" : "disabled"} ${mode === "directory" ? "selected" : ""}>directory</option>
           </select>
           <p class="muted" style="margin-top:6px;">${escapeHtml(readiness.reason || "consumer_adapter_not_implemented")}</p>
         </div>`;

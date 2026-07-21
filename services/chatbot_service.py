@@ -36,7 +36,7 @@ from services.release_report_service import get_release_report_service
 from services.rov_statistics_service import generate_rov_statistics_excel
 from services.release_monitor_backup_service import create_release_monitor_cache_backup
 from services.psi_jenkins_service import find_psi_jenkins_instructions_by_ke
-from config import OPLOT_VALUES
+from services.release_monitor_employee_provider import get_release_monitor_names
 
 
 BASE_PATH = os.getenv("BASE_PATH", "")
@@ -1356,11 +1356,12 @@ Oplot умеет работать с рабочим столом дежурно�
         if not normalized:
             return ""
 
-        by_normalized = {self._normalize_command_text(name): name for name in OPLOT_VALUES}
+        release_monitor_names = get_release_monitor_names()
+        by_normalized = {self._normalize_command_text(name): name for name in release_monitor_names}
         if normalized in by_normalized:
             return by_normalized[normalized]
 
-        for name in OPLOT_VALUES:
+        for name in release_monitor_names:
             name_normalized = self._normalize_command_text(name)
             surname = self._normalize_command_text(name.split()[0] if name else "")
             if not surname:

@@ -18,13 +18,14 @@ from uuid import uuid4
 import requests
 from openpyxl import load_workbook
 
-from config import DASHBOARD_CACHE_TTL, OPLOT_VALUES, TOKENS
+from config import DASHBOARD_CACHE_TTL, TOKENS
 from services.jira_service import get_jira_domain_and_token
 from services.feature_flags_service import (
     get_enabled_release_prefixes,
     get_release_prefix_system,
 )
 from services.jira_oplot_issue_service import create_oplot_release_issue
+from services.release_monitor_employee_provider import get_release_monitor_names as _get_oplot_values
 from services.release_artifact_service import (
     classify_artifact_entry,
     extract_artifact_ke_id,
@@ -2609,7 +2610,7 @@ def _apply_duty_schedule_assignments(items, persist=False, force=False, debug_li
 
         deployment_date = deployment_dt.date()
         reviewer_name = str(duty_dates.get(deployment_date.isoformat()) or "").strip()
-        if reviewer_name and reviewer_name not in OPLOT_VALUES:
+        if reviewer_name and reviewer_name not in _get_oplot_values():
             reviewer_name = _match_oplot_name(reviewer_name)
         reviewer_name = reviewer_name or ""
 
@@ -2679,7 +2680,7 @@ def _get_scheduled_duty_reviewer_for_item(item):
     duty_payload = _load_duty_schedule_payload()
     duty_dates = duty_payload.get("dates") or {}
     reviewer_name = str(duty_dates.get(deployment_dt.date().isoformat()) or "").strip()
-    if reviewer_name and reviewer_name not in OPLOT_VALUES:
+    if reviewer_name and reviewer_name not in _get_oplot_values():
         reviewer_name = _match_oplot_name(reviewer_name)
     return reviewer_name or ""
 
@@ -2690,7 +2691,7 @@ def _prepare_item_for_zni_creation(item):
         return zni_item
 
     zni_reviewer = str(zni_item.get("psi_zni_reviewer") or "").strip()
-    if zni_reviewer and zni_reviewer not in OPLOT_VALUES:
+    if zni_reviewer and zni_reviewer not in _get_oplot_values():
         zni_reviewer = _match_oplot_name(zni_reviewer)
 
     if not zni_reviewer:
@@ -2729,7 +2730,7 @@ def _collect_work_mark_suggested_participants(duty_payload=None):
         raw_name = str(name or "").strip()
         if not raw_name:
             return
-        matched_name = raw_name if raw_name in OPLOT_VALUES else _match_oplot_name(raw_name)
+        matched_name = raw_name if raw_name in _get_oplot_values() else _match_oplot_name(raw_name)
         if matched_name and matched_name not in participants:
             participants.append(matched_name)
 
@@ -2990,7 +2991,7 @@ def _collect_week_candidate_availability(week_start=None, week_end=None, target_
             "excluded_dates": [],
             "is_date_dependent": False,
         }
-        for name in OPLOT_VALUES
+        for name in _get_oplot_values()
     }
 
     dates_to_check = sorted(target_dates) if target_dates else []
@@ -3568,7 +3569,7 @@ def _match_oplot_name(raw_name):
 
     exact_map = {
         _normalize_text(option).replace(".", ""): option
-        for option in OPLOT_VALUES
+        for option in _get_oplot_values()
     }
     if normalized_raw in exact_map:
         return exact_map[normalized_raw]
@@ -3580,7 +3581,7 @@ def _match_oplot_name(raw_name):
     surname = surname_match.group(1)
     first_initial = surname_match.group(2)
     candidates = []
-    for option in OPLOT_VALUES:
+    for option in _get_oplot_values():
         normalized_option = _normalize_text(option).replace(".", "")
         option_match = re.match(r"^([\u0430-\u044f\u0451a-z-]+)\s+([\u0430-\u044f\u0451a-z])", normalized_option, re.IGNORECASE)
         if option_match and option_match.group(1) == surname and option_match.group(2) == first_initial:
@@ -7684,7 +7685,7 @@ def get_release_monitor_snapshot():
 
 
 def get_release_monitor_reviewer_options():
-    return list(OPLOT_VALUES)
+    return list(_get_oplot_values())
 
 
 def get_release_monitor_week_control(snapshot=None):
@@ -7795,7 +7796,7 @@ def _release_assignment_center_period_stats(items, reference_dt=None):
             "quarter": 0,
             "year": 0,
         }
-        for name in OPLOT_VALUES
+        for name in _get_oplot_values()
     }
 
     for item in items or []:
@@ -8176,7 +8177,7 @@ def get_release_monitor_week_responsible_recommendations():
         row_available = []
         row_reserve = []
         row_excluded = []
-        for candidate_name in OPLOT_VALUES:
+        for candidate_name in _get_oplot_values():
             availability = str(
                 (candidate_availability.get(candidate_name) or {}).get("availability")
                 or "available"
@@ -9659,7 +9660,7 @@ def set_release_monitor_reviewer(release_key, reviewer):
     if not release_key:
         raise ValueError("РќРµ СѓРєР°Р·Р°РЅ РєР»СЋС‡ СЂРµР»РёР·Р°")
 
-    if reviewer and reviewer not in OPLOT_VALUES:
+    if reviewer and reviewer not in _get_oplot_values():
         raise ValueError("Р’С‹Р±СЂР°РЅРЅС‹Р№ РїСЂРѕРІРµСЂСЏСЋС‰РёР№ РѕС‚СЃСѓС‚СЃС‚РІСѓРµС‚ РІ СЃРїРёСЃРєРµ РћРџР›РћРў")
 
     assignments = _load_reviewer_assignments()
@@ -9703,7 +9704,7 @@ def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=
     if not release_key:
         raise ValueError("РќРµ СѓРєР°Р·Р°РЅ РєР»СЋС‡ СЂРµР»РёР·Р°")
 
-    if reviewer and reviewer_source != "manual_text" and reviewer not in OPLOT_VALUES:
+    if reviewer and reviewer_source != "manual_text" and reviewer not in _get_oplot_values():
         raise ValueError("Р’С‹Р±СЂР°РЅРЅС‹Р№ РґРµР¶СѓСЂРЅС‹Р№ РѕС‚СЃСѓС‚СЃС‚РІСѓРµС‚ РІ СЃРїРёСЃРєРµ РћРџР›РћРў")
 
     normalized_responsibles = []
@@ -9711,7 +9712,7 @@ def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=
         responsible_name = str(responsible or "").strip()
         if not responsible_name:
             continue
-        if responsible_name not in OPLOT_VALUES:
+        if responsible_name not in _get_oplot_values():
             raise ValueError("Р’С‹Р±СЂР°РЅРЅС‹Р№ РѕС‚РІРµС‚СЃС‚РІРµРЅРЅС‹Р№ РѕС‚СЃСѓС‚СЃС‚РІСѓРµС‚ РІ СЃРїРёСЃРєРµ РћРџР›РћРў")
         if responsible_name not in normalized_responsibles:
             normalized_responsibles.append(responsible_name)
@@ -9739,9 +9740,9 @@ def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=
     if zni_reviewer is None:
         zni_reviewer = current_assignment.get("zni_reviewer", "")
     zni_reviewer = str(zni_reviewer or "").strip()
-    if zni_reviewer and zni_reviewer not in OPLOT_VALUES:
+    if zni_reviewer and zni_reviewer not in _get_oplot_values():
         zni_reviewer = _match_oplot_name(zni_reviewer)
-    if zni_reviewer and zni_reviewer not in OPLOT_VALUES:
+    if zni_reviewer and zni_reviewer not in _get_oplot_values():
         raise ValueError("Выбранный дежурный для ЗНИ отсутствует в списке ОПЛОТ")
 
     if reviewer_source == "manual_text" and reviewer:
@@ -9759,7 +9760,7 @@ def set_release_monitor_assignment(release_key, reviewer, checker, responsibles=
     elif not zni_reviewer:
         previous_reviewer = str(current_assignment.get("reviewer") or "").strip()
         previous_source = str(current_assignment.get("reviewer_source") or "").strip()
-        if previous_source != "manual_text" and previous_reviewer in OPLOT_VALUES:
+        if previous_source != "manual_text" and previous_reviewer in _get_oplot_values():
             zni_reviewer = previous_reviewer
 
     if reviewer or checker or normalized_responsibles:
@@ -9850,7 +9851,7 @@ def assign_release_monitor_responsible_if_expected(
     responsible = str(responsible or "").strip()
     if not release_key:
         raise ValueError("Не указан ключ строки релиза")
-    if responsible not in OPLOT_VALUES:
+    if responsible not in _get_oplot_values():
         raise ValueError("Выбранный ответственный отсутствует в списке ОПЛОТ")
 
     expected = []
