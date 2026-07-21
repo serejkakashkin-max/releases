@@ -76,6 +76,9 @@ class UnionFind:
 
 def main(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.prepare_resolutions and args.write:
+        print(json.dumps({"status": "blocked", "reason": "prepare_resolutions_cannot_write_directory"}))
+        return 2
     project_root = Path(args.project_root).resolve()
     report_dir = _resolve_under_root(project_root, args.report_dir)
     resolutions_path = _resolve_under_root(project_root, args.resolutions)
@@ -92,7 +95,23 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     resolutions = read_resolutions(resolutions_path)
     source_result = collect_sources(project_root, args)
-    proposal = build_proposal(source_result, resolutions)
+    resolution_summary = {
+        "identity_decisions_added": 0,
+        "full_name_decisions_added": 0,
+        "email_decisions_added": 0,
+        "unsafe_conflicts_skipped": 0,
+    }
+    for _ in range(4):
+        proposal = build_proposal(source_result, resolutions)
+        if not args.prepare_resolutions:
+            break
+        added = add_safe_resolutions(proposal["unresolved"], resolutions)
+        for key in resolution_summary:
+            resolution_summary[key] += added[key]
+        if not added["decisions_added"]:
+            break
+    if args.prepare_resolutions:
+        atomic_write_json(resolutions_path, resolutions)
     for source_error in source_result["blocking_errors"]:
         conflict = {
             "conflict_id": stable_id(
@@ -121,14 +140,14 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     validation_errors = validate_directory(preview)
     if validation_errors:
-        proposal["conflicts"].append(
-            {
-                "conflict_id": stable_id("directory_validation", [item["path"] + ":" + item["code"] for item in validation_errors]),
-                "type": "directory_validation",
-                "blocking": True,
-                "error_count": len(validation_errors),
-            }
-        )
+        validation_conflict = {
+            "conflict_id": stable_id("directory_validation", [item["path"] + ":" + item["code"] for item in validation_errors]),
+            "type": "directory_validation",
+            "blocking": True,
+            "error_count": len(validation_errors),
+        }
+        proposal["conflicts"].append(validation_conflict)
+        proposal["unresolved"].append(validation_conflict)
 
     before_write_hashes = hash_legacy_files(project_root)
     integrity_before_write = integrity_rows(initial_hashes, before_write_hashes)
@@ -190,6 +209,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             "conflicts": len(proposal["conflicts"]),
             "unresolved": len(proposal["unresolved"]),
             "blocking_source_errors": len(source_result["blocking_errors"]),
+            "validation_errors": len(validation_errors),
+            "resolution_preparation": resolution_summary,
             "integrity": integrity_final,
         },
     }
@@ -208,6 +229,11 @@ def main(argv: Optional[List[str]] = None) -> int:
                 "employees": len(preview.get("employees") or []),
                 "conflicts": len(proposal["conflicts"]),
                 "unresolved": len(proposal["unresolved"]),
+                "resolutions_added": (
+                    resolution_summary["identity_decisions_added"]
+                    + resolution_summary["full_name_decisions_added"]
+                    + resolution_summary["email_decisions_added"]
+                ),
                 "legacy_unchanged": authoritative,
             },
             ensure_ascii=True,
@@ -229,6 +255,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--skip-duty-schedule", action="store_true")
     parser.add_argument("--report-dir", default="cache/employee_directory_migration")
     parser.add_argument("--resolutions", default="cache/employee_directory_migration/resolutions.json")
+    parser.add_argument(
+        "--prepare-resolutions",
+        action="store_true",
+        help="Prepare only unambiguous identity and employee_recipients email decisions; never writes the directory.",
+    )
     return parser
 
 
@@ -453,6 +484,95 @@ def build_proposal(source_result: Dict[str, Any], resolutions: Dict[str, Any]) -
         "unresolved": unique_items(unresolved, "conflict_id"),
         "automatic_matches": automatic_matches,
     }
+
+
+def add_safe_resolutions(unresolved: Iterable[Dict[str, Any]], resolutions: Dict[str, Any]) -> Dict[str, int]:
+    identity_decisions = resolutions.setdefault("identity_decisions", {})
+    field_decisions = resolutions.setdefault("field_decisions", {})
+    result = {
+        "decisions_added": 0,
+        "identity_decisions_added": 0,
+        "full_name_decisions_added": 0,
+        "email_decisions_added": 0,
+        "unsafe_conflicts_skipped": 0,
+    }
+
+    for conflict in unresolved:
+        conflict_id = str(conflict.get("conflict_id") or "")
+        conflict_type = str(conflict.get("type") or "")
+        refs = [normalize_text(value) for value in conflict.get("source_refs") or []]
+        if not conflict_id:
+            result["unsafe_conflicts_skipped"] += 1
+            continue
+
+        if conflict_type == "identity_match_suggested":
+            identity_keys = {surname_initials_key(source_ref_value(ref)) for ref in refs}
+            identity_keys.discard("")
+            if len(refs) < 2 or len(identity_keys) != 1:
+                result["unsafe_conflicts_skipped"] += 1
+                continue
+            if conflict_id not in identity_decisions:
+                identity_decisions[conflict_id] = {
+                    "action": "merge",
+                    "source_refs": refs,
+                    "confirmed_by": "safe_resolution_preparer",
+                }
+                result["decisions_added"] += 1
+                result["identity_decisions_added"] += 1
+            continue
+
+        if conflict_type == "full_name_difference":
+            identity_keys = {surname_initials_key(source_ref_value(ref)) for ref in refs}
+            identity_keys.discard("")
+            dashboard_refs = [ref for ref in refs if ref.startswith("config:DASHBOARD_ASSIGNEES:")]
+            has_short_source = any(
+                ref.startswith(
+                    (
+                        "config:OPLOT_VALUES:",
+                        "duty_schedule:employee:",
+                        "feature_flags:employee_recipients:",
+                        "va:employees:",
+                    )
+                )
+                for ref in refs
+            )
+            if len(identity_keys) != 1 or len(dashboard_refs) != 1 or not has_short_source:
+                result["unsafe_conflicts_skipped"] += 1
+                continue
+            if conflict_id not in field_decisions:
+                field_decisions[conflict_id] = {
+                    "action": "manual",
+                    "selected_source": dashboard_refs[0],
+                    "confirmed_by": "safe_resolution_preparer",
+                }
+                result["decisions_added"] += 1
+                result["full_name_decisions_added"] += 1
+            continue
+
+        if conflict_type == "email_source_difference":
+            has_recipients = any(ref.startswith("feature_flags:employee_recipients:") for ref in refs)
+            has_va = any(ref.startswith("va:employees:") for ref in refs)
+            if not (has_recipients and has_va):
+                result["unsafe_conflicts_skipped"] += 1
+                continue
+            if conflict_id not in field_decisions:
+                field_decisions[conflict_id] = {
+                    "action": "manual",
+                    "selected_source": "feature_flags:employee_recipients",
+                    "confirmed_by": "safe_resolution_preparer",
+                }
+                result["decisions_added"] += 1
+                result["email_decisions_added"] += 1
+            continue
+
+        result["unsafe_conflicts_skipped"] += 1
+
+    return result
+
+
+def source_ref_value(source_ref: str) -> str:
+    parts = normalize_text(source_ref).split(":", 2)
+    return parts[2] if len(parts) == 3 else ""
 
 
 def aggregate_fragments(fragments: List[Fragment]) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
