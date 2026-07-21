@@ -531,6 +531,62 @@
       gap: 10px;
       padding: 14px 18px 18px;
     }
+    .directory-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .notice {
+      border: 1px solid var(--line-soft);
+      border-radius: 8px;
+      padding: 11px 12px;
+      background: var(--panel-2);
+    }
+    .notice-warning { border-color: rgba(245, 158, 11, 0.55); color: #fde68a; }
+    .notice-success { border-color: rgba(16, 185, 129, 0.55); }
+    .notice-error { border-color: rgba(239, 68, 68, 0.55); }
+    .directory-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .directory-list { display: grid; gap: 12px; margin-top: 14px; }
+    .directory-entry {
+      border: 1px solid var(--line-soft);
+      border-radius: 8px;
+      background: var(--panel-2);
+      padding: 14px;
+    }
+    .directory-entry-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .directory-fields {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .directory-memberships {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .directory-membership {
+      border: 1px solid var(--line-soft);
+      border-radius: 6px;
+      padding: 9px;
+      min-width: 0;
+    }
+    .directory-membership label { margin-bottom: 6px; }
+    .directory-meta { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    .directory-mode-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 12px;
+    }
     .hidden { display: none !important; }
     @media (max-width: 1120px) {
       .topbar,
@@ -542,6 +598,9 @@
       }
       .tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .field-row { grid-template-columns: 1fr; }
+      .directory-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .directory-memberships,
+      .directory-mode-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media (max-width: 720px) {
       .page { width: calc(100% - 24px); margin-top: 16px; }
@@ -559,6 +618,9 @@
       }
       td { border: 0; padding: 6px 4px; }
       .action-cell { text-align: left; }
+      .directory-fields,
+      .directory-memberships,
+      .directory-mode-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -805,6 +867,39 @@
       </section>
 
       <section class="panel" data-panel="employees">
+        <section class="card" id="employeeDirectoryCard">
+          <div class="card-header">
+            <h2>Центральный справочник сотрудников</h2>
+            <p class="muted">Первый этап: справочник редактируется отдельно, а рабочие сервисы продолжают использовать legacy-списки.</p>
+          </div>
+          <div class="card-body stack">
+            <div class="notice notice-warning">
+              Изменения в центральном справочнике пока не изменяют раздел Email → SberTrack / Jira. Этот раздел продолжает использовать собственные legacy-настройки.
+            </div>
+            <div class="directory-toolbar">
+              <div>
+                <span id="directoryStatusBadge" class="badge">не загружен</span>
+                <span class="muted directory-meta" id="directoryRevisionText">revision: - · etag: -</span>
+              </div>
+              <div class="directory-actions">
+                <button type="button" class="ghost" id="reloadDirectoryBtn">Обновить справочник</button>
+                <button type="button" class="ghost" id="addDirectoryEmployeeBtn">Добавить сотрудника</button>
+                <button type="button" class="primary" id="saveDirectoryBtn">Сохранить справочник</button>
+              </div>
+            </div>
+            <div id="directoryStatusText" class="status">Для загрузки справочника нужна активная административная session.</div>
+            <div id="directoryEmployeeList" class="directory-list"></div>
+            <div id="directoryEmployeeEmpty" class="empty-state">Справочник пока не содержит сотрудников.</div>
+            <div>
+              <h3>Режимы потребителей</h3>
+              <p class="muted">На первом этапе доступны только legacy-режимы. Compare и directory будут включаться отдельными задачами после реализации adapters.</p>
+              <div id="directoryConsumerModes" class="directory-mode-grid"></div>
+              <div class="directory-actions" style="margin-top:10px;">
+                <button type="button" class="ghost" id="saveDirectoryModesBtn">Сохранить режимы</button>
+              </div>
+            </div>
+          </div>
+        </section>
         <section class="card">
           <div class="card-header">
             <h2>Сотрудники и email</h2>
@@ -1161,6 +1256,15 @@
       activeTab: "overview",
       employeeFilter: "all",
       prefixFilter: "all",
+      directory: {
+        status: "missing",
+        revision: 0,
+        etag: "missing",
+        employees: [],
+        featureFlagsRevision: "",
+        consumers: {},
+        readiness: {}
+      },
       modal: { type: "", index: -1 }
     };
 
@@ -1628,6 +1732,263 @@
       return payload;
     }
 
+    async function adminApi(path, options = {}) {
+      const headers = new Headers(options.headers || {});
+      if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+      const csrfToken = sessionStorage.getItem("sup_admin_csrf_token") || "";
+      if (csrfToken) headers.set("X-CSRF-Token", csrfToken);
+      const response = await fetch(path, { ...options, headers });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.success === false) {
+        const error = new Error(payload.error || `HTTP ${response.status}`);
+        error.payload = payload;
+        error.status = response.status;
+        throw error;
+      }
+      return payload;
+    }
+
+    function emptyDirectoryEmployee() {
+      return {
+        employee_id: crypto.randomUUID(),
+        enabled: true,
+        full_name: "",
+        release_name: "",
+        jira_names: { delta: "", sberbank: "" },
+        aliases: [],
+        emails: [],
+        phone: "",
+        location: "",
+        personnel_number: "",
+        memberships: {
+          release_monitor: { enabled: false, order: null },
+          release_zni: { enabled: false },
+          duty_dashboard: { enabled: false, role: "none", order: null },
+          release_notifications: { enabled: false },
+          va_schedule_manager: { enabled: false }
+        },
+        source_refs: []
+      };
+    }
+
+    function aliasesToText(aliases) {
+      return (aliases || []).map((alias) => `${alias.type || "full"}|${alias.jira_domain || ""}|${alias.value || ""}`).join("\n");
+    }
+
+    function aliasesFromText(value) {
+      return String(value || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
+        const parts = line.split("|");
+        return {
+          type: (parts.shift() || "").trim(),
+          jira_domain: (parts.shift() || "").trim(),
+          value: parts.join("|").trim()
+        };
+      });
+    }
+
+    function optionalInteger(value) {
+      const normalized = String(value ?? "").trim();
+      return normalized === "" ? null : Number(normalized);
+    }
+
+    function renderEmployeeDirectory(payload) {
+      const directory = payload.directory || {};
+      state.directory = {
+        status: payload.status || "missing",
+        revision: payload.revision == null ? null : payload.revision,
+        etag: payload.etag || "missing",
+        employees: clone(directory.employees || []),
+        featureFlagsRevision: payload.feature_flags_revision || "",
+        consumers: clone(payload.consumers || {}),
+        readiness: clone(payload.readiness || {})
+      };
+      const statusBadge = $("directoryStatusBadge");
+      statusBadge.textContent = state.directory.status;
+      statusBadge.className = `badge ${state.directory.status === "available" ? "green" : state.directory.status === "missing" || state.directory.status === "empty" ? "yellow" : "red"}`;
+      $("directoryRevisionText").textContent = `revision: ${state.directory.revision ?? "-"} · etag: ${(state.directory.etag || "-").slice(0, 22)}`;
+      const writable = ["missing", "empty", "available"].includes(state.directory.status);
+      $("saveDirectoryBtn").disabled = !writable;
+      $("addDirectoryEmployeeBtn").disabled = !writable;
+      $("directoryStatusText").textContent = writable
+        ? "Справочник готов к отдельному редактированию. Рабочие сервисы остаются в legacy-режиме."
+        : "Справочник нельзя редактировать до явного восстановления его состояния.";
+      $("directoryStatusText").className = `status ${writable ? "success" : "error"}`;
+      renderDirectoryEmployees();
+      renderDirectoryConsumerModes();
+    }
+
+    function renderDirectoryEmployees() {
+      const employees = state.directory.employees || [];
+      $("directoryEmployeeList").innerHTML = employees.map((employee, index) => {
+        const memberships = employee.memberships || {};
+        const release = memberships.release_monitor || { enabled: false, order: null };
+        const dashboard = memberships.duty_dashboard || { enabled: false, role: "none", order: null };
+        return `
+          <div class="directory-entry" data-directory-employee="${index}">
+            <div class="directory-entry-head">
+              <label><input type="checkbox" data-directory-enabled ${employee.enabled === false ? "" : "checked"}> Активен</label>
+              <div class="directory-actions">
+                <span class="muted directory-meta">${escapeHtml(String(employee.employee_id || "").slice(0, 12))}</span>
+                <button type="button" class="icon-btn danger" data-remove-directory-employee="${index}">Удалить</button>
+              </div>
+            </div>
+            <div class="directory-fields">
+              <div><label>Полное ФИО</label><input data-directory-full-name value="${escapeAttr(employee.full_name || "")}"></div>
+              <div><label>Release name</label><input data-directory-release-name value="${escapeAttr(employee.release_name || "")}"></div>
+              <div><label>Jira Delta</label><input data-directory-jira-delta value="${escapeAttr(employee.jira_names?.delta || "")}"></div>
+              <div><label>Jira Sberbank</label><input data-directory-jira-sberbank value="${escapeAttr(employee.jira_names?.sberbank || "")}"></div>
+              <div><label>Email, по одному в строке</label><textarea data-directory-emails>${escapeHtml(lines(employee.emails || []))}</textarea></div>
+              <div><label>Телефон</label><input data-directory-phone value="${escapeAttr(employee.phone || "")}"></div>
+              <div><label>Локация</label><input data-directory-location value="${escapeAttr(employee.location || "")}"></div>
+              <div><label>Табельный номер</label><input data-directory-personnel value="${escapeAttr(employee.personnel_number || "")}"></div>
+              <div style="grid-column:1/-1"><label>Aliases: type|jira_domain|value</label><textarea data-directory-aliases>${escapeHtml(aliasesToText(employee.aliases || []))}</textarea></div>
+            </div>
+            <div class="directory-memberships">
+              <div class="directory-membership">
+                <label><input type="checkbox" data-directory-release-enabled ${release.enabled ? "checked" : ""}> Блок релизов</label>
+                <input type="number" min="0" data-directory-release-order value="${release.order == null ? "" : Number(release.order)}" placeholder="order">
+              </div>
+              <div class="directory-membership">
+                <label><input type="checkbox" data-directory-zni-enabled ${memberships.release_zni?.enabled ? "checked" : ""}> Релизные ЗНИ</label>
+              </div>
+              <div class="directory-membership">
+                <label><input type="checkbox" data-directory-dashboard-enabled ${dashboard.enabled ? "checked" : ""}> Рабочий стол</label>
+                <select data-directory-dashboard-role>
+                  <option value="none" ${dashboard.role === "none" ? "selected" : ""}>none</option>
+                  <option value="primary" ${dashboard.role === "primary" ? "selected" : ""}>primary</option>
+                  <option value="extra" ${dashboard.role === "extra" ? "selected" : ""}>extra</option>
+                </select>
+                <input type="number" min="0" data-directory-dashboard-order value="${dashboard.order == null ? "" : Number(dashboard.order)}" placeholder="order" style="margin-top:6px;">
+              </div>
+              <div class="directory-membership">
+                <label><input type="checkbox" data-directory-notifications-enabled ${memberships.release_notifications?.enabled ? "checked" : ""}> Релизные письма</label>
+              </div>
+              <div class="directory-membership">
+                <label><input type="checkbox" data-directory-va-enabled ${memberships.va_schedule_manager?.enabled ? "checked" : ""}> VA Schedule Manager</label>
+              </div>
+            </div>
+          </div>`;
+      }).join("");
+      $("directoryEmployeeEmpty").classList.toggle("hidden", employees.length > 0);
+    }
+
+    function collectDirectoryEmployees() {
+      return Array.from(document.querySelectorAll("[data-directory-employee]")).map((row, index) => {
+        const current = state.directory.employees[index] || emptyDirectoryEmployee();
+        const releaseEnabled = row.querySelector("[data-directory-release-enabled]").checked;
+        const dashboardEnabled = row.querySelector("[data-directory-dashboard-enabled]").checked;
+        return {
+          employee_id: current.employee_id,
+          enabled: row.querySelector("[data-directory-enabled]").checked,
+          full_name: row.querySelector("[data-directory-full-name]").value.trim(),
+          release_name: row.querySelector("[data-directory-release-name]").value.trim(),
+          jira_names: {
+            delta: row.querySelector("[data-directory-jira-delta]").value.trim(),
+            sberbank: row.querySelector("[data-directory-jira-sberbank]").value.trim()
+          },
+          aliases: aliasesFromText(row.querySelector("[data-directory-aliases]").value),
+          emails: splitLines(row.querySelector("[data-directory-emails]").value).map((value) => value.toLowerCase()),
+          phone: row.querySelector("[data-directory-phone]").value.trim(),
+          location: row.querySelector("[data-directory-location]").value.trim(),
+          personnel_number: row.querySelector("[data-directory-personnel]").value.trim(),
+          memberships: {
+            release_monitor: {
+              enabled: releaseEnabled,
+              order: releaseEnabled ? optionalInteger(row.querySelector("[data-directory-release-order]").value) : null
+            },
+            release_zni: { enabled: row.querySelector("[data-directory-zni-enabled]").checked },
+            duty_dashboard: {
+              enabled: dashboardEnabled,
+              role: dashboardEnabled ? row.querySelector("[data-directory-dashboard-role]").value : "none",
+              order: dashboardEnabled ? optionalInteger(row.querySelector("[data-directory-dashboard-order]").value) : null
+            },
+            release_notifications: { enabled: row.querySelector("[data-directory-notifications-enabled]").checked },
+            va_schedule_manager: { enabled: row.querySelector("[data-directory-va-enabled]").checked }
+          },
+          source_refs: Array.isArray(current.source_refs) ? current.source_refs : []
+        };
+      });
+    }
+
+    function renderDirectoryConsumerModes() {
+      const labels = {
+        release_monitor: "Блок релизов",
+        release_zni: "Релизные ЗНИ",
+        duty_dashboard: "Рабочий стол",
+        release_notifications: "Релизные письма",
+        va_schedule_manager: "VA Schedule Manager"
+      };
+      $("directoryConsumerModes").innerHTML = Object.entries(labels).map(([name, label]) => {
+        const readiness = state.directory.readiness[name] || {};
+        const mode = state.directory.consumers[name] || "legacy";
+        return `<div class="directory-membership">
+          <label>${escapeHtml(label)}</label>
+          <select data-directory-consumer="${escapeAttr(name)}">
+            <option value="legacy" ${mode === "legacy" ? "selected" : ""}>legacy</option>
+            <option value="compare" disabled ${mode === "compare" ? "selected" : ""}>compare</option>
+            <option value="directory" disabled ${mode === "directory" ? "selected" : ""}>directory</option>
+          </select>
+          <p class="muted" style="margin-top:6px;">${escapeHtml(readiness.reason || "consumer_adapter_not_implemented")}</p>
+        </div>`;
+      }).join("");
+    }
+
+    async function loadEmployeeDirectory() {
+      try {
+        await ensureAdminSession();
+        const payload = await adminApi(BASE_PATH + "/admin/sup-parameters/employee-directory");
+        renderEmployeeDirectory(payload);
+      } catch (error) {
+        $("directoryStatusText").textContent = error.message;
+        $("directoryStatusText").className = "status error";
+        $("saveDirectoryBtn").disabled = true;
+        $("addDirectoryEmployeeBtn").disabled = true;
+      }
+    }
+
+    async function saveEmployeeDirectory() {
+      try {
+        const payload = await adminApi(BASE_PATH + "/admin/sup-parameters/employee-directory/save", {
+          method: "POST",
+          body: JSON.stringify({
+            expected_revision: state.directory.revision,
+            expected_etag: state.directory.etag,
+            employees: collectDirectoryEmployees()
+          })
+        });
+        renderEmployeeDirectory(payload);
+        setStatus("Центральный справочник сохранён. Рабочие сервисы остаются в legacy-режиме.", "success");
+      } catch (error) {
+        const details = Array.isArray(error.payload?.errors)
+          ? error.payload.errors.map((item) => typeof item === "string" ? item : `${item.path}: ${item.code}`).join("\n")
+          : "";
+        setStatus(`${error.message}${details ? "\n" + details : ""}`, "error");
+      }
+    }
+
+    async function saveDirectoryConsumerModes() {
+      const consumers = {};
+      document.querySelectorAll("[data-directory-consumer]").forEach((select) => {
+        consumers[select.dataset.directoryConsumer] = select.value;
+      });
+      try {
+        const payload = await adminApi(BASE_PATH + "/admin/sup-parameters/employee-directory/consumers", {
+          method: "POST",
+          body: JSON.stringify({
+            expected_revision: state.directory.featureFlagsRevision,
+            consumers
+          })
+        });
+        state.directory.featureFlagsRevision = payload.feature_flags_revision || state.directory.featureFlagsRevision;
+        state.directory.consumers = clone(payload.consumers || consumers);
+        state.directory.readiness = clone(payload.readiness || state.directory.readiness);
+        renderDirectoryConsumerModes();
+        setStatus("Режимы сохранены: все потребители остаются legacy.", "success");
+      } catch (error) {
+        setStatus(error.message, "error");
+      }
+    }
+
     function renderSberTrackRuntimeStatus(status) {
       const mode = status.mode || "disabled";
       const modeText = mode === "dry_run"
@@ -1816,6 +2177,7 @@
       try {
         const payload = await api(BASE_PATH + "/admin/sup-parameters/data");
         render(payload);
+        await loadEmployeeDirectory();
       } catch (error) {
         $("tokenBox").classList.remove("hidden");
         $("appBox").classList.add("hidden");
@@ -1974,6 +2336,13 @@
         markDirty();
       }
 
+      const removeDirectoryEmployee = event.target.closest("[data-remove-directory-employee]");
+      if (removeDirectoryEmployee) {
+        state.directory.employees = collectDirectoryEmployees();
+        state.directory.employees.splice(Number(removeDirectoryEmployee.dataset.removeDirectoryEmployee), 1);
+        renderDirectoryEmployees();
+      }
+
       const editPrefix = event.target.closest("[data-edit-prefix]");
       if (editPrefix) openPrefixModal(Number(editPrefix.dataset.editPrefix));
 
@@ -2041,6 +2410,14 @@
     $("employeeSearch").addEventListener("input", renderEmployees);
     $("prefixSearch").addEventListener("input", renderPrefixes);
     $("addEmployeeBtn").addEventListener("click", () => openEmployeeModal());
+    $("addDirectoryEmployeeBtn").addEventListener("click", () => {
+      state.directory.employees = collectDirectoryEmployees();
+      state.directory.employees.push(emptyDirectoryEmployee());
+      renderDirectoryEmployees();
+    });
+    $("reloadDirectoryBtn").addEventListener("click", loadEmployeeDirectory);
+    $("saveDirectoryBtn").addEventListener("click", saveEmployeeDirectory);
+    $("saveDirectoryModesBtn").addEventListener("click", saveDirectoryConsumerModes);
     $("addPrefixBtn").addEventListener("click", () => openPrefixModal());
     $("addSbertrackRouteBtn").addEventListener("click", () => {
       state.config = currentFormConfig();

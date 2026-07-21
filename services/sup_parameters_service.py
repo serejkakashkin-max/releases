@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import re
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -11,11 +12,13 @@ from uuid import uuid4
 from services.feature_flags_service import (
     DEFAULT_FEATURE_FLAGS,
     DEFAULT_RELEASE_PREFIX_CONFIGS,
+    EMPLOYEE_DIRECTORY_CONSUMERS,
     FEATURE_FLAGS_FILE,
     JIRA_DOMAIN_CONFIGS,
     PREFIX_PATTERN,
     reload_feature_flags,
 )
+from services.cross_process_file_lock import CrossProcessFileLock
 
 
 BACKUP_DIR = Path(__file__).resolve().parent.parent / "cache" / "sup_parameters_backups"
@@ -24,6 +27,8 @@ EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 TIME_PATTERN = re.compile(r"^\d{2}:\d{2}$")
 
 MAINTENANCE_KEYS = ("index", "release_monitor", "duty_dashboard", "chatbot")
+_feature_flags_write_lock = threading.RLock()
+FEATURE_FLAGS_LOCK_FILE = BACKUP_DIR / "feature_flags.lock"
 
 
 class SupParametersValidationError(ValueError):
@@ -34,6 +39,78 @@ class SupParametersValidationError(ValueError):
 
 class SupParametersConflictError(RuntimeError):
     pass
+
+
+def get_employee_directory_consumer_modes_data() -> Dict[str, Any]:
+    payload, data, _exists, read_error = _read_current_json()
+    raw_consumers = (
+        ((payload.get("employee_directory") or {}).get("consumers") or {})
+        if isinstance(payload, dict)
+        else {}
+    )
+    consumers = {
+        name: (
+            str(raw_consumers.get(name) or "legacy").strip().lower()
+            if str(raw_consumers.get(name) or "legacy").strip().lower()
+            in {"legacy", "compare", "directory"}
+            else "legacy"
+        )
+        for name in EMPLOYEE_DIRECTORY_CONSUMERS
+    }
+    return {
+        "feature_flags_revision": _file_hash(data),
+        "read_error": bool(read_error),
+        "consumers": consumers,
+        "readiness": {
+            name: {"ready": False, "reason": "consumer_adapter_not_implemented"}
+            for name in EMPLOYEE_DIRECTORY_CONSUMERS
+        },
+    }
+
+
+def save_employee_directory_consumer_modes(
+    raw_consumers: Any,
+    expected_revision: str,
+) -> Dict[str, Any]:
+    if not isinstance(raw_consumers, dict):
+        raise SupParametersValidationError(["employee_directory.consumers must be an object"])
+    unknown = set(raw_consumers) - set(EMPLOYEE_DIRECTORY_CONSUMERS)
+    missing = set(EMPLOYEE_DIRECTORY_CONSUMERS) - set(raw_consumers)
+    errors = []
+    if unknown:
+        errors.append("employee_directory.consumers contains unknown consumer names")
+    if missing:
+        errors.append("employee_directory.consumers must include all managed consumers")
+    normalized = {}
+    for name in EMPLOYEE_DIRECTORY_CONSUMERS:
+        mode = str(raw_consumers.get(name) or "").strip().lower()
+        if mode != "legacy":
+            errors.append(f"{name}: consumer_adapter_not_implemented")
+        normalized[name] = "legacy"
+    if errors:
+        raise SupParametersValidationError(errors)
+
+    with _feature_flags_write_lock, CrossProcessFileLock(FEATURE_FLAGS_LOCK_FILE):
+        payload, data, _exists, read_error = _read_current_json()
+        current_revision = _file_hash(data)
+        if str(expected_revision or "") != current_revision:
+            raise SupParametersConflictError(
+                "Feature flags were changed by another process. Reload and try again."
+            )
+        if read_error:
+            raise SupParametersValidationError(
+                ["feature_flags.json is invalid; consumer modes were not saved"]
+            )
+        next_payload = copy.deepcopy(payload)
+        directory = next_payload.get("employee_directory")
+        if not isinstance(directory, dict):
+            directory = {}
+        directory["consumers"] = normalized
+        next_payload["employee_directory"] = directory
+        _backup_existing_file(data, "")
+        _atomic_write_json(next_payload)
+        reload_feature_flags()
+    return get_employee_directory_consumer_modes_data()
 
 
 def _file_hash(data: bytes) -> str:
@@ -976,6 +1053,11 @@ def _merge_managed_config(base_payload: Dict[str, Any], managed: Dict[str, Any])
 
 
 def save_sup_parameters(managed_config: Any, expected_revision: str) -> Dict[str, Any]:
+    with _feature_flags_write_lock, CrossProcessFileLock(FEATURE_FLAGS_LOCK_FILE):
+        return _save_sup_parameters_locked(managed_config, expected_revision)
+
+
+def _save_sup_parameters_locked(managed_config: Any, expected_revision: str) -> Dict[str, Any]:
     current_payload, current_data, exists, read_error = _read_current_json()
     current_revision = _file_hash(current_data)
     if expected_revision and expected_revision != current_revision:

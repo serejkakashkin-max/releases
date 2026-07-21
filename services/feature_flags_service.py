@@ -106,9 +106,26 @@ DEFAULT_FEATURE_FLAGS = {
         },
     },
     "sbertrack_users": {},
+    "employee_directory": {
+        "consumers": {
+            "release_monitor": "legacy",
+            "release_zni": "legacy",
+            "duty_dashboard": "legacy",
+            "release_notifications": "legacy",
+            "va_schedule_manager": "legacy",
+        }
+    },
 }
 
 PREFIX_PATTERN = re.compile(r"^[A-Z0-9_]+$")
+EMPLOYEE_DIRECTORY_CONSUMERS = (
+    "release_monitor",
+    "release_zni",
+    "duty_dashboard",
+    "release_notifications",
+    "va_schedule_manager",
+)
+EMPLOYEE_DIRECTORY_MODES = {"legacy", "compare", "directory"}
 
 _flags_lock = threading.RLock()
 _cached_flags = copy.deepcopy(DEFAULT_FEATURE_FLAGS)
@@ -433,6 +450,15 @@ def _normalize_flags(payload: Any) -> Dict[str, Dict[str, Any]]:
         payload.get("sbertrack_users")
     )
 
+    directory = payload.get("employee_directory")
+    if isinstance(directory, dict):
+        consumers = directory.get("consumers")
+        if isinstance(consumers, dict):
+            target = normalized["employee_directory"]["consumers"]
+            for consumer_name in EMPLOYEE_DIRECTORY_CONSUMERS:
+                mode = str(consumers.get(consumer_name) or "").strip().lower()
+                target[consumer_name] = mode if mode in EMPLOYEE_DIRECTORY_MODES else "legacy"
+
     return normalized
 
 
@@ -519,6 +545,18 @@ def is_module_enabled(name: str, *, default: bool = False) -> bool:
 def get_automation_config(name: str) -> Any:
     flags = get_feature_flags()
     return copy.deepcopy((flags.get("automation") or {}).get(name, False))
+
+
+def get_employee_directory_consumer_mode(consumer_name: str) -> str:
+    normalized_name = str(consumer_name or "").strip().lower()
+    if normalized_name not in EMPLOYEE_DIRECTORY_CONSUMERS:
+        return "legacy"
+    flags = get_feature_flags()
+    mode = str(
+        (((flags.get("employee_directory") or {}).get("consumers") or {}).get(normalized_name))
+        or "legacy"
+    ).strip().lower()
+    return mode if mode in EMPLOYEE_DIRECTORY_MODES else "legacy"
 
 
 def get_release_prefix_configs(*, include_disabled: bool = False) -> List[Dict[str, Any]]:

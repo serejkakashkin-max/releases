@@ -152,6 +152,9 @@ sms_templates/
 # Config with sensitive data
 config.json
 feature_flags.json
+/employee_directory.json
+/cache/employee_directory_backups/
+/cache/employee_directory_migration/
 
 # Local Playwright MCP artifacts
 .playwright-mcp/
