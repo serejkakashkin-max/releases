@@ -720,16 +720,21 @@ def update_release_monitor_work_mark():
         data = request.get_json(silent=True) or {}
         row_key = data.get("row_key", "")
         mark = data.get("mark", "")
-        result = set_release_monitor_work_mark(row_key, mark=mark)
+        compact = data.get("compact") is True
+        result = set_release_monitor_work_mark(row_key, mark=mark, include_data=not compact)
         payload = result.get("data", {})
-        return jsonify({
+        response_payload = {
             "success": True,
             "row_key": result.get("row_key"),
             "work_mark": result.get("work_mark", ""),
-            "release_monitor": payload.get("items", []),
-            "release_monitor_summary": payload.get("summary", {}),
             "release_monitor_meta": payload.get("meta", {}),
-        })
+        }
+        if not compact:
+            response_payload.update({
+                "release_monitor": payload.get("items", []),
+                "release_monitor_summary": payload.get("summary", {}),
+            })
+        return jsonify(response_payload)
     except Exception as e:
         logging.error(f"Ошибка сохранения метки смены релиза: {e}")
         return jsonify({"success": False, "error": str(e)}), 400

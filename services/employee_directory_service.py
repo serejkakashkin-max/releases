@@ -5,8 +5,11 @@ from typing import Any, Dict, List, Optional
 from services.employee_directory_repository import normalize_text, read_directory_snapshot
 
 
-def get_release_monitor_names() -> List[str]:
-    return [employee["release_name"] for employee in _ordered_members("release_monitor")]
+def get_release_monitor_names(snapshot=None) -> List[str]:
+    return [
+        employee["release_name"]
+        for employee in _ordered_members("release_monitor", snapshot=snapshot)
+    ]
 
 
 def get_release_zni_users() -> List[str]:
@@ -94,20 +97,24 @@ def _identity_values(employee: Dict[str, Any], identity_type: Optional[str], jir
     return values
 
 
-def _all_employees() -> List[Dict[str, Any]]:
-    snapshot = read_directory_snapshot()
+def _all_employees(snapshot=None) -> List[Dict[str, Any]]:
+    snapshot = snapshot or read_directory_snapshot()
     if snapshot.status != "available" or not snapshot.payload:
         return []
     return list(snapshot.payload["employees"])
 
 
-def _active_employees() -> List[Dict[str, Any]]:
-    return [employee for employee in _all_employees() if employee["enabled"]]
+def _active_employees(snapshot=None) -> List[Dict[str, Any]]:
+    return [employee for employee in _all_employees(snapshot) if employee["enabled"]]
 
 
-def _ordered_members(membership: str) -> List[Dict[str, Any]]:
+def _ordered_members(membership: str, snapshot=None) -> List[Dict[str, Any]]:
     return sorted(
-        [employee for employee in _active_employees() if employee["memberships"][membership]["enabled"]],
+        [
+            employee
+            for employee in _active_employees(snapshot)
+            if employee["memberships"][membership]["enabled"]
+        ],
         key=lambda employee: employee["memberships"][membership]["order"],
     )
 

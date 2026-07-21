@@ -4183,6 +4183,8 @@
         const RELEASE_SMS_PROFILE_AVAILABILITY = {{ sms_profile_availability | default({}) | tojson | safe }};
         const RELEASE_WORK_MARK_PARTICIPANTS_KEY = 'releaseMonitorWorkMarkParticipants';
         const RELEASE_WORK_MARK_ACTIVE_KEY = 'releaseMonitorWorkMarkActive';
+        const RELEASE_WORK_MARK_AUTO_PARTICIPANTS_KEY = 'releaseMonitorWorkMarkAutoParticipants';
+        const RELEASE_WORK_MARK_WEEK_KEY = 'releaseMonitorWorkMarkWeek';
         const RELEASE_WORK_MARK_AUTO_COLLAPSE_MS = 30000;
         let releaseScrollRestoreAttempted = false;
         const RELEASE_REVIEWER_OPTIONS = {{ reviewer_options | tojson | safe }};
@@ -4307,7 +4309,10 @@
         }
 
         function getReleaseWorkMarkMeta() {
-            return releaseMonitorMeta || window.dashboardData?.release_monitor_meta || {};
+            if (releaseMonitorMeta && Object.keys(releaseMonitorMeta).length) {
+                return releaseMonitorMeta;
+            }
+            return window.dashboardData?.release_monitor_meta || {};
         }
 
         function getReleaseWorkMarkSuggestedParticipants() {
@@ -4318,6 +4323,47 @@
                     .filter(Boolean)
                     .filter(name => getReleaseWorkMarkDirectory().includes(name))
             ));
+        }
+
+        function syncReleaseWorkMarkSuggestedParticipants() {
+            const suggested = getReleaseWorkMarkSuggestedParticipants();
+            const suggestedWeek = String(getReleaseWorkMarkMeta().work_mark_suggested_week || '').trim();
+            if (!suggested.length || !suggestedWeek) {
+                return false;
+            }
+
+            let previousSuggested = [];
+            let previousWeek = '';
+            try {
+                const rawSuggested = localStorage.getItem(RELEASE_WORK_MARK_AUTO_PARTICIPANTS_KEY);
+                const parsedSuggested = rawSuggested ? JSON.parse(rawSuggested) : [];
+                previousSuggested = Array.isArray(parsedSuggested)
+                    ? parsedSuggested.map(normalizeReleaseWorkMark).filter(Boolean)
+                    : [];
+                previousWeek = String(localStorage.getItem(RELEASE_WORK_MARK_WEEK_KEY) || '').trim();
+            } catch (error) {
+                previousSuggested = [];
+                previousWeek = '';
+            }
+
+            let nextParticipants = releaseWorkMarkParticipants.slice();
+            const suggestedChanged = JSON.stringify(previousSuggested) !== JSON.stringify(suggested);
+            if (previousWeek && (previousWeek !== suggestedWeek || suggestedChanged)) {
+                const previousSet = new Set(previousSuggested);
+                nextParticipants = nextParticipants.filter(name => !previousSet.has(name));
+            }
+            nextParticipants = Array.from(new Set([...suggested, ...nextParticipants]));
+            const changed = JSON.stringify(nextParticipants) !== JSON.stringify(releaseWorkMarkParticipants);
+            releaseWorkMarkParticipants = nextParticipants;
+
+            try {
+                localStorage.setItem(RELEASE_WORK_MARK_PARTICIPANTS_KEY, JSON.stringify(releaseWorkMarkParticipants));
+                localStorage.setItem(RELEASE_WORK_MARK_AUTO_PARTICIPANTS_KEY, JSON.stringify(suggested));
+                localStorage.setItem(RELEASE_WORK_MARK_WEEK_KEY, suggestedWeek);
+            } catch (error) {
+                // localStorage can be unavailable in restricted browser modes.
+            }
+            return changed;
         }
 
         function loadReleaseWorkMarkPreferences() {
@@ -4331,9 +4377,7 @@
                 releaseWorkMarkParticipants = [];
             }
 
-            if (!releaseWorkMarkParticipants.length) {
-                releaseWorkMarkParticipants = getReleaseWorkMarkSuggestedParticipants();
-            }
+            syncReleaseWorkMarkSuggestedParticipants();
 
             try {
                 activeReleaseWorkMark = normalizeReleaseWorkMark(localStorage.getItem(RELEASE_WORK_MARK_ACTIVE_KEY));
@@ -4367,7 +4411,8 @@
         function getReleaseWorkMarkAvailableParticipants() {
             const directory = getReleaseWorkMarkDirectory();
             const selected = releaseWorkMarkParticipants.filter(name => directory.includes(name));
-            return selected.length ? selected : getReleaseWorkMarkSuggestedParticipants();
+            const suggested = getReleaseWorkMarkSuggestedParticipants();
+            return Array.from(new Set([...suggested, ...selected]));
         }
 
         function ensureExplicitReleaseWorkMarkParticipants() {
@@ -4450,6 +4495,7 @@
                 return;
             }
             const participants = getReleaseWorkMarkAvailableParticipants();
+            const suggested = new Set(getReleaseWorkMarkSuggestedParticipants());
             if (!participants.length) {
                 container.innerHTML = '<span class="release-work-mark-chip empty">Выберите участников окна</span>';
                 return;
@@ -4457,7 +4503,7 @@
             const chips = participants.map(mark => {
                 const count = Number(counts[mark] || 0);
                 const isActive = mark === activeReleaseWorkMark;
-                const removeButton = participants.length > 1
+                const removeButton = participants.length > 1 && !suggested.has(mark)
                     ? `<button type="button" class="release-work-mark-chip-remove" onclick="removeReleaseWorkMarkParticipant('${escapeHtml(mark)}', event)" title="Убрать участника из окна"><i class="bi bi-x"></i></button>`
                     : '';
                 return `
@@ -4718,7 +4764,7 @@
                 const response = await fetch(BASE_PATH + '/dashboard/release-monitor/work-mark', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ row_key: normalizedRowKey, mark: normalizedMark }),
+                    body: JSON.stringify({ row_key: normalizedRowKey, mark: normalizedMark, compact: true }),
                 });
                 const data = await response.json();
                 if (!response.ok || !data.success) {
@@ -4729,7 +4775,7 @@
                 }
                 setReleaseWorkMarkPending(normalizedRowKey, false);
                 if (data.release_monitor_meta) {
-                    releaseMonitorMeta = data.release_monitor_meta || releaseMonitorMeta;
+                    releaseMonitorMeta = { ...releaseMonitorMeta, ...(data.release_monitor_meta || {}) };
                     releaseMonitorKnownRevision = getReleaseMonitorRevision(releaseMonitorMeta) || releaseMonitorKnownRevision;
                     updateReleaseAutoRefreshBadge(releaseMonitorMeta);
                     window.dashboardData.release_monitor_meta = releaseMonitorMeta;
@@ -5148,6 +5194,34 @@
             `;
         }
 
+        function buildInitialReleaseReviewerOptions(currentValue) {
+            const current = String(currentValue || '').trim();
+            return [
+                '<option value="">Не назначен</option>',
+                current
+                    ? `<option value="${escapeHtml(current)}" selected>${escapeHtml(current)}</option>`
+                    : '',
+            ].join('');
+        }
+
+        function ensureReleaseReviewerOptions(select) {
+            if (!select || select.dataset.optionsReady === 'true') {
+                return;
+            }
+            const current = String(select.value || '').trim();
+            const values = current && !RELEASE_REVIEWER_OPTIONS.includes(current)
+                ? [current, ...RELEASE_REVIEWER_OPTIONS]
+                : RELEASE_REVIEWER_OPTIONS;
+            select.innerHTML = [
+                '<option value="">Не назначен</option>',
+                ...values.map(option => (
+                    `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`
+                )),
+            ].join('');
+            select.value = current;
+            select.dataset.optionsReady = 'true';
+        }
+
         function buildReviewerCell(item) {
             const rowKey = item.row_key || item.release_key;
             const currentReviewer = item.psi_owner || '';
@@ -5173,11 +5247,8 @@
                     </div>
                 `
                 : `
-                    <select class="reviewer-select duty-select" onchange="updateReleaseAssignment('${escapeHtml(rowKey)}', this)">
-                        <option value="">Не назначен</option>
-                        ${RELEASE_REVIEWER_OPTIONS.map(option => `
-                            <option value="${escapeHtml(option)}" ${option === currentReviewer ? 'selected' : ''}>${escapeHtml(option)}</option>
-                        `).join('')}
+                    <select class="reviewer-select duty-select" onfocus="ensureReleaseReviewerOptions(this)" onpointerdown="ensureReleaseReviewerOptions(this)" onchange="updateReleaseAssignment('${escapeHtml(rowKey)}', this)">
+                        ${buildInitialReleaseReviewerOptions(currentReviewer)}
                     </select>
                 `;
             return `
@@ -5188,11 +5259,8 @@
                         <div class="responsibles-stack">
                             ${responsibles.map((responsible, index) => `
                                 <div class="responsible-row">
-                                    <select class="reviewer-select responsible-select" onchange="updateResponsibleAssignment('${escapeHtml(rowKey)}', ${index}, this.value)">
-                                        <option value="">Не назначен</option>
-                                        ${RELEASE_REVIEWER_OPTIONS.map(option => `
-                                            <option value="${escapeHtml(option)}" ${option === responsible ? 'selected' : ''}>${escapeHtml(option)}</option>
-                                        `).join('')}
+                                    <select class="reviewer-select responsible-select" onfocus="ensureReleaseReviewerOptions(this)" onpointerdown="ensureReleaseReviewerOptions(this)" onchange="updateResponsibleAssignment('${escapeHtml(rowKey)}', ${index}, this.value)">
+                                        ${buildInitialReleaseReviewerOptions(responsible)}
                                     </select>
                                     <button
                                         type="button"
@@ -8687,6 +8755,7 @@
 
             releaseMonitorItems = Array.isArray(items) ? items : [];
             releaseMonitorMeta = meta || {};
+            syncReleaseWorkMarkSuggestedParticipants();
             releaseMonitorKnownRevision = getReleaseMonitorRevision(releaseMonitorMeta) || releaseMonitorKnownRevision;
             hideReleaseUpdateBanner();
             updateReleaseAutoRefreshBadge(releaseMonitorMeta);
@@ -8823,10 +8892,14 @@
                 return;
             }
             releaseMonitorMeta = statusData.release_monitor_meta || releaseMonitorMeta;
+            const participantsChanged = syncReleaseWorkMarkSuggestedParticipants();
             releaseMonitorKnownRevision = getReleaseMonitorRevision(releaseMonitorMeta) || releaseMonitorKnownRevision;
             updateReleaseAutoRefreshBadge(releaseMonitorMeta);
             window.dashboardData = window.dashboardData || {};
             window.dashboardData.release_monitor_meta = releaseMonitorMeta;
+            if (participantsChanged) {
+                refreshReleaseWorkMarkUi();
+            }
         }
 
         function queueReleaseRowOrderDraftSave(draft, rollbackDraft = null) {

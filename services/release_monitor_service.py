@@ -25,7 +25,7 @@ from services.feature_flags_service import (
     get_release_prefix_system,
 )
 from services.jira_oplot_issue_service import create_oplot_release_issue
-from services.release_monitor_employee_provider import get_release_monitor_names as _get_oplot_values
+from services.release_monitor_employee_provider import get_release_monitor_names as _load_oplot_values
 from services.release_artifact_service import (
     classify_artifact_entry,
     extract_artifact_ke_id,
@@ -100,6 +100,8 @@ ZNI_FILE = SNAPSHOT_DIR / "release_monitor_zni.json"
 WORK_MARKS_FILE = SNAPSHOT_DIR / "release_monitor_work_marks.json"
 ATTEMPTS_FILE = SNAPSHOT_DIR / "release_monitor_attempts.json"
 REVISION_FILE = SNAPSHOT_DIR / "release_monitor_revision.txt"
+_employee_projection_context = threading.local()
+_state_json_read_context = threading.local()
 CONFLUENCE_DELTA_BASE = "https://confluence.delta.sbrf.ru"
 JIRA_DELTA_BASE = "https://jira.delta.sbrf.ru"
 RELEASE_TYPE_VALUES = {"release", "hotfix", "reroll", "technical"}
@@ -129,6 +131,15 @@ RELEASE_TYPE_ROW_LABELS = {
     "reroll": "(\u041f\u0435\u0440\u0435\u0440\u0430\u0441\u043a\u0430\u0442\u043a\u0430)",
     "technical": "(\u0422\u0435\u0445\u043d\u0438\u0447\u0435\u0441\u043a\u0438\u0439)",
 }
+
+
+def _get_oplot_values():
+    cached_values = getattr(_employee_projection_context, "oplot_values", None)
+    if cached_values is not None:
+        return cached_values
+    return _load_oplot_values()
+
+
 MANUAL_OVERRIDE_SCALAR_FIELDS = (
     "release_type",
     "release_summary",
@@ -604,11 +615,18 @@ def _recover_snapshot_storage(*, force=False):
 
 def _load_state_json(file_path, default=None):
     file_path = Path(file_path)
+    context_cache = getattr(_state_json_read_context, "cache", None)
+    cache_key = str(file_path)
+    if context_cache is not None and cache_key in context_cache:
+        return copy.deepcopy(context_cache[cache_key])
     if not file_path.exists():
         return default
 
     try:
-        return _read_json_file(file_path)
+        payload = _read_json_file(file_path)
+        if context_cache is not None:
+            context_cache[cache_key] = copy.deepcopy(payload)
+        return payload
     except Exception as exc:
         logging.warning("Release monitor: failed to load state file %s: %s", file_path, exc)
     return default
@@ -617,6 +635,9 @@ def _load_state_json(file_path, default=None):
 def _write_state_json(file_path, payload):
     file_path = Path(file_path)
     _ensure_snapshot_dir()
+    context_cache = getattr(_state_json_read_context, "cache", None)
+    if context_cache is not None:
+        context_cache.pop(str(file_path), None)
 
     text = json.dumps(payload, ensure_ascii=False, indent=2)
     json.loads(text)
@@ -949,16 +970,18 @@ def _reload_snapshot_from_disk_if_newer():
 
     disk_mtime = _get_snapshot_mtime()
     if disk_mtime is None:
-        return
+        return False
 
     if _cached_data is not None and _last_cache_update is not None and disk_mtime <= _last_cache_update:
-        return
+        return False
 
     disk_payload = _load_snapshot_from_disk()
     if disk_payload is not None:
         _cached_data = _hydrate_release_monitor_payload(disk_payload)
         _last_cache_update = disk_mtime
         _migrate_cached_display_snapshot_pair_if_needed(disk_payload)
+        return True
+    return False
 
 
 def _normalize_reviewer_assignments_payload(payload):
@@ -2712,9 +2735,12 @@ def _prepare_item_for_zni_creation(item):
 
 def _append_duty_schedule_meta(meta):
     duty_payload = _load_duty_schedule_payload()
+    week_start, week_end = _get_current_week_bounds()
     meta["last_duty_schedule_upload"] = duty_payload.get("last_upload")
     meta["duty_schedule_months"] = list(duty_payload.get("months") or [])
     meta["duty_schedule_files"] = list(duty_payload.get("files") or [])
+    meta["work_mark_suggested_week"] = week_start.isoformat()
+    meta["work_mark_suggested_week_end"] = week_end.isoformat()
     meta["work_mark_suggested_participants"] = _collect_work_mark_suggested_participants(duty_payload)
     return meta
 
@@ -7591,33 +7617,48 @@ def _normalize_release_payload(payload):
     if not isinstance(payload, dict):
         return _build_empty_release_monitor_payload()
 
-    normalized_items = [dict(item) for item in (payload.get("items") or []) if isinstance(item, dict)]
-    _apply_manual_releases(normalized_items)
-    _apply_manual_release_overrides(normalized_items, payload.get("manual_overrides") or {})
-    _apply_reviewer_assignments(normalized_items)
-    _apply_release_status_consistency(normalized_items)
-    _apply_date_overrides(normalized_items)
-    _apply_release_attempt_outcomes(normalized_items)
-    _apply_duty_schedule_assignments(normalized_items, persist=False)
-    _apply_zni_assignments(normalized_items)
-    _apply_manual_release_overrides(normalized_items, payload.get("manual_overrides") or {})
-    _apply_template_system_classification(normalized_items)
-    _apply_work_marks(normalized_items)
-    _apply_manual_duplicate_reconciliation(normalized_items)
-    _apply_week_control_flags(normalized_items)
-    _apply_release_week_buckets(normalized_items)
-    _sort_and_number_records(normalized_items)
-    current_year = datetime.now().year
-    previous_year = current_year - 1
+    previous_values = getattr(_employee_projection_context, "oplot_values", None)
+    owns_projection = previous_values is None
+    if owns_projection:
+        _employee_projection_context.oplot_values = tuple(_load_oplot_values())
+    previous_state_cache = getattr(_state_json_read_context, "cache", None)
+    owns_state_cache = previous_state_cache is None
+    if owns_state_cache:
+        _state_json_read_context.cache = {}
 
-    return {
-        "items": normalized_items,
-        "manual_overrides": _normalize_manual_release_overrides(payload.get("manual_overrides") or {}),
-        "summary": _build_summary(normalized_items, current_year, previous_year),
-        "meta": _append_auto_incremental_meta(
-            _append_revision_meta(_append_duty_schedule_meta(dict(payload.get("meta", {}))))
-        ),
-    }
+    try:
+        normalized_items = [dict(item) for item in (payload.get("items") or []) if isinstance(item, dict)]
+        _apply_manual_releases(normalized_items)
+        _apply_manual_release_overrides(normalized_items, payload.get("manual_overrides") or {})
+        _apply_reviewer_assignments(normalized_items)
+        _apply_release_status_consistency(normalized_items)
+        _apply_date_overrides(normalized_items)
+        _apply_release_attempt_outcomes(normalized_items)
+        _apply_duty_schedule_assignments(normalized_items, persist=False)
+        _apply_zni_assignments(normalized_items)
+        _apply_manual_release_overrides(normalized_items, payload.get("manual_overrides") or {})
+        _apply_template_system_classification(normalized_items)
+        _apply_work_marks(normalized_items)
+        _apply_manual_duplicate_reconciliation(normalized_items)
+        _apply_week_control_flags(normalized_items)
+        _apply_release_week_buckets(normalized_items)
+        _sort_and_number_records(normalized_items)
+        current_year = datetime.now().year
+        previous_year = current_year - 1
+
+        return {
+            "items": normalized_items,
+            "manual_overrides": _normalize_manual_release_overrides(payload.get("manual_overrides") or {}),
+            "summary": _build_summary(normalized_items, current_year, previous_year),
+            "meta": _append_auto_incremental_meta(
+                _append_revision_meta(_append_duty_schedule_meta(dict(payload.get("meta", {}))))
+            ),
+        }
+    finally:
+        if owns_projection:
+            del _employee_projection_context.oplot_values
+        if owns_state_cache:
+            del _state_json_read_context.cache
 
 
 def _finalize_release_monitor_payload(payload, manual_overrides=None):
@@ -7672,11 +7713,15 @@ def get_release_monitor_refresh_status():
 def get_release_monitor_snapshot():
     with _cache_lock:
         _ensure_scheduler_started()
-        _reload_snapshot_from_disk_if_newer()
+        reloaded_from_disk = _reload_snapshot_from_disk_if_newer()
         if _cached_data is None:
             return _build_empty_release_monitor_payload()
 
-        payload = _normalize_release_payload(_get_cached_payload_copy())
+        payload = (
+            copy.deepcopy(_cached_data)
+            if reloaded_from_disk
+            else _normalize_release_payload(_get_cached_payload_copy())
+        )
         payload["meta"] = {
             **payload.get("meta", {}),
             "is_cached": True,
@@ -8531,7 +8576,7 @@ def create_release_monitor_zni(release_key, reporter=""):
     }
 
 
-def set_release_monitor_work_mark(row_key, mark=""):
+def set_release_monitor_work_mark(row_key, mark="", *, include_data=True):
     global _cached_data
 
     row_key = str(row_key or "").strip()
@@ -8546,10 +8591,9 @@ def set_release_monitor_work_mark(row_key, mark=""):
             if disk_payload is not None:
                 _cached_data = _hydrate_release_monitor_payload(disk_payload)
 
-        current_payload = _normalize_release_payload(_get_cached_payload_copy() or _build_empty_release_monitor_payload())
         target_item = next(
             (
-                item for item in current_payload.get("items") or []
+                item for item in (_cached_data or {}).get("items") or []
                 if _get_assignment_key_for_item(item) == row_key
             ),
             None,
@@ -8586,7 +8630,18 @@ def set_release_monitor_work_mark(row_key, mark=""):
             if changed:
                 _touch_release_monitor_revision()
 
-        payload = _normalize_release_payload(_get_cached_payload_copy() or current_payload)
+        if include_data:
+            payload = _normalize_release_payload(
+                _get_cached_payload_copy() or _build_empty_release_monitor_payload()
+            )
+        else:
+            payload = {
+                "items": [],
+                "summary": {},
+                "meta": _append_auto_incremental_meta(
+                    _append_revision_meta(dict(((_cached_data or {}).get("meta") or {})))
+                ),
+            }
 
     return {
         "row_key": row_key,
