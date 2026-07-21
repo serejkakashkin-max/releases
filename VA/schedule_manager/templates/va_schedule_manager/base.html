@@ -52,26 +52,19 @@
           }
           return originalFetch(input, { ...init, headers });
         };
-        document.addEventListener("submit", async (event) => {
+        document.addEventListener("submit", (event) => {
           const form = event.target;
           if (!(form instanceof HTMLFormElement)) return;
           const method = String(form.method || "GET").toUpperCase();
           if (method === "GET" || !csrfToken) return;
-          event.preventDefault();
-          const response = await fetch(form.action || window.location.href, {
-            method,
-            body: new FormData(form),
-            headers: { "X-CSRF-Token": csrfToken },
-            redirect: "follow"
-          });
-          if (response.redirected) {
-            window.location.assign(response.url);
-            return;
+          let field = form.querySelector('input[name="_csrf_token"]');
+          if (!field) {
+            field = document.createElement("input");
+            field.type = "hidden";
+            field.name = "_csrf_token";
+            form.appendChild(field);
           }
-          const html = await response.text();
-          document.open();
-          document.write(html);
-          document.close();
+          field.value = csrfToken;
         });
       })();
     </script>

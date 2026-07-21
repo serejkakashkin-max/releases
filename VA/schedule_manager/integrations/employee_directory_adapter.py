@@ -99,7 +99,9 @@ def prepare_va_records_for_save(
 
 
 def is_va_employee_directory_managed() -> bool:
-    return get_employee_directory_consumer_mode("va_schedule_manager") == "directory"
+    if get_employee_directory_consumer_mode("va_schedule_manager") != "directory":
+        return False
+    return read_directory_snapshot().status == "available"
 
 
 def get_va_schedule_manager_adapter_readiness(
@@ -317,6 +319,14 @@ def _merge_central_common_fields(
 def _new_va_employee(central: Dict[str, Any]) -> Employee:
     aliases = central.get("aliases") or []
     preferred_name = next(
+        (
+            normalize_text(source_ref.split(":", 2)[2])
+            for source_ref in central.get("source_refs") or []
+            if normalize_text(source_ref).startswith("va:employees:")
+            and len(source_ref.split(":", 2)) == 3
+        ),
+        "",
+    ) or next(
         (
             normalize_text(alias.get("value"))
             for alias_type in ("va", "schedule", "full")

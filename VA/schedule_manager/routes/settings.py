@@ -6,8 +6,10 @@ from VA.schedule_manager.integrations.employee_directory_adapter import (
 )
 from VA.schedule_manager.integrations.employee_directory_commands import (
     VaEmployeeDirectoryCommandError,
+    disable_va_employee_in_directory,
     ensure_va_employee_in_directory,
     get_va_employee_directory_write_state,
+    update_va_employee_in_directory,
 )
 
 from VA.schedule_manager.repositories.competency_repository import CompetencyRepository
@@ -49,6 +51,13 @@ def _employee_service() -> EmployeeService:
     return EmployeeService(EmployeeRepository(), schedule_service=ScheduleService(ScheduleRepository()))
 
 
+def _legacy_employee_service() -> EmployeeService:
+    return EmployeeService(
+        EmployeeRepository(directory_projection=False),
+        schedule_service=ScheduleService(ScheduleRepository()),
+    )
+
+
 def _competency_service() -> CompetencyService:
     return CompetencyService(CompetencyRepository(), EmployeeRepository())
 
@@ -67,38 +76,122 @@ def _update_employee_from_request(service: EmployeeService) -> None:
     email = request.form.get("email", "")
     phone = request.form.get("phone", "")
     location = request.form.get("location", "moscow")
-    if is_va_employee_directory_managed():
-        current = next(
-            (
-                employee
-                for employee in service.repository.load_all_legacy()
-                if employee.name == original_name
-            ),
-            None,
+    status = request.form.get("status", "active")
+    competencies = request.form.getlist("competencies")
+    overtime_ready = request.form.get("overtime_ready", "1") == "1"
+    if not is_va_employee_directory_managed():
+        service.update_employee(
+            original_name,
+            name,
+            email,
+            phone,
+            status,
+            location,
+            competencies,
+            overtime_ready,
         )
-        if current is None:
-            current = next(
-                (
-                    employee
-                    for employee in service.list_employees()
-                    if employee.name == original_name
-                ),
-                None,
-            )
-        if current is None:
-            raise EmployeeValidationError("Сотрудник не найден.")
-        name = current.name
-        email = current.email
-        phone = current.phone
-        location = current.location or "moscow"
+        return
 
-    service.update_employee(
-        original_name,
+    # Validate the complete VA record before changing either storage.
+    service._build_employee(
         name,
         email,
         phone,
-        request.form.get("status", "active"),
+        status,
         location,
+        competencies,
+        overtime_ready,
+    )
+    legacy_service = _legacy_employee_service()
+    legacy_employees = legacy_service.list_employees()
+    if any(
+        employee.name == name and employee.name != original_name
+        for employee in legacy_employees
+    ):
+        raise EmployeeValidationError("Сотрудник с таким ФИО уже есть.")
+
+    directory_field = request.form.get("directory_field", "all")
+    directory_fields = {
+        "va_name": ("va_name",),
+        "email": ("email",),
+        "phone": ("phone",),
+        "location": ("location",),
+        "none": (),
+        "all": ("va_name", "email", "phone", "location"),
+    }.get(directory_field, ())
+    if directory_fields:
+        update_va_employee_in_directory(
+            original_name=original_name,
+            full_name=name,
+            email=email,
+            phone=phone,
+            location=location,
+            expected_revision=request.form.get("directory_revision"),
+            expected_etag=request.form.get("directory_etag", ""),
+            fields=directory_fields,
+        )
+    if any(employee.name == original_name for employee in legacy_employees):
+        legacy_service.update_employee(
+            original_name,
+            name,
+            email,
+            phone,
+            status,
+            location,
+            competencies,
+            overtime_ready,
+        )
+    elif any(employee.name == name for employee in legacy_employees):
+        legacy_service.update_employee(
+            name,
+            name,
+            email,
+            phone,
+            status,
+            location,
+            competencies,
+            overtime_ready,
+        )
+    else:
+        legacy_service.add_employee(
+            name,
+            email,
+            phone,
+            status,
+            location,
+            competencies,
+            overtime_ready,
+        )
+
+
+def _disable_va_directory_membership(name: str) -> None:
+    disable_va_employee_in_directory(
+        name=name,
+        expected_revision=request.form.get("directory_revision"),
+        expected_etag=request.form.get("directory_etag", ""),
+    )
+
+
+def _employee_update_error(exc: Exception):
+    if isinstance(exc, EmployeeDirectoryConflictError):
+        message = "Центральный справочник изменился. Обновите страницу и повторите действие."
+    else:
+        message = str(exc)
+    return redirect(public_url_for("va_schedule_manager.settings.employees", error=message))
+
+
+def _legacy_employee_exists(service: EmployeeService, name: str) -> bool:
+    return any(employee.name == name for employee in service.list_employees())
+
+
+def _update_legacy_employee_from_form(service: EmployeeService, original_name: str) -> None:
+    service.update_employee(
+        original_name,
+        request.form.get("name", ""),
+        request.form.get("email", ""),
+        request.form.get("phone", ""),
+        request.form.get("status", "active"),
+        request.form.get("location", "moscow"),
         request.form.getlist("competencies"),
         request.form.get("overtime_ready", "1") == "1",
     )
@@ -151,9 +244,11 @@ def employees():
 @settings_bp.post("/employees")
 def add_employee():
     if is_va_employee_directory_managed():
-        service = _employee_service()
-        name = request.form.get("name", "")
+        service = _legacy_employee_service()
+        name = " ".join(request.form.get("name", "").strip().split())
         try:
+            if any(employee.name == name for employee in _employee_service().list_employees()):
+                raise EmployeeValidationError("Сотрудник с таким ФИО уже есть.")
             directory_result = ensure_va_employee_in_directory(
                 full_name=name,
                 email=request.form.get("email", ""),
@@ -163,16 +258,29 @@ def add_employee():
                 expected_etag=request.form.get("directory_etag", ""),
             )
             employee_name = directory_result["employee_name"]
-            service.update_employee(
-                employee_name,
-                employee_name,
-                request.form.get("email", ""),
-                request.form.get("phone", ""),
-                request.form.get("status", "active"),
-                request.form.get("location", "moscow"),
-                request.form.getlist("competencies"),
-                request.form.get("overtime_ready", "1") == "1",
-            )
+            if not directory_result["created"]:
+                update_va_employee_in_directory(
+                    original_name=employee_name,
+                    full_name=directory_result["central_full_name"],
+                    email=request.form.get("email", ""),
+                    phone=request.form.get("phone", ""),
+                    location=request.form.get("location", "moscow"),
+                    expected_revision=directory_result["revision"],
+                    expected_etag=directory_result["etag"],
+                    fields=("email", "phone", "location"),
+                )
+            if _legacy_employee_exists(service, employee_name):
+                _update_legacy_employee_from_form(service, employee_name)
+            else:
+                service.add_employee(
+                    employee_name,
+                    request.form.get("email", ""),
+                    request.form.get("phone", ""),
+                    request.form.get("status", "active"),
+                    request.form.get("location", "moscow"),
+                    request.form.getlist("competencies"),
+                    request.form.get("overtime_ready", "1") == "1",
+                )
         except EmployeeDirectoryConflictError:
             return redirect(
                 public_url_for(
@@ -214,8 +322,13 @@ def update_employee():
     service = _employee_service()
     try:
         _update_employee_from_request(service)
-    except EmployeeValidationError as exc:
-        return redirect(public_url_for("va_schedule_manager.settings.employees", error=str(exc)))
+    except (
+        EmployeeDirectoryConflictError,
+        EmployeeDirectoryError,
+        VaEmployeeDirectoryCommandError,
+        EmployeeValidationError,
+    ) as exc:
+        return _employee_update_error(exc)
     return redirect(public_url_for("va_schedule_manager.settings.employees", message="Сотрудник обновлен."))
 
 
@@ -285,43 +398,63 @@ def quick_update_employee():
     service = _employee_service()
     try:
         _update_employee_from_request(service)
-    except EmployeeValidationError as exc:
-        return redirect(public_url_for("va_schedule_manager.settings.employees", error=str(exc)))
+    except (
+        EmployeeDirectoryConflictError,
+        EmployeeDirectoryError,
+        VaEmployeeDirectoryCommandError,
+        EmployeeValidationError,
+    ) as exc:
+        return _employee_update_error(exc)
     return redirect(public_url_for("va_schedule_manager.settings.employees", message="Сотрудник обновлен."))
 
 
 @settings_bp.post("/employees/delete")
 def delete_employee():
-    if is_va_employee_directory_managed():
-        return redirect(
-            public_url_for(
-                "va_schedule_manager.settings.employees",
-                error="Удаление сотрудников выполняется в центральном справочнике СУП.",
-            )
-        )
-    service = _employee_service()
+    directory_managed = is_va_employee_directory_managed()
+    service = _legacy_employee_service() if directory_managed else _employee_service()
     name = request.form.get("name", "")
     try:
-        service.delete_employee(name)
-    except (EmployeeValidationError, EmployeeInUseError) as exc:
+        if directory_managed:
+            usage = _employee_service().find_schedule_usage(name)
+            if usage:
+                raise EmployeeInUseError("Сотрудник найден в графиках. Выберите, что сделать дальше.")
+            _disable_va_directory_membership(name)
+            if _legacy_employee_exists(service, name):
+                service.delete_employee(name)
+        else:
+            service.delete_employee(name)
+    except (
+        EmployeeDirectoryConflictError,
+        EmployeeDirectoryError,
+        VaEmployeeDirectoryCommandError,
+        EmployeeValidationError,
+        EmployeeInUseError,
+    ) as exc:
+        if isinstance(exc, EmployeeDirectoryConflictError):
+            return _employee_update_error(exc)
         return redirect(public_url_for("va_schedule_manager.settings.employees", delete=name, error=str(exc)))
-    return redirect(public_url_for("va_schedule_manager.settings.employees", message="Сотрудник удален."))
+    message = "Сотрудник исключен из VA." if directory_managed else "Сотрудник удален."
+    return redirect(public_url_for("va_schedule_manager.settings.employees", message=message))
 
 
 @settings_bp.post("/employees/delete-from-schedules")
 def delete_employee_from_schedules():
-    if is_va_employee_directory_managed():
-        return redirect(
-            public_url_for(
-                "va_schedule_manager.settings.employees",
-                error="Удаление сотрудников выполняется в центральном справочнике СУП.",
-            )
-        )
-    service = _employee_service()
+    directory_managed = is_va_employee_directory_managed()
+    service = _legacy_employee_service() if directory_managed else _employee_service()
     name = request.form.get("name", "")
     try:
         output_path = service.delete_employee_with_schedule_cleanup(name)
-    except (EmployeeValidationError, EmployeeInUseError) as exc:
+        if directory_managed:
+            _disable_va_directory_membership(name)
+    except (
+        EmployeeDirectoryConflictError,
+        EmployeeDirectoryError,
+        VaEmployeeDirectoryCommandError,
+        EmployeeValidationError,
+        EmployeeInUseError,
+    ) as exc:
+        if isinstance(exc, EmployeeDirectoryConflictError):
+            return _employee_update_error(exc)
         return redirect(public_url_for("va_schedule_manager.settings.employees", delete=name, error=str(exc)))
     return redirect(
         public_url_for(

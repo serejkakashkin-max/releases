@@ -145,7 +145,11 @@ def csrf_protect_request():
     if request.method not in ADMIN_MUTATION_METHODS:
         return None
     expected = str(session.get("sup_admin_csrf_token") or "")
-    supplied = str(request.headers.get("X-CSRF-Token") or "").strip()
+    supplied = str(
+        request.headers.get("X-CSRF-Token")
+        or request.form.get("_csrf_token")
+        or ""
+    ).strip()
     if expected and supplied and hmac.compare_digest(supplied, expected):
         return None
     return jsonify({"success": False, "error": "CSRF token missing or invalid."}), 403
