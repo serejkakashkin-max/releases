@@ -7,13 +7,20 @@
 {% block page_subtitle %}Справочник сотрудников{% endblock %}
 
 {% block content %}
+  {% if employee_directory_managed %}
+    <div class="notice notice-info">
+      ФИО, email, телефон и локация управляются в центральном справочнике СУП. Здесь сохраняются настройки графика: компетенции, статус и готовность к сверхурочной работе.
+    </div>
+  {% endif %}
   <section class="panel table-panel employee-table-panel">
     {% call section_header("Список сотрудников", none) %}
       <div class="section-meta">
         <span class="meta-pill">Активных {{ active_count }}</span>
         <span class="meta-pill">Всего {{ employees|length }}</span>
       </div>
-      <a class="button button-light button-add-compact" href="{{ va_url_for('va_schedule_manager.settings.employees', add='1') }}" data-modal-trigger data-focus-key="employee-add">+</a>
+      {% if not employee_directory_managed %}
+        <a class="button button-light button-add-compact" href="{{ va_url_for('va_schedule_manager.settings.employees', add='1') }}" data-modal-trigger data-focus-key="employee-add">+</a>
+      {% endif %}
     {% endcall %}
 
     <div class="table-wrap settings-table-wrap employees-table-wrap">
@@ -35,18 +42,22 @@
             {% set row_location = employee.location or "moscow" %}
             <tr>
               <td>
-                <form class="inline-edit-form" method="post" action="{{ va_url_for('va_schedule_manager.settings.quick_update_employee') }}" data-auto-submit-form>
-                  <input type="hidden" name="original_name" value="{{ employee.name }}">
-                  <input class="inline-field inline-name-field" name="name" required value="{{ employee.name }}" data-auto-submit-control>
-                  <input type="hidden" name="email" value="{{ employee.email }}">
-                  <input type="hidden" name="phone" value="{{ employee.phone }}">
-                  <input type="hidden" name="status" value="{{ employee.status }}">
-                  <input type="hidden" name="location" value="{{ row_location }}">
-                  <input type="hidden" name="overtime_ready" value="{{ '1' if employee.overtime_ready else '0' }}">
-                  {% for competency_code in employee.competencies %}
-                    <input type="hidden" name="competencies" value="{{ competency_code }}">
-                  {% endfor %}
-                </form>
+                {% if employee_directory_managed %}
+                  <span>{{ employee.name }}</span>
+                {% else %}
+                  <form class="inline-edit-form" method="post" action="{{ va_url_for('va_schedule_manager.settings.quick_update_employee') }}" data-auto-submit-form>
+                    <input type="hidden" name="original_name" value="{{ employee.name }}">
+                    <input class="inline-field inline-name-field" name="name" required value="{{ employee.name }}" data-auto-submit-control>
+                    <input type="hidden" name="email" value="{{ employee.email }}">
+                    <input type="hidden" name="phone" value="{{ employee.phone }}">
+                    <input type="hidden" name="status" value="{{ employee.status }}">
+                    <input type="hidden" name="location" value="{{ row_location }}">
+                    <input type="hidden" name="overtime_ready" value="{{ '1' if employee.overtime_ready else '0' }}">
+                    {% for competency_code in employee.competencies %}
+                      <input type="hidden" name="competencies" value="{{ competency_code }}">
+                    {% endfor %}
+                  </form>
+                {% endif %}
               </td>
               <td>
                 <form class="inline-edit-form" method="post" action="{{ va_url_for('va_schedule_manager.settings.quick_update_employee') }}" data-auto-submit-form>
@@ -91,6 +102,9 @@
                 </form>
               </td>
               <td>
+                {% if employee_directory_managed %}
+                  <span>{{ employee.email or "Не указан" }}</span>
+                {% else %}
                 <form class="inline-edit-form" method="post" action="{{ va_url_for('va_schedule_manager.settings.quick_update_employee') }}" data-auto-submit-form>
                   <input type="hidden" name="original_name" value="{{ employee.name }}">
                   <input type="hidden" name="name" value="{{ employee.name }}">
@@ -103,8 +117,12 @@
                     <input type="hidden" name="competencies" value="{{ competency_code }}">
                   {% endfor %}
                 </form>
+                {% endif %}
               </td>
               <td>
+                {% if employee_directory_managed %}
+                  <span>{{ employee.phone or "Не указан" }}</span>
+                {% else %}
                 <form class="inline-edit-form" method="post" action="{{ va_url_for('va_schedule_manager.settings.quick_update_employee') }}" data-auto-submit-form>
                   <input type="hidden" name="original_name" value="{{ employee.name }}">
                   <input type="hidden" name="name" value="{{ employee.name }}">
@@ -117,6 +135,7 @@
                     <input type="hidden" name="competencies" value="{{ competency_code }}">
                   {% endfor %}
                 </form>
+                {% endif %}
               </td>
               <td>
                 <form class="inline-edit-form" method="post" action="{{ va_url_for('va_schedule_manager.settings.quick_update_employee') }}" data-auto-submit-form>
@@ -137,6 +156,9 @@
                 </form>
               </td>
               <td>
+                {% if employee_directory_managed %}
+                  <span>{{ locations.get(row_location, row_location) }}</span>
+                {% else %}
                 <form class="inline-edit-form" method="post" action="{{ va_url_for('va_schedule_manager.settings.quick_update_employee') }}" data-auto-submit-form>
                   <input type="hidden" name="original_name" value="{{ employee.name }}">
                   <input type="hidden" name="name" value="{{ employee.name }}">
@@ -153,6 +175,7 @@
                     <input type="hidden" name="competencies" value="{{ competency_code }}">
                   {% endfor %}
                 </form>
+                {% endif %}
               </td>
               <td>
                 <form class="inline-edit-form" method="post" action="{{ va_url_for('va_schedule_manager.settings.quick_update_employee') }}" data-auto-submit-form>
@@ -174,7 +197,11 @@
               </td>
               <td>
                 <div class="row-actions">
-                  <a class="button button-danger-soft button-icon" href="{{ va_url_for('va_schedule_manager.settings.employees', delete=employee.name) }}" data-modal-trigger data-focus-key="employee-delete-{{ loop.index }}">Удалить</a>
+                  {% if not employee_directory_managed %}
+                    <a class="button button-danger-soft button-icon" href="{{ va_url_for('va_schedule_manager.settings.employees', delete=employee.name) }}" data-modal-trigger data-focus-key="employee-delete-{{ loop.index }}">Удалить</a>
+                  {% else %}
+                    <span class="meta-pill">СУП</span>
+                  {% endif %}
                 </div>
               </td>
             </tr>

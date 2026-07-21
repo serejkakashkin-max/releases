@@ -1,6 +1,9 @@
 from flask import Blueprint, redirect, render_template, request
 
 from VA.schedule_manager.url_helpers import public_url_for
+from VA.schedule_manager.integrations.employee_directory_adapter import (
+    is_va_employee_directory_managed,
+)
 
 from VA.schedule_manager.repositories.competency_repository import CompetencyRepository
 from VA.schedule_manager.repositories.employee_repository import EmployeeRepository
@@ -49,6 +52,40 @@ def _calendar_integration_service() -> CalendarIntegrationService:
     return CalendarIntegrationService(IntegrationSettingsRepository())
 
 
+def _update_employee_from_request(service: EmployeeService) -> None:
+    original_name = request.form.get("original_name", "")
+    name = request.form.get("name", "")
+    email = request.form.get("email", "")
+    phone = request.form.get("phone", "")
+    location = request.form.get("location", "moscow")
+    if is_va_employee_directory_managed():
+        current = next(
+            (
+                employee
+                for employee in service.repository.load_all_legacy()
+                if employee.name == original_name
+            ),
+            None,
+        )
+        if current is None:
+            raise EmployeeValidationError("Сотрудник не найден.")
+        name = current.name
+        email = current.email
+        phone = current.phone
+        location = current.location or "moscow"
+
+    service.update_employee(
+        original_name,
+        name,
+        email,
+        phone,
+        request.form.get("status", "active"),
+        location,
+        request.form.getlist("competencies"),
+        request.form.get("overtime_ready", "1") == "1",
+    )
+
+
 @settings_bp.get("/")
 def index():
     return redirect(public_url_for("va_schedule_manager.settings.employees"))
@@ -58,6 +95,7 @@ def index():
 def employees():
     service = _employee_service()
     all_employees = service.list_employees()
+    directory_managed = is_va_employee_directory_managed()
     delete_name = request.args.get("delete")
     delete_employee = next((employee for employee in all_employees if employee.name == delete_name), None)
     delete_usage = service.find_schedule_usage(delete_name) if delete_employee else []
@@ -69,7 +107,8 @@ def employees():
         locations=EMPLOYEE_LOCATIONS,
         overtime_ready_options=OVERTIME_READY_OPTIONS,
         competencies=_competency_service().list_competencies(),
-        show_add_employee=request.args.get("add") == "1",
+        show_add_employee=request.args.get("add") == "1" and not directory_managed,
+        employee_directory_managed=directory_managed,
         delete_employee=delete_employee,
         delete_usage=delete_usage,
         user_messages=build_user_messages(
@@ -83,6 +122,13 @@ def employees():
 
 @settings_bp.post("/employees")
 def add_employee():
+    if is_va_employee_directory_managed():
+        return redirect(
+            public_url_for(
+                "va_schedule_manager.settings.employees",
+                error="Добавление сотрудников выполняется в центральном справочнике СУП.",
+            )
+        )
     service = _employee_service()
     try:
         service.add_employee(
@@ -103,16 +149,7 @@ def add_employee():
 def update_employee():
     service = _employee_service()
     try:
-        service.update_employee(
-            request.form.get("original_name", ""),
-            request.form.get("name", ""),
-            request.form.get("email", ""),
-            request.form.get("phone", ""),
-            request.form.get("status", "active"),
-            request.form.get("location", "moscow"),
-            request.form.getlist("competencies"),
-            request.form.get("overtime_ready", "1") == "1",
-        )
+        _update_employee_from_request(service)
     except EmployeeValidationError as exc:
         return redirect(public_url_for("va_schedule_manager.settings.employees", error=str(exc)))
     return redirect(public_url_for("va_schedule_manager.settings.employees", message="Сотрудник обновлен."))
@@ -183,16 +220,7 @@ def change_status():
 def quick_update_employee():
     service = _employee_service()
     try:
-        service.update_employee_fields(
-            request.form.get("original_name", ""),
-            request.form.get("name", ""),
-            request.form.get("email", ""),
-            request.form.get("phone", ""),
-            request.form.get("status", "active"),
-            request.form.get("location", "moscow"),
-            request.form.getlist("competencies"),
-            request.form.get("overtime_ready", "1") == "1",
-        )
+        _update_employee_from_request(service)
     except EmployeeValidationError as exc:
         return redirect(public_url_for("va_schedule_manager.settings.employees", error=str(exc)))
     return redirect(public_url_for("va_schedule_manager.settings.employees", message="Сотрудник обновлен."))
@@ -200,6 +228,13 @@ def quick_update_employee():
 
 @settings_bp.post("/employees/delete")
 def delete_employee():
+    if is_va_employee_directory_managed():
+        return redirect(
+            public_url_for(
+                "va_schedule_manager.settings.employees",
+                error="Удаление сотрудников выполняется в центральном справочнике СУП.",
+            )
+        )
     service = _employee_service()
     name = request.form.get("name", "")
     try:
@@ -211,6 +246,13 @@ def delete_employee():
 
 @settings_bp.post("/employees/delete-from-schedules")
 def delete_employee_from_schedules():
+    if is_va_employee_directory_managed():
+        return redirect(
+            public_url_for(
+                "va_schedule_manager.settings.employees",
+                error="Удаление сотрудников выполняется в центральном справочнике СУП.",
+            )
+        )
     service = _employee_service()
     name = request.form.get("name", "")
     try:

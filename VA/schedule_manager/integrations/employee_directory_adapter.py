@@ -15,7 +15,7 @@ _last_diagnostic_key: Tuple[str, str] | None = None
 
 
 def apply_employee_directory_mode(employees: Iterable[Employee]) -> List[Employee]:
-    """Compare VA identities while preserving the original runtime records."""
+    """Apply central common fields without changing VA schedule identity keys."""
     legacy_employees = list(employees)
     mode = get_employee_directory_consumer_mode("va_schedule_manager")
     if mode == "legacy":
@@ -23,9 +23,53 @@ def apply_employee_directory_mode(employees: Iterable[Employee]) -> List[Employe
 
     comparison = compare_va_employees(legacy_employees)
     _log_comparison_once(mode, comparison)
+    if mode != "directory" or not comparison["matches"]:
+        return legacy_employees
 
-    # In-memory central projection is a separate step after compare observation.
-    return legacy_employees
+    snapshot = read_directory_snapshot()
+    central_employees = _central_va_employees(snapshot.payload or {})
+    return [
+        _merge_central_common_fields(legacy_employee, central_employee)
+        for legacy_employee, central_employee in zip(legacy_employees, central_employees)
+    ]
+
+
+def prepare_va_records_for_save(
+    employees: Iterable[Employee],
+    legacy_employees: Iterable[Employee],
+) -> List[Employee]:
+    """Keep central-owned values out of VA JSON while saving VA-only fields."""
+    incoming = list(employees)
+    legacy = list(legacy_employees)
+    if get_employee_directory_consumer_mode("va_schedule_manager") != "directory":
+        return incoming
+
+    incoming_by_name = {_normalize(employee.name): employee for employee in incoming}
+    result: List[Employee] = []
+    for current in legacy:
+        updated = incoming_by_name.get(_normalize(current.name))
+        if updated is None:
+            # Membership and identity are managed by the central directory.
+            result.append(current)
+            continue
+        result.append(
+            Employee(
+                name=current.name,
+                email=current.email,
+                phone=current.phone,
+                status=updated.status,
+                personnel_number=current.personnel_number,
+                role=updated.role,
+                location=current.location,
+                competencies=updated.competencies,
+                overtime_ready=updated.overtime_ready,
+            )
+        )
+    return result
+
+
+def is_va_employee_directory_managed() -> bool:
+    return get_employee_directory_consumer_mode("va_schedule_manager") == "directory"
 
 
 def get_va_schedule_manager_adapter_readiness(
@@ -41,7 +85,7 @@ def get_va_schedule_manager_adapter_readiness(
     return {
         "ready": ready,
         "reason": reason,
-        "allowed_modes": ["legacy", "compare"] if ready else ["legacy"],
+        "allowed_modes": ["legacy", "compare", "directory"] if ready else ["legacy"],
         "comparison": comparison,
     }
 
@@ -61,15 +105,7 @@ def compare_va_employees(employees: Iterable[Employee]) -> Dict[str, Any]:
             "common_field_mismatch_count": 0,
         }
 
-    central_employees = sorted(
-        [
-            employee
-            for employee in snapshot.payload["employees"]
-            if employee["enabled"]
-            and employee["memberships"]["va_schedule_manager"]["enabled"]
-        ],
-        key=lambda employee: employee["memberships"]["va_schedule_manager"]["order"],
-    )
+    central_employees = _central_va_employees(snapshot.payload)
     resolved_ids: List[str] = []
     unresolved_count = 0
     ambiguous_count = 0
@@ -122,6 +158,37 @@ def _identity_values(employee: Dict[str, Any]) -> set[str]:
     )
     values.discard("")
     return values
+
+
+def _central_va_employees(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    return sorted(
+        [
+            employee
+            for employee in payload.get("employees", [])
+            if employee["enabled"]
+            and employee["memberships"]["va_schedule_manager"]["enabled"]
+        ],
+        key=lambda employee: employee["memberships"]["va_schedule_manager"]["order"],
+    )
+
+
+def _merge_central_common_fields(
+    legacy: Employee,
+    central: Dict[str, Any],
+) -> Employee:
+    central_emails = list(central.get("emails") or [])
+    return Employee(
+        # VA schedule rows keep using their existing, already persisted name.
+        name=legacy.name,
+        email=central_emails[0] if central_emails else legacy.email,
+        phone=central.get("phone") or legacy.phone,
+        status=legacy.status,
+        personnel_number=central.get("personnel_number") or legacy.personnel_number,
+        role=legacy.role,
+        location=central.get("location") or legacy.location,
+        competencies=legacy.competencies,
+        overtime_ready=legacy.overtime_ready,
+    )
 
 
 def _common_field_mismatches(legacy: Employee, central: Dict[str, Any]) -> int:

@@ -26,4 +26,9 @@ class EmployeeRepository:
         return [Employee.from_dict(item) for item in data.get("employees", [])]
 
     def save_all(self, employees: List[Employee]) -> None:
-        self.store.save({"employees": [employee.to_dict() for employee in employees]})
+        from VA.schedule_manager.integrations.employee_directory_adapter import (
+            prepare_va_records_for_save,
+        )
+
+        records = prepare_va_records_for_save(employees, self.load_all_legacy())
+        self.store.save({"employees": [employee.to_dict() for employee in records]})
