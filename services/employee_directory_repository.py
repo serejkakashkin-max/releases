@@ -185,7 +185,7 @@ def normalize_employee(raw_employee: Any) -> Dict[str, Any]:
             "release_zni": _normalize_enabled_membership(raw_memberships.get("release_zni")),
             "duty_dashboard": _normalize_dashboard_membership(raw_memberships.get("duty_dashboard")),
             "release_notifications": _normalize_enabled_membership(raw_memberships.get("release_notifications")),
-            "va_schedule_manager": _normalize_enabled_membership(raw_memberships.get("va_schedule_manager")),
+            "va_schedule_manager": _normalize_ordered_membership(raw_memberships.get("va_schedule_manager")),
         },
         "source_refs": source_refs,
     }
@@ -216,6 +216,7 @@ def validate_directory(payload: Any) -> List[Dict[str, str]]:
     active_emails: Dict[str, int] = {}
     active_aliases: Dict[tuple, int] = {}
     release_orders: Dict[int, int] = {}
+    va_orders: Dict[int, int] = {}
     dashboard_orders = {"primary": {}, "extra": {}}
 
     for index, employee in enumerate(employees):
@@ -331,10 +332,22 @@ def validate_directory(payload: Any) -> List[Dict[str, str]]:
                 active_release_names[key] = index
             _validate_order(release.get("order"), f"{path}.memberships.release_monitor.order", release_orders, errors)
 
-        for membership_name in ("release_zni", "release_notifications", "va_schedule_manager"):
+        for membership_name in ("release_zni", "release_notifications"):
             membership = memberships.get(membership_name)
             if not _valid_membership_shape(membership, {"enabled"}):
                 errors.append(_error(f"{path}.memberships.{membership_name}", "invalid"))
+
+        va_membership = memberships.get("va_schedule_manager")
+        if not _valid_membership_shape(va_membership, {"enabled", "order"}):
+            errors.append(_error(f"{path}.memberships.va_schedule_manager", "invalid"))
+            va_membership = {}
+        if va_membership.get("enabled") is True:
+            _validate_order(
+                va_membership.get("order"),
+                f"{path}.memberships.va_schedule_manager.order",
+                va_orders,
+                errors,
+            )
 
         notifications = memberships.get("release_notifications") or {}
         if notifications.get("enabled") is True and not local_emails:

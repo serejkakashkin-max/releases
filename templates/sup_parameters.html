@@ -1765,7 +1765,7 @@
           release_zni: { enabled: false },
           duty_dashboard: { enabled: false, role: "none", order: null },
           release_notifications: { enabled: false },
-          va_schedule_manager: { enabled: false }
+          va_schedule_manager: { enabled: false, order: null }
         },
         source_refs: []
       };
@@ -1865,6 +1865,7 @@
               </div>
               <div class="directory-membership">
                 <label><input type="checkbox" data-directory-va-enabled ${memberships.va_schedule_manager?.enabled ? "checked" : ""}> VA Schedule Manager</label>
+                <input type="number" min="0" data-directory-va-order value="${memberships.va_schedule_manager?.order == null ? "" : Number(memberships.va_schedule_manager.order)}" placeholder="order" style="margin-top:6px;">
               </div>
             </div>
           </div>`;
@@ -1903,7 +1904,12 @@
               order: dashboardEnabled ? optionalInteger(row.querySelector("[data-directory-dashboard-order]").value) : null
             },
             release_notifications: { enabled: row.querySelector("[data-directory-notifications-enabled]").checked },
-            va_schedule_manager: { enabled: row.querySelector("[data-directory-va-enabled]").checked }
+            va_schedule_manager: {
+              enabled: row.querySelector("[data-directory-va-enabled]").checked,
+              order: row.querySelector("[data-directory-va-enabled]").checked
+                ? optionalInteger(row.querySelector("[data-directory-va-order]").value)
+                : null
+            }
           },
           source_refs: Array.isArray(current.source_refs) ? current.source_refs : []
         };

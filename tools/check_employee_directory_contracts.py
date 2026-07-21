@@ -207,9 +207,11 @@ def dashboard_order(employee: Dict[str, Any]) -> int:
 
 def central_va_source_names(employees: Sequence[Dict[str, Any]]) -> List[str]:
     result = []
-    for employee in employees:
-        if not employee["memberships"]["va_schedule_manager"]["enabled"]:
-            continue
+    va_employees = sorted(
+        [item for item in employees if item["memberships"]["va_schedule_manager"]["enabled"]],
+        key=lambda item: item["memberships"]["va_schedule_manager"]["order"],
+    )
+    for employee in va_employees:
         refs = [
             normalize_text(ref).split(":", 2)[2]
             for ref in employee["source_refs"]

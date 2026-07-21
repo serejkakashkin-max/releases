@@ -432,20 +432,29 @@ def build_proposal(source_result: Dict[str, Any], resolutions: Dict[str, Any]) -
             if not decision_resolves(conflict, identity_decisions):
                 unresolved.append(conflict)
 
-    release_indexes = [index for index, item in enumerate(fragments) if item.release_name]
-    full_indexes = [index for index, item in enumerate(fragments) if item.full_name and not item.release_name]
-    for release_index in release_indexes:
-        release_fragment = fragments[release_index]
+    short_identity_indexes = [
+        index
+        for index, item in enumerate(fragments)
+        if is_abbreviated_identity(item.release_name or item.full_name)
+    ]
+    full_indexes = [
+        index
+        for index, item in enumerate(fragments)
+        if item.full_name and not is_abbreviated_identity(item.full_name)
+    ]
+    for short_index in short_identity_indexes:
+        short_fragment = fragments[short_index]
+        short_value = short_fragment.release_name or short_fragment.full_name
         candidate_indexes = [
             full_index
             for full_index in full_indexes
-            if surname_initials_key(release_fragment.release_name)
-            and surname_initials_key(release_fragment.release_name) == surname_initials_key(fragments[full_index].full_name)
-            and union.find(release_index) != union.find(full_index)
+            if surname_initials_key(short_value)
+            and surname_initials_key(short_value) == surname_initials_key(fragments[full_index].full_name)
+            and union.find(short_index) != union.find(full_index)
         ]
         if not candidate_indexes:
             continue
-        refs = [release_fragment.source_ref] + [fragments[index].source_ref for index in candidate_indexes]
+        refs = [short_fragment.source_ref] + [fragments[index].source_ref for index in candidate_indexes]
         conflict = make_conflict("identity_match_suggested", refs, blocking=True)
         conflicts.append(conflict)
         decision = identity_decisions.get(conflict["conflict_id"])
@@ -524,7 +533,11 @@ def add_safe_resolutions(unresolved: Iterable[Dict[str, Any]], resolutions: Dict
         if conflict_type == "full_name_difference":
             identity_keys = {surname_initials_key(source_ref_value(ref)) for ref in refs}
             identity_keys.discard("")
-            dashboard_refs = [ref for ref in refs if ref.startswith("config:DASHBOARD_ASSIGNEES:")]
+            dashboard_refs = [
+                ref
+                for ref in refs
+                if ref.startswith(("config:DASHBOARD_ASSIGNEES:", "config:DASHBOARD_EXTRA_ASSIGNEES:"))
+            ]
             has_short_source = any(
                 ref.startswith(
                     (
@@ -917,10 +930,10 @@ def va_fragments(rows: List[Dict[str, Any]]) -> List[Fragment]:
             location=row["location"],
             personnel_number=row["personnel_number"],
             aliases=[{"value": row["name"], "type": "va", "jira_domain": ""}],
-            memberships={"va_schedule_manager": {"enabled": True}},
+            memberships={"va_schedule_manager": {"enabled": True, "order": order}},
             diagnostics={"status": row["status"]},
         )
-        for row in rows
+        for order, row in enumerate(rows)
     ]
 
 
@@ -954,7 +967,7 @@ def default_memberships() -> Dict[str, Dict[str, Any]]:
         "release_zni": {"enabled": False},
         "duty_dashboard": {"enabled": False, "role": "none", "order": None},
         "release_notifications": {"enabled": False},
-        "va_schedule_manager": {"enabled": False},
+        "va_schedule_manager": {"enabled": False, "order": None},
     }
 
 
@@ -1047,6 +1060,13 @@ def surname_initials_key(value: str) -> str:
         if len(initials) == 2:
             break
     return surname + ":" + "".join(initials[:2])
+
+
+def is_abbreviated_identity(value: Any) -> bool:
+    clean = normalize_text(value)
+    if not clean:
+        return False
+    return "." in clean or len(clean.split()) < 3
 
 
 def strip_jira_suffix(value: str) -> str:
