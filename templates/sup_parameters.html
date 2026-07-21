@@ -1791,6 +1791,26 @@
       return normalized === "" ? null : Number(normalized);
     }
 
+    function nextDirectoryOrder(enabledSelector, orderSelector, role = null) {
+      const orders = Array.from(document.querySelectorAll("[data-directory-employee]"))
+        .filter((row) => {
+          const enabled = row.querySelector(enabledSelector);
+          if (!enabled?.checked) return false;
+          if (role === null) return true;
+          return row.querySelector("[data-directory-dashboard-role]")?.value === role;
+        })
+        .map((row) => optionalInteger(row.querySelector(orderSelector)?.value))
+        .filter((value) => Number.isInteger(value) && value >= 0);
+      return orders.length ? Math.max(...orders) + 1 : 0;
+    }
+
+    function fillDirectoryOrder(target, orderSelector, enabledSelector, role = null) {
+      const row = target.closest("[data-directory-employee]");
+      const orderInput = row?.querySelector(orderSelector);
+      if (!orderInput || String(orderInput.value || "").trim() !== "") return;
+      orderInput.value = String(nextDirectoryOrder(enabledSelector, orderSelector, role));
+    }
+
     function renderEmployeeDirectory(payload) {
       const directory = payload.directory || {};
       state.directory = {
@@ -1810,7 +1830,7 @@
       $("saveDirectoryBtn").disabled = !writable;
       $("addDirectoryEmployeeBtn").disabled = !writable;
       $("directoryStatusText").textContent = writable
-        ? "Справочник готов к отдельному редактированию. Рабочие сервисы остаются в legacy-режиме."
+        ? "Справочник готов к редактированию. Активные режимы потребителей отображаются ниже."
         : "Справочник нельзя редактировать до явного восстановления его состояния.";
       $("directoryStatusText").className = `status ${writable ? "success" : "error"}`;
       renderDirectoryEmployees();
@@ -1964,7 +1984,7 @@
           })
         });
         renderEmployeeDirectory(payload);
-        setStatus("Центральный справочник сохранён. Рабочие сервисы остаются в legacy-режиме.", "success");
+        setStatus("Центральный справочник сохранён.", "success");
       } catch (error) {
         const details = Array.isArray(error.payload?.errors)
           ? error.payload.errors.map((item) => typeof item === "string" ? item : `${item.path}: ${item.code}`).join("\n")
@@ -1990,7 +2010,7 @@
         state.directory.consumers = clone(payload.consumers || consumers);
         state.directory.readiness = clone(payload.readiness || state.directory.readiness);
         renderDirectoryConsumerModes();
-        setStatus("Режимы сохранены: все потребители остаются legacy.", "success");
+        setStatus("Режимы потребителей сохранены.", "success");
       } catch (error) {
         setStatus(error.message, "error");
       }
@@ -2378,6 +2398,51 @@
     });
 
     document.addEventListener("change", (event) => {
+      if (event.target.matches("[data-directory-release-enabled]")) {
+        const orderInput = event.target.closest("[data-directory-employee]")?.querySelector("[data-directory-release-order]");
+        if (event.target.checked) {
+          fillDirectoryOrder(
+            event.target,
+            "[data-directory-release-order]",
+            "[data-directory-release-enabled]"
+          );
+        } else if (orderInput) {
+          orderInput.value = "";
+        }
+        return;
+      }
+      if (event.target.matches("[data-directory-va-enabled]")) {
+        const orderInput = event.target.closest("[data-directory-employee]")?.querySelector("[data-directory-va-order]");
+        if (event.target.checked) {
+          fillDirectoryOrder(
+            event.target,
+            "[data-directory-va-order]",
+            "[data-directory-va-enabled]"
+          );
+        } else if (orderInput) {
+          orderInput.value = "";
+        }
+        return;
+      }
+      if (event.target.matches("[data-directory-dashboard-enabled], [data-directory-dashboard-role]")) {
+        const row = event.target.closest("[data-directory-employee]");
+        const enabled = row?.querySelector("[data-directory-dashboard-enabled]")?.checked;
+        const role = row?.querySelector("[data-directory-dashboard-role]")?.value;
+        const orderInput = row?.querySelector("[data-directory-dashboard-order]");
+        if (!enabled && orderInput) orderInput.value = "";
+        if (event.target.matches("[data-directory-dashboard-role]") && orderInput) {
+          orderInput.value = "";
+        }
+        if (enabled && ["primary", "extra"].includes(role)) {
+          fillDirectoryOrder(
+            event.target,
+            "[data-directory-dashboard-order]",
+            "[data-directory-dashboard-enabled]",
+            role
+          );
+        }
+        return;
+      }
       const employeeToggle = event.target.closest("[data-toggle-employee]");
       if (employeeToggle) {
         const row = state.config.automation.release_monitor_responsible_email.employee_recipients[Number(employeeToggle.dataset.toggleEmployee)];

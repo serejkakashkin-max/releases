@@ -23,15 +23,13 @@ def apply_employee_directory_mode(employees: Iterable[Employee]) -> List[Employe
 
     comparison = compare_va_employees(legacy_employees)
     _log_comparison_once(mode, comparison)
-    if mode != "directory" or not comparison["matches"]:
+    if mode != "directory" or not comparison["projection_ready"]:
         return legacy_employees
 
     snapshot = read_directory_snapshot()
     central_employees = _central_va_employees(snapshot.payload or {})
-    return [
-        _merge_central_common_fields(legacy_employee, central_employee)
-        for legacy_employee, central_employee in zip(legacy_employees, central_employees)
-    ]
+    projection = _build_directory_projection(legacy_employees, central_employees)
+    return projection if projection is not None else legacy_employees
 
 
 def prepare_va_records_for_save(
@@ -45,6 +43,7 @@ def prepare_va_records_for_save(
         return incoming
 
     incoming_by_name = {_normalize(employee.name): employee for employee in incoming}
+    consumed_names: set[str] = set()
     result: List[Employee] = []
     for current in legacy:
         updated = incoming_by_name.get(_normalize(current.name))
@@ -52,6 +51,7 @@ def prepare_va_records_for_save(
             # Membership and identity are managed by the central directory.
             result.append(current)
             continue
+        consumed_names.add(_normalize(updated.name))
         result.append(
             Employee(
                 name=current.name,
@@ -65,6 +65,36 @@ def prepare_va_records_for_save(
                 overtime_ready=updated.overtime_ready,
             )
         )
+
+    snapshot = read_directory_snapshot()
+    if snapshot.status != "available" or not snapshot.payload:
+        return result
+    comparison = compare_va_employees(legacy)
+    if not comparison["projection_ready"]:
+        return result
+    central_employees = _central_va_employees(snapshot.payload)
+    projection = _build_directory_projection(legacy, central_employees) or []
+    central_projection_names = {_normalize(employee.name) for employee in projection}
+    for updated in incoming:
+        normalized_name = _normalize(updated.name)
+        if normalized_name in consumed_names or normalized_name not in central_projection_names:
+            continue
+        # Persist only a VA shadow with VA-specific defaults/settings. Central
+        # contacts continue to be projected on every read.
+        result.append(
+            Employee(
+                name=updated.name,
+                email="",
+                phone="",
+                status=updated.status,
+                personnel_number=None,
+                role=updated.role,
+                location=updated.location or "moscow",
+                competencies=updated.competencies,
+                overtime_ready=updated.overtime_ready,
+            )
+        )
+        consumed_names.add(normalized_name)
     return result
 
 
@@ -76,11 +106,19 @@ def get_va_schedule_manager_adapter_readiness(
     employees: Iterable[Employee],
 ) -> Dict[str, Any]:
     comparison = compare_va_employees(employees)
-    ready = bool(comparison["matches"])
-    reason = "compare_ready"
-    if ready and comparison["common_field_mismatch_count"]:
-        reason = "compare_ready_with_common_field_differences"
-    elif not ready:
+    ready = bool(comparison["projection_ready"])
+    mode = get_employee_directory_consumer_mode("va_schedule_manager")
+    if ready and comparison["central_only_count"]:
+        reason = "directory_active_with_central_additions" if mode == "directory" else "compare_ready_with_central_additions"
+    elif ready and comparison["legacy_only_count"]:
+        reason = "directory_active_with_central_removals" if mode == "directory" else "compare_ready_with_central_removals"
+    elif ready and comparison["order_mismatch"]:
+        reason = "directory_active_with_central_order" if mode == "directory" else "compare_ready_with_central_order"
+    elif ready and comparison["common_field_mismatch_count"]:
+        reason = "directory_active_with_common_field_differences" if mode == "directory" else "compare_ready_with_common_field_differences"
+    elif ready:
+        reason = "directory_active" if mode == "directory" else "compare_ready"
+    else:
         reason = comparison["reason"]
     return {
         "ready": ready,
@@ -103,6 +141,10 @@ def compare_va_employees(employees: Iterable[Employee]) -> Dict[str, Any]:
             "unresolved_count": 0,
             "ambiguous_count": 0,
             "common_field_mismatch_count": 0,
+            "central_only_count": 0,
+            "legacy_only_count": 0,
+            "order_mismatch": False,
+            "projection_ready": False,
         }
 
     central_employees = _central_va_employees(snapshot.payload)
@@ -131,6 +173,18 @@ def compare_va_employees(employees: Iterable[Employee]) -> Dict[str, Any]:
         )
 
     expected_ids = [employee["employee_id"] for employee in central_employees]
+    central_only_count = len(set(expected_ids) - set(resolved_ids))
+    legacy_only_count = unresolved_count
+    order_mismatch = (
+        not central_only_count
+        and not legacy_only_count
+        and resolved_ids != expected_ids
+    )
+    projection_ready = (
+        not ambiguous_count
+        and len(resolved_ids) == len(set(resolved_ids))
+        and not (central_only_count and legacy_only_count)
+    )
     matches = (
         not unresolved_count
         and not ambiguous_count
@@ -140,12 +194,22 @@ def compare_va_employees(employees: Iterable[Employee]) -> Dict[str, Any]:
     return {
         "matches": matches,
         "status": "available",
-        "reason": "exact_identity_order_match" if matches else "identity_or_order_mismatch",
+        "reason": _comparison_reason(
+            matches=matches,
+            projection_ready=projection_ready,
+            central_only_count=central_only_count,
+            legacy_only_count=legacy_only_count,
+            order_mismatch=order_mismatch,
+        ),
         "legacy_count": len(legacy_employees),
         "directory_count": len(central_employees),
         "unresolved_count": unresolved_count,
         "ambiguous_count": ambiguous_count,
         "common_field_mismatch_count": common_field_mismatch_count,
+        "central_only_count": central_only_count,
+        "legacy_only_count": legacy_only_count,
+        "order_mismatch": order_mismatch,
+        "projection_ready": projection_ready,
     }
 
 
@@ -156,8 +220,67 @@ def _identity_values(employee: Dict[str, Any]) -> set[str]:
         for alias in employee["aliases"]
         if alias["type"] in {"full", "schedule", "va"}
     )
+    values.update(
+        _normalize(source_ref.split(":", 2)[2])
+        for source_ref in employee.get("source_refs", [])
+        if normalize_text(source_ref).startswith("va:employees:")
+        and len(source_ref.split(":", 2)) == 3
+    )
     values.discard("")
     return values
+
+
+def _comparison_reason(
+    *,
+    matches: bool,
+    projection_ready: bool,
+    central_only_count: int,
+    legacy_only_count: int,
+    order_mismatch: bool,
+) -> str:
+    if matches:
+        return "exact_identity_order_match"
+    if central_only_count and legacy_only_count:
+        return "possible_identity_replacement"
+    if not projection_ready:
+        return "ambiguous_identity_match"
+    if central_only_count:
+        return "central_employees_added"
+    if legacy_only_count:
+        return "central_employees_removed"
+    if order_mismatch:
+        return "central_order_changed"
+    return "compatible_projection"
+
+
+def _build_directory_projection(
+    legacy_employees: List[Employee],
+    central_employees: List[Dict[str, Any]],
+) -> List[Employee] | None:
+    used_legacy_indexes: set[int] = set()
+    projection: List[Employee] = []
+    for central_employee in central_employees:
+        candidates = [
+            index
+            for index, legacy_employee in enumerate(legacy_employees)
+            if _normalize(legacy_employee.name) in _identity_values(central_employee)
+        ]
+        if len(candidates) > 1:
+            return None
+        if candidates:
+            legacy_index = candidates[0]
+            if legacy_index in used_legacy_indexes:
+                return None
+            used_legacy_indexes.add(legacy_index)
+            projection.append(
+                _merge_central_common_fields(
+                    legacy_employees[legacy_index],
+                    central_employee,
+                )
+            )
+            continue
+        projection.append(_new_va_employee(central_employee))
+    return projection
 
 
 def _central_va_employees(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -185,10 +308,46 @@ def _merge_central_common_fields(
         status=legacy.status,
         personnel_number=central.get("personnel_number") or legacy.personnel_number,
         role=legacy.role,
-        location=central.get("location") or legacy.location,
+        location=_va_location(central.get("location"), legacy.location),
         competencies=legacy.competencies,
         overtime_ready=legacy.overtime_ready,
     )
+
+
+def _new_va_employee(central: Dict[str, Any]) -> Employee:
+    aliases = central.get("aliases") or []
+    preferred_name = next(
+        (
+            normalize_text(alias.get("value"))
+            for alias_type in ("va", "schedule", "full")
+            for alias in aliases
+            if alias.get("type") == alias_type and normalize_text(alias.get("value"))
+        ),
+        normalize_text(central.get("full_name")),
+    )
+    central_emails = list(central.get("emails") or [])
+    return Employee(
+        name=preferred_name,
+        email=central_emails[0] if central_emails else "",
+        phone=central.get("phone") or "",
+        status="active",
+        personnel_number=central.get("personnel_number") or None,
+        role="employee",
+        location=_va_location(central.get("location"), "moscow"),
+        competencies=("support",),
+        overtime_ready=True,
+    )
+
+
+def _va_location(value: Any, fallback: Any) -> str:
+    normalized = _normalize(value)
+    aliases = {
+        "moscow": "moscow",
+        "москва": "moscow",
+        "khabarovsk": "khabarovsk",
+        "хабаровск": "khabarovsk",
+    }
+    return aliases.get(normalized) or aliases.get(_normalize(fallback)) or "moscow"
 
 
 def _common_field_mismatches(legacy: Employee, central: Dict[str, Any]) -> int:

@@ -68,6 +68,15 @@ def _update_employee_from_request(service: EmployeeService) -> None:
             None,
         )
         if current is None:
+            current = next(
+                (
+                    employee
+                    for employee in service.list_employees()
+                    if employee.name == original_name
+                ),
+                None,
+            )
+        if current is None:
             raise EmployeeValidationError("Сотрудник не найден.")
         name = current.name
         email = current.email

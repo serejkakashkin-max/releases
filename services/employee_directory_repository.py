@@ -406,6 +406,44 @@ def get_employee_directory_admin_data(path: Path = EMPLOYEE_DIRECTORY_FILE) -> D
     }
 
 
+def assign_missing_membership_orders(employees: Any) -> Any:
+    """Fill only missing orders; explicit administrator values stay untouched."""
+    if not isinstance(employees, list):
+        return employees
+    result = copy.deepcopy(employees)
+    groups = (
+        ("release_monitor", None),
+        ("va_schedule_manager", None),
+        ("duty_dashboard", "primary"),
+        ("duty_dashboard", "extra"),
+    )
+    for membership_name, role in groups:
+        used_orders = []
+        for employee in result:
+            membership = (employee.get("memberships") or {}).get(membership_name) if isinstance(employee, dict) else None
+            if not isinstance(membership, dict) or membership.get("enabled") is not True:
+                continue
+            if role is not None and membership.get("role") != role:
+                continue
+            order = membership.get("order")
+            if isinstance(order, int) and not isinstance(order, bool) and order >= 0:
+                used_orders.append(order)
+        next_order = max(used_orders, default=-1) + 1
+        for employee in result:
+            membership = (employee.get("memberships") or {}).get(membership_name) if isinstance(employee, dict) else None
+            if not isinstance(membership, dict) or membership.get("enabled") is not True:
+                continue
+            if role is not None and membership.get("role") != role:
+                continue
+            if membership.get("order") is None:
+                while next_order in used_orders:
+                    next_order += 1
+                membership["order"] = next_order
+                used_orders.append(next_order)
+                next_order += 1
+    return result
+
+
 def save_employee_directory(
     employees: Any,
     *,
@@ -441,6 +479,7 @@ def save_employee_directory(
             created_at = now
             created_by = writer
             current_revision = 0
+        ordered_employees = assign_missing_membership_orders(employees)
         raw_payload = {
             "schema_version": SUPPORTED_SCHEMA_VERSION,
             "revision": current_revision + 1,
@@ -448,12 +487,12 @@ def save_employee_directory(
             "created_by": created_by,
             "updated_at": now,
             "updated_by": writer,
-            "employees": copy.deepcopy(employees),
+            "employees": ordered_employees,
         }
         raw_errors = validate_directory(raw_payload)
         if raw_errors:
             raise EmployeeDirectoryValidationError(raw_errors)
-        normalized_employees = [normalize_employee(employee) for employee in employees]
+        normalized_employees = [normalize_employee(employee) for employee in ordered_employees]
         next_payload = {**raw_payload, "employees": normalized_employees}
         errors = validate_directory(next_payload)
         if errors:
