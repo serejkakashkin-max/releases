@@ -337,6 +337,10 @@ def validate_directory(payload: Any) -> List[Dict[str, str]]:
             if not _valid_membership_shape(membership, {"enabled"}):
                 errors.append(_error(f"{path}.memberships.{membership_name}", "invalid"))
 
+        release_zni = memberships.get("release_zni") or {}
+        if release_zni.get("enabled") is True and not normalize_text(jira_names.get("delta")):
+            errors.append(_error(f"{path}.jira_names.delta", "required_for_release_zni"))
+
         va_membership = memberships.get("va_schedule_manager")
         if not _valid_membership_shape(va_membership, {"enabled", "order"}):
             errors.append(_error(f"{path}.memberships.va_schedule_manager", "invalid"))

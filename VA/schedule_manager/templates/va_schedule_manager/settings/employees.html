@@ -18,7 +18,7 @@
         <span class="meta-pill">Активных {{ active_count }}</span>
         <span class="meta-pill">Всего {{ employees|length }}</span>
       </div>
-      {% if not employee_directory_managed %}
+      {% if not employee_directory_managed or employee_directory_write_state.writable %}
         <a class="button button-light button-add-compact" href="{{ va_url_for('va_schedule_manager.settings.employees', add='1') }}" data-modal-trigger data-focus-key="employee-add">+</a>
       {% endif %}
     {% endcall %}
@@ -216,6 +216,10 @@
   {% if show_add_employee %}
     {% call modal("Добавление сотрудника", "", va_url_for("va_schedule_manager.settings.employees"), "add-employee-title", "employee-add-modal") %}
       <form class="employee-form modal-employee-form" method="post" action="{{ va_url_for('va_schedule_manager.settings.add_employee') }}">
+        {% if employee_directory_managed %}
+          <input type="hidden" name="directory_revision" value="{{ employee_directory_write_state.revision }}">
+          <input type="hidden" name="directory_etag" value="{{ employee_directory_write_state.etag }}">
+        {% endif %}
         <label>
           <span>ФИО</span>
           <input name="name" required>
