@@ -19,7 +19,7 @@ _last_diagnostic_key: Tuple[str, str] | None = None
 def get_release_notification_recipients(
     legacy_recipients: Mapping[str, Iterable[str]],
 ) -> Dict[str, List[str]]:
-    """Return legacy recipients while the consumer is in compare rollout."""
+    """Return effective release recipients with safe legacy fallback."""
     legacy_map = _copy_recipients(legacy_recipients)
     mode = get_employee_directory_consumer_mode("release_notifications")
     if mode == "legacy":
@@ -27,8 +27,10 @@ def get_release_notification_recipients(
 
     comparison = get_release_notification_comparison(legacy_map)
     _log_comparison_once(mode, comparison)
-
-    # Directory activation follows only after real delivery observation.
+    if mode == "directory" and comparison["status"] == "available":
+        directory_map = get_directory_release_notification_recipients()
+        if directory_map:
+            return _copy_recipients(directory_map)
     return legacy_map
 
 
@@ -61,11 +63,33 @@ def get_release_notification_adapter_readiness(
     legacy_recipients: Mapping[str, Iterable[str]],
 ) -> Dict[str, Any]:
     comparison = get_release_notification_comparison(legacy_recipients)
-    ready = bool(comparison["matches"])
+    mode = get_employee_directory_consumer_mode("release_notifications")
+    if comparison["status"] != "available" or comparison["directory_count"] == 0:
+        return {
+            "ready": False,
+            "reason": comparison["reason"],
+            "allowed_modes": ["legacy"],
+            "comparison": comparison,
+        }
+
+    if mode == "directory":
+        return {
+            "ready": True,
+            "reason": "directory_active",
+            "allowed_modes": ["legacy", "compare", "directory"],
+            "comparison": comparison,
+        }
+
+    exact_match = bool(comparison["matches"])
+    allowed_modes = ["legacy", "compare"]
+    reason = "compare_ready" if exact_match else comparison["reason"]
+    if mode == "compare" and exact_match:
+        allowed_modes.append("directory")
+        reason = "directory_ready"
     return {
-        "ready": ready,
-        "reason": "compare_ready" if ready else comparison["reason"],
-        "allowed_modes": ["legacy", "compare"] if ready else ["legacy"],
+        "ready": exact_match,
+        "reason": reason,
+        "allowed_modes": allowed_modes if exact_match else ["legacy"],
         "comparison": comparison,
     }
 
@@ -93,14 +117,17 @@ def _canonical_recipients(values: Mapping[str, Iterable[str]]) -> Dict[str, List
 
 def _log_comparison_once(mode: str, comparison: Dict[str, Any]) -> None:
     global _last_diagnostic_key
-    status = "match" if comparison["matches"] else comparison["reason"]
+    if mode == "directory" and comparison["status"] == "available":
+        status = "directory_active"
+    else:
+        status = "match" if comparison["matches"] else comparison["reason"]
     key = (mode, status)
     with _diagnostic_lock:
         if key == _last_diagnostic_key:
             return
         _last_diagnostic_key = key
 
-    log = LOGGER.info if comparison["matches"] else LOGGER.warning
+    log = LOGGER.info if comparison["matches"] or status == "directory_active" else LOGGER.warning
     log(
         "Employee directory release_notifications comparison: mode=%s status=%s legacy_count=%s directory_count=%s",
         mode,
