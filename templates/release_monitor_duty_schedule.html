@@ -48,35 +48,41 @@
             </div>
             <form method="get" class="month-form">
                 <label>Год
-                    <select name="year">
+                    <select name="year" id="scheduleYear" {% if not available_months %}disabled{% endif %}>
                         {% for year in available_months|map(attribute=0)|unique|list %}<option value="{{ year }}" {% if year == selected_year %}selected{% endif %}>{{ year }}</option>{% endfor %}
-                        {% if not available_months %}<option value="{{ selected_year }}">{{ selected_year }}</option>{% endif %}
+                        {% if not available_months %}<option>Нет данных</option>{% endif %}
                     </select>
                 </label>
                 <label>Месяц
-                    <select name="month">
-                        {% for number, label in [(1,'Январь'),(2,'Февраль'),(3,'Март'),(4,'Апрель'),(5,'Май'),(6,'Июнь'),(7,'Июль'),(8,'Август'),(9,'Сентябрь'),(10,'Октябрь'),(11,'Ноябрь'),(12,'Декабрь')] %}
-                        <option value="{{ number }}" {% if number == selected_month %}selected{% endif %}>{{ label }}</option>
+                    <select name="month" id="scheduleMonth" data-selected-month="{{ selected_month }}" {% if not available_months %}disabled{% endif %}>
+                        {% for year_value, number in available_months if year_value == selected_year %}
+                        <option value="{{ number }}" {% if number == selected_month %}selected{% endif %}>{{ ['', 'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'][number] }}</option>
                         {% endfor %}
+                        {% if not available_months %}<option>Нет графиков</option>{% endif %}
                     </select>
                 </label>
-                <button class="apply-btn" type="submit"><i class="bi bi-calendar3"></i> Показать</button>
+                <button class="apply-btn" type="submit" {% if not available_months %}disabled{% endif %}><i class="bi bi-calendar3"></i> Показать</button>
             </form>
         </section>
+        <script id="availableScheduleMonths" type="application/json">{{ available_months|tojson }}</script>
 
         {% if month_grid.employees and month_grid.days %}
         <section class="schedule-panel">
-            <div class="table-scroll" tabindex="0" aria-label="Таблица графика дежурств">
+            <div class="schedule-table-wrap" aria-label="Таблица графика дежурств">
                 <table class="schedule-table">
-                    <thead><tr><th class="employee-col">Сотрудник</th>{% for day in month_grid.days %}<th class="day-col {% if day.date == today %}today{% endif %}"><span>{{ day.day }}</span><small>{{ day.weekday }}</small></th>{% endfor %}</tr></thead>
+                    <thead><tr><th class="employee-col">Сотрудник</th>{% for day in month_grid.days %}<th class="day-col {% if day.weekday in ['сб', 'вс'] %}weekend-col{% endif %} {% if day.date == today %}today{% endif %}"><small>{{ day.weekday }}</small><strong>{{ day.day }}</strong></th>{% endfor %}</tr></thead>
                     <tbody>
                     {% for employee in month_grid.employees %}
                     <tr class="{% if employee.warning %}row-warning{% endif %}">
-                        <th class="employee-col">{{ employee.employee_name }}{% if employee.warning %}<i class="bi bi-exclamation-triangle" title="Дублированная строка сотрудника"></i>{% endif %}</th>
+                        <th class="employee-col" title="{{ employee.employee_name }}"><span>{{ employee.employee_name }}</span>{% if employee.warning %}<i class="bi bi-exclamation-triangle" title="Дублированная строка сотрудника"></i>{% endif %}</th>
                         {% for day in month_grid.days %}
                         {% set code = employee.assignments.get(day.day ~ '', '') %}
                         {% set shift = (month_grid.shifts|selectattr('code', 'equalto', code)|list|first) %}
-                        <td class="shift-cell {% if day.date == today %}today{% endif %}" {% if shift %}style="--shift-color: {{ shift.color }}"{% endif %}><span {% if shift %}class="shift-value"{% endif %}>{{ shift.short_name if shift else code }}</span></td>
+                        <td
+                            class="shift-cell {% if shift %}has-shift{% endif %} {% if day.date == today %}today{% endif %}"
+                            {% if shift %}style="--shift-color: {{ shift.color }}; --shift-text: {{ shift.text_color }}"{% endif %}
+                            title="{{ shift.name if shift else code }}"
+                        >{{ shift.short_name if shift else code }}</td>
                         {% endfor %}
                     </tr>
                     {% endfor %}

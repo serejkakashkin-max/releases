@@ -35,6 +35,14 @@ def _canonical_bytes(value: object) -> bytes:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
+def _contrast_text_color(color: str) -> str:
+    if not HEX_COLOR_RE.fullmatch(color):
+        return "#FFFFFF"
+    red, green, blue = (int(color[index:index + 2], 16) for index in (1, 3, 5))
+    luminance = (0.299 * red + 0.587 * green + 0.114 * blue) / 255
+    return "#102033" if luminance >= 0.62 else "#FFFFFF"
+
+
 def _warning(code: str, **details: object) -> dict:
     result = {"type": code}
     result.update(details)
@@ -345,6 +353,7 @@ class ReleaseMonitorDutyProvider:
                 "short_name": short_name,
                 "aliases": [str(value).strip() for value in aliases if str(value).strip()],
                 "color": safe_color,
+                "text_color": _contrast_text_color(safe_color),
             }
             shifts.append(normalized)
             for alias in (code, short_name, *normalized["aliases"]):
