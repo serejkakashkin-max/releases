@@ -4820,7 +4820,13 @@
             if (revisionDate) {
                 return revisionDate;
             }
-            const value = String(meta?.last_updated || '').trim();
+            const value = String(meta?.view_updated_at || meta?.last_updated || '').trim();
+            if (/^\d{4}-\d{2}-\d{2}T/.test(value)) {
+                const isoDate = new Date(value);
+                if (!Number.isNaN(isoDate.getTime())) {
+                    return isoDate;
+                }
+            }
             const match = value.match(/^(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})(?::(\d{2}))?$/);
             if (!match) {
                 return null;
@@ -4840,8 +4846,8 @@
             if (updatedAt) {
                 return `${String(updatedAt.getHours()).padStart(2, '0')}:${String(updatedAt.getMinutes()).padStart(2, '0')}`;
             }
-            const value = String(meta?.last_updated || '').trim();
-            const match = value.match(/(\d{2}:\d{2})(?::\d{2})?$/);
+            const value = String(meta?.view_updated_at || meta?.last_updated || '').trim();
+            const match = value.match(/(?:^|\s)(\d{2}:\d{2})(?::\d{2})?$/);
             return match ? match[1] : '';
         }
 
