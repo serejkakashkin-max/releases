@@ -15,6 +15,7 @@ from services.release_monitor_service import (
     get_release_monitor_snapshot,
     start_release_monitor_refresh,
     get_release_monitor_refresh_status,
+    get_release_monitor_refresh_state,
     ensure_release_monitor_not_refreshing,
     get_release_monitor_reviewer_options,
     get_release_monitor_week_control,
@@ -43,7 +44,11 @@ from services.release_report_service import get_release_report_service
 from services.feature_flags_service import is_maintenance_enabled
 from services.release_monitor_email_service import get_unassigned_email_status
 from services.sms_service import get_sms_profile_availability
-from routes.release_routes import detect_release_template_from_values, get_previous_version_from_monitor_items
+from routes.release_routes import (
+    build_previous_release_version_index,
+    build_release_template_detection_context,
+    detect_release_template_from_values,
+)
 from config import DASHBOARD_CACHE_TTL, DEFAULT_BH_PLAYBOOKS
 from services.duty_dashboard_employee_provider import get_dashboard_primary_display_names
 from services.duty_schedule_provider_registry import (
@@ -51,6 +56,7 @@ from services.duty_schedule_provider_registry import (
     get_duty_schedule_months,
     get_duty_schedule_provider_status,
 )
+from services.release_monitor_view_revision import get_release_monitor_view_state
 
 BASE_PATH = os.getenv("BASE_PATH", "")
 
@@ -60,6 +66,8 @@ dashboard_bp = Blueprint('dashboard', __name__)
 def _build_release_monitor_template_hints(items):
     """Готовит быстрые подсказки шаблонов по КЭ релиза из snapshot без Jira-запросов."""
     hints = {}
+    previous_version_index = build_previous_release_version_index(items)
+    catalog_context = build_release_template_detection_context()
     for item in items or []:
         row_key = str(item.get("row_key") or item.get("release_key") or "").strip()
         release_key = str(item.get("release_key") or "").strip()
@@ -72,12 +80,16 @@ def _build_release_monitor_template_hints(items):
             or " ".join(item.get("release_name_lines") or [])
         )
         try:
-            detection = detect_release_template_from_values(str(item.get("ke_id") or ""), summary)
+            detection = detect_release_template_from_values(
+                str(item.get("ke_id") or ""),
+                summary,
+                catalog_context=catalog_context,
+            )
         except Exception as exc:
             logging.debug("Не удалось подготовить подсказку шаблона для %s: %s", row_key or release_key, exc)
             detection = {"found": False, "candidates": []}
 
-        prev_version = get_previous_version_from_monitor_items(items, row_key, release_key)
+        prev_version = previous_version_index.resolve(row_key, release_key)
         detection["prev_version"] = prev_version
 
         if detection.get("found") or detection.get("candidates"):
@@ -86,6 +98,23 @@ def _build_release_monitor_template_hints(items):
             if release_key and release_key != row_key:
                 hints[release_key] = detection
     return hints
+
+
+class ReleaseMonitorViewChanged(RuntimeError):
+    def __init__(self, view_revision=""):
+        super().__init__("release_monitor_changed")
+        self.view_revision = str(view_revision or "")
+
+
+def _build_consistent_release_monitor_model(builder):
+    latest_state = {}
+    for _attempt in range(2):
+        before = get_release_monitor_view_state(force_template_check=True)
+        model = builder()
+        latest_state = get_release_monitor_view_state(force_template_check=True)
+        if before.get("view_revision") == latest_state.get("view_revision"):
+            return model, latest_state
+    raise ReleaseMonitorViewChanged(latest_state.get("view_revision"))
 
 @dashboard_bp.route('/dashboard')
 def dashboard():
@@ -203,7 +232,23 @@ def dashboard():
 def release_monitor_page():
     """Отдельная страница контроля релизов."""
     try:
-        release_monitor_data = get_release_monitor_snapshot()
+        def build_model():
+            snapshot = get_release_monitor_snapshot()
+            items = snapshot.get('items', [])
+            return {
+                "snapshot": snapshot,
+                "template_hints": _build_release_monitor_template_hints(items),
+                "reviewer_options": get_release_monitor_reviewer_options(),
+                "sms_profile_availability": get_sms_profile_availability(),
+            }
+
+        model, view_state = _build_consistent_release_monitor_model(build_model)
+        release_monitor_data = model["snapshot"]
+        release_monitor_data["meta"] = {
+            **dict(release_monitor_data.get("meta") or {}),
+            "view_revision": view_state["view_revision"],
+            "view_updated_at": view_state["updated_at"],
+        }
         release_monitor_items = release_monitor_data.get('items', [])
         return render_template(
             'release_monitor.html',
@@ -211,7 +256,23 @@ def release_monitor_page():
             release_monitor=release_monitor_items,
             release_monitor_summary=release_monitor_data.get('summary', {}),
             release_monitor_meta=release_monitor_data.get('meta', {}),
-            release_monitor_template_hints=_build_release_monitor_template_hints(release_monitor_items),
+            release_monitor_template_hints=model["template_hints"],
+            release_document_playbooks=DEFAULT_BH_PLAYBOOKS,
+            reviewer_options=model["reviewer_options"],
+            sms_profile_availability=model["sms_profile_availability"],
+            last_update=datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
+            maintenance_enabled=is_maintenance_enabled("release_monitor"),
+            maintenance_scope="release_monitor",
+            maintenance_title="Блок релизов на обслуживании",
+        )
+    except ReleaseMonitorViewChanged:
+        return render_template(
+            'release_monitor.html',
+            basepath=BASE_PATH,
+            release_monitor=[],
+            release_monitor_summary={},
+            release_monitor_meta={},
+            release_monitor_template_hints={},
             release_document_playbooks=DEFAULT_BH_PLAYBOOKS,
             reviewer_options=get_release_monitor_reviewer_options(),
             sms_profile_availability=get_sms_profile_availability(),
@@ -219,7 +280,8 @@ def release_monitor_page():
             maintenance_enabled=is_maintenance_enabled("release_monitor"),
             maintenance_scope="release_monitor",
             maintenance_title="Блок релизов на обслуживании",
-        )
+            error="Данные релизов обновляются. Повторите открытие страницы через несколько секунд.",
+        ), 503
     except Exception as e:
         logging.error(f"Ошибка загрузки страницы контроля релизов: {e}")
         return render_template(
@@ -455,9 +517,35 @@ def refresh_release_monitor():
 @dashboard_bp.route('/dashboard/release-monitor/status', methods=['GET'])
 def release_monitor_status():
     """Возвращает статус фонового обновления и последний снимок данных релизов."""
+    if request.args.get("compact") == "1":
+        try:
+            view_state = get_release_monitor_view_state()
+            refresh_state = get_release_monitor_refresh_state()
+            return jsonify({
+                "success": True,
+                "refresh": refresh_state,
+                "email": get_unassigned_email_status(),
+                "view_revision": view_state["view_revision"],
+                "updated_at": view_state["updated_at"],
+                "refresh_in_progress": refresh_state.get("state") == "refreshing",
+            })
+        except Exception as exc:
+            logging.exception(
+                "Release monitor compact status failed: error_type=%s",
+                type(exc).__name__,
+            )
+            return jsonify({"success": False, "error": "status_unavailable"}), 503
+
     try:
-        status_payload = get_release_monitor_refresh_status()
+        status_payload, view_state = _build_consistent_release_monitor_model(
+            get_release_monitor_refresh_status
+        )
         release_monitor_data = status_payload.get("data", {})
+        release_monitor_data["meta"] = {
+            **dict(release_monitor_data.get("meta") or {}),
+            "view_revision": view_state["view_revision"],
+            "view_updated_at": view_state["updated_at"],
+        }
         return jsonify({
             "success": True,
             "refresh_status": status_payload.get("status", {}),
@@ -466,6 +554,13 @@ def release_monitor_status():
             "release_monitor_summary": release_monitor_data.get("summary", {}),
             "release_monitor_meta": release_monitor_data.get("meta", {}),
         })
+    except ReleaseMonitorViewChanged as exc:
+        return jsonify({
+            "success": False,
+            "error": "release_monitor_changed",
+            "retry": True,
+            "view_revision": exc.view_revision,
+        }), 409
     except Exception as e:
         logging.error(f"Ошибка получения статуса обновления релизов: {e}")
         return jsonify({"success": False, "error": str(e)}), 500

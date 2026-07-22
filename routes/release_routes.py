@@ -7,6 +7,7 @@ from flask import Blueprint, request, send_file, jsonify
 from zipfile import ZipFile
 from io import BytesIO
 import tempfile
+from collections import defaultdict
 from docx import Document  # ДОБАВЛЕНО
 
 from extensions import RELEASE_STRUCTURE, ID_MAP  # Импортируем из extensions
@@ -23,6 +24,7 @@ from services.release_monitor_service import (
 from services.docx_service import replace_keys_in_doc
 from services.counter_service import increment_counter  # НОВОЕ: импорт счетчика
 from services.release_template_catalog_service import (
+    build_runtime_template_catalog,
     find_template_entries_by_ke,
     is_ai_agents_template_category,
     select_template_by_summary,
@@ -36,12 +38,23 @@ release_bp = Blueprint('release', __name__)
 # УБРАНО: определение get_release_structure() - оно теперь в extensions.py
 
 
-def release_uses_playbooks(release_name: str, category: str = "") -> bool:
+def release_uses_playbooks(release_name: str, category: str = "", *, catalog_entries=None) -> bool:
     """Определяет необходимость плейбуков по каталогу или старому fallback-правилу."""
     if is_ai_agents_template_category(category):
         return False
 
-    catalog_value = template_requires_playbooks(release_full=release_name, category=category)
+    if catalog_entries is None:
+        catalog_value = template_requires_playbooks(release_full=release_name, category=category)
+    else:
+        catalog_value = None
+        for entry in catalog_entries:
+            if release_name and entry.get("release_full") != release_name:
+                continue
+            if category and entry.get("category") != category:
+                continue
+            if entry.get("requires_playbooks") is not None:
+                catalog_value = bool(entry.get("requires_playbooks"))
+            break
     if catalog_value is not None:
         return catalog_value
 
@@ -62,24 +75,52 @@ def _catalog_template_payload(candidate: dict) -> dict:
     }
 
 
-def _legacy_template_payload(category: str, release_clean: str, release_full: str) -> dict:
+def _legacy_template_payload(
+    category: str,
+    release_clean: str,
+    release_full: str,
+    *,
+    catalog_entries=None,
+) -> dict:
     return {
         "found": True,
         "category": category,
         "release_clean": release_clean,
         "release_full": release_full,
-        "requires_playbooks": release_uses_playbooks(release_full, category),
+        "requires_playbooks": release_uses_playbooks(
+            release_full,
+            category,
+            catalog_entries=catalog_entries,
+        ),
         "candidates": None,
     }
 
 
-def detect_release_template_from_values(sm_id: str, summary: str = ""):
+def build_release_template_detection_context() -> dict:
+    entries = build_runtime_template_catalog()
+    by_ke = defaultdict(list)
+    for entry in entries:
+        ke = str(entry.get("ke") or "").strip()
+        if ke:
+            by_ke[ke].append(entry)
+    return {
+        "entries": entries,
+        "by_ke": dict(by_ke),
+    }
+
+
+def detect_release_template_from_values(sm_id: str, summary: str = "", *, catalog_context=None):
     """Определяет шаблон по уже известным КЭ релиза и summary без запроса в Jira."""
     sm_id = (sm_id or "").strip()
     summary = summary or ""
     result = {"found": False, "candidates": [], "template_sm_id": sm_id}
 
-    catalog_candidates = find_template_entries_by_ke(sm_id) if sm_id else []
+    if catalog_context is None:
+        catalog_candidates = find_template_entries_by_ke(sm_id) if sm_id else []
+        catalog_entries = None
+    else:
+        catalog_candidates = list((catalog_context.get("by_ke") or {}).get(sm_id) or [])
+        catalog_entries = list(catalog_context.get("entries") or [])
     if catalog_candidates:
         if len(catalog_candidates) == 1:
             return {**_catalog_template_payload(catalog_candidates[0]), "template_sm_id": sm_id}
@@ -109,7 +150,15 @@ def detect_release_template_from_values(sm_id: str, summary: str = ""):
             category, release_name_clean = candidates[0]
             for clean, full in RELEASE_STRUCTURE.get(category, []):
                 if clean == release_name_clean:
-                    return {**_legacy_template_payload(category, release_name_clean, full), "template_sm_id": sm_id}
+                    return {
+                        **_legacy_template_payload(
+                            category,
+                            release_name_clean,
+                            full,
+                            catalog_entries=catalog_entries,
+                        ),
+                        "template_sm_id": sm_id,
+                    }
         else:
             summary_lower = summary.lower() if summary else ""
             selected = None
@@ -131,7 +180,15 @@ def detect_release_template_from_values(sm_id: str, summary: str = ""):
                 category, release_name_clean = selected
                 for clean, full in RELEASE_STRUCTURE.get(category, []):
                     if clean == release_name_clean:
-                        return {**_legacy_template_payload(category, release_name_clean, full), "template_sm_id": sm_id}
+                        return {
+                            **_legacy_template_payload(
+                                category,
+                                release_name_clean,
+                                full,
+                                catalog_entries=catalog_entries,
+                            ),
+                            "template_sm_id": sm_id,
+                        }
 
             candidates_list = []
             for cand_category, cand_release_clean in candidates:
@@ -195,102 +252,141 @@ def _get_constructor_rollback_group(item):
     return ""
 
 
+def _typed_lookup_key(value):
+    try:
+        hash(value)
+    except TypeError:
+        return type(value).__name__, repr(value)
+    return "hashable", value
+
+
+class PreviousReleaseVersionIndex:
+    """Request-local index preserving the legacy previous-version contract."""
+
+    def __init__(self, items):
+        self._by_row_key = {}
+        self._by_release_key = {}
+        self._by_ke_exact_year = defaultdict(list)
+        self._by_ke_numeric_year = defaultdict(list)
+        self._by_exact_year = defaultdict(list)
+
+        for item in items or []:
+            row_key = str(item.get("row_key") or "").strip()
+            release_key = str(item.get("release_key") or "").strip()
+            if row_key:
+                self._by_row_key.setdefault(row_key, item)
+            if release_key:
+                self._by_release_key.setdefault(release_key, item)
+
+            release_number = _safe_int(item.get("release_number"))
+            version = str(item.get("release_version") or "").strip()
+            if release_number is None or not version:
+                continue
+            record = {
+                "item": item,
+                "number": release_number,
+                "version": version,
+                "release_key": release_key,
+                "rollback_group": _get_constructor_rollback_group(item),
+                "sort_key": (
+                    release_number or -1,
+                    release_key,
+                    row_key,
+                ),
+            }
+            ke_id = str(item.get("ke_id") or "").strip()
+            exact_year = _typed_lookup_key(item.get("year"))
+            numeric_year = _safe_int(item.get("year"))
+            if ke_id:
+                self._by_ke_exact_year[(ke_id, exact_year)].append(record)
+                if numeric_year is not None:
+                    self._by_ke_numeric_year[(ke_id, numeric_year)].append(record)
+            self._by_exact_year[exact_year].append(record)
+
+        for index in (
+            self._by_ke_exact_year,
+            self._by_ke_numeric_year,
+            self._by_exact_year,
+        ):
+            for candidates in index.values():
+                candidates.sort(key=lambda record: record["sort_key"])
+
+    @staticmethod
+    def _best_candidate(
+        candidates,
+        current_number,
+        current_release_key,
+        rollback_group,
+        *,
+        require_lower_number=True,
+    ):
+        for record in reversed(candidates or []):
+            if require_lower_number and record["number"] >= current_number:
+                continue
+            if record["release_key"] == current_release_key:
+                continue
+            if rollback_group and record["rollback_group"] != rollback_group:
+                continue
+            return record["version"]
+        return ""
+
+    def resolve(self, row_key: str, release_id: str) -> str:
+        normalized_row_key = str(row_key or "").strip()
+        normalized_release_id = str(release_id or "").strip()
+        current_item = self._by_row_key.get(normalized_row_key) if normalized_row_key else None
+        if current_item is None and normalized_release_id:
+            current_item = self._by_release_key.get(normalized_release_id)
+        if current_item is None:
+            return ""
+
+        current_number = _safe_int(current_item.get("release_number"))
+        current_release_key = str(
+            current_item.get("release_key") or normalized_release_id or ""
+        ).strip()
+        current_ke_id = str(current_item.get("ke_id") or "").strip()
+        current_year = current_item.get("year")
+        release_type = normalize_release_type(current_item.get("release_type"))
+        is_reroll = release_type == "reroll" if release_type else bool(current_item.get("is_reroll"))
+        rollback_group = _get_constructor_rollback_group(current_item)
+
+        if current_number is not None and current_ke_id:
+            version = self._best_candidate(
+                self._by_ke_exact_year.get((current_ke_id, _typed_lookup_key(current_year))),
+                current_number,
+                current_release_key,
+                rollback_group,
+            )
+            if version:
+                return version
+
+            numeric_year = _safe_int(current_year)
+            if numeric_year is not None:
+                version = self._best_candidate(
+                    self._by_ke_numeric_year.get((current_ke_id, numeric_year - 1)),
+                    current_number,
+                    current_release_key,
+                    rollback_group,
+                    require_lower_number=False,
+                )
+                if version:
+                    return version
+
+        if is_reroll and current_number is not None:
+            return self._best_candidate(
+                self._by_exact_year.get(_typed_lookup_key(current_year)),
+                current_number,
+                current_release_key,
+                rollback_group,
+            )
+        return ""
+
+
+def build_previous_release_version_index(items):
+    return PreviousReleaseVersionIndex(items)
+
+
 def get_previous_version_from_monitor_items(items, row_key: str, release_id: str):
-    if not items:
-        return ""
-
-    normalized_row_key = (row_key or "").strip()
-    normalized_release_id = (release_id or "").strip()
-    current_item = None
-
-    if normalized_row_key:
-        current_item = next(
-            (item for item in items if str(item.get("row_key") or "").strip() == normalized_row_key),
-            None,
-        )
-
-    if current_item is None and normalized_release_id:
-        current_item = next(
-            (item for item in items if str(item.get("release_key") or "").strip() == normalized_release_id),
-            None,
-        )
-
-    if not current_item:
-        return ""
-
-    current_release_number = _safe_int(current_item.get("release_number"))
-    current_release_key = (current_item.get("release_key") or normalized_release_id or "").strip()
-    current_ke_id = (current_item.get("ke_id") or "").strip()
-    current_year = current_item.get("year")
-    current_release_type = normalize_release_type(current_item.get("release_type"))
-    current_is_reroll = current_release_type == "reroll" if current_release_type else bool(current_item.get("is_reroll"))
-    current_rollback_group = _get_constructor_rollback_group(current_item)
-
-    def _candidate_version(item):
-        return str(item.get("release_version") or "").strip()
-
-    def _candidate_sort_key(item):
-        return (
-            _safe_int(item.get("release_number")) or -1,
-            str(item.get("release_key") or ""),
-            str(item.get("row_key") or ""),
-        )
-
-    def _is_not_current_release(item):
-        return (item.get("release_key") or "").strip() != current_release_key
-
-    def _matches_rollback_group(item):
-        if not current_rollback_group:
-            return True
-        return _get_constructor_rollback_group(item) == current_rollback_group
-
-    numbered_items = [
-        item for item in items
-        if _safe_int(item.get("release_number")) is not None
-    ]
-
-    if current_release_number is not None and current_ke_id:
-        same_ke_current_year_candidates = [
-            item for item in numbered_items
-            if (item.get("ke_id") or "").strip() == current_ke_id
-            and _is_not_current_release(item)
-            and _matches_rollback_group(item)
-            and item.get("year") == current_year
-            and _safe_int(item.get("release_number")) is not None
-            and _safe_int(item.get("release_number")) < current_release_number
-            and _candidate_version(item)
-        ]
-        if same_ke_current_year_candidates:
-            return _candidate_version(max(same_ke_current_year_candidates, key=_candidate_sort_key))
-
-        previous_year = _safe_int(current_year)
-        previous_year = previous_year - 1 if previous_year is not None else None
-        same_ke_previous_year_candidates = [
-            item for item in numbered_items
-            if (item.get("ke_id") or "").strip() == current_ke_id
-            and _is_not_current_release(item)
-            and _matches_rollback_group(item)
-            and previous_year is not None
-            and _safe_int(item.get("year")) == previous_year
-            and _candidate_version(item)
-        ]
-        if same_ke_previous_year_candidates:
-            return _candidate_version(max(same_ke_previous_year_candidates, key=_candidate_sort_key))
-
-    if current_is_reroll and current_release_number is not None:
-        previous_numbered_candidates = [
-            item for item in numbered_items
-            if item.get("year") == current_year
-            and _is_not_current_release(item)
-            and _matches_rollback_group(item)
-            and _safe_int(item.get("release_number")) is not None
-            and _safe_int(item.get("release_number")) < current_release_number
-            and _candidate_version(item)
-        ]
-        if previous_numbered_candidates:
-            return _candidate_version(max(previous_numbered_candidates, key=_candidate_sort_key))
-
-    return ""
+    return build_previous_release_version_index(items).resolve(row_key, release_id)
 
 
 def _get_previous_version_from_monitor_snapshot(row_key: str, release_id: str):

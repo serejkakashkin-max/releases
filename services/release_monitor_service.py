@@ -646,7 +646,7 @@ def _write_state_json(file_path, payload):
 
     text = json.dumps(payload, ensure_ascii=False, indent=2)
     json.loads(text)
-    file_path.write_text(text, encoding="utf-8")
+    _atomic_write_text(file_path, text)
 
 
 def _mark_release_monitor_state_changed():
@@ -865,6 +865,15 @@ def _latest_archive_hash():
         if payload is not None:
             return _snapshot_payload_hash(payload)
     return ""
+
+
+def get_release_monitor_base_revision():
+    return _read_data_revision()
+
+
+def get_release_monitor_refresh_state():
+    with _cache_lock:
+        return dict(_refresh_status)
 
 
 def _archive_previous_good_snapshot(payload):
@@ -2303,12 +2312,20 @@ def _is_explicit_manual_reviewer_assignment(assignment):
     )
 
 
-def _apply_duty_schedule_assignments(items, persist=False, force=False, debug_limit=0):
+def _apply_duty_schedule_assignments(
+    items,
+    persist=False,
+    force=False,
+    debug_limit=0,
+    *,
+    duty_projection=None,
+    reviewer_assignments=None,
+):
     del persist, force
     result = apply_duty_schedule_overlay(
         items,
-        _get_current_duty_schedule_projection(),
-        _load_reviewer_assignments(),
+        duty_projection if isinstance(duty_projection, dict) else _get_current_duty_schedule_projection(),
+        reviewer_assignments if isinstance(reviewer_assignments, dict) else _load_reviewer_assignments(),
     )
     items[:] = result["items"]
     if debug_limit:
@@ -2353,8 +2370,8 @@ def _prepare_item_for_zni_creation(item):
     return zni_item
 
 
-def _append_duty_schedule_meta(meta):
-    duty_payload = _get_current_duty_schedule_projection()
+def _append_duty_schedule_meta(meta, duty_payload=None):
+    duty_payload = duty_payload if isinstance(duty_payload, dict) else _get_current_duty_schedule_projection()
     week_start, week_end = _get_current_week_bounds()
     meta.pop("last_duty_schedule_upload", None)
     meta["duty_schedule_months"] = list(duty_payload.get("months") or [])
@@ -2526,8 +2543,8 @@ def _apply_date_overrides(items):
     return items
 
 
-def _apply_reviewer_assignments(items):
-    assignments = _load_reviewer_assignments()
+def _apply_reviewer_assignments(items, assignments=None):
+    assignments = assignments if isinstance(assignments, dict) else _load_reviewer_assignments()
     for item in items:
         assignment_key = _get_assignment_key_for_item(item)
         release_assignment = assignments.get(assignment_key) or assignments.get(item.get("release_key"), {})
@@ -2891,14 +2908,20 @@ def _apply_release_attempt_outcomes(items):
             and has_confirmed_attempt
         ):
             current = dict(outcomes.get(row_key) or {})
-            outcomes[row_key] = {
+            next_outcome = {
                 "state": "deferred",
                 "release_key": str(item.get("release_key") or "").strip(),
                 "rov_key": str(item.get("rov_key") or "").strip(),
                 "detected_at": current.get("detected_at") or now_text,
-                "updated_at": now_text,
+                "updated_at": current.get("updated_at") or now_text,
             }
-            changed = True
+            if any(
+                current.get(field_name) != next_outcome[field_name]
+                for field_name in ("state", "release_key", "rov_key", "detected_at")
+            ):
+                next_outcome["updated_at"] = now_text
+                outcomes[row_key] = next_outcome
+                changed = True
 
     stale_successful_attempt_keys = set()
     final_items_by_release = {}
@@ -5089,11 +5112,22 @@ def _sort_datetime_value(item, field_name="sort_date"):
     return datetime.min
 
 
-def _apply_group_manual_order(year, group_name, items):
+def _apply_group_manual_order(
+    year,
+    group_name,
+    items,
+    *,
+    manual_order=None,
+    bucket_by_identity=None,
+):
     if not items:
         return items
 
-    manual_order = _load_manual_order()
+    manual_order = manual_order if isinstance(manual_order, dict) else _load_manual_order()
+    bucket_by_identity = bucket_by_identity or {
+        id(item): _get_release_order_bucket(item)
+        for item in items
+    }
     year_payload = manual_order.get(str(year), {}) if isinstance(manual_order, dict) else {}
     group_payload = year_payload.get(group_name, []) if isinstance(year_payload, dict) else []
 
@@ -5125,14 +5159,18 @@ def _apply_group_manual_order(year, group_name, items):
         for row_key in legacy_order:
             item = item_by_key.get(row_key)
             if item:
-                bucket_orders[_get_release_order_bucket(item)].append(row_key)
+                bucket_orders[bucket_by_identity[id(item)]].append(row_key)
+
+    slot_indexes_by_bucket = defaultdict(list)
+    for index, item in enumerate(merged_items):
+        slot_indexes_by_bucket[bucket_by_identity[id(item)]].append(index)
 
     for bucket, ordered_row_keys in bucket_orders.items():
         present_manual_keys = [
             row_key
             for row_key in ordered_row_keys
             if row_key in item_by_key
-            and _get_release_order_bucket(item_by_key[row_key]) == bucket
+            and bucket_by_identity[id(item_by_key[row_key])] == bucket
         ]
         if not present_manual_keys:
             continue
@@ -5140,9 +5178,8 @@ def _apply_group_manual_order(year, group_name, items):
         manual_key_set = set(present_manual_keys)
         manual_slot_indexes = [
             index
-            for index, item in enumerate(merged_items)
-            if _get_release_order_bucket(item) == bucket
-            and str(item.get("row_key") or "").strip() in manual_key_set
+            for index in slot_indexes_by_bucket.get(bucket, [])
+            if str(merged_items[index].get("row_key") or "").strip() in manual_key_set
         ]
         if not manual_slot_indexes:
             continue
@@ -5176,8 +5213,8 @@ def _derive_natural_unnumbered(item):
     return (not has_rov) or (is_cancelled and not has_ke)
 
 
-def _apply_force_unnumbered_flags(year, items):
-    manual_order = _load_manual_order()
+def _apply_force_unnumbered_flags(year, items, *, manual_order=None):
+    manual_order = manual_order if isinstance(manual_order, dict) else _load_manual_order()
     year_payload = manual_order.get(str(year), {}) if isinstance(manual_order, dict) else {}
     forced_keys = {
         str(row_key or "").strip()
@@ -5217,35 +5254,64 @@ def _apply_force_unnumbered_flags(year, items):
 
 
 def _sort_and_number_records(records):
+    manual_order = _load_manual_order()
+    order_meta = {
+        id(item): {
+            "bucket": _get_release_order_bucket(item),
+            "sort_date": _sort_datetime_value(item, "sort_date"),
+            "created_sort_date": _sort_datetime_value(item, "created_sort_date"),
+            "original_index": index,
+        }
+        for index, item in enumerate(records)
+    }
+    bucket_by_identity = {
+        identity: meta["bucket"]
+        for identity, meta in order_meta.items()
+    }
     records_by_year = defaultdict(list)
     for item in records:
         records_by_year[item["year"]].append(item)
 
     for year_items in records_by_year.values():
-        _apply_force_unnumbered_flags(year_items[0]["year"], year_items)
+        year = year_items[0]["year"]
+        _apply_force_unnumbered_flags(year, year_items, manual_order=manual_order)
         numbered_items = [item for item in year_items if not item.get("is_unnumbered")]
         waiting_items = [item for item in year_items if item.get("is_unnumbered")]
 
         numbered_items.sort(
             key=lambda item: (
-                _sort_datetime_value(item, "sort_date"),
-                _sort_datetime_value(item, "created_sort_date"),
+                order_meta[id(item)]["sort_date"],
+                order_meta[id(item)]["created_sort_date"],
                 item.get("release_key", ""),
+                -order_meta[id(item)]["original_index"],
             ),
             reverse=True,
         )
 
         waiting_items.sort(
             key=lambda item: (
-                _sort_datetime_value(item, "sort_date"),
-                _sort_datetime_value(item, "created_sort_date"),
+                order_meta[id(item)]["sort_date"],
+                order_meta[id(item)]["created_sort_date"],
                 item.get("release_key", ""),
+                -order_meta[id(item)]["original_index"],
             ),
             reverse=True,
         )
 
-        waiting_items = _apply_group_manual_order(year_items[0]["year"], "waiting", waiting_items)
-        numbered_items = _apply_group_manual_order(year_items[0]["year"], "numbered", numbered_items)
+        waiting_items = _apply_group_manual_order(
+            year,
+            "waiting",
+            waiting_items,
+            manual_order=manual_order,
+            bucket_by_identity=bucket_by_identity,
+        )
+        numbered_items = _apply_group_manual_order(
+            year,
+            "numbered",
+            numbered_items,
+            manual_order=manual_order,
+            bucket_by_identity=bucket_by_identity,
+        )
 
         total_numbered = len(numbered_items)
         for index, item in enumerate(numbered_items):
@@ -7297,19 +7363,31 @@ def _normalize_release_payload(payload):
 
     try:
         normalized_items = [dict(item) for item in (payload.get("items") or []) if isinstance(item, dict)]
+        reviewer_assignments = _load_reviewer_assignments()
+        duty_projection = _get_current_duty_schedule_projection()
         _apply_manual_releases(normalized_items)
         _apply_manual_release_overrides(normalized_items, payload.get("manual_overrides") or {})
-        _apply_reviewer_assignments(normalized_items)
+        _apply_reviewer_assignments(normalized_items, reviewer_assignments)
         _apply_release_status_consistency(normalized_items)
         _apply_date_overrides(normalized_items)
         _apply_release_attempt_outcomes(normalized_items)
-        _apply_duty_schedule_assignments(normalized_items, persist=False)
+        _apply_duty_schedule_assignments(
+            normalized_items,
+            persist=False,
+            duty_projection=duty_projection,
+            reviewer_assignments=reviewer_assignments,
+        )
         _apply_zni_assignments(normalized_items)
         _apply_manual_release_overrides(normalized_items, payload.get("manual_overrides") or {})
         _apply_template_system_classification(normalized_items)
         _apply_work_marks(normalized_items)
         _apply_manual_duplicate_reconciliation(normalized_items)
-        _apply_duty_schedule_assignments(normalized_items, persist=False)
+        _apply_duty_schedule_assignments(
+            normalized_items,
+            persist=False,
+            duty_projection=duty_projection,
+            reviewer_assignments=reviewer_assignments,
+        )
         _apply_week_control_flags(normalized_items)
         _apply_release_week_buckets(normalized_items)
         _sort_and_number_records(normalized_items)
@@ -7321,7 +7399,12 @@ def _normalize_release_payload(payload):
             "manual_overrides": _normalize_manual_release_overrides(payload.get("manual_overrides") or {}),
             "summary": _build_summary(normalized_items, current_year, previous_year),
             "meta": _append_auto_incremental_meta(
-                _append_revision_meta(_append_duty_schedule_meta(dict(payload.get("meta", {}))))
+                _append_revision_meta(
+                    _append_duty_schedule_meta(
+                        dict(payload.get("meta", {})),
+                        duty_projection,
+                    )
+                )
             ),
         }
     finally:

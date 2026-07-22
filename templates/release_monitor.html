@@ -4129,8 +4129,21 @@
         const releaseAssignmentSaveSeqByKey = new Map();
         const releaseWorkMarkSaveSeqByKey = new Map();
         let releaseMonitorMeta = {};
-        let releaseMonitorRefreshPoll = null;
-        let releaseMonitorGlobalStatusPoll = null;
+        let releaseMonitorPollingController = null;
+        let releaseMonitorFullStatusRequest = null;
+        let releaseMonitorFullStatusRevision = '';
+        let releaseMonitorPendingFullStatusRevision = '';
+        let releaseMonitorLastAppliedViewRevision = '';
+        let releaseMonitorLastRequestedFullRevision = '';
+        const releaseMonitorPollingDebugState = {
+            activeLoops: 0,
+            compactRequests: 0,
+            compactRequestsInFlight: 0,
+            maxCompactRequestsInFlight: 0,
+            fullRequests: 0,
+            fullRequestsInFlight: 0,
+            maxFullRequestsInFlight: 0,
+        };
         let releaseMonitorKnownRevision = '';
         let releaseMonitorDismissedRevision = '';
         let releaseMonitorGlobalRefreshing = false;
@@ -4248,7 +4261,7 @@
         }
 
         function getReleaseMonitorRevision(meta = releaseMonitorMeta) {
-            return String(meta?.data_revision || meta?.last_updated || '').trim();
+            return String(meta?.view_revision || meta?.data_revision || meta?.last_updated || '').trim();
         }
 
         function isCustomDutyText(value) {
@@ -8718,7 +8731,9 @@
             releaseMonitorItems = Array.isArray(items) ? items : [];
             releaseMonitorMeta = meta || {};
             syncReleaseWorkMarkSuggestedParticipants();
-            releaseMonitorKnownRevision = getReleaseMonitorRevision(releaseMonitorMeta) || releaseMonitorKnownRevision;
+            const renderedRevision = getReleaseMonitorRevision(releaseMonitorMeta);
+            releaseMonitorKnownRevision = renderedRevision || releaseMonitorKnownRevision;
+            releaseMonitorLastAppliedViewRevision = renderedRevision || releaseMonitorLastAppliedViewRevision;
             hideReleaseUpdateBanner();
             updateReleaseAutoRefreshBadge(releaseMonitorMeta);
             ensureResponsibleHeaderFilter();
@@ -10320,128 +10335,245 @@
             container.title = titleParts.join('\n') || labels[visualState] || labels.waiting;
         }
 
-        async function pollReleaseMonitorRefresh(forceStart = false) {
-            if (releaseMonitorRefreshPoll && !forceStart) {
-                return;
-            }
-
-            const loadStatus = async () => {
-                const response = await fetch(BASE_PATH + '/dashboard/release-monitor/status');
-                const data = await response.json();
-                if (!data.success) {
-                    throw new Error(data.error || 'Не удалось получить статус обновления релизов');
-                }
-
-                updateReleaseEmailNotificationStatus(data.email_unassigned_notification || {});
-                const refreshStatus = data.refresh_status || {};
-
-                if (refreshStatus.state === 'completed' || refreshStatus.state === 'idle') {
-                    if (releaseMonitorRefreshPoll) {
-                        clearInterval(releaseMonitorRefreshPoll);
-                        releaseMonitorRefreshPoll = null;
-                    }
-                    renderReleaseMonitor(data.release_monitor || [], data.release_monitor_meta || {});
-                    releaseMonitorLocalRefreshing = false;
-                    releaseMonitorActiveRefreshMode = '';
-                    setReleaseRefreshButtonsLoading(false);
-                    hideReleaseSnapshotProtectionWarning();
-                    return refreshStatus.state;
-                }
-
-                if (refreshStatus.state === 'failed' || refreshStatus.state === 'rejected') {
-                    if (releaseMonitorRefreshPoll) {
-                        clearInterval(releaseMonitorRefreshPoll);
-                        releaseMonitorRefreshPoll = null;
-                    }
-                    releaseMonitorLocalRefreshing = false;
-                    releaseMonitorActiveRefreshMode = '';
-                    setReleaseRefreshButtonsLoading(false);
-                    showReleaseSnapshotProtectionWarning(refreshStatus);
-                    return refreshStatus.state;
-                }
-
-                setReleaseRefreshButtonsLoading(true);
-                return refreshStatus.state;
+        function releaseMonitorPollingDebugSnapshot() {
+            return {
+                ...releaseMonitorPollingDebugState,
+                controllerActive: Boolean(releaseMonitorPollingController),
+                fullRequestActive: Boolean(releaseMonitorFullStatusRequest),
+                pendingRevision: releaseMonitorPendingFullStatusRevision,
             };
-
-            try {
-                const currentState = await loadStatus();
-                if (['completed', 'idle', 'failed', 'rejected'].includes(currentState)) {
-                    return;
-                }
-            } catch (error) {
-                console.error('Release monitor status error:', error);
-                if (releaseMonitorRefreshPoll) {
-                    clearInterval(releaseMonitorRefreshPoll);
-                    releaseMonitorRefreshPoll = null;
-                }
-                releaseMonitorLocalRefreshing = false;
-                releaseMonitorActiveRefreshMode = '';
-                setReleaseRefreshButtonsLoading(false);
-                alert('Ошибка обновления релизов: ' + error.message);
-                return;
-            }
-
-            if (!releaseMonitorRefreshPoll) {
-                releaseMonitorRefreshPoll = setInterval(async () => {
-                    try {
-                        await loadStatus();
-                    } catch (error) {
-                        console.error('Release monitor status polling error:', error);
-                        clearInterval(releaseMonitorRefreshPoll);
-                        releaseMonitorRefreshPoll = null;
-                        releaseMonitorLocalRefreshing = false;
-                        releaseMonitorActiveRefreshMode = '';
-                        setReleaseRefreshButtonsLoading(false);
-                        alert('Ошибка обновления релизов: ' + error.message);
-                    }
-                }, 2000);
-            }
         }
 
-        async function checkReleaseMonitorGlobalStatus() {
-            try {
+        if (new URLSearchParams(window.location.search).get('debug_polling') === '1') {
+            window.__releaseMonitorPollingDebug = releaseMonitorPollingDebugSnapshot;
+        }
+
+        async function loadReleaseMonitorFullStatus(targetRevision = '') {
+            const normalizedRevision = String(targetRevision || '').trim();
+            if (releaseMonitorFullStatusRequest) {
+                if (normalizedRevision && normalizedRevision !== releaseMonitorFullStatusRevision) {
+                    releaseMonitorPendingFullStatusRevision = normalizedRevision;
+                }
+                return releaseMonitorFullStatusRequest;
+            }
+            if (
+                normalizedRevision &&
+                (normalizedRevision === releaseMonitorLastAppliedViewRevision ||
+                    normalizedRevision === releaseMonitorLastRequestedFullRevision)
+            ) {
+                return null;
+            }
+
+            releaseMonitorFullStatusRevision = normalizedRevision;
+            releaseMonitorLastRequestedFullRevision = normalizedRevision;
+            releaseMonitorPollingDebugState.fullRequests += 1;
+            releaseMonitorPollingDebugState.fullRequestsInFlight += 1;
+            releaseMonitorPollingDebugState.maxFullRequestsInFlight = Math.max(
+                releaseMonitorPollingDebugState.maxFullRequestsInFlight,
+                releaseMonitorPollingDebugState.fullRequestsInFlight
+            );
+
+            releaseMonitorFullStatusRequest = (async () => {
                 const response = await fetch(BASE_PATH + '/dashboard/release-monitor/status');
                 const data = await response.json();
                 if (!response.ok || !data.success) {
-                    return;
+                    const error = new Error(data.error || 'Не удалось получить обновлённые данные релизов');
+                    error.retry = Boolean(data.retry);
+                    error.viewRevision = String(data.view_revision || '').trim();
+                    throw error;
                 }
+                const responseRevision = getReleaseMonitorRevision(data.release_monitor_meta || {}) || normalizedRevision;
+                renderReleaseMonitor(data.release_monitor || [], data.release_monitor_meta || {});
+                releaseMonitorLastAppliedViewRevision = responseRevision;
+                releaseMonitorKnownRevision = responseRevision || releaseMonitorKnownRevision;
+                return data;
+            })();
 
-                updateReleaseEmailNotificationStatus(data.email_unassigned_notification || {});
-                const refreshStatus = data.refresh_status || {};
-                const isRefreshing = refreshStatus.state === 'refreshing';
-                setReleaseMonitorGlobalRefreshing(isRefreshing);
-                if (refreshStatus.state === 'failed' || refreshStatus.state === 'rejected') {
-                    showReleaseSnapshotProtectionWarning(refreshStatus);
-                } else if (refreshStatus.state === 'completed' || refreshStatus.state === 'idle') {
-                    hideReleaseSnapshotProtectionWarning();
+            try {
+                return await releaseMonitorFullStatusRequest;
+            } finally {
+                releaseMonitorPollingDebugState.fullRequestsInFlight = Math.max(
+                    0,
+                    releaseMonitorPollingDebugState.fullRequestsInFlight - 1
+                );
+                releaseMonitorFullStatusRequest = null;
+                releaseMonitorFullStatusRevision = '';
+                const pendingRevision = releaseMonitorPendingFullStatusRevision;
+                releaseMonitorPendingFullStatusRevision = '';
+                if (pendingRevision && pendingRevision !== releaseMonitorLastAppliedViewRevision) {
+                    window.setTimeout(() => loadReleaseMonitorFullStatus(pendingRevision).catch(error => {
+                        if (error.name !== 'AbortError') {
+                            console.error('Release monitor pending full status error:', error);
+                        }
+                    }), 0);
                 }
-
-                const meta = data.release_monitor_meta || {};
-                updateReleaseAutoRefreshBadge(meta);
-                const latestRevision = getReleaseMonitorRevision(meta);
-                if (
-                    latestRevision &&
-                    releaseMonitorKnownRevision &&
-                    latestRevision !== releaseMonitorKnownRevision &&
-                    latestRevision !== releaseMonitorDismissedRevision &&
-                    !releaseMonitorRefreshPoll
-                ) {
-                    releaseMonitorKnownRevision = latestRevision;
-                    showReleaseUpdateBanner(meta);
-                }
-            } catch (error) {
-                console.error('Release monitor background status error:', error);
             }
         }
 
-        function startReleaseMonitorGlobalStatusPolling() {
-            if (releaseMonitorGlobalStatusPoll) {
+        async function handleReleaseMonitorCompactStatus(data) {
+            updateReleaseEmailNotificationStatus(data.email || {});
+            const refreshStatus = data.refresh || {};
+            const isRefreshing = Boolean(data.refresh_in_progress || refreshStatus.state === 'refreshing');
+            setReleaseMonitorGlobalRefreshing(isRefreshing);
+
+            if (refreshStatus.state === 'failed' || refreshStatus.state === 'rejected') {
+                showReleaseSnapshotProtectionWarning(refreshStatus);
+            } else if (refreshStatus.state === 'completed' || refreshStatus.state === 'idle') {
+                hideReleaseSnapshotProtectionWarning();
+            }
+
+            const latestRevision = String(data.view_revision || '').trim();
+            const compactMeta = {
+                view_revision: latestRevision,
+                view_updated_at: data.updated_at || '',
+                last_updated: data.updated_at || '',
+            };
+            if (releaseMonitorLocalRefreshing) {
+                if (refreshStatus.state === 'completed' || refreshStatus.state === 'idle') {
+                    try {
+                        await loadReleaseMonitorFullStatus(latestRevision);
+                        releaseMonitorLocalRefreshing = false;
+                        releaseMonitorActiveRefreshMode = '';
+                        setReleaseRefreshButtonsLoading(false);
+                    } catch (error) {
+                        if (error.name !== 'AbortError') {
+                            console.error('Release monitor refresh result error:', error);
+                        }
+                        releaseMonitorLocalRefreshing = false;
+                        releaseMonitorActiveRefreshMode = '';
+                        setReleaseRefreshButtonsLoading(false);
+                        showReleaseUpdateBanner(compactMeta);
+                    }
+                } else if (refreshStatus.state === 'failed' || refreshStatus.state === 'rejected') {
+                    releaseMonitorLocalRefreshing = false;
+                    releaseMonitorActiveRefreshMode = '';
+                    setReleaseRefreshButtonsLoading(false);
+                } else {
+                    setReleaseRefreshButtonsLoading(true);
+                }
                 return;
             }
-            checkReleaseMonitorGlobalStatus();
-            releaseMonitorGlobalStatusPoll = setInterval(checkReleaseMonitorGlobalStatus, 15000);
+
+            if (
+                latestRevision &&
+                releaseMonitorKnownRevision &&
+                latestRevision !== releaseMonitorKnownRevision &&
+                latestRevision !== releaseMonitorDismissedRevision
+            ) {
+                releaseMonitorKnownRevision = latestRevision;
+                showReleaseUpdateBanner(compactMeta);
+            }
         }
+
+        function stopReleaseMonitorGlobalStatusPolling() {
+            const controller = releaseMonitorPollingController;
+            if (!controller) {
+                return;
+            }
+            controller.stopped = true;
+            if (controller.timer) {
+                clearTimeout(controller.timer);
+            }
+            if (controller.abortController) {
+                controller.abortController.abort();
+            }
+            releaseMonitorPollingController = null;
+            releaseMonitorPollingDebugState.activeLoops = 0;
+        }
+
+        function scheduleReleaseMonitorStatusPoll(controller, delayMs) {
+            if (
+                controller.stopped ||
+                controller !== releaseMonitorPollingController ||
+                document.hidden
+            ) {
+                return;
+            }
+            if (controller.timer) {
+                clearTimeout(controller.timer);
+            }
+            controller.timer = window.setTimeout(() => runReleaseMonitorStatusPoll(controller), delayMs);
+        }
+
+        async function runReleaseMonitorStatusPoll(controller) {
+            if (
+                controller.stopped ||
+                controller !== releaseMonitorPollingController ||
+                document.hidden
+            ) {
+                return;
+            }
+
+            controller.timer = null;
+            controller.abortController = new AbortController();
+            releaseMonitorPollingDebugState.compactRequests += 1;
+            releaseMonitorPollingDebugState.compactRequestsInFlight += 1;
+            releaseMonitorPollingDebugState.maxCompactRequestsInFlight = Math.max(
+                releaseMonitorPollingDebugState.maxCompactRequestsInFlight,
+                releaseMonitorPollingDebugState.compactRequestsInFlight
+            );
+            let nextDelay = releaseMonitorLocalRefreshing ? 2000 : 15000;
+            try {
+                const response = await fetch(
+                    BASE_PATH + '/dashboard/release-monitor/status?compact=1',
+                    { signal: controller.abortController.signal }
+                );
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Не удалось получить статус обновления релизов');
+                }
+                controller.errorCount = 0;
+                await handleReleaseMonitorCompactStatus(data);
+                nextDelay = data.refresh_in_progress || releaseMonitorLocalRefreshing ? 2000 : 15000;
+            } catch (error) {
+                if (error.name !== 'AbortError') {
+                    controller.errorCount += 1;
+                    nextDelay = Math.min(60000, 2000 * (2 ** Math.min(controller.errorCount, 5)));
+                    console.error('Release monitor compact status error:', error);
+                }
+            } finally {
+                releaseMonitorPollingDebugState.compactRequestsInFlight = Math.max(
+                    0,
+                    releaseMonitorPollingDebugState.compactRequestsInFlight - 1
+                );
+                controller.abortController = null;
+                scheduleReleaseMonitorStatusPoll(controller, nextDelay);
+            }
+        }
+
+        function startReleaseMonitorGlobalStatusPolling(immediate = true) {
+            stopReleaseMonitorGlobalStatusPolling();
+            const controller = {
+                stopped: false,
+                timer: null,
+                abortController: null,
+                errorCount: 0,
+            };
+            releaseMonitorPollingController = controller;
+            releaseMonitorPollingDebugState.activeLoops = 1;
+            if (!document.hidden) {
+                scheduleReleaseMonitorStatusPoll(controller, immediate ? 0 : 15000);
+            }
+        }
+
+        async function pollReleaseMonitorRefresh() {
+            startReleaseMonitorGlobalStatusPolling(true);
+        }
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                stopReleaseMonitorGlobalStatusPolling();
+            } else {
+                startReleaseMonitorGlobalStatusPolling(true);
+            }
+        });
+        window.addEventListener('pagehide', stopReleaseMonitorGlobalStatusPolling);
+        window.addEventListener('beforeunload', stopReleaseMonitorGlobalStatusPolling);
+        window.addEventListener('pageshow', event => {
+            if (event.persisted || !releaseMonitorPollingController) {
+                startReleaseMonitorGlobalStatusPolling(true);
+            }
+        });
 
         function parseReleaseDateValue(value) {
             const rawValue = String(value || '').trim();

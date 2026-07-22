@@ -71,9 +71,36 @@ class ReleaseMonitorDutyProvider:
         self._cache_lock = threading.RLock()
         self._cache_signature = None
         self._cache = None
+        self._revision_cache_signature = None
+        self._revision_cache = None
 
     def get_status(self) -> dict:
         return copy.deepcopy(self._load()["status"])
+
+    def get_revision_component(self) -> dict:
+        signatures = (_signature(self.schedule_file), _signature(self.shifts_file))
+        with self._cache_lock:
+            if self._cache is not None and signatures == self._cache_signature:
+                return self._revision_component_from_status(self._cache["status"], signatures)
+            if self._revision_cache is not None and signatures == self._revision_cache_signature:
+                return copy.deepcopy(self._revision_cache)
+
+        source_results = self._stable_read_results()
+        component_signatures = signatures
+        if source_results is None:
+            component = self._unavailable_revision_component("unstable_source", signatures)
+        else:
+            schedule_result, shifts_result, stable_signatures = source_results
+            component_signatures = stable_signatures
+            component = self._build_revision_component(
+                schedule_result,
+                shifts_result,
+                stable_signatures,
+            )
+        with self._cache_lock:
+            self._revision_cache_signature = component_signatures
+            self._revision_cache = copy.deepcopy(component)
+        return copy.deepcopy(component)
 
     def get_release_projection(self) -> dict:
         return copy.deepcopy(self._load()["projection"])
@@ -111,9 +138,21 @@ class ReleaseMonitorDutyProvider:
             state = self._stable_read()
             self._cache_signature = (_signature(self.schedule_file), _signature(self.shifts_file))
             self._cache = state
+            self._revision_cache_signature = self._cache_signature
+            self._revision_cache = self._revision_component_from_status(
+                state["status"],
+                self._cache_signature,
+            )
             return copy.deepcopy(state)
 
     def _stable_read(self) -> dict:
+        source_results = self._stable_read_results()
+        if source_results is not None:
+            schedule_result, shifts_result, _signatures = source_results
+            return self._build_state(schedule_result, shifts_result)
+        return self._unavailable_state("unstable_source")
+
+    def _stable_read_results(self):
         for _attempt in range(2):
             before = (_signature(self.schedule_file), _signature(self.shifts_file))
             schedule_result = self.schedule_store.load_diagnostic(allow_backup_preview=True)
@@ -123,8 +162,86 @@ class ReleaseMonitorDutyProvider:
             )
             after = (_signature(self.schedule_file), _signature(self.shifts_file))
             if before == after:
-                return self._build_state(schedule_result, shifts_result)
-        return self._unavailable_state("unstable_source")
+                return schedule_result, shifts_result, after
+        return None
+
+    @staticmethod
+    def _signature_payload(signatures) -> dict:
+        def serialize(value):
+            return {"exists": value is not None, "mtime_ns": value[0] if value else 0, "size": value[1] if value else 0}
+
+        return {
+            "schedule": serialize(signatures[0]),
+            "shifts": serialize(signatures[1]),
+        }
+
+    def _revision_component_from_status(self, status: dict, signatures) -> dict:
+        return {
+            "provider_id": self.provider_id,
+            "available": bool(status.get("available")),
+            "authoritative": bool(status.get("authoritative")),
+            "status": str(status.get("status") or "missing_provider"),
+            "revision": str(status.get("revision") or ""),
+            "updated_at": str(status.get("updated_at") or ""),
+            "source_signatures": self._signature_payload(signatures),
+        }
+
+    def _unavailable_revision_component(self, status_name: str, signatures) -> dict:
+        source_signatures = self._signature_payload(signatures)
+        revision_payload = {
+            "contract": PROVIDER_CONTRACT,
+            "status": status_name,
+            "source_signatures": source_signatures,
+        }
+        return {
+            "provider_id": self.provider_id,
+            "available": False,
+            "authoritative": False,
+            "status": status_name,
+            "revision": "sha256:" + hashlib.sha256(_canonical_bytes(revision_payload)).hexdigest(),
+            "updated_at": "",
+            "source_signatures": source_signatures,
+        }
+
+    def _build_revision_component(self, schedule_result: dict, shifts_result: dict, signatures) -> dict:
+        source_status = str(schedule_result.get("status") or "current_invalid")
+        status_map = {
+            "current_missing": "missing_schedule",
+            "current_empty": "empty_schedule",
+            "current_invalid": "invalid_schedule",
+            "unsupported_schema": "unsupported_schema",
+            "recovered_backup": "recovered_backup",
+        }
+        if source_status not in {"current_valid", "recovered_backup"}:
+            return self._unavailable_revision_component(status_map.get(source_status, "invalid_schedule"), signatures)
+
+        shifts_status = str(shifts_result.get("status") or "current_missing")
+        if shifts_status not in {"current_valid", "current_missing"}:
+            return self._unavailable_revision_component("invalid_schedule", signatures)
+        shifts_payload = shifts_result.get("payload") if shifts_status == "current_valid" else None
+        try:
+            shifts, _lookup, shift_warnings = self._validate_shifts(shifts_payload)
+            _months, schedule_warnings = self._validate_schedule(schedule_result.get("payload"))
+        except ValueError as exc:
+            return self._unavailable_revision_component(str(exc) or "invalid_schedule", signatures)
+
+        revision_payload = {
+            "contract": PROVIDER_CONTRACT,
+            "schedule": schedule_result.get("payload"),
+            "effective_shifts": shifts,
+            "mapping_rules": MAPPING_RULES,
+        }
+        authoritative = source_status == "current_valid"
+        warnings = shift_warnings + schedule_warnings
+        status_name = "recovered_backup" if not authoritative else ("mapping_warnings" if warnings else "ready")
+        status = {
+            "available": True,
+            "authoritative": authoritative,
+            "status": status_name,
+            "revision": "sha256:" + hashlib.sha256(_canonical_bytes(revision_payload)).hexdigest(),
+            "updated_at": str(schedule_result.get("saved_at") or ""),
+        }
+        return self._revision_component_from_status(status, signatures)
 
     def _build_state(self, schedule_result: dict, shifts_result: dict) -> dict:
         source_status = str(schedule_result.get("status") or "current_invalid")

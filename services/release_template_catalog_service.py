@@ -1,5 +1,7 @@
+import hashlib
 import json
 import re
+import threading
 import time
 import zipfile
 from collections import Counter, defaultdict
@@ -17,6 +19,9 @@ _WORD_XML_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 _FOLDER_ID_RE = re.compile(r"\s*\((\d{5,})\)\s*$")
 _CATALOG_CACHE = {}
 _RUNTIME_CATALOG_TTL_SECONDS = 300
+_CATALOG_SIGNATURE_CACHE = {}
+_CATALOG_SIGNATURE_CACHE_LOCK = threading.RLock()
+_CATALOG_SIGNATURE_TTL_SECONDS = 30
 
 
 def is_ai_agents_template_category(category: str = "") -> bool:
@@ -156,6 +161,46 @@ def _catalog_signature(root: Path) -> Tuple:
 
 def clear_template_catalog_cache() -> None:
     _CATALOG_CACHE.clear()
+    with _CATALOG_SIGNATURE_CACHE_LOCK:
+        _CATALOG_SIGNATURE_CACHE.clear()
+
+
+def get_template_catalog_signature(
+    root: Path = DOC_TEMPLATES_ROOT,
+    *,
+    force: bool = False,
+) -> Dict[str, object]:
+    """Return a deterministic, briefly cached catalog signature."""
+    root = Path(root)
+    cache_key = str(root.resolve())
+    now = time.monotonic()
+    with _CATALOG_SIGNATURE_CACHE_LOCK:
+        cached = _CATALOG_SIGNATURE_CACHE.get(cache_key)
+        if not force and cached and float(cached.get("expires_at") or 0) > now:
+            return dict(cached["value"])
+
+    records = _catalog_signature(root)
+    serialized = json.dumps(
+        records,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    value = {
+        "revision": "sha256:" + hashlib.sha256(serialized).hexdigest(),
+        "files_count": len(records),
+        "max_mtime_ns": max((int(record[1]) for record in records), default=0),
+    }
+    with _CATALOG_SIGNATURE_CACHE_LOCK:
+        previous_value = cached.get("value") if cached else None
+        if previous_value and previous_value.get("revision") != value["revision"]:
+            resolved_root = root.resolve()
+            _CATALOG_CACHE.pop(f"runtime:{resolved_root}", None)
+            _CATALOG_CACHE.pop(f"deep:{resolved_root}", None)
+        _CATALOG_SIGNATURE_CACHE[cache_key] = {
+            "expires_at": now + _CATALOG_SIGNATURE_TTL_SECONDS,
+            "value": dict(value),
+        }
+    return value
 
 
 def _count_docx_files_shallow(directory: Path) -> int:

@@ -49,6 +49,9 @@ class DutyScheduleProviderRegistry:
     def status(self) -> Dict[str, Any]:
         return self._call("get_status", _missing_status())
 
+    def revision(self) -> Dict[str, Any]:
+        return self._call("get_revision_component", _missing_status())
+
     def release_projection(self) -> Dict[str, Any]:
         fallback = {
             **_missing_status(),
@@ -152,6 +155,11 @@ def unregister_duty_schedule_provider(app: Flask, provider_id: str) -> None:
 def get_duty_schedule_provider_status(*, registry=None) -> Dict[str, Any]:
     current = get_duty_schedule_provider_registry(registry=registry)
     return current.status() if current is not None else _missing_status()
+
+
+def get_duty_schedule_provider_revision(*, registry=None) -> Dict[str, Any]:
+    current = get_duty_schedule_provider_registry(registry=registry)
+    return current.revision() if current is not None else _missing_status()
 
 
 def get_duty_schedule_release_projection(*, registry=None) -> Dict[str, Any]:
