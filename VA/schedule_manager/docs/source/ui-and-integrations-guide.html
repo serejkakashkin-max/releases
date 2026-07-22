@@ -599,7 +599,7 @@
           <div class="meta-grid">
             <div class="meta-card"><span>Ветка и снимок</span><strong>main · f400b4fe595ba57737c386865d935da37d2be3bc</strong></div>
             <div class="meta-card"><span>Дата анализа</span><strong>13 июля 2026</strong></div>
-            <div class="meta-card"><span>Область</span><strong>67 tracked-файлов · 7 Blueprint · 65 маршрутов</strong></div>
+            <div class="meta-card"><span>Область</span><strong>67 tracked-файлов · 7 Blueprint · 58 маршрутов</strong></div>
           </div>
           <div class="callout">
             <span class="label important">Важно</span>
@@ -934,9 +934,6 @@
                     <tr><td>Dashboard</td><td><code>templates/dashboard.html</code></td><td><code>dashboard.css</code> + крупный inline UI</td><td>Не архитектурный эталон</td></tr>
                     <tr><td>Release Monitor</td><td><code>templates/release_monitor.html</code></td><td>Base + frontend-монолит</td><td>Только поведенческий справочник</td></tr>
                     <tr><td>Assignment Center</td><td><code>templates/release_assignment_center.html</code></td><td>Отдельные CSS/JS + base</td><td>Основной структурный эталон</td></tr>
-                    <tr><td>Release</td><td><code>templates/release.html</code></td><td>Form/Jira/DOCX</td><td>Функциональный аналог</td></tr>
-                    <tr><td>Recommendations</td><td><code>templates/recommendations.html</code></td><td>Результат POST, не отдельный GET</td><td>Локальная result page</td></tr>
-                    <tr><td>Constructor</td><td><code>templates/template_constructor.html</code></td><td>Multipart analyze/build</td><td>File workflow</td></tr>
                     <tr><td>MPR</td><td><code>templates/mpr.html</code></td><td>XLSX/CSV → DOCX/ZIP</td><td>Error/download эталон</td></tr>
                     <tr><td>SUP</td><td><code>templates/sup_parameters.html</code></td><td>Standalone dark-only</td><td>Не использовать как UI-стандарт</td></tr>
                     <tr><td>Current week report</td><td>Jinja отсутствует</td><td>HTML генерирует service</td><td>Отдельная программная поверхность</td></tr>
@@ -978,7 +975,7 @@
                 <thead><tr><th>Blueprint</th><th>Маршрутов</th><th>Зона ответственности</th><th>Когда расширять</th></tr></thead>
                 <tbody>
                   <tr><td><code>main</code></td><td>2</td><td>Главная и help</td><td>Только общая навигация/landing</td></tr>
-                  <tr><td><code>release</code></td><td>9</td><td>Release form, DOCX, template constructor, monitor bootstrap</td><td>Новая функция относится к подготовке релиза</td></tr>
+                  <tr><td><code>release</code></td><td>2</td><td>Инициализация и генерация DOCX/ZIP из Release Monitor</td><td>Новая функция относится к подготовке релиза</td></tr>
                   <tr><td><code>mpr</code></td><td>3</td><td>Preview и генерация MPR из файлов</td><td>MPR-specific file workflow</td></tr>
                   <tr><td><code>sms</code></td><td>3</td><td>Профили SMS и CSV/ZIP handoff</td><td>SMS-specific операция</td></tr>
                   <tr><td><code>dashboard</code></td><td>35</td><td>Jira dashboard, Release Monitor, Assignment Center, отчёты</td><td>Только близкая dashboard/monitor функция; модуль уже крупный</td></tr>
@@ -1003,7 +1000,7 @@
           <div class="subsection">
             <h3>Эталонные end-to-end цепочки</h3>
             <details open><summary>MPR: preview и download</summary><div class="details-body"><div class="flow"><span class="flow-node"><code>templates/mpr.html</code></span><span class="flow-arrow">→</span><span class="flow-node"><code>POST /mpr/preview</code></span><span class="flow-arrow">→</span><span class="flow-node"><code>mpr_service</code></span><span class="flow-arrow">→</span><span class="flow-node">JSON preview</span><span class="flow-arrow">→</span><span class="flow-node"><code>POST /mpr/generate</code> → DOCX/ZIP</span></div><p>Полезно копировать обработку loading, non-JSON error, blob download и object URL cleanup.</p></div></details>
-            <details><summary>Release: форма → Jira → DOCX / рекомендации</summary><div class="details-body"><div class="flow"><span class="flow-node"><code>GET/POST /release</code></span><span class="flow-arrow">→</span><span class="flow-node">validation + Jira helpers</span><span class="flow-arrow">→</span><span class="flow-node">document services</span><span class="flow-arrow">→</span><span class="flow-node">file или <code>recommendations.html</code></span></div><p>Цепочка функционально богата, но route перегружен: новую реализацию делите на меньшие service methods.</p></div></details>
+            <details><summary>Release monitor: мастер в таблице → Jira → DOCX/ZIP</summary><div class="details-body"><div class="flow"><span class="flow-node"><code>POST /release/monitor-init</code></span><span class="flow-arrow">→</span><span class="flow-node">Jira snapshot + template detection</span><span class="flow-arrow">→</span><span class="flow-node"><code>POST /release/monitor-generate</code></span><span class="flow-arrow">→</span><span class="flow-node">DOCX/ZIP</span></div><p>Пользователь запускает сценарий кнопкой в строке Блока релизов; отдельная ручная страница генератора удалена.</p></div></details>
             <details><summary>Release Monitor: refresh → polling → cached view</summary><div class="details-body"><div class="flow"><span class="flow-node"><code>POST .../refresh</code></span><span class="flow-arrow">→</span><span class="flow-node">background worker + Jira/SMTP</span><span class="flow-arrow">→</span><span class="flow-node"><code>GET .../status</code></span><span class="flow-arrow">→</span><span class="flow-node">UI polling guard</span></div><p>Используйте как модель статусов, но не копируйте process-local scheduler как универсальную очередь.</p></div></details>
             <details><summary>Assignment Center: optimistic edit → 409 rollback</summary><div class="details-body"><div class="flow"><span class="flow-node"><code>release_assignment_center.js</code></span><span class="flow-arrow">→</span><span class="flow-node">optimistic state</span><span class="flow-arrow">→</span><span class="flow-node">POST dashboard API</span><span class="flow-arrow">→</span><span class="flow-node">success или 409 + reload</span></div><p>Лучший структурный пример отдельного CSS/JS и конфликтного ответа.</p></div></details>
             <details><summary>Confluence export</summary><div class="details-body"><div class="flow"><span class="flow-node">Release Monitor action</span><span class="flow-arrow">→</span><span class="flow-node"><code>POST .../confluence-sync</code></span><span class="flow-arrow">→</span><span class="flow-node">Confluence service</span><span class="flow-arrow">→</span><span class="flow-node">result message</span></div></div></details>
@@ -1546,11 +1543,11 @@ fetch(apiUrl('/api/upload'), {method: 'POST', body: formData});</code></pre></di
             <article class="integration-card searchable" data-searchable data-search="gigachat ai recommendations chatbot">
               <h3>GigaChat</h3>
               <dl>
-                <dt>1. Назначение</dt><dd>Рекомендации release flow, week-control и отдельные chat intents.</dd>
-                <dt>2. Вход UI</dt><dd>Release form, Assignment Center, chatbot.</dd>
+                <dt>1. Назначение</dt><dd>Рекомендации week-control и отдельные chat intents.</dd>
+                <dt>2. Вход UI</dt><dd>Assignment Center и chatbot.</dd>
                 <dt>3. Frontend caller</dt><dd><code>static/js/release_assignment_center.js:726</code>, <code>static/js/chatbot.js:290</code>.</dd>
-                <dt>4. Endpoint</dt><dd><code>POST /release</code>, <code>POST /dashboard/release-monitor/week-control/recommend</code>, <code>POST /dashboard/api/chat</code>.</dd>
-                <dt>5. Route</dt><dd><code>routes/release_routes.py:660</code>, <code>routes/dashboard_routes.py:331</code>, <code>routes/chatbot_routes.py:52</code>.</dd>
+                <dt>4. Endpoint</dt><dd><code>POST /dashboard/release-monitor/week-control/recommend</code>, <code>POST /dashboard/api/chat</code>.</dd>
+                <dt>5. Route</dt><dd><code>routes/dashboard_routes.py:331</code>, <code>routes/chatbot_routes.py:52</code>.</dd>
                 <dt>6. Service</dt><dd><code>services/gigachat_service.py</code> и вызывающие domain services.</dd>
                 <dt>7. Configuration</dt><dd><code>GIGACHAT_CREDENTIALS</code> (secret), scope/model/TLS settings.</dd>
                 <dt>8. Внешний сервис</dt><dd>GigaChat API.</dd>
@@ -1611,20 +1608,20 @@ fetch(apiUrl('/api/upload'), {method: 'POST', body: formData});</code></pre></di
               </dl>
             </article>
 
-            <article class="integration-card searchable" data-searchable data-search="release docx template constructor document">
-              <h3>Release DOCX и constructor</h3>
+            <article class="integration-card searchable" data-searchable data-search="release docx template catalog document">
+              <h3>Release Monitor DOCX и каталог шаблонов</h3>
               <dl>
-                <dt>1. Назначение</dt><dd>Проверить/собрать release document и управлять template-based generation.</dd>
-                <dt>2. Вход UI</dt><dd>Release form и Template constructor.</dd>
-                <dt>3. Frontend caller</dt><dd><code>templates/release.html:330</code>, <code>templates/template_constructor.html:802</code>.</dd>
-                <dt>4. Endpoint</dt><dd><code>GET/POST /release</code>, <code>POST /release/template-constructor/analyze</code>, <code>POST /release/template-constructor/build</code>.</dd>
-                <dt>5. Route</dt><dd><code>routes/release_routes.py:660</code>, <code>:493</code>, <code>:506</code>.</dd>
-                <dt>6. Service</dt><dd><code>services/docx_service.py</code>, <code>services/template_constructor_service.py</code>, <code>services/release_artifact_service.py</code>.</dd>
+                <dt>1. Назначение</dt><dd>Сформировать release document и выбрать рабочий шаблон из каталога.</dd>
+                <dt>2. Вход UI</dt><dd>Мастер формирования документов в строке Блока релизов.</dd>
+                <dt>3. Frontend caller</dt><dd><code>templates/release_monitor.html</code>.</dd>
+                <dt>4. Endpoint</dt><dd><code>POST /release/monitor-init</code>, <code>POST /release/monitor-generate</code>.</dd>
+                <dt>5. Route</dt><dd><code>routes/release_routes.py</code>.</dd>
+                <dt>6. Service</dt><dd><code>services/docx_service.py</code>, <code>services/release_template_catalog_service.py</code>, <code>services/release_artifact_service.py</code>.</dd>
                 <dt>7. Configuration</dt><dd>Template/artifact roots (internal filesystem parameters).</dd>
-                <dt>8. Внешний сервис</dt><dd>Опционально Jira/GigaChat; основная обработка локальная.</dd>
-                <dt>9. Ответ</dt><dd>Rendered recommendations, JSON analysis или ZIP с DOCX-артефактами.</dd>
-                <dt>10. Переиспользовать</dt><dd><code>replace_keys_in_doc</code>, <code>check_document</code>, <code>analyze_template_package</code>, <code>build_template_candidate</code>.</dd>
-                <dt>11. Ограничения</dt><dd>Большие files, path traversal/cleanup, python-docx errors, template coupling.</dd>
+                <dt>8. Внешний сервис</dt><dd>Jira; основная обработка документов локальная.</dd>
+                <dt>9. Ответ</dt><dd>JSON и ZIP с DOCX-артефактами.</dd>
+                <dt>10. Переиспользовать</dt><dd><code>replace_keys_in_doc</code>, <code>check_document</code>, <code>build_runtime_template_catalog</code>, <code>select_template_by_summary</code>.</dd>
+                <dt>11. Ограничения</dt><dd>Filesystem availability, python-docx errors, template coupling.</dd>
               </dl>
             </article>
 
@@ -1958,26 +1955,24 @@ with TemporaryDirectory() as tmp:
             </div>
           </details>
 
-          <details class="reuse-card searchable" id="docx-reuse" data-searchable data-search="docx template constructor artifact validation replacement">
-            <summary><strong>DOCX: замены, проверка и конструктор шаблонов</strong> <span class="label side-effect">Artifact</span></summary>
+          <details class="reuse-card searchable" id="docx-reuse" data-searchable data-search="docx template catalog artifact validation replacement">
+            <summary><strong>DOCX: замены, проверка и каталог шаблонов</strong> <span class="label side-effect">Artifact</span></summary>
             <div class="details-body">
               <div class="integration-card"><dl>
-                <dt>Назначение</dt><dd>Заменить placeholders и проверить release DOCX либо проанализировать/собрать candidate template package.</dd>
-                <dt>Когда использовать</dt><dd><code>replace_keys_in_doc(doc, context, issues, release_id, instruction_url=None)</code>, <code>check_document(document_path, context, issues, release_id)</code>; <code>analyze_template_package(uploaded_docs: List[Dict], metadata: Optional[Dict]=None) -&gt; Dict</code>, <code>build_template_candidate(uploaded_docs: List[Dict], metadata: Dict) -&gt; BytesIO</code>.</dd>
+                <dt>Назначение</dt><dd>Заменить placeholders, проверить release DOCX и выбрать шаблон из рабочего каталога.</dd>
+                <dt>Когда использовать</dt><dd><code>replace_keys_in_doc(doc, context, issues, release_id, instruction_url=None)</code>, <code>check_document(document_path, context, issues, release_id)</code>, <code>build_runtime_template_catalog()</code>, <code>select_template_by_summary(entries, summary)</code>.</dd>
                 <dt>Когда не использовать</dt><dd>Для orchestration всей release-формы: template selection, Jira enrichment и packaging сейчас распределены по route/services. <span class="label wrapper">Рекомендация: новый wrapper, в текущем main отсутствует</span>.</dd>
-                <dt>Public reuse point</dt><dd><code>services/docx_service.py</code>, <code>services/template_constructor_service.py</code>. Public по имени; формальная schema/version policy отсутствует.</dd>
+                <dt>Public reuse point</dt><dd><code>services/docx_service.py</code>, <code>services/release_template_catalog_service.py</code>. Public по имени; формальная schema/version policy отсутствует.</dd>
                 <dt>Стабильность</dt><dd>Public по имени и фактически вызывается routes; placeholders/metadata остаются domain-specific и не versioned.</dd>
-                <dt>Входы</dt><dd><code>python-docx Document</code>/safe temp path, validated context/issues либо uploaded doc bytes+safe filename/metadata.</dd>
-                <dt>Выходы</dt><dd>Mutated Document, list validation errors, analysis dict или <code>BytesIO</code>.</dd>
+                <dt>Входы</dt><dd><code>python-docx Document</code>/safe temp path, validated context/issues либо параметры поиска по каталогу.</dd>
+                <dt>Выходы</dt><dd>Mutated Document, list validation errors или metadata выбранного шаблона.</dd>
                 <dt>Поведение</dt><dd>В основном CPU/memory/filesystem; <code>replace_keys_in_doc</code> исторически связан с Jira domain для hyperlinks. Cache catalog существует отдельно; mutation функции меняют Document.</dd>
               </dl></div>
-              <div class="code-block"><pre><code data-language="python" data-check="fragment" data-file="services/new_document_service.py">from services.template_constructor_service import build_template_candidate
+              <div class="code-block"><pre><code data-language="python" data-check="fragment" data-file="services/new_document_service.py">from services.release_template_catalog_service import find_template_entries_by_ke, select_template_by_summary
 
-def create_candidate(files: list[dict], metadata: dict):
-    validate_upload_count_names_and_sizes(files)
-    artifact = build_template_candidate(files, metadata)
-    artifact.seek(0)
-    return artifact, "template-candidate.zip"</code></pre></div>
+def choose_template(ke: str, summary: str):
+    candidates = find_template_entries_by_ke(ke)
+    return candidates[0] if len(candidates) == 1 else select_template_by_summary(candidates, summary)</code></pre></div>
               <div class="table-wrap"><table><thead><tr><th>Ошибка</th><th>Контракт</th></tr></thead><tbody><tr><td>Invalid/oversized/corrupt DOCX</td><td>400/422 до долгой обработки.</td></tr><tr><td>Validation findings</td><td>200 + structured findings, не 500.</td></tr><tr><td>Unexpected parser/filesystem error</td><td>500 safe code; temp files removed.</td></tr></tbody></table></div>
               <p><strong>Anti-patterns:</strong> доверять filename/path; route владеет document mutation; сохранять upload бессрочно; переносить Jira coupling в новый artifact service.</p>
               <p><strong>Проверка DOCX:</strong> valid · empty/missing placeholders · corrupt/oversize · parser timeout limit · invalid metadata · partial validation · retry не нужен · cleanup/safe filename · no document content in logs.</p>
@@ -2284,7 +2279,7 @@ git push --force-with-lease</code></pre></div><p>Переписывает commit
           <p class="section-intro">Объёмные реестры вынесены из основного повествования. Они отражают снимок <code>main</code> на указанном SHA и должны пересобираться после изменения routes/config/state.</p>
 
           <details id="endpoint-registry">
-            <summary>Приложение A · полный реестр 65 endpoints</summary>
+            <summary>Приложение A · полный реестр 58 endpoints</summary>
             <div class="details-body">
               <p>Фильтры работают локально через <code>file://</code>. Endpoint с несколькими методами попадает в каждый соответствующий method filter.</p>
               <div class="filter-grid" role="group" aria-label="Фильтры реестра endpoints">
@@ -2296,7 +2291,7 @@ git push --force-with-lease</code></pre></div><p>Переписывает commit
               </div>
               <div class="filter-actions">
                 <button class="action-button" id="resetEndpointFilters" type="button">Сбросить фильтры</button>
-                <span class="result-count" id="endpointResultCount" role="status" aria-live="polite">Показано 65 из 65</span>
+                <span class="result-count" id="endpointResultCount" role="status" aria-live="polite">Показано 58 из 58</span>
               </div>
               <div class="table-wrap">
                 <table id="endpointTable">
@@ -2305,15 +2300,8 @@ git push --force-with-lease</code></pre></div><p>Переписывает commit
                     <tr class="endpoint-row" data-blueprint="main" data-path="/" data-methods="GET" data-area="landing" data-frontend="yes" data-integration="no"><td>main</td><td>GET</td><td><code>/</code></td><td>Главная</td><td>да</td><td>нет</td><td><code>main_routes.py:8 · index</code></td></tr>
                     <tr class="endpoint-row" data-blueprint="main" data-path="/help" data-methods="GET" data-area="landing" data-frontend="yes" data-integration="no"><td>main</td><td>GET</td><td><code>/help</code></td><td>Главная</td><td>да</td><td>нет</td><td><code>main_routes.py:23 · help_page</code></td></tr>
 
-                    <tr class="endpoint-row" data-blueprint="release" data-path="/get_ke" data-methods="GET" data-area="release" data-frontend="yes" data-integration="yes"><td>release</td><td>GET</td><td><code>/get_ke</code></td><td>Release</td><td>да</td><td>Jira</td><td><code>release_routes.py:402 · get_ke</code></td></tr>
-                    <tr class="endpoint-row" data-blueprint="release" data-path="/get_releases" data-methods="GET" data-area="release" data-frontend="yes" data-integration="no"><td>release</td><td>GET</td><td><code>/get_releases</code></td><td>Release</td><td>да</td><td>нет</td><td><code>release_routes.py:408 · get_releases</code></td></tr>
-                    <tr class="endpoint-row" data-blueprint="release" data-path="/auto_detect" data-methods="GET" data-area="release" data-frontend="yes" data-integration="yes"><td>release</td><td>GET</td><td><code>/auto_detect</code></td><td>Release</td><td>да</td><td>Jira</td><td><code>release_routes.py:421 · auto_detect</code></td></tr>
-                    <tr class="endpoint-row" data-blueprint="release" data-path="/release/template-constructor" data-methods="GET" data-area="release" data-frontend="yes" data-integration="no"><td>release</td><td>GET</td><td><code>/release/template-constructor</code></td><td>Release/DOCX</td><td>да</td><td>нет</td><td><code>release_routes.py:484 · release_template_constructor</code></td></tr>
-                    <tr class="endpoint-row" data-blueprint="release" data-path="/release/template-constructor/analyze" data-methods="POST" data-area="release" data-frontend="yes" data-integration="no"><td>release</td><td>POST</td><td><code>/release/template-constructor/analyze</code></td><td>Release/DOCX</td><td>да</td><td>нет</td><td><code>release_routes.py:493 · release_template_constructor_analyze</code></td></tr>
-                    <tr class="endpoint-row" data-blueprint="release" data-path="/release/template-constructor/build" data-methods="POST" data-area="release" data-frontend="yes" data-integration="no"><td>release</td><td>POST</td><td><code>/release/template-constructor/build</code></td><td>Release/DOCX</td><td>да</td><td>нет</td><td><code>release_routes.py:506 · release_template_constructor_build</code></td></tr>
-                    <tr class="endpoint-row" data-blueprint="release" data-path="/release/monitor-init" data-methods="POST" data-area="monitor" data-frontend="yes" data-integration="yes"><td>release</td><td>POST</td><td><code>/release/monitor-init</code></td><td>Monitor</td><td>да</td><td>Jira</td><td><code>release_routes.py:521 · release_monitor_init</code></td></tr>
-                    <tr class="endpoint-row" data-blueprint="release" data-path="/release/monitor-generate" data-methods="POST" data-area="monitor" data-frontend="yes" data-integration="yes"><td>release</td><td>POST</td><td><code>/release/monitor-generate</code></td><td>Monitor</td><td>да</td><td>Jira</td><td><code>release_routes.py:586 · release_monitor_generate</code></td></tr>
-                    <tr class="endpoint-row" data-blueprint="release" data-path="/release" data-methods="GET,POST" data-area="release" data-frontend="yes" data-integration="yes"><td>release</td><td>GET, POST</td><td><code>/release</code></td><td>Release</td><td>да</td><td>Jira/Giga</td><td><code>release_routes.py:660 · release</code></td></tr>
+                    <tr class="endpoint-row" data-blueprint="release" data-path="/release/monitor-init" data-methods="POST" data-area="monitor" data-frontend="yes" data-integration="yes"><td>release</td><td>POST</td><td><code>/release/monitor-init</code></td><td>Monitor</td><td>да</td><td>Jira</td><td><code>release_routes.py:396 · release_monitor_init</code></td></tr>
+                    <tr class="endpoint-row" data-blueprint="release" data-path="/release/monitor-generate" data-methods="POST" data-area="monitor" data-frontend="yes" data-integration="yes"><td>release</td><td>POST</td><td><code>/release/monitor-generate</code></td><td>Monitor</td><td>да</td><td>Jira</td><td><code>release_routes.py:461 · release_monitor_generate</code></td></tr>
 
                     <tr class="endpoint-row" data-blueprint="mpr" data-path="/mpr" data-methods="GET" data-area="mpr" data-frontend="yes" data-integration="no"><td>mpr</td><td>GET</td><td><code>/mpr</code></td><td>MPR</td><td>да</td><td>нет</td><td><code>mpr_routes.py:28 · mpr_page</code></td></tr>
                     <tr class="endpoint-row" data-blueprint="mpr" data-path="/mpr/generate" data-methods="POST" data-area="mpr" data-frontend="yes" data-integration="no"><td>mpr</td><td>POST</td><td><code>/mpr/generate</code></td><td>MPR</td><td>да</td><td>нет</td><td><code>mpr_routes.py:37 · mpr_generate</code></td></tr>

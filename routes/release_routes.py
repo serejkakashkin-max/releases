@@ -2,10 +2,8 @@
 import re
 import logging
 from datetime import datetime, timedelta
-from services.gigachat_service import GIGA_HELPER
 from pathlib import Path
-from flask import Blueprint, render_template, request, send_file, jsonify
-from werkzeug.utils import secure_filename
+from flask import Blueprint, request, send_file, jsonify
 from zipfile import ZipFile
 from io import BytesIO
 import tempfile
@@ -14,8 +12,7 @@ from docx import Document  # ДОБАВЛЕНО
 from extensions import RELEASE_STRUCTURE, ID_MAP  # Импортируем из extensions
 from config import DOC_TEMPLATES_ROOT, DEFAULT_BH_PLAYBOOKS
 from services.jira_service import (
-    get_release_version, get_issues_from_jira, get_ke_from_release, 
-    get_pob_from_release, extract_sm_id_and_summary, get_distributives_info,
+    extract_sm_id_and_summary,
     get_release_jira_snapshot,
 )
 from services.release_monitor_service import (
@@ -23,15 +20,10 @@ from services.release_monitor_service import (
     normalize_release_type,
     sync_release_monitor_jira_fields,
 )
-from services.docx_service import replace_keys_in_doc, check_document
-from services.release_monitor_employee_provider import get_release_monitor_names
-from services.gigachat_service import GIGA_HELPER
+from services.docx_service import replace_keys_in_doc
 from services.counter_service import increment_counter  # НОВОЕ: импорт счетчика
-from services.template_constructor_service import (
-    build_template_candidate,
-    analyze_template_package,
+from services.release_template_catalog_service import (
     find_template_entries_by_ke,
-    get_catalog_release_structure,
     is_ai_agents_template_category,
     select_template_by_summary,
     template_requires_playbooks,
@@ -400,125 +392,6 @@ def _generate_release_zip_buffer(
     zip_buffer.seek(0)
     return zip_buffer
 
-@release_bp.route('/get_ke')
-def get_ke():
-    release_id = request.args.get('release_id')
-    ke = get_ke_from_release(release_id)
-    return jsonify({'ke': ke})
-
-@release_bp.route('/get_releases')
-def get_releases():
-    category = request.args.get('category')
-    releases = get_catalog_release_structure().get(category, RELEASE_STRUCTURE.get(category, []))
-    return jsonify([
-        {
-            "clean": clean,
-            "full": full,
-            "requires_playbooks": release_uses_playbooks(full, category),
-        }
-        for clean, full in releases
-    ])
-
-@release_bp.route('/auto_detect')
-def auto_detect():
-    release_id = request.args.get('release_id')
-    if not release_id:
-        return jsonify({"error": "No release_id provided"}), 400
-
-    jira_snapshot = get_release_jira_snapshot(release_id)
-    return jsonify(detect_release_template(release_id, jira_snapshot=jira_snapshot))
-
-
-def _read_constructor_uploads(files):
-    uploaded_docs = []
-
-    def append_upload(upload):
-        if not upload or not upload.filename:
-            return
-        upload_bytes = upload.read()
-        filename = upload.filename
-        filename_lower = filename.lower()
-        if filename_lower.endswith(".zip"):
-            try:
-                with ZipFile(BytesIO(upload_bytes)) as archive:
-                    for info in archive.infolist():
-                        if info.is_dir() or not info.filename.lower().endswith(".docx"):
-                            continue
-                        if info.file_size <= 0:
-                            continue
-                        uploaded_docs.append({
-                            "filename": Path(info.filename.replace("\\", "/")).name,
-                            "data": archive.read(info),
-                        })
-            except Exception as exc:
-                raise ValueError(f"Не удалось прочитать ZIP: {exc}")
-        elif filename_lower.endswith(".docx"):
-            uploaded_docs.append({"filename": filename, "data": upload_bytes})
-
-    for package in files.getlist("package"):
-        append_upload(package)
-
-    for document in files.getlist("documents"):
-        append_upload(document)
-
-    if len(uploaded_docs) > 10:
-        raise ValueError("Слишком много DOCX-файлов. Загрузите ZIP с 3 документами или ровно 3 DOCX.")
-    if not uploaded_docs:
-        raise ValueError("Загрузите ZIP с шаблонами или 3 DOCX-документа.")
-    return uploaded_docs
-
-
-def _constructor_metadata_from_request(form):
-    return {
-        "category": (form.get("category") or "").strip(),
-        "name": (form.get("name") or "").strip(),
-        "ke": (form.get("ke") or "").strip(),
-        "variant": (form.get("variant") or "").strip(),
-        "aliases": (form.get("aliases") or "").strip(),
-        "requires_playbooks": form.get("requires_playbooks"),
-        "requires_instruction": form.get("requires_instruction"),
-        "replacements": (form.get("replacements") or "").strip(),
-        "enhancements": form.getlist("enhancements") if hasattr(form, "getlist") else [],
-    }
-
-
-@release_bp.route('/release/template-constructor')
-def release_template_constructor():
-    return render_template(
-        'template_constructor.html',
-        basepath=BASE_PATH,
-        categories=["CLM", "EMRM", "AIST", "AI-agents"],
-    )
-
-
-@release_bp.route('/release/template-constructor/analyze', methods=['POST'])
-def release_template_constructor_analyze():
-    try:
-        uploaded_docs = _read_constructor_uploads(request.files)
-        analysis = analyze_template_package(uploaded_docs, _constructor_metadata_from_request(request.form))
-        return jsonify({"success": True, "analysis": analysis})
-    except ValueError as exc:
-        return jsonify({"success": False, "error": str(exc)}), 400
-    except Exception as exc:
-        logging.error("Ошибка анализа пакета шаблонов: %s", exc)
-        return jsonify({"success": False, "error": "Не удалось проанализировать пакет шаблонов"}), 500
-
-
-@release_bp.route('/release/template-constructor/build', methods=['POST'])
-def release_template_constructor_build():
-    try:
-        uploaded_docs = _read_constructor_uploads(request.files)
-        metadata = _constructor_metadata_from_request(request.form)
-        zip_buffer = build_template_candidate(uploaded_docs, metadata)
-        filename = f"template_candidate_{metadata.get('category') or 'release'}_{metadata.get('ke') or 'new'}.zip"
-        return send_file(zip_buffer, as_attachment=True, download_name=filename)
-    except ValueError as exc:
-        return jsonify({"success": False, "error": str(exc)}), 400
-    except Exception as exc:
-        logging.error("Ошибка сборки кандидата шаблона: %s", exc)
-        return jsonify({"success": False, "error": "Не удалось собрать кандидат шаблона"}), 500
-
-
 @release_bp.route('/release/monitor-init', methods=['POST'])
 def release_monitor_init():
     data = request.get_json(silent=True) or {}
@@ -657,129 +530,3 @@ def release_monitor_generate():
     except Exception as exc:
         logging.error("Ошибка формирования документов из блока релизов: %s", exc)
         return jsonify({"success": False, "error": "Не удалось сформировать документы"}), 500
-
-@release_bp.route('/release', methods=['GET', 'POST'])
-def release():
-    categories = list(get_catalog_release_structure().keys() or RELEASE_STRUCTURE.keys())
-    oplot_values = get_release_monitor_names()
-    playbooks = DEFAULT_BH_PLAYBOOKS
-    status = ""
-    results = {}
-    current_date = datetime.now().strftime("%d.%m.%Y")
-    
-    if request.method == 'POST':
-        required_fields = ['release_id', 'prev_version', 'oplot', 'checker', 'date']
-        for field in required_fields:
-            if not request.form.get(field):
-                status = f"Ошибка: поле {field} обязательно для заполнения"
-                return render_template('release.html', basepath=BASE_PATH, categories=categories, releases=[], oplot_values=oplot_values, playbooks=playbooks, status=status, current_date=current_date, results=results)
-        
-        category = request.form.get('category', '')
-        release_full = request.form.get('release', '')
-        release_id = request.form['release_id']
-        prev_version = request.form['prev_version']
-        oplot = request.form['oplot']
-        checker = request.form['checker']
-        instruction_link = request.form['instruction_link']
-        date_str = request.form['date']
-        ke = request.form['ke']
-        selected_playbooks = request.form.getlist('playbooks')
-        if not release_uses_playbooks(release_full, category):
-            selected_playbooks = []
-        playbooks_text = "\n".join(selected_playbooks)
-        
-        try:
-            t_date = datetime.strptime(date_str, "%d.%m.%Y")
-            t = t_date.strftime("%d.%m.%Y")
-            tt = (t_date + timedelta(days=1)).strftime("%d.%m.%Y")
-        except ValueError:
-            status = "Ошибка: Неверный формат даты"
-            return render_template('release.html', basepath=BASE_PATH, categories=categories, releases=[], oplot_values=oplot_values, playbooks=playbooks, status=status, current_date=current_date, results=results)
-        
-        jira_snapshot = get_release_jira_snapshot(release_id)
-        release_version = jira_snapshot.get("release_version") or ""
-        jira_issues = list(jira_snapshot.get("issues") or [])
-        instruction_block = "Выполнить пункты инструкции по внедрению ИНСТРУКЦИЯ" if instruction_link else "Отсутствуют"
-        pob = jira_snapshot.get("pob") or ""
-        
-        context = {
-            "RELEASE_VERSION": release_version,
-            "release_version": release_version,
-            "releases_version": release_version,
-            "PREV_VERSION": prev_version,
-            "RELEASE_ID": release_id,
-            "OPLOT": oplot,
-            "CHECKER": checker,
-            "DATE": t,
-            "PLUS_1": tt,
-            "PLAYBOOKS": playbooks_text,
-            "INSTRUCTION_BLOCK": instruction_block,
-            "POB": pob,
-            "RELNUMBER": release_id
-        }
-        
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
-            
-            if not category or not release_full:
-                status = "Ошибка: Не выбраны категория и/или релиз. Используйте автоопределение или выберите вручную."
-                return render_template('release.html', basepath=BASE_PATH, categories=categories, releases=[], oplot_values=oplot_values, playbooks=playbooks, status=status, current_date=current_date, results=results)
-            
-            template_dir = DOC_TEMPLATES_ROOT / category / release_full
-            
-            if not template_dir.exists():
-                status = f"Ошибка: директория с шаблонами не найдена: {template_dir}"
-                return render_template('release.html', basepath=BASE_PATH, categories=categories, releases=[], oplot_values=oplot_values, playbooks=playbooks, status=status, current_date=current_date, results=results)
-            
-            template_files = list(template_dir.glob("*.docx"))
-            
-            if not template_files:
-                status = f"Ошибка: шаблоны не найдены в директории: {template_dir}"
-                return render_template('release.html', basepath=BASE_PATH, categories=categories, releases=[], oplot_values=oplot_values, playbooks=playbooks, status=status, current_date=current_date, results=results)
-            
-            has_errors = False
-            results = {}
-            generated_docs = []
-            
-            for path in template_files:
-                doc = Document(path)
-                doc = replace_keys_in_doc(doc, context, jira_issues, release_id, instruction_url=instruction_link if "План" in path.name else None)
-                stem = path.stem
-                if ke:
-                    stem = stem.replace("КЭ", ke)
-                
-                output_path = temp_path / f"{stem}.docx"
-                doc.save(output_path)
-                generated_docs.append(output_path)
-                
-                if request.form.get('action') in ['check', 'recommendations']:
-                    errors = check_document(output_path, context, jira_issues, release_id)
-                    results[output_path.name] = errors
-                    if errors:
-                        has_errors = True
-            
-            if request.form.get('action') == 'check':
-                status = "Результаты проверки документов"
-                return render_template('release.html', basepath=BASE_PATH, categories=categories, releases=[], oplot_values=oplot_values, playbooks=playbooks, status=status, current_date=current_date, results=results)
-            
-            if request.form.get('action') == 'recommendations':
-                dist_info = get_distributives_info(release_id)
-                check_results = {}
-                for doc_path in generated_docs:
-                    errors = check_document(doc_path, context, jira_issues, release_id)
-                    check_results[doc_path.name] = errors
-                
-                summary_text = GIGA_HELPER.generate_recommendations(check_results, dist_info)
-                return render_template('recommendations.html', basepath=BASE_PATH, check_results=check_results, dist_info=dist_info, summary_text=summary_text, release_id=release_id)
-            
-            # НОВОЕ: Инкремент счетчика при успешной генерации
-            increment_counter('release')
-            
-            zip_buffer = BytesIO()
-            with ZipFile(zip_buffer, 'w') as zip_file:
-                for doc_path in generated_docs:
-                    zip_file.write(doc_path, doc_path.name)
-            zip_buffer.seek(0)
-            return send_file(zip_buffer, as_attachment=True, download_name=f"{release_id}.zip")
-    
-    return render_template('release.html', basepath=BASE_PATH, categories=categories, releases=[], oplot_values=oplot_values, playbooks=playbooks, status=status, current_date=current_date, results=results)

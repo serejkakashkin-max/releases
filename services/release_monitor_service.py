@@ -35,7 +35,7 @@ from services.release_artifact_service import (
     is_ai_agent_release_context,
     select_distribution_artifact,
 )
-from services.template_constructor_service import (
+from services.release_template_catalog_service import (
     build_runtime_template_catalog,
     is_ai_agents_template_category,
     select_template_by_summary,
