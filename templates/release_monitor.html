@@ -10422,6 +10422,17 @@
             const isRefreshing = Boolean(data.refresh_in_progress || refreshStatus.state === 'refreshing');
             setReleaseMonitorGlobalRefreshing(isRefreshing);
 
+            const autoIncrementalStatus = data.auto_incremental || {};
+            if (Object.keys(autoIncrementalStatus).length) {
+                releaseMonitorMeta = {
+                    ...releaseMonitorMeta,
+                    auto_incremental_status: autoIncrementalStatus,
+                    auto_incremental_refresh_enabled: autoIncrementalStatus.enabled !== false,
+                };
+                updateReleaseAutoRefreshBadge(releaseMonitorMeta);
+                window.dashboardData.release_monitor_meta = releaseMonitorMeta;
+            }
+
             if (refreshStatus.state === 'failed' || refreshStatus.state === 'rejected') {
                 showReleaseSnapshotProtectionWarning(refreshStatus);
             } else if (refreshStatus.state === 'completed' || refreshStatus.state === 'idle') {
@@ -10530,7 +10541,11 @@
                 }
                 controller.errorCount = 0;
                 await handleReleaseMonitorCompactStatus(data);
-                nextDelay = data.refresh_in_progress || releaseMonitorLocalRefreshing ? 2000 : 15000;
+                nextDelay = (
+                    data.refresh_in_progress ||
+                    data.auto_refresh_in_progress ||
+                    releaseMonitorLocalRefreshing
+                ) ? 2000 : 15000;
             } catch (error) {
                 if (error.name !== 'AbortError') {
                     controller.errorCount += 1;

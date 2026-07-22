@@ -16,6 +16,7 @@ from services.release_monitor_service import (
     start_release_monitor_refresh,
     get_release_monitor_refresh_status,
     get_release_monitor_refresh_state,
+    get_release_monitor_auto_incremental_status,
     ensure_release_monitor_not_refreshing,
     get_release_monitor_reviewer_options,
     get_release_monitor_week_control,
@@ -521,13 +522,16 @@ def release_monitor_status():
         try:
             view_state = get_release_monitor_view_state()
             refresh_state = get_release_monitor_refresh_state()
+            auto_incremental_status = get_release_monitor_auto_incremental_status()
             return jsonify({
                 "success": True,
                 "refresh": refresh_state,
+                "auto_incremental": auto_incremental_status,
                 "email": get_unassigned_email_status(),
                 "view_revision": view_state["view_revision"],
                 "updated_at": view_state["updated_at"],
                 "refresh_in_progress": refresh_state.get("state") == "refreshing",
+                "auto_refresh_in_progress": bool(auto_incremental_status.get("running")),
             })
         except Exception as exc:
             logging.exception(

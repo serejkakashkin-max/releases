@@ -876,6 +876,11 @@ def get_release_monitor_refresh_state():
         return dict(_refresh_status)
 
 
+def get_release_monitor_auto_incremental_status():
+    with _cache_lock:
+        return _get_auto_incremental_status()
+
+
 def _archive_previous_good_snapshot(payload):
     if not _is_valid_snapshot_payload(payload):
         return None
