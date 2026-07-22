@@ -10,7 +10,7 @@ from services.sup_admin_auth_service import (
     require_sup_admin_request,
 )
 
-from .config import APP_VERSION, ensure_runtime_dirs
+from .config import APP_VERSION
 from .routes.api import api_bp
 from .routes.integration import integration_bp
 from .routes.settings import settings_bp
@@ -22,8 +22,6 @@ logger = logging.getLogger(__name__)
 
 
 def create_schedule_manager_blueprint() -> Blueprint:
-    ensure_runtime_dirs()
-
     parent_bp = Blueprint(
         "va_schedule_manager",
         __name__,

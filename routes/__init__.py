@@ -2,6 +2,7 @@ from flask import request
 
 
 def register_routes(app):
+    from services.duty_schedule_provider_registry import init_duty_schedule_provider_registry
     from routes.main_routes import main_bp
     from routes.release_routes import release_bp
     from routes.mpr_routes import mpr_bp
@@ -12,6 +13,7 @@ def register_routes(app):
     from routes.sup_parameters_routes import sup_parameters_bp
     from routes.sandbox_routes import sandbox_bp
 
+    init_duty_schedule_provider_registry(app)
     app.register_blueprint(main_bp)
     app.register_blueprint(release_bp)
     app.register_blueprint(mpr_bp)

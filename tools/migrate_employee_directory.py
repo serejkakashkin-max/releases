@@ -37,7 +37,7 @@ LEGACY_PATHS = {
     "feature_flags": Path("feature_flags.json"),
     "va_employees": Path("cache/va_schedule_manager/data/employees.json"),
     "va_schedule_data": Path("cache/va_schedule_manager/data/schedule_data.json"),
-    "duty_schedule": Path("cache/release_monitor_duty_schedule.json"),
+    "deprecated_duty_schedule": Path("cache/release_monitor_duty_schedule.json"),
 }
 
 
@@ -346,19 +346,24 @@ def collect_sources(project_root: Path, args: argparse.Namespace) -> Dict[str, A
             sources_report["sources"]["va_employees"] = {"found": True, "status": "invalid", "error_type": type(exc).__name__}
             blocking_errors.append({"source": "va_employees", "error_type": type(exc).__name__})
 
-    duty_path = project_root / LEGACY_PATHS["duty_schedule"]
+    duty_path = project_root / LEGACY_PATHS["va_schedule_data"]
+    deprecated_path = project_root / LEGACY_PATHS["deprecated_duty_schedule"]
+    sources_report["sources"]["deprecated_duty_schedule"] = {
+        "found": deprecated_path.exists(),
+        "status": "deprecated_ignored",
+    }
     if args.skip_duty_schedule:
-        sources_report["sources"]["duty_schedule"] = {"found": duty_path.exists(), "status": "skipped"}
+        sources_report["sources"]["va_schedule_data"] = {"found": duty_path.exists(), "status": "skipped"}
     else:
         try:
             duty_names = read_duty_schedule_names(duty_path)
-            sources_report["sources"]["duty_schedule"] = {"found": True, "record_count": len(duty_names)}
+            sources_report["sources"]["va_schedule_data"] = {"found": True, "record_count": len(duty_names)}
             fragments.extend(duty_fragments(duty_names))
         except FileNotFoundError:
-            sources_report["sources"]["duty_schedule"] = {"found": False, "record_count": 0}
+            sources_report["sources"]["va_schedule_data"] = {"found": False, "record_count": 0}
         except Exception as exc:
-            sources_report["sources"]["duty_schedule"] = {"found": True, "status": "invalid", "error_type": type(exc).__name__}
-            blocking_errors.append({"source": "duty_schedule", "error_type": type(exc).__name__})
+            sources_report["sources"]["va_schedule_data"] = {"found": True, "status": "invalid", "error_type": type(exc).__name__}
+            blocking_errors.append({"source": "va_schedule_data", "error_type": type(exc).__name__})
 
     return {
         "fragments": fragments,
@@ -405,7 +410,7 @@ def build_proposal(source_result: Dict[str, Any], resolutions: Dict[str, Any]) -
         keys = []
         if fragment.full_name:
             keys.append(("full", fragment.full_name.casefold()))
-            if fragment.source_kind == "duty_schedule":
+            if fragment.source_kind == "va_schedule":
                 keys.append(("release", fragment.full_name.casefold()))
         if fragment.release_name:
             keys.append(("release", fragment.release_name.casefold()))
@@ -542,7 +547,7 @@ def add_safe_resolutions(unresolved: Iterable[Dict[str, Any]], resolutions: Dict
                 ref.startswith(
                     (
                         "config:OPLOT_VALUES:",
-                        "duty_schedule:employee:",
+                        "va_schedule:employee:",
                         "feature_flags:employee_recipients:",
                         "va:employees:",
                     )
@@ -847,15 +852,24 @@ def read_duty_schedule_names(path: Path) -> List[str]:
     payload = json.loads(path.read_text(encoding="utf-8-sig"))
     if not isinstance(payload, dict):
         raise ValueError("Duty schedule root must be an object.")
+    if "payload" in payload:
+        payload = payload.get("payload")
+    if not isinstance(payload, dict):
+        raise ValueError("VA schedule payload must be an object.")
     names = []
-    dates = payload.get("dates")
-    if isinstance(dates, dict):
-        names.extend(value for value in dates.values() if isinstance(value, str))
-    availability = payload.get("availability")
-    if isinstance(availability, dict):
-        for day_values in availability.values():
-            if isinstance(day_values, dict):
-                names.extend(key for key in day_values if isinstance(key, str))
+    months = payload.get("month_schedules")
+    if not isinstance(months, list):
+        raise ValueError("VA month_schedules must be a list.")
+    for month in months:
+        grid = month.get("grid") if isinstance(month, dict) else None
+        employees = grid.get("employees") if isinstance(grid, dict) else None
+        if not isinstance(employees, list):
+            continue
+        names.extend(
+            row.get("employee_name")
+            for row in employees
+            if isinstance(row, dict) and isinstance(row.get("employee_name"), str)
+        )
     return unique_non_empty(normalize_text(value) for value in names)
 
 
@@ -940,8 +954,8 @@ def va_fragments(rows: List[Dict[str, Any]]) -> List[Fragment]:
 def duty_fragments(names: List[str]) -> List[Fragment]:
     return [
         Fragment(
-            source_ref=canonical_source_ref("duty_schedule", "employee", name),
-            source_kind="duty_schedule",
+            source_ref=canonical_source_ref("va_schedule", "employee", name),
+            source_kind="va_schedule",
             full_name=name,
             aliases=[{"value": name, "type": "schedule", "jira_domain": ""}],
         )

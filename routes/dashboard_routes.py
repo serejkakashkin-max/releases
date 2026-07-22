@@ -1,6 +1,7 @@
 import os
 import logging
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from flask import Blueprint, render_template, jsonify, request, make_response
 
 from services.dashboard_service import (
@@ -19,7 +20,6 @@ from services.release_monitor_service import (
     get_release_monitor_week_control,
     get_release_monitor_week_responsible_recommendations,
     get_release_monitor_assignment_center_data,
-    upload_release_monitor_duty_schedules,
     sync_release_monitor_assignments_from_confluence,
     save_release_monitor_manual_order,
     set_release_monitor_assignment,
@@ -46,6 +46,11 @@ from services.sms_service import get_sms_profile_availability
 from routes.release_routes import detect_release_template_from_values, get_previous_version_from_monitor_items
 from config import DASHBOARD_CACHE_TTL, DEFAULT_BH_PLAYBOOKS
 from services.duty_dashboard_employee_provider import get_dashboard_primary_display_names
+from services.duty_schedule_provider_registry import (
+    get_duty_schedule_month,
+    get_duty_schedule_months,
+    get_duty_schedule_provider_status,
+)
 
 BASE_PATH = os.getenv("BASE_PATH", "")
 
@@ -315,6 +320,58 @@ def release_monitor_assignment_center_page():
     except Exception as e:
         logging.exception("Ошибка открытия Центра назначений")
         return f"Ошибка открытия Центра назначений: {str(e)}", 500
+
+
+@dashboard_bp.route('/dashboard/release-monitor/duty-schedule', methods=['GET'])
+def release_monitor_duty_schedule_page():
+    status = get_duty_schedule_provider_status()
+    months_result = get_duty_schedule_months()
+    available = []
+    for value in months_result.get("months") or []:
+        try:
+            year_value, month_value = (int(part) for part in str(value).split("-", 1))
+            if 2000 <= year_value <= 2100 and 1 <= month_value <= 12:
+                available.append((year_value, month_value))
+        except (TypeError, ValueError):
+            continue
+    available = sorted(set(available))
+
+    now = datetime.now(ZoneInfo("Europe/Moscow"))
+    query_invalid = False
+    try:
+        selected_year = int(request.args.get("year", now.year))
+        selected_month = int(request.args.get("month", now.month))
+        if not 2000 <= selected_year <= 2100 or not 1 <= selected_month <= 12:
+            raise ValueError
+    except (TypeError, ValueError):
+        selected_year, selected_month = now.year, now.month
+        query_invalid = True
+
+    requested = (selected_year, selected_month)
+    fallback_month = False
+    if available and requested not in available:
+        selected_year, selected_month = min(
+            available,
+            key=lambda value: (
+                abs((value[0] * 12 + value[1]) - (requested[0] * 12 + requested[1])),
+                0 if value >= requested else 1,
+            ),
+        )
+        fallback_month = True
+
+    month_grid = get_duty_schedule_month(selected_year, selected_month)
+    return render_template(
+        "release_monitor_duty_schedule.html",
+        basepath=BASE_PATH,
+        provider_status=status,
+        month_grid=month_grid,
+        available_months=available,
+        selected_year=selected_year,
+        selected_month=selected_month,
+        fallback_month=fallback_month,
+        query_invalid=query_invalid,
+        today=now.date().isoformat(),
+    )
 
 
 @dashboard_bp.route('/dashboard/release-monitor/assignment-center/data', methods=['GET'])
@@ -795,31 +852,6 @@ def sync_release_monitor_confluence():
         })
     except Exception as e:
         logging.error(f"Ошибка выгрузки релизов в Confluence: {e}")
-        return jsonify({"success": False, "error": str(e)}), 400
-
-
-@dashboard_bp.route('/dashboard/release-monitor/duty-schedules/upload', methods=['POST'])
-def upload_release_monitor_duty_files():
-    """Загружает Excel-графики дежурств и автопроставляет дежурного в пустые релизы."""
-    try:
-        ensure_release_monitor_not_refreshing()
-        uploaded_files = request.files.getlist('files')
-        result = upload_release_monitor_duty_schedules(uploaded_files)
-        payload = result.get("data", {})
-        return jsonify({
-            "success": True,
-            "message": f"Загружено графиков: {len(result.get('uploaded_files', []))}",
-            "uploaded_files": result.get("uploaded_files", []),
-            "parsed_months": result.get("parsed_months", []),
-            "warnings": result.get("warnings", []),
-            "applied_count": result.get("applied_count", 0),
-            "duty_debug_rows": result.get("duty_debug_rows", []),
-            "release_monitor": payload.get("items", []),
-            "release_monitor_summary": payload.get("summary", {}),
-            "release_monitor_meta": payload.get("meta", {}),
-        })
-    except Exception as e:
-        logging.error(f"Ошибка загрузки графиков дежурств: {e}")
         return jsonify({"success": False, "error": str(e)}), 400
 
 

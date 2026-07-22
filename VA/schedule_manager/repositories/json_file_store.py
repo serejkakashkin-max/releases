@@ -23,6 +23,101 @@ class JsonFileStore:
         with self._lock():
             return self._load_unlocked()
 
+    def load_diagnostic(
+        self,
+        *,
+        allow_backup_preview: bool = False,
+        allow_legacy_current: bool = False,
+    ) -> dict:
+        """Read the current file under the normal VA lock without recovery writes."""
+        if not self.data_file.exists():
+            return self._diagnostic_result("current_missing")
+        try:
+            if not self.data_file.read_bytes().strip():
+                return self._diagnostic_result("current_empty")
+        except OSError:
+            return self._diagnostic_result("current_invalid")
+
+        with self._lock():
+            try:
+                with self.data_file.open("r", encoding="utf-8-sig") as file:
+                    data = json.load(file)
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                if allow_backup_preview:
+                    recovered = self._recover_latest_backup()
+                    if recovered is not None:
+                        return self._diagnostic_from_data(
+                            recovered,
+                            status="recovered_backup",
+                            recovery_used=True,
+                            allow_legacy_current=allow_legacy_current,
+                        )
+                return self._diagnostic_result("current_invalid")
+            return self._diagnostic_from_data(
+                data,
+                allow_legacy_current=allow_legacy_current,
+            )
+
+    def _diagnostic_from_data(
+        self,
+        data: object,
+        *,
+        status: str = "current_valid",
+        recovery_used: bool = False,
+        allow_legacy_current: bool = False,
+    ) -> dict:
+        if not isinstance(data, dict):
+            return self._diagnostic_result("current_invalid")
+        if not self._is_versioned(data):
+            if allow_legacy_current:
+                return {
+                    "status": status,
+                    "payload": data,
+                    "schema_version": 0,
+                    "schema_name": self.schema_name,
+                    "saved_at": "",
+                    "recovery_used": recovery_used,
+                    "legacy_schema": True,
+                }
+            return self._diagnostic_result("unsupported_schema")
+        schema_version = data.get("schema_version")
+        schema_name = str(data.get("schema_name") or "")
+        payload = data.get("payload")
+        if schema_version != SCHEMA_VERSION or schema_name != self.schema_name:
+            return self._diagnostic_result(
+                "unsupported_schema",
+                schema_version=schema_version,
+                schema_name=schema_name,
+            )
+        if not isinstance(payload, dict):
+            return self._diagnostic_result("current_invalid")
+        return {
+            "status": status,
+            "payload": payload,
+            "schema_version": schema_version,
+            "schema_name": schema_name,
+            "saved_at": str(data.get("saved_at") or ""),
+            "recovery_used": recovery_used,
+            "legacy_schema": False,
+        }
+
+    def _diagnostic_result(
+        self,
+        status: str,
+        *,
+        schema_version: object = None,
+        schema_name: str = "",
+    ) -> dict:
+        return {
+            "status": status,
+            "payload": None,
+            "schema_version": schema_version,
+            "schema_name": schema_name,
+            "saved_at": "",
+            "recovery_used": False,
+            "legacy_schema": False,
+        }
+
     def save(self, payload: dict) -> None:
         self.data_file.parent.mkdir(parents=True, exist_ok=True)
         with self._lock():

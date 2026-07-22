@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>График дежурств</title>
+    <link rel="stylesheet" href="{{ basepath }}/static/css/bootstrap-icons.css">
+    <link rel="stylesheet" href="{{ basepath }}/static/css/release_monitor_duty_schedule.css">
+</head>
+<body>
+    <header class="app-bar">
+        <nav class="app-nav" aria-label="Навигация">
+            <a class="icon-btn" href="{{ basepath }}/" aria-label="На главную" title="На главную"><i class="bi bi-house-door-fill"></i></a>
+            <a class="icon-btn" href="{{ basepath }}/release-monitor" aria-label="Вернуться в Блок релизов" title="Вернуться в Блок релизов"><i class="bi bi-arrow-left"></i></a>
+        </nav>
+        <button class="icon-btn" id="themeToggle" type="button" aria-label="Переключить тему" title="Переключить тему"><i class="bi bi-sun"></i></button>
+    </header>
+
+    <main class="page-shell">
+        <section class="page-heading">
+            <div>
+                <p class="eyebrow">Блок релизов</p>
+                <h1>График дежурств</h1>
+                <p class="subtitle">Актуальный график из VA Schedule Manager в режиме просмотра</p>
+            </div>
+            <div class="source-status status-{{ provider_status.status }}">
+                <span class="status-dot"></span>
+                <span>
+                    {% if provider_status.authoritative %}Источник доступен{% elif provider_status.status == 'recovered_backup' %}Резервная копия{% else %}График временно недоступен{% endif %}
+                </span>
+            </div>
+        </section>
+
+        {% if query_invalid %}<div class="notice warning">Некорректный месяц заменён текущим.</div>{% endif %}
+        {% if fallback_month %}<div class="notice info">Текущий месяц отсутствует. Открыт ближайший доступный график.</div>{% endif %}
+        {% if provider_status.status == 'recovered_backup' %}
+        <div class="notice danger"><strong>Резервная копия.</strong> Эти данные показаны только для просмотра и не используются для автоматических назначений.</div>
+        {% elif not provider_status.authoritative %}
+        <div class="notice danger">График временно недоступен. Автоматические назначения по графику приостановлены, ручные назначения доступны.</div>
+        {% elif provider_status.status == 'mapping_warnings' %}
+        <div class="notice warning">В графике есть несопоставленные или неоднозначные записи. Корректные даты продолжают использоваться.</div>
+        {% endif %}
+
+        <section class="schedule-toolbar" aria-label="Выбор месяца">
+            <div class="month-title">
+                <span>Выбранный месяц</span>
+                <strong>{{ month_grid.label or ('%04d-%02d'|format(selected_year, selected_month)) }}</strong>
+            </div>
+            <form method="get" class="month-form">
+                <label>Год
+                    <select name="year">
+                        {% for year in available_months|map(attribute=0)|unique|list %}<option value="{{ year }}" {% if year == selected_year %}selected{% endif %}>{{ year }}</option>{% endfor %}
+                        {% if not available_months %}<option value="{{ selected_year }}">{{ selected_year }}</option>{% endif %}
+                    </select>
+                </label>
+                <label>Месяц
+                    <select name="month">
+                        {% for number, label in [(1,'Январь'),(2,'Февраль'),(3,'Март'),(4,'Апрель'),(5,'Май'),(6,'Июнь'),(7,'Июль'),(8,'Август'),(9,'Сентябрь'),(10,'Октябрь'),(11,'Ноябрь'),(12,'Декабрь')] %}
+                        <option value="{{ number }}" {% if number == selected_month %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <button class="apply-btn" type="submit"><i class="bi bi-calendar3"></i> Показать</button>
+            </form>
+        </section>
+
+        {% if month_grid.employees and month_grid.days %}
+        <section class="schedule-panel">
+            <div class="table-scroll" tabindex="0" aria-label="Таблица графика дежурств">
+                <table class="schedule-table">
+                    <thead><tr><th class="employee-col">Сотрудник</th>{% for day in month_grid.days %}<th class="day-col {% if day.date == today %}today{% endif %}"><span>{{ day.day }}</span><small>{{ day.weekday }}</small></th>{% endfor %}</tr></thead>
+                    <tbody>
+                    {% for employee in month_grid.employees %}
+                    <tr class="{% if employee.warning %}row-warning{% endif %}">
+                        <th class="employee-col">{{ employee.employee_name }}{% if employee.warning %}<i class="bi bi-exclamation-triangle" title="Дублированная строка сотрудника"></i>{% endif %}</th>
+                        {% for day in month_grid.days %}
+                        {% set code = employee.assignments.get(day.day ~ '', '') %}
+                        {% set shift = (month_grid.shifts|selectattr('code', 'equalto', code)|list|first) %}
+                        <td class="shift-cell {% if day.date == today %}today{% endif %}" {% if shift %}style="--shift-color: {{ shift.color }}"{% endif %}><span {% if shift %}class="shift-value"{% endif %}>{{ shift.short_name if shift else code }}</span></td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        <section class="legend" aria-label="Легенда смен">
+            {% for shift in month_grid.shifts %}<div class="legend-item"><span class="legend-swatch" style="--shift-color: {{ shift.color }}"></span><strong>{{ shift.short_name or shift.code }}</strong><span>{{ shift.name }}</span></div>{% endfor %}
+        </section>
+        {% else %}
+        <section class="empty-state"><i class="bi bi-calendar-x"></i><h2>Нет данных за выбранный месяц</h2><p>Выберите другой месяц или проверьте состояние графика в VA Schedule Manager.</p></section>
+        {% endif %}
+
+        <footer class="source-meta">Обновлено: {{ provider_status.updated_at or 'не указано' }}{% if provider_status.revision %}<span>Версия {{ provider_status.revision[:18] }}…</span>{% endif %}</footer>
+    </main>
+    <script src="{{ basepath }}/static/js/release_monitor_duty_schedule.js"></script>
+</body>
+</html>

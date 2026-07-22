@@ -3592,14 +3592,18 @@
                         </div>
                     </div>
                     <div class="hero-action-stack">
-                    <button id="releaseMonitorCurrentWeekReportBtn" class="hero-week-report-btn" onclick="generateCurrentWeekReleaseReport()">
-                        <i class="bi bi-calendar-week"></i>
-                        Релизы текущей недели
-                    </button>
-                    <button id="releaseMonitorAssignmentCenterBtn" class="hero-week-report-btn control" onclick="openReleaseAssignmentCenter()">
-                        <i class="bi bi-person-check"></i>
-                        Центр назначений
-                    </button>
+                        <a id="releaseMonitorDutyScheduleBtn" class="hero-week-report-btn" href="{{ basepath }}/dashboard/release-monitor/duty-schedule">
+                            <i class="bi bi-calendar3"></i>
+                            График дежурств
+                        </a>
+                        <button id="releaseMonitorAssignmentCenterBtn" class="hero-week-report-btn control" onclick="openReleaseAssignmentCenter()">
+                            <i class="bi bi-person-check"></i>
+                            Центр назначений
+                        </button>
+                        <button id="releaseMonitorCurrentWeekReportBtn" class="hero-week-report-btn" onclick="generateCurrentWeekReleaseReport()">
+                            <i class="bi bi-calendar-week"></i>
+                            Релизы текущей недели
+                        </button>
                     </div>
                 </div>
             </div>
@@ -3741,16 +3745,6 @@
                             <div class="release-action-meta">
                                 Confluence: <strong id="releaseMonitorLastConfluenceSync">{{ release_monitor_meta.last_confluence_sync or 'еще не выполнялось' }}</strong>
                             </div>
-                        </div>
-                        <div class="release-action-stack duty-stack">
-                            <button id="releaseMonitorDutyUploadBtn" class="release-monitor-btn" onclick="openReleaseDutySchedulePicker()">
-                                <i class="bi bi-calendar-week"></i>
-                                Загрузить графики
-                            </button>
-                            <div class="release-action-meta">
-                                Графики: <strong id="releaseMonitorLastDutyUpload">{{ release_monitor_meta.last_duty_schedule_upload or 'еще не загружались' }}</strong>
-                            </div>
-                            <input type="file" id="releaseMonitorDutyUploadInput" multiple accept=".xlsx,.xlsm" style="display: none;" onchange="handleReleaseDutyScheduleUpload(event)">
                         </div>
                     </div>
                 </div>
@@ -8719,7 +8713,6 @@
             const lastQuickSync = document.getElementById('releaseMonitorLastQuickSync');
             const lastFullSync = document.getElementById('releaseMonitorLastFullSync');
             const lastConfluenceSync = document.getElementById('releaseMonitorLastConfluenceSync');
-            const lastDutyUpload = document.getElementById('releaseMonitorLastDutyUpload');
             const yearSelect = document.getElementById('releaseYearFilter');
 
             releaseMonitorItems = Array.isArray(items) ? items : [];
@@ -8757,10 +8750,6 @@
             }
             if (lastConfluenceSync) {
                 lastConfluenceSync.textContent = meta?.last_confluence_sync || 'еще не выполнялось';
-            }
-
-            if (lastDutyUpload) {
-                lastDutyUpload.textContent = meta?.last_duty_schedule_upload || 'еще не загружались';
             }
 
             const noRovToggle = document.getElementById('releaseNoRovToggle');
@@ -10135,7 +10124,7 @@
             if (effectiveLoading) {
                 closeReleaseManualRefreshMenu();
             }
-            ['releaseManualRefreshMenuBtn', 'releaseMonitorQuickRefreshBtn', 'releaseMonitorRefreshBtn', 'releaseMonitorReliableRefreshBtn', 'releaseMonitorConfluenceSyncBtn', 'releaseMonitorDutyUploadBtn', 'releaseMonitorCurrentWeekReportBtn', 'releaseMonitorAssignmentCenterBtn', 'releaseManualCreateBtn'].forEach(id => {
+            ['releaseManualRefreshMenuBtn', 'releaseMonitorQuickRefreshBtn', 'releaseMonitorRefreshBtn', 'releaseMonitorReliableRefreshBtn', 'releaseMonitorConfluenceSyncBtn', 'releaseMonitorCurrentWeekReportBtn', 'releaseMonitorAssignmentCenterBtn', 'releaseManualCreateBtn'].forEach(id => {
                 const btn = document.getElementById(id);
                 if (!btn) {
                     return;
@@ -10149,66 +10138,6 @@
                 btn.classList.toggle('spinning', isLoadingButton);
                 btn.classList.toggle('loading', isLoadingButton);
             });
-        }
-
-        function openReleaseDutySchedulePicker() {
-            const input = document.getElementById('releaseMonitorDutyUploadInput');
-            if (!input) {
-                return;
-            }
-            input.value = '';
-            input.click();
-        }
-
-        async function handleReleaseDutyScheduleUpload(event) {
-            const input = event?.target;
-            const files = Array.from(input?.files || []);
-            if (!files.length) {
-                return;
-            }
-
-            const formData = new FormData();
-            files.forEach(file => formData.append('files', file));
-            setReleaseRefreshButtonsLoading(true);
-
-            try {
-                const response = await fetch(BASE_PATH + '/dashboard/release-monitor/duty-schedules/upload', {
-                    method: 'POST',
-                    body: formData
-                });
-                const data = await response.json();
-                if (!response.ok || !data.success) {
-                    throw new Error(data.error || 'Не удалось загрузить графики дежурств');
-                }
-
-                renderReleaseMonitor(data.release_monitor || [], data.release_monitor_meta || {});
-
-                const parsedMonths = (data.parsed_months || []).join(', ');
-                const warnings = Array.isArray(data.warnings) ? data.warnings.filter(Boolean) : [];
-                let message = `Графики загружены. Автопроставлено дежурных: ${data.applied_count || 0}.`;
-                if (parsedMonths) {
-                    message += ` Месяцы: ${parsedMonths}.`;
-                }
-                if (warnings.length) {
-                    message += `\n\nПредупреждения:\n- ${warnings.join('\n- ')}`;
-                }
-                const dutyDebugRows = Array.isArray(data.duty_debug_rows) ? data.duty_debug_rows : [];
-                if (dutyDebugRows.length) {
-                    const debugLines = dutyDebugRows.slice(0, 8).map(row => (
-                        `${row.release_key || row.row_key || '-'} | ${row.date || 'дата не найдена'} | график: ${row.scheduled || '-'} | стало: ${row.result || '-'}`
-                    ));
-                    message += `\n\nПроверка графика:\n- ${debugLines.join('\n- ')}`;
-                }
-                alert(message);
-            } catch (error) {
-                console.error('Duty schedule upload error:', error);
-                alert('Ошибка загрузки графиков дежурств: ' + error.message);
-            } finally {
-                if (input) {
-                    input.value = '';
-                }
-                setReleaseRefreshButtonsLoading(false);
-            }
         }
 
         async function syncReleaseMonitorFromConfluence() {

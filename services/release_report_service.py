@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from services.feature_flags_service import get_release_prefix_system
 from services.release_monitor_employee_provider import get_release_monitor_names
+from services.release_monitor_duty_overlay import get_effective_release_reviewer
 from services.release_template_catalog_service import is_ai_agents_template_category
 
 
@@ -142,7 +143,7 @@ class ReleaseReportService:
             system_name = self._get_item_system_name(item)
             system_counter[system_name] += 1
 
-            duty_owner = str(item.get("psi_owner") or "").strip()
+            duty_owner = get_effective_release_reviewer(item)
             if duty_owner:
                 duty_counter[duty_owner] += 1
 
@@ -1484,7 +1485,7 @@ class ReleaseReportService:
             row_kind = self._get_item_kind_label(item)
             item_responsibles = self._get_item_responsibles(item)
             responsibles = ", ".join(item_responsibles) or EM_DASH
-            duty_owner = str(item.get("psi_owner") or "").strip() or EM_DASH
+            duty_owner = get_effective_release_reviewer(item) or EM_DASH
             row_state = "final" if item.get("is_final") else "cancelled" if item.get("is_cancelled") else "active"
             row_title = " / ".join(
                 [part for part in (item.get("release_name_lines") or [])[:2] if str(part or "").strip()]

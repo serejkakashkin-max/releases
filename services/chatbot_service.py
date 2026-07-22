@@ -33,6 +33,7 @@ from services.release_monitor_service import (
     set_release_monitor_manual_distribution_override,
 )
 from services.release_report_service import get_release_report_service
+from services.release_monitor_duty_overlay import get_effective_release_reviewer
 from services.rov_statistics_service import generate_rov_statistics_excel
 from services.release_monitor_backup_service import create_release_monitor_cache_backup
 from services.psi_jenkins_service import find_psi_jenkins_instructions_by_ke
@@ -1411,8 +1412,11 @@ Oplot умеет работать с рабочим столом дежурно�
         row_key = str(item.get("row_key") or item.get("release_key") or "").strip()
         if not row_key:
             raise ValueError("Не найден ключ строки релиза")
-        reviewer = str(item.get("psi_owner") or "").strip()
+        reviewer = get_effective_release_reviewer(item)
         reviewer_source = str(item.get("psi_owner_source") or "").strip() or None
+        if reviewer_source == "duty_schedule":
+            reviewer = ""
+            reviewer_source = ""
         current_checker = str(item.get("psi_checker") or "").strip()
         current_responsibles = item.get("psi_responsibles") or []
         if not isinstance(current_responsibles, list):
@@ -2820,7 +2824,7 @@ Oplot умеет работать с рабочим столом дежурно�
         row_key = str(item.get("row_key") or item.get("release_key") or release_key).strip()
         rov_key = str(item.get("rov_key") or "").strip() or "без РОВ"
         date_value = self._release_doc_date(item)
-        oplot = str(item.get("psi_owner") or "").strip()
+        oplot = get_effective_release_reviewer(item)
         checker = str(item.get("psi_checker") or "").strip()
         responsibles = self._normalize_responsible_candidates(item.get("psi_responsibles") or [])
 

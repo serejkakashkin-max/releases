@@ -60,14 +60,29 @@ def register_va_schedule_manager(app: Flask) -> None:
             EXPORT_DIR,
             STATE_DIR,
             UPLOAD_DIR,
-            ensure_runtime_dirs,
+        )
+        from config import OPLOT_VALUES
+        from services.duty_schedule_provider_registry import register_duty_schedule_provider
+        from services.release_employee_name_matcher import (
+            match_release_employee_name,
+            match_release_employee_name_diagnostic,
+        )
+        from VA.schedule_manager.integrations.release_monitor_duty_provider import (
+            ReleaseMonitorDutyProvider,
         )
         from VA.schedule_manager.module import create_schedule_manager_blueprint
 
-        ensure_runtime_dirs()
         app.register_blueprint(
             create_schedule_manager_blueprint(),
             url_prefix=VA_URL_PREFIX,
+        )
+        register_duty_schedule_provider(
+            app,
+            ReleaseMonitorDutyProvider(
+                release_names=OPLOT_VALUES,
+                name_matcher=match_release_employee_name,
+                name_matcher_diagnostic=match_release_employee_name_diagnostic,
+            ),
         )
         _metadata.update(
             {

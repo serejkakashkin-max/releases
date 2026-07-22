@@ -11,20 +11,23 @@ import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
-from io import BytesIO
 from pathlib import Path
 from uuid import uuid4
 
 import requests
-from openpyxl import load_workbook
-
+from flask import current_app, has_app_context
 from config import DASHBOARD_CACHE_TTL, TOKENS
+from services.duty_schedule_provider_registry import get_duty_schedule_release_projection
 from services.jira_service import get_jira_domain_and_token
 from services.feature_flags_service import (
     get_enabled_release_prefixes,
     get_release_prefix_system,
 )
 from services.jira_oplot_issue_service import create_oplot_release_issue
+from services.release_monitor_duty_overlay import (
+    apply_duty_schedule_overlay,
+    get_effective_release_reviewer,
+)
 from services.release_monitor_employee_provider import get_release_monitor_names as _load_oplot_values
 from services.release_artifact_service import (
     classify_artifact_entry,
@@ -94,7 +97,6 @@ MANUAL_RELEASES_FILE = SNAPSHOT_DIR / "release_monitor_manual_releases.json"
 MANUAL_OVERRIDES_FILE = SNAPSHOT_DIR / "release_monitor_manual_overrides.json"
 REVIEWERS_FILE = SNAPSHOT_DIR / "release_monitor_reviewers.json"
 ORDER_FILE = SNAPSHOT_DIR / "release_monitor_order.json"
-DUTY_SCHEDULE_FILE = SNAPSHOT_DIR / "release_monitor_duty_schedule.json"
 DATE_OVERRIDES_FILE = SNAPSHOT_DIR / "release_monitor_date_overrides.json"
 ZNI_FILE = SNAPSHOT_DIR / "release_monitor_zni.json"
 WORK_MARKS_FILE = SNAPSHOT_DIR / "release_monitor_work_marks.json"
@@ -140,6 +142,13 @@ def _get_oplot_values():
     return _load_oplot_values()
 
 
+def _run_in_app_context(app, callback, *args, **kwargs):
+    if app is None:
+        return callback(*args, **kwargs)
+    with app.app_context():
+        return callback(*args, **kwargs)
+
+
 MANUAL_OVERRIDE_SCALAR_FIELDS = (
     "release_type",
     "release_summary",
@@ -164,9 +173,6 @@ MANUAL_RELEASE_SCALAR_FIELDS = MANUAL_OVERRIDE_SCALAR_FIELDS + ("deployment_star
 MANUAL_RELEASE_FIELDS = MANUAL_RELEASE_SCALAR_FIELDS + MANUAL_OVERRIDE_DICT_FIELDS
 RELEASE_VERSION_PATTERN = re.compile(r"[DP]-\d+(?:\.\d+){2}(?:[.-][A-Za-z0-9_]+)+")
 ARTIFACT_URL_PATTERN = re.compile(r"(?:https?://)?[A-Za-z0-9.-]+\.[A-Za-z]{2,}/[^\s\"'<>)]+")
-DUTY_HARD_EXCLUDED_STATUSES = {"ДД", "ВД", "ВР", "ХД", "ХР"}
-DUTY_RESERVE_STATUSES = {"ДР"}
-DUTY_ABSENCE_KEYWORDS = ("отпуск", "отгул", "больн")
 
 MONTH_NAME_MAP = {
     "\u044f\u043d\u0432\u0430\u0440": 1,
@@ -345,7 +351,6 @@ def _build_empty_release_monitor_payload():
             "last_quick_sync": None,
             "last_auto_incremental_sync": None,
             "last_confluence_sync": None,
-            "last_duty_schedule_upload": None,
             "last_sync_mode": None,
             "quick_refresh_days": QUICK_REFRESH_DAYS,
             "auto_full_refresh_enabled": AUTO_FULL_REFRESH_ENABLED,
@@ -760,8 +765,39 @@ def _strip_manual_release_overrides_for_snapshot(payload):
     return payload_to_save
 
 
+def _strip_effective_duty_fields_for_snapshot(payload):
+    clean_payload = copy.deepcopy(payload or {})
+    for item in clean_payload.get("items") or []:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("psi_owner_source") or "").strip() == "duty_schedule":
+            item["psi_owner"] = ""
+            item["psi_owner_source"] = ""
+            item["psi_owner_date"] = ""
+        for field_name in (
+            "psi_owner_stale",
+            "psi_owner_stored_value_present",
+            "psi_owner_schedule_status",
+        ):
+            item.pop(field_name, None)
+    meta = dict(clean_payload.get("meta") or {})
+    for field_name in (
+        "duty_schedule_provider",
+        "duty_schedule_status",
+        "duty_schedule_authoritative",
+        "duty_schedule_revision",
+        "duty_schedule_updated_at",
+        "duty_schedule_months",
+        "work_mark_suggested_participants",
+    ):
+        meta.pop(field_name, None)
+    clean_payload["meta"] = meta
+    return clean_payload
+
+
 def _save_snapshot_to_disk(payload, bump_revision=True):
     try:
+        payload = _strip_effective_duty_fields_for_snapshot(payload)
         _ensure_snapshot_dir()
         current_disk_payload = _load_snapshot_from_disk()
         incoming_items = _count_payload_items(payload)
@@ -885,6 +921,7 @@ def _commit_accepted_snapshot(payload, *, mode):
     )
     if not _is_valid_snapshot_payload(payload):
         raise ValueError("Accepted release monitor snapshot has invalid payload")
+    stored_payload = _strip_effective_duty_fields_for_snapshot(payload)
 
     _recover_snapshot_storage()
     previous_active = _load_json_payload(SNAPSHOT_FILE)
@@ -896,10 +933,10 @@ def _commit_accepted_snapshot(payload, *, mode):
         if _is_valid_snapshot_payload(previous_last_good)
         else None
     )
-    accepted_revision = _new_accepted_revision(previous_active, previous_last_good, payload)
+    accepted_revision = _new_accepted_revision(previous_active, previous_last_good, stored_payload)
     accepted_at = _utc_now_iso()
     prepared = _prepare_accepted_snapshot(
-        payload,
+        stored_payload,
         accepted_revision=accepted_revision,
         accepted_at=accepted_at,
     )
@@ -2026,92 +2063,8 @@ def _get_release_order_bucket(item):
     return raw_value[:10] if raw_value else "no-date"
 
 
-def _build_empty_duty_schedule_payload():
-    return {
-        "dates": {},
-        "availability": {},
-        "months": [],
-        "files": [],
-        "last_upload": None,
-    }
-
-
-def _normalize_duty_availability_payload(value):
-    normalized = {}
-    if not isinstance(value, dict):
-        return normalized
-
-    for date_key, people in value.items():
-        normalized_date = str(date_key or "").strip()
-        if not normalized_date or not isinstance(people, dict):
-            continue
-
-        normalized_people = {}
-        for person, info in people.items():
-            person_name = str(person or "").strip()
-            if not person_name:
-                continue
-
-            if isinstance(info, dict):
-                status = str(info.get("status") or "").strip()
-                availability = str(info.get("availability") or "").strip()
-                reason = str(info.get("reason") or "").strip()
-            else:
-                status = str(info or "").strip()
-                availability, reason = _classify_duty_status(status)
-
-            if not status:
-                continue
-            if not availability:
-                availability, reason = _classify_duty_status(status)
-            normalized_people[person_name] = {
-                "status": status,
-                "availability": availability,
-                "reason": reason,
-            }
-
-        if normalized_people:
-            normalized[normalized_date] = normalized_people
-
-    return normalized
-
-
-def _load_duty_schedule_payload():
-    payload = _load_state_json(DUTY_SCHEDULE_FILE, default=None)
-    if not isinstance(payload, dict):
-        return _build_empty_duty_schedule_payload()
-
-    dates = {
-        str(date_key).strip(): str(reviewer).strip()
-        for date_key, reviewer in (payload.get("dates") or {}).items()
-        if str(date_key).strip() and str(reviewer).strip()
-    }
-    availability = _normalize_duty_availability_payload(payload.get("availability") or {})
-    months = [
-        str(month_label).strip()
-        for month_label in (payload.get("months") or [])
-        if str(month_label).strip()
-    ]
-    files = [
-        dict(file_info)
-        for file_info in (payload.get("files") or [])
-        if isinstance(file_info, dict)
-    ]
-    return {
-        "dates": dates,
-        "availability": availability,
-        "months": list(dict.fromkeys(months)),
-        "files": files,
-        "last_upload": str(payload.get("last_upload") or "").strip() or None,
-    }
-
-
-def _save_duty_schedule_payload(payload):
-    try:
-        _write_state_json(DUTY_SCHEDULE_FILE, payload or _build_empty_duty_schedule_payload())
-    except Exception as exc:
-        logging.warning("Release monitor: failed to save duty schedules: %s", exc)
-        raise
+def _get_current_duty_schedule_projection():
+    return get_duty_schedule_release_projection()
 
 
 def _load_date_overrides():
@@ -2341,224 +2294,6 @@ def _release_base_covers_manual_date(base_dt, manual_dt):
     return _release_dates_match(base_dt, manual_dt)
 
 
-def _extract_schedule_month_year(sheet_title):
-    normalized_title = _normalize_text(sheet_title)
-    year_match = re.search(r"(20\d{2})", normalized_title)
-    if not year_match:
-        return None, None
-
-    month = None
-    for month_token, month_number in MONTH_NAME_MAP.items():
-        if month_token in normalized_title:
-            month = month_number
-            break
-
-    if month is None:
-        return None, None
-
-    return month, int(year_match.group(1))
-
-
-def _coerce_schedule_day(value):
-    if isinstance(value, int):
-        return value if 1 <= value <= 31 else None
-    if isinstance(value, float) and value.is_integer():
-        day_value = int(value)
-        return day_value if 1 <= day_value <= 31 else None
-
-    text_value = str(value or "").strip()
-    if text_value.isdigit():
-        day_value = int(text_value)
-        return day_value if 1 <= day_value <= 31 else None
-    return None
-
-
-def _detect_schedule_day_columns(worksheet):
-    max_scan_row = min(12, worksheet.max_row)
-    max_scan_col = min(50, worksheet.max_column)
-
-    for row_index in range(1, max_scan_row + 1):
-        detected = []
-        for col_index in range(2, max_scan_col + 1):
-            day_value = _coerce_schedule_day(worksheet.cell(row_index, col_index).value)
-            if day_value is not None:
-                detected.append((col_index, day_value))
-
-        if len(detected) >= 20:
-            return row_index, detected
-
-    return None, []
-
-
-def _classify_duty_status(status):
-    raw_status = str(status or "").strip()
-    if not raw_status:
-        return "", ""
-
-    normalized_status = _normalize_text(raw_status)
-    upper_status = raw_status.upper()
-    if upper_status in DUTY_HARD_EXCLUDED_STATUSES:
-        return "excluded", {
-            "ДД": "Дневной дежурный",
-            "ВД": "Вечерний дежурный",
-            "ВР": "Вечерний резервный дежурный",
-            "ХД": "Хабаровская смена",
-            "ХР": "Хабаровский резерв",
-        }.get(upper_status, "Дежурство")
-    if upper_status in DUTY_RESERVE_STATUSES:
-        return "reserve", "Дневной резервный ответственный"
-    if any(keyword in normalized_status for keyword in DUTY_ABSENCE_KEYWORDS):
-        return "excluded", raw_status
-    if "празд" in normalized_status:
-        return "excluded", raw_status
-    return "available", ""
-
-
-def _parse_duty_schedule_sheet(worksheet, filename):
-    month, year = _extract_schedule_month_year(worksheet.title)
-    if not month or not year:
-        return {"dates": {}, "months": [], "warnings": []}
-
-    day_row_index, day_columns = _detect_schedule_day_columns(worksheet)
-    if not day_row_index or not day_columns:
-        return {"dates": {}, "months": [], "warnings": []}
-
-    daily_candidates = defaultdict(list)
-    availability_dates = defaultdict(dict)
-    max_scan_row = min(worksheet.max_row, day_row_index + 40)
-
-    for row_index in range(day_row_index + 1, max_scan_row + 1):
-        raw_name = str(worksheet.cell(row_index, 1).value or "").strip()
-        if not raw_name:
-            continue
-
-        matched_name = _match_oplot_name(raw_name)
-        for col_index, day_number in day_columns:
-            raw_marker = str(worksheet.cell(row_index, col_index).value or "").strip()
-            marker = _normalize_text(raw_marker)
-            if marker != "\u0432\u0434":
-                if matched_name and raw_marker:
-                    try:
-                        day_date = datetime(year, month, day_number).date()
-                    except ValueError:
-                        continue
-                    availability, reason = _classify_duty_status(raw_marker)
-                    if availability in {"excluded", "reserve"}:
-                        availability_dates[day_date.isoformat()][matched_name] = {
-                            "status": raw_marker,
-                            "availability": availability,
-                            "reason": reason,
-                        }
-                continue
-
-            if not matched_name:
-                daily_candidates[day_number].append({"name": raw_name, "matched": ""})
-            else:
-                daily_candidates[day_number].append({"name": raw_name, "matched": matched_name})
-                try:
-                    day_date = datetime(year, month, day_number).date()
-                except ValueError:
-                    continue
-                availability, reason = _classify_duty_status(raw_marker)
-                availability_dates[day_date.isoformat()][matched_name] = {
-                    "status": raw_marker,
-                    "availability": availability,
-                    "reason": reason,
-                }
-
-    parsed_dates = {}
-    warnings = []
-    month_label = f"{year:04d}-{month:02d}"
-
-    for day_number, entries in daily_candidates.items():
-        try:
-            day_date = datetime(year, month, day_number).date()
-        except ValueError:
-            continue
-
-        if day_date.weekday() >= 5:
-            continue
-
-        matched_names = [entry["matched"] for entry in entries if entry.get("matched")]
-        unique_names = list(dict.fromkeys(matched_names))
-
-        if len(unique_names) == 1:
-            parsed_dates[day_date.isoformat()] = unique_names[0]
-            continue
-
-        if not unique_names:
-            source_names = ", ".join(entry.get("name", "") for entry in entries if entry.get("name"))
-            warnings.append(
-                f"{worksheet.title}: не удалось сопоставить ВД за {day_date.strftime('%d.%m.%Y')} ({source_names})"
-            )
-        else:
-            warnings.append(
-                f"{worksheet.title}: найдено несколько ВД за {day_date.strftime('%d.%m.%Y')} ({', '.join(unique_names)})"
-            )
-
-    if not parsed_dates and not availability_dates:
-        return {"dates": {}, "availability": {}, "months": [], "warnings": warnings}
-
-    return {
-        "dates": parsed_dates,
-        "availability": dict(availability_dates),
-        "months": [month_label],
-        "warnings": warnings,
-    }
-
-
-def _parse_duty_schedule_workbook(file_bytes, filename):
-    workbook = load_workbook(BytesIO(file_bytes), data_only=True)
-    merged_dates = {}
-    merged_availability = {}
-    parsed_months = []
-    warnings = []
-
-    for worksheet in workbook.worksheets:
-        parsed_sheet = _parse_duty_schedule_sheet(worksheet, filename)
-        merged_dates.update(parsed_sheet.get("dates", {}))
-        for date_key, people in (parsed_sheet.get("availability") or {}).items():
-            merged_availability.setdefault(date_key, {}).update(people or {})
-        parsed_months.extend(parsed_sheet.get("months", []))
-        warnings.extend(parsed_sheet.get("warnings", []))
-
-    if not merged_dates and not merged_availability:
-        raise ValueError(f"\u0412 \u0444\u0430\u0439\u043b\u0435 {filename} \u043d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u043d\u0430\u0439\u0442\u0438 \u043b\u0438\u0441\u0442\u044b \u0441 \u0433\u0440\u0430\u0444\u0438\u043a\u043e\u043c \u0434\u0435\u0436\u0443\u0440\u0441\u0442\u0432")
-
-    return {
-        "dates": merged_dates,
-        "availability": merged_availability,
-        "months": list(dict.fromkeys(parsed_months)),
-        "warnings": warnings,
-        "files": [{
-            "name": filename,
-            "uploaded_at": _format_timestamp(),
-            "months": list(dict.fromkeys(parsed_months)),
-        }],
-    }
-
-
-def _merge_duty_schedule_payload(base_payload, incoming_payload):
-    merged = _build_empty_duty_schedule_payload()
-    merged["dates"] = dict((base_payload or {}).get("dates") or {})
-    merged["dates"].update((incoming_payload or {}).get("dates") or {})
-    merged["availability"] = _normalize_duty_availability_payload((base_payload or {}).get("availability") or {})
-    for date_key, people in _normalize_duty_availability_payload((incoming_payload or {}).get("availability") or {}).items():
-        merged["availability"].setdefault(date_key, {}).update(people)
-    merged["months"] = list(
-        dict.fromkeys(
-            list((base_payload or {}).get("months") or [])
-            + list((incoming_payload or {}).get("months") or [])
-        )
-    )
-    merged["files"] = list((base_payload or {}).get("files") or []) + list((incoming_payload or {}).get("files") or [])
-    merged["last_upload"] = (
-        (incoming_payload or {}).get("last_upload")
-        or (base_payload or {}).get("last_upload")
-    )
-    return merged
-
-
 def _is_explicit_manual_reviewer_assignment(assignment):
     if not isinstance(assignment, dict):
         return False
@@ -2569,144 +2304,29 @@ def _is_explicit_manual_reviewer_assignment(assignment):
 
 
 def _apply_duty_schedule_assignments(items, persist=False, force=False, debug_limit=0):
-    assignments = _load_reviewer_assignments()
-    duty_payload = _load_duty_schedule_payload()
-    duty_dates = duty_payload.get("dates") or {}
-    changed = False
-    applied_count = 0
-    debug_rows = []
-
-    for item in items:
-        assignment_key = _get_assignment_key_for_item(item)
-        current_assignment = dict(assignments.get(assignment_key) or {})
-        current_reviewer = str(current_assignment.get("reviewer") or "").strip()
-        reviewer_source = str(current_assignment.get("reviewer_source") or "").strip()
-        if not force and current_reviewer and _is_explicit_manual_reviewer_assignment(current_assignment):
-            if debug_limit and len(debug_rows) < debug_limit:
-                debug_rows.append({
-                    "row_key": assignment_key,
-                    "release_key": item.get("release_key", ""),
-                    "date": "",
-                    "previous": current_reviewer,
-                    "scheduled": "",
-                    "result": current_reviewer,
-                    "reason": "manual",
-                })
-            continue
-
-        deployment_dt = _parse_release_monitor_date(item.get("deployment_start_iso") or item.get("deployment_start"))
-        if not deployment_dt or deployment_dt.date().weekday() >= 5:
-            if force or current_reviewer or reviewer_source == "duty_schedule":
-                current_assignment["reviewer"] = ""
-                current_assignment["reviewer_source"] = ""
-                current_assignment["reviewer_date"] = ""
-                current_assignment["checker"] = str(current_assignment.get("checker", "") or "").strip()
-                raw_responsibles = current_assignment.get("responsibles") or []
-                if not isinstance(raw_responsibles, list):
-                    raw_responsibles = [raw_responsibles] if raw_responsibles else []
-                current_assignment["responsibles"] = [
-                    str(value or "").strip()
-                    for value in raw_responsibles
-                    if str(value or "").strip()
-                ]
-                if current_assignment["checker"] or current_assignment["responsibles"]:
-                    assignments[assignment_key] = current_assignment
-                else:
-                    assignments.pop(assignment_key, None)
-                item["psi_owner"] = ""
-                item["psi_owner_source"] = ""
-                item["psi_owner_date"] = ""
-                item["psi_checker"] = current_assignment["checker"]
-                item["psi_responsibles"] = list(current_assignment["responsibles"])
-                changed = True
-            if debug_limit and len(debug_rows) < debug_limit:
-                debug_rows.append({
-                    "row_key": assignment_key,
-                    "release_key": item.get("release_key", ""),
-                    "date": deployment_dt.date().isoformat() if deployment_dt else "",
-                    "previous": current_reviewer,
-                    "scheduled": "",
-                    "result": "",
-                    "reason": "no-date-or-weekend",
-                })
-            continue
-
-        deployment_date = deployment_dt.date()
-        reviewer_name = str(duty_dates.get(deployment_date.isoformat()) or "").strip()
-        if reviewer_name and reviewer_name not in _get_oplot_values():
-            reviewer_name = _match_oplot_name(reviewer_name)
-        reviewer_name = reviewer_name or ""
-
-        if (
-            current_reviewer == reviewer_name
-            and reviewer_source == "duty_schedule"
-            and str(current_assignment.get("reviewer_date") or "") == deployment_date.isoformat()
-            and not force
-        ):
-            item["psi_owner"] = reviewer_name
-            item["psi_owner_source"] = "duty_schedule"
-            item["psi_owner_date"] = deployment_date.isoformat()
-            continue
-
-        current_assignment["reviewer"] = reviewer_name
-        current_assignment["reviewer_source"] = "duty_schedule" if reviewer_name else ""
-        current_assignment["reviewer_date"] = deployment_date.isoformat() if reviewer_name else ""
-        current_assignment["checker"] = str(current_assignment.get("checker", "") or "").strip()
-        raw_responsibles = current_assignment.get("responsibles") or []
-        if not isinstance(raw_responsibles, list):
-            raw_responsibles = [raw_responsibles] if raw_responsibles else []
-        current_assignment["responsibles"] = [
-            str(value or "").strip()
-            for value in raw_responsibles
-            if str(value or "").strip()
-        ]
-        if current_assignment["reviewer"] or current_assignment["checker"] or current_assignment["responsibles"]:
-            assignments[assignment_key] = current_assignment
-        else:
-            assignments.pop(assignment_key, None)
-
-        item["psi_owner"] = reviewer_name
-        item["psi_owner_source"] = current_assignment["reviewer_source"]
-        item["psi_owner_date"] = current_assignment["reviewer_date"]
-        item["psi_checker"] = current_assignment["checker"]
-        item["psi_responsibles"] = list(current_assignment["responsibles"])
-        changed = True
-        if reviewer_name:
-            applied_count += 1
-        if debug_limit and len(debug_rows) < debug_limit:
-            debug_rows.append({
-                "row_key": assignment_key,
-                "release_key": item.get("release_key", ""),
-                "date": deployment_date.isoformat(),
-                "previous": current_reviewer,
-                "scheduled": reviewer_name,
-                "result": reviewer_name,
-                "reason": "updated" if reviewer_name else "no-duty-for-date",
-            })
-
-    if changed and persist:
-        _save_reviewer_assignments(assignments)
-
+    del persist, force
+    result = apply_duty_schedule_overlay(
+        items,
+        _get_current_duty_schedule_projection(),
+        _load_reviewer_assignments(),
+    )
+    items[:] = result["items"]
     if debug_limit:
         return {
-            "applied_count": applied_count,
-            "debug_rows": debug_rows,
+            "applied_count": int(result["changes"].get("effective_updated") or 0),
+            "debug_rows": [],
+            "changes": result["changes"],
         }
-    return applied_count
+    return int(result["changes"].get("effective_updated") or 0)
 
 
 def _get_scheduled_duty_reviewer_for_item(item):
-    deployment_dt = _parse_release_monitor_date(item.get("deployment_start_iso") or item.get("deployment_start"))
-    if not deployment_dt or deployment_dt.date().weekday() >= 5:
-        return ""
-
-    duty_payload = _load_duty_schedule_payload()
-    duty_dates = duty_payload.get("dates") or {}
-    reviewer_name = str(duty_dates.get(deployment_dt.date().isoformat()) or "").strip()
-    if reviewer_name and reviewer_name not in _get_oplot_values():
-        reviewer_name = _match_oplot_name(reviewer_name)
-    return reviewer_name or ""
-
+    result = apply_duty_schedule_overlay(
+        [dict(item or {})],
+        _get_current_duty_schedule_projection(),
+        _load_reviewer_assignments(),
+    )
+    return get_effective_release_reviewer((result.get("items") or [{}])[0])
 
 def _prepare_item_for_zni_creation(item):
     zni_item = dict(item or {})
@@ -2734,11 +2354,16 @@ def _prepare_item_for_zni_creation(item):
 
 
 def _append_duty_schedule_meta(meta):
-    duty_payload = _load_duty_schedule_payload()
+    duty_payload = _get_current_duty_schedule_projection()
     week_start, week_end = _get_current_week_bounds()
-    meta["last_duty_schedule_upload"] = duty_payload.get("last_upload")
+    meta.pop("last_duty_schedule_upload", None)
     meta["duty_schedule_months"] = list(duty_payload.get("months") or [])
-    meta["duty_schedule_files"] = list(duty_payload.get("files") or [])
+    meta.pop("duty_schedule_files", None)
+    meta["duty_schedule_provider"] = str(duty_payload.get("source") or "va_schedule_manager")
+    meta["duty_schedule_status"] = str(duty_payload.get("status") or "missing_provider")
+    meta["duty_schedule_authoritative"] = bool(duty_payload.get("authoritative"))
+    meta["duty_schedule_revision"] = str(duty_payload.get("revision") or "")
+    meta["duty_schedule_updated_at"] = str(duty_payload.get("updated_at") or "")
     meta["work_mark_suggested_week"] = week_start.isoformat()
     meta["work_mark_suggested_week_end"] = week_end.isoformat()
     meta["work_mark_suggested_participants"] = _collect_work_mark_suggested_participants(duty_payload)
@@ -2746,7 +2371,7 @@ def _append_duty_schedule_meta(meta):
 
 
 def _collect_work_mark_suggested_participants(duty_payload=None):
-    duty_payload = duty_payload if isinstance(duty_payload, dict) else _load_duty_schedule_payload()
+    duty_payload = duty_payload if isinstance(duty_payload, dict) else _get_current_duty_schedule_projection()
     week_start, week_end = _get_current_week_bounds()
     dates = duty_payload.get("dates") or {}
     availability = duty_payload.get("availability") or {}
@@ -2763,12 +2388,12 @@ def _collect_work_mark_suggested_participants(duty_payload=None):
     current_date = week_start
     while current_date <= week_end:
         date_key = current_date.isoformat()
-        add_participant(dates.get(date_key))
-        for person, info in (availability.get(date_key) or {}).items():
-            status = str((info or {}).get("status") or "").strip().upper()
-            reason = str((info or {}).get("reason") or "").strip()
-            if status == "ВР" or reason == "Вечерний резервный дежурный":
-                add_participant(person)
+        state = (duty_payload.get("date_states") or {}).get(date_key) or {}
+        if state.get("state") == "ready":
+            add_participant(dates.get(date_key))
+        evening = (duty_payload.get("evening") or {}).get(date_key) or {}
+        for person in evening.get("reserve") or []:
+            add_participant(person)
         current_date += timedelta(days=1)
 
     return participants
@@ -2997,13 +2622,36 @@ def _apply_release_week_buckets(items):
 
 def _collect_week_candidate_availability(week_start=None, week_end=None, target_dates=None):
     week_start, week_end = (week_start, week_end) if week_start and week_end else _get_current_week_bounds()
-    duty_payload = _load_duty_schedule_payload()
+    duty_payload = _get_current_duty_schedule_projection()
+    if not duty_payload.get("authoritative"):
+        return {
+            "available": [],
+            "reserve": [],
+            "excluded": [],
+            "status": "availability_unknown",
+            "authoritative": False,
+            "schedule_status": str(duty_payload.get("status") or "missing_provider"),
+        }
     availability_by_date = duty_payload.get("availability") or {}
     if target_dates is not None:
         target_dates = {
             value for value in target_dates
             if value and week_start <= value <= week_end
         }
+        date_states = duty_payload.get("date_states") or {}
+        if any(
+            str((date_states.get(value.isoformat()) or {}).get("state") or "month_unavailable")
+            not in {"ready", "no_duty"}
+            for value in target_dates
+        ):
+            return {
+                "available": [],
+                "reserve": [],
+                "excluded": [],
+                "status": "availability_unknown",
+                "authoritative": False,
+                "schedule_status": "mapping_warnings",
+            }
 
     candidates = {
         name: {
@@ -3027,6 +2675,21 @@ def _collect_week_candidate_availability(week_start=None, week_end=None, target_
             dates_to_check.append(current_date)
             current_date += timedelta(days=1)
 
+    date_states = duty_payload.get("date_states") or {}
+    if any(
+        str((date_states.get(value.isoformat()) or {}).get("state") or "month_unavailable")
+        not in {"ready", "no_duty"}
+        for value in dates_to_check
+    ):
+        return {
+            "available": [],
+            "reserve": [],
+            "excluded": [],
+            "status": "availability_unknown",
+            "authoritative": False,
+            "schedule_status": "mapping_warnings",
+        }
+
     for current_date in dates_to_check:
         day_people = availability_by_date.get(current_date.isoformat()) or {}
         for matched_name, entry in candidates.items():
@@ -3035,7 +2698,7 @@ def _collect_week_candidate_availability(week_start=None, week_end=None, target_
             availability = str((info or {}).get("availability") or "").strip()
             reason = str((info or {}).get("reason") or "").strip() or status
             if not availability:
-                availability, reason = _classify_duty_status(status) if status else ("available", "")
+                availability, reason = "available", ""
             if availability not in {"available", "reserve", "excluded"}:
                 availability = "available"
 
@@ -3071,11 +2734,11 @@ def _collect_week_candidate_availability(week_start=None, week_end=None, target_
         entry["is_date_dependent"] = len(observed_states) > 1
         entry["reasons"] = _summarize_duty_restrictions(entry["statuses"])
 
-    grouped = {"available": [], "reserve": [], "excluded": []}
+    grouped = {"available": [], "reserve": [], "excluded": [], "status": "ready", "authoritative": True}
     for entry in candidates.values():
         grouped[entry["availability"]].append(entry)
-    for values in grouped.values():
-        values.sort(key=lambda item: item["name"])
+    for group_name in ("available", "reserve", "excluded"):
+        grouped[group_name].sort(key=lambda item: item["name"])
     return grouped
 
 
@@ -6048,7 +5711,6 @@ def _compose_release_payload(all_records, mode):
             "last_sync_mode": mode,
             "last_auto_incremental_sync": None,
             "last_confluence_sync": None,
-            "last_duty_schedule_upload": None,
             "quick_refresh_days": QUICK_REFRESH_DAYS,
             "auto_full_refresh_enabled": AUTO_FULL_REFRESH_ENABLED,
             "auto_full_refresh_hour": AUTO_FULL_REFRESH_HOUR,
@@ -6791,7 +6453,7 @@ def _migrate_cached_display_snapshot_pair_if_needed(source_payload=None):
     )
     source_payload = source_payload or {}
     migrated = _prepare_accepted_snapshot(
-        _cached_data,
+        _strip_effective_duty_fields_for_snapshot(_cached_data),
         accepted_revision=(source_payload.get("meta") or {}).get("accepted_revision"),
         accepted_at=(source_payload.get("meta") or {}).get("accepted_at"),
     )
@@ -7168,6 +6830,8 @@ def _ensure_scheduler_started():
         )
         return
 
+    scheduler_app = current_app._get_current_object() if has_app_context() else None
+
     def _scheduler_loop():
         global _auto_incremental_thread
         _rm_trace("RM_SCHEDULER", "loop_started")
@@ -7227,13 +6891,15 @@ def _ensure_scheduler_started():
                                 last_auto_ts=last_auto_ts,
                             )
                             _auto_incremental_thread = threading.Thread(
-                                target=_run_auto_incremental_release_monitor_refresh,
+                                target=_run_in_app_context,
+                                args=(scheduler_app, _run_auto_incremental_release_monitor_refresh),
                                 daemon=True,
                                 name="release-monitor-silent-refresh",
                             )
                             _auto_incremental_thread.start()
-                _schedule_unassigned_weekly_reminder(snapshot)
-                _schedule_responsible_weekly_digest(snapshot)
+                effective_snapshot = get_effective_release_monitor_snapshot(base_snapshot=snapshot)
+                _schedule_unassigned_weekly_reminder(effective_snapshot)
+                _schedule_responsible_weekly_digest(effective_snapshot)
             except Exception:
                 logging.exception("Release monitor: refresh scheduler failed")
                 _rm_trace("RM_SCHEDULER", "loop_error")
@@ -7247,7 +6913,8 @@ def _ensure_scheduler_started():
         interval_seconds=AUTO_INCREMENTAL_REFRESH_INTERVAL_SECONDS,
     )
     _scheduler_thread = threading.Thread(
-        target=_scheduler_loop,
+        target=_run_in_app_context,
+        args=(scheduler_app, _scheduler_loop),
         daemon=True,
         name="release-monitor-scheduler",
     )
@@ -7599,8 +7266,10 @@ def start_release_monitor_refresh(mode="full", trigger="manual"):
                 "confirmed_snapshot_at": None,
             }
         )
+        worker_app = current_app._get_current_object() if has_app_context() else None
         _refresh_thread = threading.Thread(
-            target=_run_release_monitor_refresh,
+            target=_run_in_app_context,
+            args=(worker_app, _run_release_monitor_refresh),
             kwargs={"mode": mode, "trigger": trigger},
             daemon=True,
             name=f"release-monitor-{mode}-refresh",
@@ -7640,6 +7309,7 @@ def _normalize_release_payload(payload):
         _apply_template_system_classification(normalized_items)
         _apply_work_marks(normalized_items)
         _apply_manual_duplicate_reconciliation(normalized_items)
+        _apply_duty_schedule_assignments(normalized_items, persist=False)
         _apply_week_control_flags(normalized_items)
         _apply_release_week_buckets(normalized_items)
         _sort_and_number_records(normalized_items)
@@ -7678,6 +7348,12 @@ def _hydrate_release_monitor_payload(payload):
     return _finalize_release_monitor_payload(payload, _load_manual_release_overrides())
 
 
+def get_effective_release_monitor_snapshot(*, base_snapshot=None):
+    """Return an in-memory snapshot with the current VA duty overlay applied."""
+    source = base_snapshot if isinstance(base_snapshot, dict) else _get_cached_payload_copy()
+    return _normalize_release_payload(source or _build_empty_release_monitor_payload())
+
+
 def get_release_monitor_refresh_status():
     with _cache_lock:
         _ensure_scheduler_started()
@@ -7686,9 +7362,7 @@ def get_release_monitor_refresh_status():
         payload = {
             "status": dict(_refresh_status),
         }
-        data = copy.deepcopy(
-            _get_cached_payload_copy() or _build_empty_release_monitor_payload()
-        )
+        data = get_effective_release_monitor_snapshot()
         data["meta"] = _append_auto_incremental_meta(data.get("meta", {}))
         payload["data"] = data
         persisted_state = str(
@@ -7713,15 +7387,11 @@ def get_release_monitor_refresh_status():
 def get_release_monitor_snapshot():
     with _cache_lock:
         _ensure_scheduler_started()
-        reloaded_from_disk = _reload_snapshot_from_disk_if_newer()
+        _reload_snapshot_from_disk_if_newer()
         if _cached_data is None:
             return _build_empty_release_monitor_payload()
 
-        payload = (
-            copy.deepcopy(_cached_data)
-            if reloaded_from_disk
-            else _normalize_release_payload(_get_cached_payload_copy())
-        )
+        payload = get_effective_release_monitor_snapshot()
         payload["meta"] = {
             **payload.get("meta", {}),
             "is_cached": True,
@@ -7812,6 +7482,9 @@ def get_release_monitor_week_control(snapshot=None):
         },
         "missing_responsible": missing_responsible,
         "candidates": candidate_groups,
+        "availability_status": str(candidate_groups.get("status") or "ready"),
+        "availability_authoritative": bool(candidate_groups.get("authoritative", True)),
+        "duty_schedule_status": str(candidate_groups.get("schedule_status") or "ready"),
         "assigned_load": dict(sorted(assigned_load.items(), key=lambda pair: (-pair[1], pair[0]))),
     }
 
@@ -7930,7 +7603,7 @@ def get_release_monitor_assignment_center_data():
             "rov_status": source_item.get("rov_status", ""),
             "row_state": source_item.get("row_state", ""),
             "is_final": bool(source_item.get("is_final")),
-            "duty_owner": source_item.get("psi_owner", ""),
+            "duty_owner": get_effective_release_reviewer(source_item),
             "duty_owner_source": source_item.get("psi_owner_source", ""),
         })
 
@@ -8192,6 +7865,14 @@ def get_release_monitor_week_responsible_recommendations():
     snapshot = get_release_monitor_snapshot() or {}
     items = snapshot.get("items", []) if isinstance(snapshot, dict) else []
     control = get_release_monitor_week_control(snapshot=snapshot)
+    if not control.get("availability_authoritative"):
+        return {
+            "control": control,
+            "recommendations": [],
+            "source": "unavailable",
+            "summary": "",
+            "message": "Данные графика временно недоступны. Автоматическая рекомендация не выполнялась.",
+        }
     missing = control.get("missing_responsible") or []
     week_start, week_end = _get_current_week_bounds()
     week_items = [
@@ -8409,75 +8090,6 @@ reserve_candidates конкретного релиза уже включены �
         "source": "gigachat",
         "summary": summary,
         "message": "" if normalized_recommendations else "GigaChat не вернул применимых рекомендаций.",
-    }
-
-
-def upload_release_monitor_duty_schedules(uploaded_files):
-    global _cached_data, _last_cache_update
-
-    files = [file_storage for file_storage in (uploaded_files or []) if getattr(file_storage, "filename", "")]
-    if not files:
-        raise ValueError("\u041d\u0435 \u0432\u044b\u0431\u0440\u0430\u043d\u044b \u0444\u0430\u0439\u043b\u044b \u0433\u0440\u0430\u0444\u0438\u043a\u0430")
-
-    existing_payload = _load_duty_schedule_payload()
-    merged_payload = dict(existing_payload)
-    uploaded_names = []
-    parsed_months = []
-    warnings = []
-
-    for file_storage in files:
-        filename = str(getattr(file_storage, "filename", "") or "").strip()
-        if not filename:
-            continue
-
-        file_bytes = file_storage.read()
-        if not file_bytes:
-            continue
-
-        parsed_payload = _parse_duty_schedule_workbook(file_bytes, filename)
-        parsed_payload["last_upload"] = _format_timestamp()
-        merged_payload = _merge_duty_schedule_payload(merged_payload, parsed_payload)
-        uploaded_names.append(filename)
-        parsed_months.extend(parsed_payload.get("months", []))
-        warnings.extend(parsed_payload.get("warnings", []))
-
-    if not uploaded_names:
-        raise ValueError("\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u043f\u0440\u043e\u0447\u0438\u0442\u0430\u0442\u044c \u043d\u0438 \u043e\u0434\u0438\u043d \u0444\u0430\u0439\u043b \u0433\u0440\u0430\u0444\u0438\u043a\u0430")
-
-    merged_payload["last_upload"] = _format_timestamp()
-    _save_duty_schedule_payload(merged_payload)
-
-    with _cache_lock:
-        _ensure_scheduler_started()
-        if _cached_data is None:
-            disk_payload = _load_snapshot_from_disk()
-            if disk_payload is not None:
-                _cached_data = _hydrate_release_monitor_payload(disk_payload)
-                _last_cache_update = _get_snapshot_mtime() or time.time()
-
-        applied_count = 0
-        duty_debug_rows = []
-        if _cached_data is not None:
-            items = _cached_data.get("items") or []
-            _apply_reviewer_assignments(items)
-            _apply_date_overrides(items)
-            duty_result = _apply_duty_schedule_assignments(items, persist=False, force=True, debug_limit=20)
-            applied_count = duty_result.get("applied_count", 0) if isinstance(duty_result, dict) else int(duty_result or 0)
-            duty_debug_rows = duty_result.get("debug_rows", []) if isinstance(duty_result, dict) else []
-            _sort_and_number_records(items)
-            meta = _cached_data.setdefault("meta", {})
-            meta["last_duty_schedule_upload"] = merged_payload.get("last_upload")
-            _mark_release_monitor_state_changed()
-
-        payload = _normalize_release_payload(_get_cached_payload_copy() or _build_empty_release_monitor_payload())
-
-    return {
-        "uploaded_files": uploaded_names,
-        "parsed_months": list(dict.fromkeys(parsed_months)),
-        "warnings": warnings,
-        "applied_count": applied_count,
-        "duty_debug_rows": duty_debug_rows,
-        "data": payload,
     }
 
 

@@ -15,9 +15,11 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 from urllib.parse import urlparse
 from uuid import uuid4
+from flask import current_app, has_app_context
 
 from config import TOKENS
 from services.feature_flags_service import get_automation_config
+from services.release_monitor_duty_overlay import get_effective_release_reviewer
 
 
 EMAIL_AUTOMATION_FLAG = "release_monitor_unassigned_email"
@@ -567,7 +569,7 @@ def _display(value, fallback: str = "—") -> str:
 
 
 def _owner_label(item: Dict) -> str:
-    owner = _display(item.get("psi_owner"), "")
+    owner = _display(get_effective_release_reviewer(item), "")
     if not owner:
         return "—"
     source = str(item.get("psi_owner_source") or "").strip()
@@ -1023,6 +1025,14 @@ def _latest_snapshot() -> Dict:
     return get_release_monitor_snapshot() or {}
 
 
+def _worker_with_app_context(app) -> None:
+    if app is None:
+        _worker_loop()
+        return
+    with app.app_context():
+        _worker_loop()
+
+
 def _run_notification(
     snapshot: Dict,
     *,
@@ -1417,8 +1427,10 @@ def schedule_unassigned_email_notification(
         }
         if _worker_thread and _worker_thread.is_alive():
             return True
+        worker_app = current_app._get_current_object() if has_app_context() else None
         _worker_thread = threading.Thread(
-            target=_worker_loop,
+            target=_worker_with_app_context,
+            args=(worker_app,),
             daemon=True,
             name="release-monitor-unassigned-email",
         )
@@ -1461,8 +1473,10 @@ def schedule_unassigned_weekly_reminder(snapshot: Dict) -> bool:
         }
         if _worker_thread and _worker_thread.is_alive():
             return True
+        worker_app = current_app._get_current_object() if has_app_context() else None
         _worker_thread = threading.Thread(
-            target=_worker_loop,
+            target=_worker_with_app_context,
+            args=(worker_app,),
             daemon=True,
             name="release-monitor-unassigned-email",
         )

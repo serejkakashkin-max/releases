@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, time as dt_time
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 from uuid import uuid4
+from flask import current_app, has_app_context
 
 from services.feature_flags_service import get_automation_config, get_release_prefix_system
 from services.release_monitor_email_service import (
@@ -31,6 +32,7 @@ from services.release_notification_employee_provider import (
     get_release_notification_adapter_readiness as _get_release_notification_adapter_readiness,
     get_release_notification_recipients,
 )
+from services.release_monitor_duty_overlay import get_effective_release_reviewer
 
 
 RESPONSIBLE_EMAIL_AUTOMATION_FLAG = "release_monitor_responsible_email"
@@ -447,7 +449,7 @@ def _display(value, fallback: str = "—") -> str:
 
 
 def _owner_label(item: Dict) -> str:
-    owner = str(item.get("psi_owner") or "").strip()
+    owner = get_effective_release_reviewer(item)
     if not owner:
         return "—"
     source = str(item.get("psi_owner_source") or "").strip()
@@ -1006,6 +1008,14 @@ def _latest_snapshot() -> Dict:
     return get_release_monitor_snapshot() or {}
 
 
+def _worker_with_app_context(app) -> None:
+    if app is None:
+        _worker_loop()
+        return
+    with app.app_context():
+        _worker_loop()
+
+
 def _release_monitor_links() -> Tuple[str, str]:
     public_url = _mail_settings()["public_url"].rstrip("/")
     assignment_suffix = "/assignment-center"
@@ -1551,8 +1561,10 @@ def _queue_job(
         }
         if _worker_thread and _worker_thread.is_alive():
             return True
+        worker_app = current_app._get_current_object() if has_app_context() else None
         _worker_thread = threading.Thread(
-            target=_worker_loop,
+            target=_worker_with_app_context,
+            args=(worker_app,),
             daemon=True,
             name="release-monitor-responsible-email",
         )

@@ -520,6 +520,12 @@
 
         const viewUnchanged = !force && lastViewRevision && lastViewRevision === meta.view_revision;
         currentControl = payload;
+        const availabilityKnown = payload?.availability_authoritative !== false;
+        if (elements.scheduleWarning) elements.scheduleWarning.hidden = availabilityKnown;
+        if (elements.aiBtn) {
+            elements.aiBtn.disabled = !availabilityKnown;
+            elements.aiBtn.title = availabilityKnown ? '' : 'Данные графика временно недоступны';
+        }
         setConnection('online', `Онлайн · ${meta.generated_at || 'обновлено'}`);
         renderCockpit();
         if (viewUnchanged) {
@@ -778,6 +784,7 @@
         elements.excludedCount = document.getElementById('assignmentExcludedCount');
         elements.refreshBtn = document.getElementById('assignmentRefreshBtn');
         elements.aiBtn = document.getElementById('assignmentAiBtn');
+        elements.scheduleWarning = document.getElementById('assignmentScheduleWarning');
         elements.aiPanel = document.getElementById('assignmentAiPanel');
         elements.aiSummary = document.getElementById('assignmentAiSummary');
         elements.aiList = document.getElementById('assignmentAiList');
