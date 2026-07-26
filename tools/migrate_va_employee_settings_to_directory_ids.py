@@ -50,6 +50,7 @@ def main(argv: List[str] | None = None) -> int:
     )
     from VA.schedule_manager.repositories.employee_settings_repository import (
         EmployeeSettingsConflictError,
+        EmployeeSettingsValidationError,
         EmployeeSettingsRepository,
         empty_settings_payload,
         normalize_employee_settings,
@@ -122,12 +123,22 @@ def main(argv: List[str] | None = None) -> int:
         employee_id = resolution.employee_id
         resolved_ids.add(employee_id)
         report["resolved"] += 1
-        migrated = normalize_employee_settings(record)
+        try:
+            migrated = normalize_employee_settings(
+                record,
+                allow_legacy_status=True,
+            )
+        except EmployeeSettingsValidationError:
+            report["conflicts"] += 1
+            continue
         existing = next_employees.get(employee_id)
         if existing is None:
             next_employees[employee_id] = migrated
             report["would_create"] += 1
-        elif normalize_employee_settings(existing) == migrated:
+        elif normalize_employee_settings(
+            existing,
+            allow_legacy_status=True,
+        ) == migrated:
             report["already_migrated"] += 1
         else:
             report["conflicts"] += 1

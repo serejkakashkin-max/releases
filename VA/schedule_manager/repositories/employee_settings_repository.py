@@ -30,6 +30,7 @@ DEFAULT_EMPLOYEE_SETTINGS = {
 }
 MIGRATION_STATUSES = {"not_required", "required", "complete", "failed"}
 VA_STATUSES = {"active", "long_leave"}
+PERSISTED_VA_STATUSES = VA_STATUSES | {"dismissed"}
 VA_ROLES = {"employee", "manager"}
 
 
@@ -213,7 +214,11 @@ def empty_settings_payload(*, migration_status: str, directory_etag: str = "") -
     }
 
 
-def normalize_employee_settings(value: Any) -> Dict[str, Any]:
+def normalize_employee_settings(
+    value: Any,
+    *,
+    allow_legacy_status: bool = False,
+) -> Dict[str, Any]:
     source = value if isinstance(value, dict) else {}
     status = str(source.get("status") or "active").strip()
     role = str(source.get("role") or "employee").strip()
@@ -224,7 +229,8 @@ def normalize_employee_settings(value: Any) -> Dict[str, Any]:
             competencies.append(clean)
     if not competencies:
         competencies = ["support"]
-    if status not in VA_STATUSES:
+    allowed_statuses = PERSISTED_VA_STATUSES if allow_legacy_status else VA_STATUSES
+    if status not in allowed_statuses:
         raise EmployeeSettingsValidationError("Invalid VA status.")
     if role not in VA_ROLES:
         raise EmployeeSettingsValidationError("Invalid VA role.")
@@ -242,7 +248,7 @@ def normalize_employee_settings(value: Any) -> Dict[str, Any]:
 def effective_employee_settings(explicit: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     if explicit is None:
         return copy.deepcopy(DEFAULT_EMPLOYEE_SETTINGS)
-    return normalize_employee_settings(explicit)
+    return normalize_employee_settings(explicit, allow_legacy_status=True)
 
 
 def validate_settings_payload(payload: Any) -> list:
@@ -297,7 +303,7 @@ def validate_settings_payload(payload: Any) -> list:
         for employee_id, settings in employees.items():
             try:
                 UUID(str(employee_id))
-                normalize_employee_settings(settings)
+                normalize_employee_settings(settings, allow_legacy_status=True)
             except (ValueError, EmployeeSettingsValidationError):
                 errors.append("invalid_employee_settings")
     return errors
