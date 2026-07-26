@@ -275,6 +275,51 @@ html[data-theme="light"] .source-status { background: rgba(255, 255, 255, 0.72);
     text-overflow: ellipsis;
 }
 
+.schedule-table tbody tr > th,
+.schedule-table tbody tr > td {
+    transition:
+        background-image 0.14s ease,
+        box-shadow 0.14s ease,
+        filter 0.14s ease;
+}
+
+.schedule-table tbody tr:hover > th,
+.schedule-table tbody tr:hover > td {
+    background-image: linear-gradient(
+        rgba(88, 166, 255, 0.18),
+        rgba(88, 166, 255, 0.18)
+    );
+    box-shadow:
+        inset 0 1px 0 rgba(125, 190, 255, 0.62),
+        inset 0 -1px 0 rgba(125, 190, 255, 0.62);
+    filter: brightness(1.08);
+}
+
+.schedule-table tbody tr:hover > .today {
+    box-shadow:
+        inset 0 3px 0 var(--accent),
+        inset 0 -1px 0 rgba(125, 190, 255, 0.62);
+}
+
+.schedule-table tbody tr.row-warning:hover > .employee-col {
+    box-shadow:
+        inset 3px 0 0 var(--warning),
+        inset 0 1px 0 rgba(125, 190, 255, 0.62),
+        inset 0 -1px 0 rgba(125, 190, 255, 0.62);
+}
+
+html[data-theme="light"] .schedule-table tbody tr:hover > th,
+html[data-theme="light"] .schedule-table tbody tr:hover > td {
+    background-image: linear-gradient(
+        rgba(13, 110, 253, 0.11),
+        rgba(13, 110, 253, 0.11)
+    );
+    box-shadow:
+        inset 0 1px 0 rgba(13, 110, 253, 0.38),
+        inset 0 -1px 0 rgba(13, 110, 253, 0.38);
+    filter: brightness(1.03);
+}
+
 .schedule-table th:last-child,
 .schedule-table td:last-child { border-right: 0; }
 
@@ -306,6 +351,11 @@ html[data-theme="light"] .schedule-table thead th { color: #17324d; }
     overflow: hidden;
     vertical-align: middle;
     text-overflow: ellipsis;
+}
+
+.schedule-table tbody .employee-col span {
+    font-size: 12px;
+    line-height: 1;
 }
 
 .day-col { width: auto; }
@@ -405,7 +455,10 @@ html[data-theme="light"] .schedule-table thead th { color: #17324d; }
     .schedule-table td { height: 23px; padding: 0; }
     .schedule-table thead th { height: 28px; }
     .employee-col { width: 76px; padding-left: 2px !important; }
-    .employee-col span { max-width: calc(100% - 8px); }
+    .employee-col span {
+        max-width: calc(100% - 8px);
+        font-size: 8px;
+    }
     .day-col small { font-size: 6px; }
     .day-col strong { font-size: 8px; }
     .legend { gap: 4px 8px; }
