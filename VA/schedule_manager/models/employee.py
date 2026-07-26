@@ -5,6 +5,7 @@ from typing import Optional, Tuple
 @dataclass(frozen=True)
 class Employee:
     name: str
+    employee_id: str = ""
     email: str = ""
     phone: str = ""
     status: str = "active"
@@ -32,6 +33,7 @@ class Employee:
                 competencies = ("support",)
         return cls(
             name=data["name"],
+            employee_id=str(data.get("employee_id") or ""),
             email=data.get("email", ""),
             phone=data.get("phone", ""),
             status=data.get("status", "active"),

@@ -31,67 +31,8 @@ DEFAULT_BH_PLAYBOOKS = [
     "IMPORT_DICTIONARY_PARAMS", "IMPORT_LOGGER_PARAMS"
 ]
 
-OPLOT_VALUES = [
-    "Кондратьева А.А.", "Тутов А.М.", "Частухин А.М.",
-    "Ефимов В.В.", "Гапоненко Д.А.", "Фисан К.Ю.", "Глотов К.С.",
-    "Мухиддинов М.Б.", "Кашкин С.Н.", "Айрапетова Н.Г."
-]
-
 # === Константы для Дашборда дежурного ===
 # Список дежурных ОПЛОТ (ФИО полностью как в Jira)
-DASHBOARD_ASSIGNEES = [
-    "Айрапетова Нелли Геннадьевна - СРБ",
-    "Андреев Василий Юрьевич",
-    "Гапоненко Дмитрий Анатольевич",
-    "Глотов Кирилл Сергеевич",
-    "Ефимов Владимир Владимирович",
-    "Кашкин Сергей Николаевич",
-    "Кондратьева Алена Александровна",
-    "Мухиддинов Манучехр Бахриддинович",
-    "Сафронов Кирилл Евгеньевич",
-    "Тутов Артем Михайлович",
-    "Фисан Кирилл Юрьевич",
-    "Частухин Александр Михайлович",
-]
-
-DASHBOARD_EXTRA_ASSIGNEES = [
-    "Монахов Дмитрий Владимирович",
-    "Васькин Антон Анатольевич",
-]
-
-_ASSIGNEE_DISPLAY_SUFFIXES = (" - СРБ",)
-
-DASHBOARD_ASSIGNEE_DISPLAY_MAP = {
-    name: next(
-        (name[:-len(suffix)] for suffix in _ASSIGNEE_DISPLAY_SUFFIXES if name.endswith(suffix)),
-        name
-    )
-    for name in DASHBOARD_ASSIGNEES + DASHBOARD_EXTRA_ASSIGNEES
-}
-
-DASHBOARD_ASSIGNEES_DISPLAY = [
-    DASHBOARD_ASSIGNEE_DISPLAY_MAP[name]
-    for name in DASHBOARD_ASSIGNEES
-]
-
-DASHBOARD_VISIBLE_ASSIGNEES = list(dict.fromkeys(
-    DASHBOARD_ASSIGNEES + DASHBOARD_EXTRA_ASSIGNEES
-))
-
-DASHBOARD_VISIBLE_ASSIGNEES_DISPLAY = [
-    DASHBOARD_ASSIGNEE_DISPLAY_MAP[name]
-    for name in DASHBOARD_VISIBLE_ASSIGNEES
-]
-
-
-def get_dashboard_assignee_display_name(name: str) -> str:
-    """Возвращает имя для UI без служебных суффиксов Jira."""
-    if not name:
-        return name
-    return DASHBOARD_ASSIGNEE_DISPLAY_MAP.get(name, name)
-
-
-# Теги для фильтрации задач в Jira
 DASHBOARD_TAG = "СУП"
 DASHBOARD_TAG_VNEDRENIE = "Внедрение"
 

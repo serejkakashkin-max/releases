@@ -6,7 +6,7 @@ from typing import List
 from VA.schedule_manager.models.employee import Employee
 from VA.schedule_manager.models.schedule_grid import ScheduleDay, ScheduleGrid, ScheduleRow
 from VA.schedule_manager.models.schedule_snapshot import ScheduleSnapshot
-from VA.schedule_manager.repositories.employee_repository import EmployeeRepository
+from VA.schedule_manager.repositories.managed_employee_repository import ManagedEmployeeRepository
 from VA.schedule_manager.repositories.schedule_repository import ScheduleRepository
 from VA.schedule_manager.repositories.shift_repository import ShiftRepository
 from VA.schedule_manager.services.calendar_integration_service import CalendarIntegrationService
@@ -80,7 +80,7 @@ class ScheduleMonthService:
     def __init__(
         self,
         schedule_repository: ScheduleRepository,
-        employee_repository: EmployeeRepository,
+        employee_repository: ManagedEmployeeRepository,
         calendar_service: CalendarIntegrationService,
         shift_service: ShiftService = None,
     ) -> None:
@@ -194,8 +194,19 @@ class ScheduleMonthService:
         if target_exists and not overwrite:
             raise ScheduleMonthValidationError("Целевой месяц уже существует. Подтвердите перезапись.")
 
+        current_employee_names = self._employees_for_new_month(snapshot, "directory")
+        if not current_employee_names:
+            raise ScheduleMonthValidationError(
+                "Нет активных сотрудников для копируемого графика."
+            )
         calendar_state = self.calendar_service.load_calendar(target_year, target_month)
-        target_grid = self._copy_grid_to_month(source_grid, target_year, target_month, calendar_state.holidays)
+        target_grid = self._copy_grid_to_month(
+            source_grid,
+            target_year,
+            target_month,
+            calendar_state.holidays,
+            current_employee_names,
+        )
         month_name = MONTH_NAMES[target_month]
         sheet_name = f"{month_name} {target_year}"
 
@@ -225,19 +236,16 @@ class ScheduleMonthService:
         )
 
     def _employees_for_new_month(self, snapshot: ScheduleSnapshot, employee_source: str) -> List[str]:
-        if employee_source == "last_schedule" and snapshot is not None and snapshot.month_schedules:
-            latest = max(snapshot.month_schedules, key=lambda item: (int(item["year"]), int(item["month"])))
-            grid = snapshot.get_month_grid(latest["sheet_name"])
-            names = [row.employee_name for row in grid.employees]
-            if names:
-                return names
-
-        employees = [
-            employee.name
-            for employee in self.employee_service.list_employees()
-            if employee.status == "active"
-        ]
-        return employees
+        try:
+            return [
+                employee.name
+                for employee in self.employee_service.list_employees()
+                if employee.status == "active"
+            ]
+        except RuntimeError as exc:
+            raise ScheduleMonthValidationError(
+                "Current employee list is temporarily unavailable."
+            ) from exc
 
     def _build_empty_grid(self, year: int, month: int, employee_names: List[str], holidays: set) -> ScheduleGrid:
         days_count = calendar.monthrange(year, month)[1]
@@ -265,24 +273,42 @@ class ScheduleMonthService:
             employees=rows,
         )
 
-    def _copy_grid_to_month(self, source_grid: ScheduleGrid, year: int, month: int, holidays: set) -> ScheduleGrid:
+    def _copy_grid_to_month(
+        self,
+        source_grid: ScheduleGrid,
+        year: int,
+        month: int,
+        holidays: set,
+        employee_names: List[str],
+    ) -> ScheduleGrid:
         days_count = calendar.monthrange(year, month)[1]
         days = []
         for day_number in range(1, days_count + 1):
             current = date(year, month, day_number)
             days.append(ScheduleDay(day_number, WEEKDAYS[current.weekday()], current))
 
+        source_rows = {
+            self._normalize_code(row.employee_name).casefold(): row
+            for row in source_grid.employees
+        }
         rows = []
-        for source_row in source_grid.employees:
+        for employee_name in employee_names:
+            source_row = source_rows.get(
+                self._normalize_code(employee_name).casefold()
+            )
             assignments = {}
             for target_day in days:
                 if target_day.date in holidays:
                     assignments[target_day.day] = "П"
                     continue
-                assignments[target_day.day] = source_row.assignments.get(target_day.day, "")
+                assignments[target_day.day] = (
+                    source_row.assignments.get(target_day.day, "")
+                    if source_row is not None
+                    else ""
+                )
             rows.append(
                 ScheduleRow(
-                    employee_name=source_row.employee_name,
+                    employee_name=employee_name,
                     hours=self._calculate_hours(assignments),
                     assignments=assignments,
                 )

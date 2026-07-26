@@ -2,7 +2,7 @@ from flask import Blueprint, request
 
 from VA.schedule_manager.parsers.schedule_csv_parser import parse_schedule_csv_file
 from VA.schedule_manager.repositories.competency_repository import CompetencyRepository
-from VA.schedule_manager.repositories.employee_repository import EmployeeRepository
+from VA.schedule_manager.repositories.managed_employee_repository import ManagedEmployeeRepository
 from VA.schedule_manager.repositories.integration_settings_repository import IntegrationSettingsRepository
 from VA.schedule_manager.repositories.schedule_repository import ScheduleRepository
 from VA.schedule_manager.repositories.shift_repository import ShiftRepository
@@ -18,6 +18,11 @@ from VA.schedule_manager.services.shift_service import ShiftService
 from VA.schedule_manager.services.today_schedule_service import TodayScheduleService
 from VA.schedule_manager.services.workload_analyzer import analyze_schedule
 from VA.schedule_manager.config import ENABLE_SAMPLE_ENDPOINTS, SAMPLE_DATA_DIR
+from VA.schedule_manager.integrations.employee_directory_adapter import (
+    VaSettingsMigrationRequiredError,
+    get_managed_va_employees,
+)
+from services.employee_directory_service import EmployeeDirectoryUnavailableError
 
 
 api_bp = Blueprint("api", __name__)
@@ -40,7 +45,7 @@ def _schedule_edit_service() -> ScheduleEditService:
     return ScheduleEditService(
         _schedule_service(),
         ShiftService(ShiftRepository()),
-        employee_service=EmployeeService(EmployeeRepository()),
+        employee_service=EmployeeService(ManagedEmployeeRepository()),
     )
 
 
@@ -51,13 +56,13 @@ def _today_schedule_service() -> TodayScheduleService:
 def _schedule_month_service() -> ScheduleMonthService:
     return ScheduleMonthService(
         ScheduleRepository(),
-        EmployeeRepository(),
+        ManagedEmployeeRepository(),
         CalendarIntegrationService(IntegrationSettingsRepository()),
     )
 
 
 def _competency_service() -> CompetencyService:
-    return CompetencyService(CompetencyRepository(), EmployeeRepository())
+    return CompetencyService(CompetencyRepository(), ManagedEmployeeRepository())
 
 
 @api_bp.get("/status")
@@ -90,18 +95,20 @@ def _status_payload() -> dict:
 
 @api_bp.get("/employees")
 def employees():
-    snapshot = _schedule_service().get_current()
-    if snapshot is None:
-        return api_error("schedule_not_loaded", "Данные не загружены.", 404)
-
-    return api_success(
-        {
-            "employees": [employee.to_dict() for employee in snapshot.employees],
-            "count": snapshot.employee_count,
-            "uploaded_at": snapshot.uploaded_at,
-        }
-    )
-
+    try:
+        current_employees = get_managed_va_employees()
+    except EmployeeDirectoryUnavailableError as exc:
+        return api_error(
+            f"employee_directory_{exc.status}",
+            "Current employee list is temporarily unavailable.",
+            503,
+        )
+    except VaSettingsMigrationRequiredError as exc:
+        return api_error(str(exc), "VA settings migration is required.", 409)
+    return api_success({
+        "employees": [employee.to_dict() for employee in current_employees],
+        "count": len(current_employees),
+    })
 
 @api_bp.get("/competencies")
 def competencies():

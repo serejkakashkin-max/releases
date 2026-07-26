@@ -37,7 +37,6 @@ from services.release_monitor_duty_overlay import get_effective_release_reviewer
 from services.rov_statistics_service import generate_rov_statistics_excel
 from services.release_monitor_backup_service import create_release_monitor_cache_backup
 from services.psi_jenkins_service import find_psi_jenkins_instructions_by_ke
-from services.release_monitor_employee_provider import get_release_monitor_names
 
 
 BASE_PATH = os.getenv("BASE_PATH", "")
@@ -1356,24 +1355,28 @@ Oplot умеет работать с рабочим столом дежурно�
         normalized = self._normalize_command_text(value)
         if not normalized:
             return ""
+        from services.employee_directory_service import (
+            load_employee_directory_context,
+            resolve_employee_identity,
+        )
 
-        release_monitor_names = get_release_monitor_names()
-        by_normalized = {self._normalize_command_text(name): name for name in release_monitor_names}
-        if normalized in by_normalized:
-            return by_normalized[normalized]
-
-        for name in release_monitor_names:
-            name_normalized = self._normalize_command_text(name)
-            surname = self._normalize_command_text(name.split()[0] if name else "")
-            if not surname:
-                continue
-            if (
-                surname == normalized
-                or surname in normalized
-                or normalized in name_normalized
-                or self._surname_case_stem_matches(surname, normalized)
-            ):
-                return name
+        context = load_employee_directory_context()
+        if context.status != "available":
+            return ""
+        result = resolve_employee_identity(
+            value,
+            context=context,
+            identity_type="release",
+        )
+        if result.status == "unresolved":
+            result = resolve_employee_identity(value, context=context)
+        if result.status == "resolved":
+            employee = result.employee or {}
+            membership = (
+                (employee.get("memberships") or {}).get("release_monitor") or {}
+            )
+            if employee.get("enabled") and membership.get("enabled"):
+                return str(employee.get("release_name") or "")
         return ""
 
     def _get_release_row_by_row_key(self, row_key: str) -> Optional[Dict]:

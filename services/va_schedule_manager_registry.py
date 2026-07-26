@@ -61,12 +61,7 @@ def register_va_schedule_manager(app: Flask) -> None:
             STATE_DIR,
             UPLOAD_DIR,
         )
-        from config import OPLOT_VALUES
         from services.duty_schedule_provider_registry import register_duty_schedule_provider
-        from services.release_employee_name_matcher import (
-            match_release_employee_name,
-            match_release_employee_name_diagnostic,
-        )
         from VA.schedule_manager.integrations.release_monitor_duty_provider import (
             ReleaseMonitorDutyProvider,
         )
@@ -78,11 +73,7 @@ def register_va_schedule_manager(app: Flask) -> None:
         )
         register_duty_schedule_provider(
             app,
-            ReleaseMonitorDutyProvider(
-                release_names=OPLOT_VALUES,
-                name_matcher=match_release_employee_name,
-                name_matcher_diagnostic=match_release_employee_name_diagnostic,
-            ),
+            ReleaseMonitorDutyProvider(),
         )
         _metadata.update(
             {

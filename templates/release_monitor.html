@@ -3672,6 +3672,13 @@
                 </div>
 
                 <div class="release-extra-controls">
+                    <div
+                        id="releaseEmployeeDirectoryWarning"
+                        class="alert alert-warning"
+                        {% if release_monitor_meta.employee_selection_available %}hidden{% endif %}
+                    >
+                        Employee Directory временно недоступен. Исторические назначения сохранены, выбор сотрудников и автоматические рекомендации приостановлены.
+                    </div>
                     <div class="release-toggle-stack">
                     <div class="release-toggle-card" title="Релизы без РОВ, отмененные без КЭ и вручную отправленные в ненумерованный отсек. По умолчанию скрыты.">
                         <div class="release-toggle-copy">
@@ -4164,6 +4171,7 @@
         const RELEASE_WORK_MARK_AUTO_COLLAPSE_MS = 30000;
         let releaseScrollRestoreAttempted = false;
         const RELEASE_REVIEWER_OPTIONS = {{ reviewer_options | tojson | safe }};
+        let releaseEmployeeSelectionAvailable = {{ release_monitor_meta.employee_selection_available | default(false) | tojson }};
         let releaseWorkMarkParticipants = [];
         let activeReleaseWorkMark = '';
         let isReleaseWorkMarkingMode = false;
@@ -5109,7 +5117,11 @@
             releaseMonitorGlobalRefreshing = Boolean(isRefreshing);
             setReleaseRefreshButtonsLoading(releaseMonitorGlobalRefreshing);
             document.querySelectorAll('.reviewer-select, .responsible-icon-btn, .release-doc-btn, .release-row-edit-btn, .release-row-manual-btn, .release-order-step-btn').forEach(element => {
-                element.disabled = releaseMonitorGlobalRefreshing;
+                const directoryBlocked = (
+                    element.hasAttribute('data-directory-employee-control')
+                    && !releaseEmployeeSelectionAvailable
+                );
+                element.disabled = releaseMonitorGlobalRefreshing || directoryBlocked;
             });
             if (!releaseMonitorGlobalRefreshing && typeof refreshReleaseOrderModeUi === 'function') {
                 refreshReleaseOrderModeUi();
@@ -5187,7 +5199,7 @@
         }
 
         function ensureReleaseReviewerOptions(select) {
-            if (!select || select.dataset.optionsReady === 'true') {
+            if (!select || !releaseEmployeeSelectionAvailable || select.dataset.optionsReady === 'true') {
                 return;
             }
             const current = String(select.value || '').trim();
@@ -5229,7 +5241,7 @@
                     </div>
                 `
                 : `
-                    <select class="reviewer-select duty-select" onfocus="ensureReleaseReviewerOptions(this)" onpointerdown="ensureReleaseReviewerOptions(this)" onchange="updateReleaseAssignment('${escapeHtml(rowKey)}', this)">
+                    <select class="reviewer-select duty-select" data-directory-employee-control onfocus="ensureReleaseReviewerOptions(this)" onpointerdown="ensureReleaseReviewerOptions(this)" onchange="updateReleaseAssignment('${escapeHtml(rowKey)}', this)" ${releaseEmployeeSelectionAvailable ? '' : 'disabled'}>
                         ${buildInitialReleaseReviewerOptions(currentReviewer)}
                     </select>
                 `;
@@ -5241,12 +5253,14 @@
                         <div class="responsibles-stack">
                             ${responsibles.map((responsible, index) => `
                                 <div class="responsible-row">
-                                    <select class="reviewer-select responsible-select" onfocus="ensureReleaseReviewerOptions(this)" onpointerdown="ensureReleaseReviewerOptions(this)" onchange="updateResponsibleAssignment('${escapeHtml(rowKey)}', ${index}, this.value)">
+                                    <select class="reviewer-select responsible-select" data-directory-employee-control onfocus="ensureReleaseReviewerOptions(this)" onpointerdown="ensureReleaseReviewerOptions(this)" onchange="updateResponsibleAssignment('${escapeHtml(rowKey)}', ${index}, this.value)" ${releaseEmployeeSelectionAvailable ? '' : 'disabled'}>
                                         ${buildInitialReleaseReviewerOptions(responsible)}
                                     </select>
                                     <button
                                         type="button"
                                         class="responsible-icon-btn ${index > 0 ? 'remove' : ''}"
+                                        data-directory-employee-control
+                                        ${releaseEmployeeSelectionAvailable ? '' : 'disabled'}
                                         onclick="${index > 0 ? `removeResponsibleAssignment('${escapeHtml(rowKey)}', ${index})` : `addResponsibleAssignment('${escapeHtml(rowKey)}')`}"
                                         title="${index > 0 ? 'Убрать ответственного' : 'Добавить ответственного'}"
                                     >
@@ -8736,6 +8750,13 @@
 
             releaseMonitorItems = Array.isArray(items) ? items : [];
             releaseMonitorMeta = meta || {};
+            releaseEmployeeSelectionAvailable = Boolean(
+                releaseMonitorMeta.employee_selection_available
+            );
+            const directoryWarning = document.getElementById('releaseEmployeeDirectoryWarning');
+            if (directoryWarning) {
+                directoryWarning.hidden = releaseEmployeeSelectionAvailable;
+            }
             syncReleaseWorkMarkSuggestedParticipants();
             const renderedRevision = getReleaseMonitorRevision(releaseMonitorMeta);
             releaseMonitorKnownRevision = renderedRevision || releaseMonitorKnownRevision;

@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from services.feature_flags_service import get_release_prefix_system
 from services.release_monitor_employee_provider import get_release_monitor_names
+from services.employee_directory_service import EmployeeDirectoryUnavailableError
 from services.release_monitor_duty_overlay import get_effective_release_reviewer
 from services.release_template_catalog_service import is_ai_agents_template_category
 
@@ -151,7 +152,13 @@ class ReleaseReportService:
                 if responsible_name:
                     responsible_counter[responsible_name] += 1
 
-        for responsible_name in get_release_monitor_names():
+        employee_directory_status = "available"
+        try:
+            current_responsibles = get_release_monitor_names()
+        except EmployeeDirectoryUnavailableError as exc:
+            current_responsibles = []
+            employee_directory_status = exc.status
+        for responsible_name in current_responsibles:
             if responsible_name not in responsible_counter:
                 responsible_counter[responsible_name] = 0
 
@@ -182,6 +189,7 @@ class ReleaseReportService:
                 "responsibles": dict(responsible_counter.most_common()),
             },
             "items": filtered_items,
+            "employee_directory_status": employee_directory_status,
             "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
 

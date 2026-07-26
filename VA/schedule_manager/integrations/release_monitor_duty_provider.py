@@ -8,7 +8,7 @@ import threading
 from calendar import month_name
 from datetime import date
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 from VA.schedule_manager.config import SCHEDULE_DATA_FILE, SHIFTS_DATA_FILE
 from VA.schedule_manager.repositories.json_file_store import JsonFileStore
@@ -55,15 +55,9 @@ class ReleaseMonitorDutyProvider:
     def __init__(
         self,
         *,
-        release_names: Iterable[str],
-        name_matcher: Callable[[object, Iterable[str]], str],
-        name_matcher_diagnostic: Callable[[object, Iterable[str]], dict] | None = None,
         schedule_file: Path = SCHEDULE_DATA_FILE,
         shifts_file: Path = SHIFTS_DATA_FILE,
     ) -> None:
-        self.release_names = tuple(str(value).strip() for value in release_names if str(value).strip())
-        self.name_matcher = name_matcher
-        self.name_matcher_diagnostic = name_matcher_diagnostic
         self.schedule_file = Path(schedule_file)
         self.shifts_file = Path(shifts_file)
         self.schedule_store = JsonFileStore(self.schedule_file, "schedule")
@@ -486,6 +480,12 @@ class ReleaseMonitorDutyProvider:
         return shifts, lookup, warnings
 
     def _project(self, months: List[dict], shifts: List[dict], lookup: Dict[str, str], revision: str, authoritative: bool):
+        from services.employee_directory_service import (
+            load_employee_directory_context,
+            resolve_historical_va_employee,
+        )
+
+        directory_context = load_employee_directory_context()
         dates: Dict[str, str] = {}
         availability: Dict[str, dict] = {}
         evening: Dict[str, dict] = {}
@@ -502,13 +502,27 @@ class ReleaseMonitorDutyProvider:
             per_date_reserve: Dict[str, list] = {}
             duplicate_row_dates = set()
             for row in month["employees"]:
-                if self.name_matcher_diagnostic is not None:
-                    match_result = self.name_matcher_diagnostic(row["employee_name"], self.release_names)
-                    matched = str(match_result.get("name") or "")
-                    match_status = str(match_result.get("status") or "unmapped")
-                else:
-                    matched = self.name_matcher(row["employee_name"], self.release_names)
-                    match_status = "matched" if matched else "unmapped"
+                resolution = None
+                if directory_context.status == "available":
+                    resolution = resolve_historical_va_employee(
+                        row["employee_name"],
+                        directory_context,
+                    )
+                matched = ""
+                match_status = resolution.status if resolution is not None else "unmapped"
+                employee = resolution.employee if resolution is not None else None
+                release_membership = (
+                    ((employee or {}).get("memberships") or {}).get("release_monitor") or {}
+                )
+                if (
+                    resolution is not None
+                    and resolution.status == "resolved"
+                    and (employee or {}).get("enabled")
+                    and release_membership.get("enabled")
+                    and (employee or {}).get("release_name")
+                ):
+                    matched = str(employee["release_name"])
+                    match_status = "matched"
                 display_assignments = {}
                 for raw_day, raw_value in row["assignments"].items():
                     day = int(raw_day)

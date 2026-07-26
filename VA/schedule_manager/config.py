@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 
+from services.runtime_paths import get_va_runtime_root
 
 def _normalized_base_path(value: str) -> str:
     cleaned = value.strip().strip("/")
@@ -19,12 +20,7 @@ APP_VERSION = os.environ.get("VA_SCHEDULE_MANAGER_VERSION", "0.1.0-integrated")
 BASE_PATH = _normalized_base_path(os.environ.get("VA_SCHEDULE_MANAGER_BASE_PATH", ""))
 PUBLIC_BASE_URL = os.environ.get("VA_SCHEDULE_MANAGER_PUBLIC_BASE_URL", "").rstrip("/")
 
-RUNTIME_ROOT = Path(
-    os.environ.get(
-        "VA_SCHEDULE_MANAGER_RUNTIME_ROOT",
-        PROJECT_ROOT / "cache" / "va_schedule_manager",
-    )
-)
+RUNTIME_ROOT = get_va_runtime_root()
 DATA_DIR = RUNTIME_ROOT / "data"
 UPLOAD_DIR = RUNTIME_ROOT / "uploads"
 EXPORT_DIR = RUNTIME_ROOT / "exports"
@@ -37,7 +33,7 @@ DOCS_DIR = MODULE_DIR / "docs"
 SAMPLE_DATA_DIR = MODULE_DIR / "sample_data"
 
 SCHEDULE_DATA_FILE = DATA_DIR / "schedule_data.json"
-EMPLOYEES_DATA_FILE = DATA_DIR / "employees.json"
+EMPLOYEE_SETTINGS_DATA_FILE = DATA_DIR / "employee_settings.json"
 COMPETENCIES_DATA_FILE = DATA_DIR / "competencies.json"
 SHIFTS_DATA_FILE = DATA_DIR / "shifts.json"
 SCHEDULE_EDITS_FILE = DATA_DIR / "schedule_edits.json"

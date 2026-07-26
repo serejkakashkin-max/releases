@@ -9,7 +9,7 @@ from VA.schedule_manager.models.employee import Employee
 from VA.schedule_manager.models.schedule_snapshot import ScheduleSnapshot, grid_to_dict
 from VA.schedule_manager.parsers.excel_parser import parse_employees_from_excel
 from VA.schedule_manager.parsers.monthly_workbook_parser import parse_all_month_sheets
-from VA.schedule_manager.repositories.employee_repository import EmployeeRepository
+from VA.schedule_manager.repositories.managed_employee_repository import ManagedEmployeeRepository
 from VA.schedule_manager.repositories.schedule_repository import ScheduleRepository
 from VA.schedule_manager.services.competency_service import COMPETENCY_SUPPORT
 from VA.schedule_manager.config import ALLOWED_EXTENSIONS, MAX_UPLOAD_SIZE_BYTES, UPLOAD_DIR
@@ -20,9 +20,9 @@ class UploadValidationError(Exception):
 
 
 class ImportService:
-    def __init__(self, repository: ScheduleRepository, employee_repository: EmployeeRepository = None) -> None:
+    def __init__(self, repository: ScheduleRepository, employee_repository: ManagedEmployeeRepository = None) -> None:
         self.repository = repository
-        self.employee_repository = employee_repository or EmployeeRepository()
+        self.employee_repository = employee_repository or ManagedEmployeeRepository()
 
     def import_file(self, file: FileStorage) -> ScheduleSnapshot:
         original_filename = file.filename or ""

@@ -3,7 +3,7 @@ from typing import List, Set
 
 from VA.schedule_manager.models.competency import Competency
 from VA.schedule_manager.repositories.competency_repository import CompetencyRepository
-from VA.schedule_manager.repositories.employee_repository import EmployeeRepository
+from VA.schedule_manager.repositories.managed_employee_repository import ManagedEmployeeRepository
 
 
 COMPETENCY_MANAGER = "manager"
@@ -43,10 +43,10 @@ class CompetencyService:
     def __init__(
         self,
         repository: CompetencyRepository,
-        employee_repository: EmployeeRepository = None,
+        employee_repository: ManagedEmployeeRepository = None,
     ) -> None:
         self.repository = repository
-        self.employee_repository = employee_repository or EmployeeRepository()
+        self.employee_repository = employee_repository or ManagedEmployeeRepository()
 
     def list_competencies(self) -> List[Competency]:
         competencies = self.repository.load_all()

@@ -4,7 +4,7 @@ from typing import Dict, Iterable, List, Optional, Set
 from VA.schedule_manager.models.employee import Employee
 from VA.schedule_manager.models.schedule_grid import ScheduleGrid
 from VA.schedule_manager.models.shift import ShiftDefinition
-from VA.schedule_manager.repositories.employee_repository import EmployeeRepository
+from VA.schedule_manager.repositories.managed_employee_repository import ManagedEmployeeRepository
 from VA.schedule_manager.repositories.shift_repository import ShiftRepository
 from VA.schedule_manager.services.competency_service import COMPETENCY_MANAGER, COMPETENCY_MPR_COORDINATOR
 from VA.schedule_manager.services.duty_rules import (
@@ -64,7 +64,7 @@ def build_validation_rules(
     employees: Optional[Iterable[Employee]] = None,
 ) -> ScheduleValidationRules:
     shift_list = list(shifts) if shifts is not None else ShiftService(ShiftRepository()).list_shifts()
-    employee_list = list(employees) if employees is not None else EmployeeRepository().load_all()
+    employee_list = list(employees) if employees is not None else ManagedEmployeeRepository().load_all()
     alias_lookup = _build_alias_lookup(shift_list)
     absence_codes = _codes_by_meaning(shift_list, ("отпуск",))
     holiday_codes = _codes_by_meaning(shift_list, ("праздник",))

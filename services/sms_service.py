@@ -7,12 +7,13 @@ from pathlib import Path
 from uuid import uuid4
 
 from config import SMS_TEMPLATES_ROOT
+from services.runtime_paths import runtime_path
 
 
 SMS_PROFILE_WHITELIST = ("CLM", "EMRM", "AIST", "AI")
 SMS_PHONE_PATTERN = re.compile(r"^\+?\d{5,20}$")
 SMS_TEMPLATE_BACKUP_LIMIT = 10
-SMS_TEMPLATE_BACKUP_ROOT = Path(__file__).resolve().parent.parent / "cache" / "sms_template_backups"
+SMS_TEMPLATE_BACKUP_ROOT = runtime_path("cache", "sms_template_backups")
 
 
 def normalize_sms_profile(profile):

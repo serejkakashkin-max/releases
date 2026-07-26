@@ -29,9 +29,14 @@ from services.release_monitor_email_service import (
 )
 from services.release_report_service import get_release_report_service
 from services.release_notification_employee_provider import (
-    get_release_notification_adapter_readiness as _get_release_notification_adapter_readiness,
     get_release_notification_recipients,
+    resolve_release_notification_emails,
 )
+from services.employee_directory_service import (
+    EmployeeDirectoryUnavailableError,
+    load_employee_directory_context,
+)
+from services.runtime_paths import runtime_path
 from services.release_monitor_duty_overlay import get_effective_release_reviewer
 
 
@@ -42,10 +47,9 @@ EVENT_ASSIGNED_TO_RESPONSIBLE = "assigned_to_responsible"
 DEFAULT_ASSIGNMENT_EMAIL_DELAY_MINUTES = 6
 DEFAULT_PERSONAL_EMAIL_SEND_INTERVAL_SECONDS = 5
 
-RESPONSIBLE_NOTIFY_STATE_FILE = (
-    Path(__file__).resolve().parent.parent
-    / "cache"
-    / "release_monitor_responsible_email_notify_state.json"
+RESPONSIBLE_NOTIFY_STATE_FILE = runtime_path(
+    "cache",
+    "release_monitor_responsible_email_notify_state.json",
 )
 RESPONSIBLE_EMAIL_LOCK_FILE = RESPONSIBLE_NOTIFY_STATE_FILE.with_suffix(".lock")
 
@@ -209,49 +213,30 @@ def _atomic_write_state(state: Dict) -> None:
                 pass
 
 
-def _legacy_employee_recipients(config: Dict) -> Dict[str, List[str]]:
-    recipients = {}
-    raw_recipients = config.get("employee_recipients")
-    if isinstance(raw_recipients, dict):
-        for name, addresses in raw_recipients.items():
-            clean_name = str(name or "").strip()
-            address_values = (
-                addresses
-                if isinstance(addresses, (list, tuple, set))
-                else [addresses]
-            )
-            clean_addresses = _normalize_recipients(address_values, strict=False)
-            if clean_name and clean_addresses:
-                recipients[clean_name] = clean_addresses
-    return recipients
-
-
-def get_release_notifications_adapter_readiness() -> Dict:
-    config = get_automation_config(RESPONSIBLE_EMAIL_AUTOMATION_FLAG)
-    config = config if isinstance(config, dict) else {}
-    return _get_release_notification_adapter_readiness(
-        _legacy_employee_recipients(config)
-    )
-
-
 def _responsible_settings() -> Dict:
     config = get_automation_config(RESPONSIBLE_EMAIL_AUTOMATION_FLAG)
     if not isinstance(config, dict):
         return {
             "enabled": False,
-            "employee_recipients": {},
+            "directory_recipients": {},
             "weekly_digest_enabled": False,
             "weekly_digest_time": "16:00",
             "weekly_digest_recipients": [],
             "assignment_email_delay_minutes": DEFAULT_ASSIGNMENT_EMAIL_DELAY_MINUTES,
             "personal_email_send_interval_seconds": DEFAULT_PERSONAL_EMAIL_SEND_INTERVAL_SECONDS,
         }
-    recipients = get_release_notification_recipients(
-        _legacy_employee_recipients(config)
-    )
+    directory_context = load_employee_directory_context()
+    try:
+        recipients = get_release_notification_recipients(directory_context)
+        directory_status = "available"
+    except EmployeeDirectoryUnavailableError as exc:
+        recipients = {}
+        directory_status = exc.status
     return {
         "enabled": bool(config.get("enabled", False)),
-        "employee_recipients": recipients,
+        "directory_recipients": recipients,
+        "_directory_context": directory_context,
+        "employee_directory_status": directory_status,
         "weekly_digest_enabled": bool(config.get("weekly_digest_enabled", True)),
         "weekly_digest_time": str(config.get("weekly_digest_time") or "16:00").strip()
         or "16:00",
@@ -1083,8 +1068,9 @@ def _send_personal_events(
     snapshot: Dict,
     pending: Dict[str, Dict[str, str]],
     settings: Dict,
-    employee_recipients: Dict[str, List[str]],
+    directory_recipients: Dict[str, List[str]],
     send_interval_seconds: int,
+    directory_context=None,
 ) -> Tuple[Set[str], List[str], int, str, List[str], str]:
     if not pending:
         return set(), [], 0, "", [], ""
@@ -1096,9 +1082,16 @@ def _send_personal_events(
         responsible = str(event.get("responsible") or "").strip()
         if not responsible:
             continue
-        if responsible not in employee_recipients:
-            missing_recipients.add(responsible)
-            continue
+        if responsible not in directory_recipients:
+            resolution = resolve_release_notification_emails(
+                responsible,
+                directory_context,
+            )
+            if resolution.get("status") == "resolved":
+                directory_recipients[responsible] = list(resolution.get("emails") or [])
+            else:
+                missing_recipients.add(responsible)
+                continue
         if row_key not in items_by_key:
             continue
         by_responsible[responsible][row_key] = event
@@ -1112,7 +1105,7 @@ def _send_personal_events(
     for index, (responsible, events) in enumerate(grouped_events):
         try:
             recipients = _normalize_recipients(
-                employee_recipients[responsible],
+                directory_recipients[responsible],
                 strict=True,
             )
             _validate_delivery_settings(settings, recipients)
@@ -1379,8 +1372,9 @@ def _run_responsible_notification(
                             latest_snapshot,
                             mature_pending,
                             delivery_settings,
-                            settings["employee_recipients"],
+                            settings["directory_recipients"],
                             int(settings.get("personal_email_send_interval_seconds") or 0),
+                            settings.get("_directory_context"),
                         )
                     )
                     pending = {

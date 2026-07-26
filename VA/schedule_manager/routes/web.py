@@ -13,7 +13,7 @@ from werkzeug.security import safe_join
 from VA.schedule_manager.url_helpers import public_url_for
 from VA.schedule_manager.parsers.excel_parser import ExcelParseError
 from VA.schedule_manager.repositories.shift_repository import ShiftRepository
-from VA.schedule_manager.repositories.employee_repository import EmployeeRepository
+from VA.schedule_manager.repositories.managed_employee_repository import ManagedEmployeeRepository
 from VA.schedule_manager.repositories.integration_settings_repository import IntegrationSettingsRepository
 from VA.schedule_manager.repositories.schedule_repository import ScheduleRepository
 from VA.schedule_manager.services.calendar_integration_service import CalendarIntegrationService
@@ -168,11 +168,14 @@ def _shift_service() -> ShiftService:
 
 
 def _active_employees() -> list:
-    return [
-        employee
-        for employee in EmployeeService(EmployeeRepository()).list_employees()
-        if employee.status == "active"
-    ]
+    try:
+        return [
+            employee
+            for employee in EmployeeService(ManagedEmployeeRepository()).list_employees()
+            if employee.status == "active"
+        ]
+    except RuntimeError:
+        return []
 
 
 def _display_service(schedule_service: ScheduleService) -> ScheduleDisplayService:
@@ -186,13 +189,13 @@ def _today_state(schedule_service: ScheduleService) -> dict:
 def _schedule_month_service() -> ScheduleMonthService:
     return ScheduleMonthService(
         ScheduleRepository(),
-        EmployeeRepository(),
+        ManagedEmployeeRepository(),
         CalendarIntegrationService(IntegrationSettingsRepository()),
     )
 
 
 def _schedule_autoplan_service() -> ScheduleAutoplanService:
-    return ScheduleAutoplanService(ScheduleRepository(), EmployeeRepository(), _shift_service())
+    return ScheduleAutoplanService(ScheduleRepository(), ManagedEmployeeRepository(), _shift_service())
 
 
 def _schedule_export_service(schedule_service: ScheduleService) -> ScheduleExportService:

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Dict
 
 from services.duty_schedule_provider_registry import get_duty_schedule_provider_revision
+from services.employee_directory_service import load_employee_directory_context
 from services.release_template_catalog_service import get_template_catalog_signature
 
 
@@ -102,11 +103,13 @@ def get_release_monitor_view_state(*, force_template_check: bool = False) -> Dic
     }
     template_component = get_template_catalog_signature(force=force_template_check)
     va_component = get_duty_schedule_provider_revision()
+    directory_component = load_employee_directory_context().version_token
     revision_payload = {
         "view_contract": VIEW_CONTRACT,
         "base_revision": release_monitor.get_release_monitor_base_revision(),
         "sources": source_components,
         "va": va_component,
+        "employee_directory": directory_component,
         "template_catalog": template_component,
     }
     serialized = json.dumps(

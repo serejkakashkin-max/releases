@@ -3,32 +3,18 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from config import DASHBOARD_ASSIGNEES, TOKENS
-from services.release_zni_employee_provider import (
-    get_release_zni_adapter_readiness as _get_release_zni_adapter_readiness,
-    get_release_zni_users as _get_release_zni_users,
+from config import TOKENS
+from services.employee_directory_service import (
+    load_employee_directory_context,
+    resolve_employee_identity,
 )
+from services.release_zni_employee_provider import get_release_zni_users as _get_release_zni_users
 
 
 JIRA_DOMAIN = "https://jira.delta.sbrf.ru"
 OPLOT_PROJECT_KEY = "OPLOT"
 OPLOT_TASK_ISSUE_TYPE_ID = "3"
 IMPLEMENTATION_LABEL = "Внедрение"
-RELEASE_MONITOR_JIRA_USERS = [
-    name
-    for name in DASHBOARD_ASSIGNEES
-    if not name.startswith(("Сафронов ", "Андреев "))
-]
-
-
-def get_release_zni_users() -> List[str]:
-    return _get_release_zni_users(RELEASE_MONITOR_JIRA_USERS)
-
-
-def get_release_zni_adapter_readiness() -> Dict[str, Any]:
-    return _get_release_zni_adapter_readiness(RELEASE_MONITOR_JIRA_USERS)
-
-
 def _headers() -> Dict[str, str]:
     return {
         "Authorization": f"Bearer {TOKENS['delta_token']}",
@@ -70,33 +56,31 @@ def _split_short_name(value: str) -> Optional[Dict[str, str]]:
     }
 
 
-def resolve_dashboard_user_name(short_or_full_name: str) -> str:
+def resolve_dashboard_user_name(
+    short_or_full_name: str,
+    context=None,
+) -> str:
     """Maps release-table short names like 'Кашкин С.Н.' to Jira display names."""
     raw_name = str(short_or_full_name or "").strip()
     if not raw_name:
         return ""
 
-    release_zni_users = get_release_zni_users()
-    if raw_name in release_zni_users:
+    resolved_context = context or load_employee_directory_context()
+    if resolved_context.status != "available":
         return raw_name
-
-    parsed = _split_short_name(raw_name)
-    if not parsed:
-        return raw_name
-
-    surname = parsed["surname"]
-    initials = parsed["initials"]
-    matches: List[str] = []
-    for full_name in release_zni_users:
-        full_parts = str(full_name or "").strip().split()
-        if not full_parts or full_parts[0].lower() != surname:
-            continue
-        full_initials = "".join(part[:1] for part in full_parts[1:] if part and part != "-").upper()
-        if initials and full_initials.startswith(initials):
-            matches.append(full_name)
-
-    if len(matches) == 1:
-        return matches[0]
+    for identity_type, domain in (("jira", "delta"), ("release", None), ("full", None)):
+        result = resolve_employee_identity(
+            raw_name,
+            context=resolved_context,
+            identity_type=identity_type,
+            jira_domain=domain,
+            include_disabled_for_history=False,
+        )
+        if result.status == "resolved":
+            employee = result.employee or {}
+            membership = (employee.get("memberships") or {}).get("release_zni") or {}
+            if membership.get("enabled"):
+                return str((employee.get("jira_names") or {}).get("delta") or raw_name)
     return raw_name
 
 
@@ -108,21 +92,9 @@ def _select_jira_user_name(users: Any, expected_display_name: str) -> str:
     if not isinstance(users, list):
         return ""
     expected = _normalize_name(expected_display_name)
-    expected_surname = expected.split()[0] if expected else ""
-
     for user in users:
         display_name = str(user.get("displayName") or "").strip()
         if _normalize_name(display_name) == expected:
-            return str(user.get("name") or user.get("key") or "").strip()
-
-    for user in users:
-        display_name = _normalize_name(user.get("displayName"))
-        if expected and (expected in display_name or display_name in expected):
-            return str(user.get("name") or user.get("key") or "").strip()
-
-    for user in users:
-        display_name = _normalize_name(user.get("displayName"))
-        if expected_surname and display_name.startswith(expected_surname):
             return str(user.get("name") or user.get("key") or "").strip()
 
     return ""
@@ -211,6 +183,10 @@ def _build_issue_description(item: Dict[str, Any]) -> str:
 
 
 def create_oplot_release_issue(item: Dict[str, Any], reporter_name: str = "") -> Dict[str, Any]:
+    context = load_employee_directory_context()
+    if context.status != "available":
+        raise ValueError("Employee Directory is temporarily unavailable.")
+    eligible_users = set(get_release_zni_users(context))
     if not isinstance(item, dict):
         raise ValueError("Не переданы данные строки релиза")
 
@@ -225,7 +201,9 @@ def create_oplot_release_issue(item: Dict[str, Any], reporter_name: str = "") ->
     if not responsibles:
         raise ValueError("Перед созданием ЗНИ заполните ответственного")
 
-    assignee_display_name = resolve_dashboard_user_name(duty_short_name)
+    assignee_display_name = resolve_dashboard_user_name(duty_short_name, context)
+    if assignee_display_name not in eligible_users:
+        raise ValueError("The duty reviewer is not eligible for release ZNI.")
     selected_reporter = str(reporter_name or "").strip()
     if not selected_reporter:
         if len(responsibles) == 1:
@@ -233,7 +211,9 @@ def create_oplot_release_issue(item: Dict[str, Any], reporter_name: str = "") ->
         else:
             raise ValueError("Для нескольких ответственных нужно выбрать автора задачи")
 
-    reporter_display_name = resolve_dashboard_user_name(selected_reporter)
+    reporter_display_name = resolve_dashboard_user_name(selected_reporter, context)
+    if reporter_display_name not in eligible_users:
+        raise ValueError("The selected reporter is not eligible for release ZNI.")
     current_user = _get_current_jira_user()
     fallback_reporter_name = current_user.get("name") or current_user.get("key")
     assignee_jira_name = _find_jira_user_name(assignee_display_name, assignable=True)

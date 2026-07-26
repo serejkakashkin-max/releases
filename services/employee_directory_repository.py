@@ -13,11 +13,11 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 from uuid import UUID, uuid4
 
 from services.cross_process_file_lock import CrossProcessFileLock
+from services.runtime_paths import get_coordination_lock_path, runtime_path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-EMPLOYEE_DIRECTORY_FILE = PROJECT_ROOT / "employee_directory.json"
-BACKUP_DIR = PROJECT_ROOT / "cache" / "employee_directory_backups"
+EMPLOYEE_DIRECTORY_FILE = runtime_path("employee_directory.json")
+BACKUP_DIR = runtime_path("cache", "employee_directory_backups")
 LOCK_FILE = BACKUP_DIR / "employee_directory.lock"
 SUPPORTED_SCHEMA_VERSION = 1
 MAX_BACKUPS = 30
@@ -215,9 +215,27 @@ def validate_directory(payload: Any) -> List[Dict[str, str]]:
     active_jira_names = {domain: {} for domain in JIRA_DOMAINS}
     active_emails: Dict[str, int] = {}
     active_aliases: Dict[tuple, int] = {}
+    historical_identities: Dict[tuple, int] = {}
+    source_ref_owners: Dict[str, int] = {}
     release_orders: Dict[int, int] = {}
     va_orders: Dict[int, int] = {}
     dashboard_orders = {"primary": {}, "extra": {}}
+
+    def register_identity(
+        context_name: str,
+        value: Any,
+        owner_index: int,
+        path: str,
+    ) -> None:
+        normalized_value = normalize_text(value).casefold()
+        if not normalized_value:
+            return
+        key = (context_name, normalized_value)
+        previous = historical_identities.get(key)
+        if previous is not None and previous != owner_index:
+            errors.append(_error(path, "historical_identity_conflict"))
+            return
+        historical_identities[key] = owner_index
 
     for index, employee in enumerate(employees):
         path = f"employees[{index}]"
@@ -245,6 +263,9 @@ def validate_directory(payload: Any) -> List[Dict[str, str]]:
         full_name = normalize_text(employee.get("full_name"))
         if not full_name:
             errors.append(_error(f"{path}.full_name", "required"))
+        else:
+            register_identity("full", full_name, index, f"{path}.full_name")
+            register_identity("va", full_name, index, f"{path}.full_name")
 
         jira_names = employee.get("jira_names")
         if not isinstance(jira_names, dict) or set(jira_names) != JIRA_DOMAINS:
@@ -254,6 +275,12 @@ def validate_directory(payload: Any) -> List[Dict[str, str]]:
             if not isinstance(jira_names.get(domain), str):
                 errors.append(_error(f"{path}.jira_names.{domain}", "string_required"))
             jira_name = normalize_text(jira_names.get(domain))
+            register_identity(
+                f"jira:{domain}",
+                jira_name,
+                index,
+                f"{path}.jira_names.{domain}",
+            )
             if enabled and jira_name:
                 key = jira_name.casefold()
                 if key in active_jira_names[domain]:
@@ -311,6 +338,15 @@ def validate_directory(payload: Any) -> List[Dict[str, str]]:
                 if alias_key in active_aliases:
                     errors.append(_error(alias_path, "duplicate_active"))
                 active_aliases[alias_key] = index
+            if alias_type == "full":
+                register_identity("full", value, index, alias_path)
+                register_identity("va", value, index, alias_path)
+            elif alias_type == "release":
+                register_identity("release", value, index, alias_path)
+            elif alias_type == "jira":
+                register_identity(f"jira:{domain}", value, index, alias_path)
+            elif alias_type in {"schedule", "va"}:
+                register_identity("va", value, index, alias_path)
 
         memberships = employee.get("memberships")
         if not isinstance(memberships, dict) or set(memberships) != MEMBERSHIP_KEYS:
@@ -331,6 +367,12 @@ def validate_directory(payload: Any) -> List[Dict[str, str]]:
                     errors.append(_error(f"{path}.release_name", "duplicate_active"))
                 active_release_names[key] = index
             _validate_order(release.get("order"), f"{path}.memberships.release_monitor.order", release_orders, errors)
+        register_identity(
+            "release",
+            employee.get("release_name"),
+            index,
+            f"{path}.release_name",
+        )
 
         for membership_name in ("release_zni", "release_notifications"):
             membership = memberships.get(membership_name)
@@ -393,6 +435,17 @@ def validate_directory(payload: Any) -> List[Dict[str, str]]:
                 if normalized_ref in local_source_refs:
                     errors.append(_error(source_path, "duplicate_in_employee"))
                 local_source_refs.add(normalized_ref)
+                previous_owner = source_ref_owners.get(normalized_ref.casefold())
+                if previous_owner is not None and previous_owner != index:
+                    errors.append(_error(source_path, "historical_identity_conflict"))
+                source_ref_owners[normalized_ref.casefold()] = index
+                if normalized_ref.startswith("va:employees:"):
+                    register_identity(
+                        "va",
+                        normalized_ref.partition("va:employees:")[2],
+                        index,
+                        source_path,
+                    )
 
     return errors
 
@@ -457,10 +510,11 @@ def save_employee_directory(
     path: Path = EMPLOYEE_DIRECTORY_FILE,
     allow_invalid_overwrite: bool = False,
     pre_write_check: Optional[Callable[[], bool]] = None,
+    operational_validator: Optional[Callable[[Dict[str, Any]], List[Dict[str, str]]]] = None,
 ) -> Dict[str, Any]:
     path = Path(path)
     lock_path = BACKUP_DIR / "employee_directory.lock" if path == EMPLOYEE_DIRECTORY_FILE else path.parent / ".employee_directory.lock"
-    with CrossProcessFileLock(lock_path):
+    with CrossProcessFileLock(get_coordination_lock_path()), CrossProcessFileLock(lock_path):
         current = read_directory_snapshot(path)
         _assert_expected_version(current, expected_revision, expected_etag)
         if pre_write_check is not None and not pre_write_check():
@@ -484,6 +538,10 @@ def save_employee_directory(
             created_by = writer
             current_revision = 0
         ordered_employees = assign_missing_membership_orders(employees)
+        ordered_employees = merge_server_managed_aliases(
+            (current.payload or {}).get("employees", []),
+            ordered_employees,
+        )
         raw_payload = {
             "schema_version": SUPPORTED_SCHEMA_VERSION,
             "revision": current_revision + 1,
@@ -501,6 +559,10 @@ def save_employee_directory(
         errors = validate_directory(next_payload)
         if errors:
             raise EmployeeDirectoryValidationError(errors)
+        if operational_validator is not None:
+            operational_errors = operational_validator(next_payload)
+            if operational_errors:
+                raise EmployeeDirectoryValidationError(operational_errors)
 
         backup_dir = BACKUP_DIR if path == EMPLOYEE_DIRECTORY_FILE else path.parent / "cache" / "employee_directory_backups"
         _backup_current_bytes(current, broken=current.status == "invalid", backup_dir=backup_dir)
@@ -509,6 +571,105 @@ def save_employee_directory(
         if saved.status != "available":
             raise EmployeeDirectoryStateError("Employee directory verification failed after write.")
         return get_employee_directory_admin_data(path)
+
+
+def merge_server_managed_aliases(
+    old_employees: Any,
+    incoming_employees: Any,
+) -> List[Dict[str, Any]]:
+    old_by_id = {
+        str(item.get("employee_id") or ""): item
+        for item in old_employees if isinstance(item, dict)
+    }
+    result = copy.deepcopy(incoming_employees if isinstance(incoming_employees, list) else [])
+    for employee in result:
+        if not isinstance(employee, dict):
+            continue
+        employee_id = str(employee.get("employee_id") or "")
+        old = old_by_id.get(employee_id)
+        aliases = list(employee.get("aliases") or [])
+        if old:
+            old_stable_aliases = {
+                (
+                    normalize_text(alias.get("type")).lower(),
+                    normalize_text(alias.get("value")).casefold(),
+                )
+                for alias in old.get("aliases") or []
+                if isinstance(alias, dict)
+                and normalize_text(alias.get("type")).lower() in {"schedule", "va"}
+                and normalize_text(alias.get("value"))
+            }
+            old_has_va_source = any(
+                normalize_text(ref).startswith("va:employees:")
+                for ref in old.get("source_refs") or []
+            )
+            if old_stable_aliases or old_has_va_source:
+                aliases = [
+                    alias
+                    for alias in aliases
+                    if not isinstance(alias, dict)
+                    or normalize_text(alias.get("type")).lower()
+                    not in {"schedule", "va"}
+                    or (
+                        normalize_text(alias.get("type")).lower(),
+                        normalize_text(alias.get("value")).casefold(),
+                    )
+                    in old_stable_aliases
+                ]
+            aliases.extend(copy.deepcopy(old.get("aliases") or []))
+            changed = (
+                ("full_name", "full", ""),
+                ("release_name", "release", ""),
+            )
+            for field, alias_type, domain in changed:
+                previous = normalize_text(old.get(field))
+                current = normalize_text(employee.get(field))
+                if previous and previous.casefold() != current.casefold():
+                    aliases.append({"value": previous, "type": alias_type, "jira_domain": domain})
+            for domain in JIRA_DOMAINS:
+                previous = normalize_text((old.get("jira_names") or {}).get(domain))
+                current = normalize_text((employee.get("jira_names") or {}).get(domain))
+                if previous and previous.casefold() != current.casefold():
+                    aliases.append({"value": previous, "type": "jira", "jira_domain": domain})
+
+        va_membership = ((employee.get("memberships") or {}).get("va_schedule_manager") or {})
+        has_stable_schedule_identity = any(
+            isinstance(alias, dict)
+            and alias.get("type") in {"schedule", "va"}
+            and normalize_text(alias.get("value"))
+            for alias in aliases
+        ) or any(
+            normalize_text(ref).startswith("va:employees:")
+            for ref in employee.get("source_refs") or []
+        )
+        if va_membership.get("enabled") and not has_stable_schedule_identity:
+            full_name = normalize_text(employee.get("full_name"))
+            if full_name:
+                aliases.append({"value": full_name, "type": "schedule", "jira_domain": ""})
+        employee["aliases"] = _deduplicate_aliases(aliases)
+    return result
+
+
+def _deduplicate_aliases(aliases: Any) -> List[Dict[str, str]]:
+    result = []
+    seen = set()
+    for alias in aliases if isinstance(aliases, list) else []:
+        if not isinstance(alias, dict):
+            continue
+        normalized = {
+            "value": normalize_text(alias.get("value")),
+            "type": normalize_text(alias.get("type")).lower(),
+            "jira_domain": normalize_text(alias.get("jira_domain")).lower(),
+        }
+        key = (
+            normalized["type"],
+            normalized["jira_domain"],
+            normalized["value"].casefold(),
+        )
+        if normalized["value"] and key not in seen:
+            result.append(normalized)
+            seen.add(key)
+    return result
 
 
 def _assert_expected_version(snapshot: DirectorySnapshot, expected_revision: Any, expected_etag: str) -> None:

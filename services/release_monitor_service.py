@@ -28,7 +28,10 @@ from services.release_monitor_duty_overlay import (
     apply_duty_schedule_overlay,
     get_effective_release_reviewer,
 )
-from services.release_monitor_employee_provider import get_release_monitor_names as _load_oplot_values
+from services.release_monitor_employee_provider import (
+    get_release_monitor_names as _load_oplot_values,
+    get_release_monitor_projection as _load_employee_projection,
+)
 from services.release_artifact_service import (
     classify_artifact_entry,
     extract_artifact_ke_id,
@@ -43,6 +46,7 @@ from services.release_template_catalog_service import (
     is_ai_agents_template_category,
     select_template_by_summary,
 )
+from services.runtime_paths import runtime_path
 
 
 FINAL_RELEASE_STATUS = "\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u043b\u0435\u043d \u043d\u0430 \u041f\u0420\u041e\u041c"
@@ -87,7 +91,7 @@ RELIABLE_FULL_REFRESH_DEADLINE_SECONDS = int(
 )
 AUTO_INCREMENTAL_SEARCH_MAX_ATTEMPTS = int(os.getenv("RELEASE_MONITOR_AUTO_INCREMENTAL_SEARCH_MAX_ATTEMPTS", "3"))
 AUTO_INCREMENTAL_SEARCH_RETRY_DELAY_SECONDS = float(os.getenv("RELEASE_MONITOR_AUTO_INCREMENTAL_SEARCH_RETRY_DELAY_SECONDS", "2"))
-SNAPSHOT_DIR = Path(__file__).resolve().parent.parent / "cache"
+SNAPSHOT_DIR = runtime_path("cache")
 SNAPSHOT_FILE = SNAPSHOT_DIR / "release_monitor_snapshot.json"
 LAST_GOOD_SNAPSHOT_FILE = SNAPSHOT_DIR / "release_monitor_last_good.json"
 CANDIDATE_SNAPSHOT_FILE = SNAPSHOT_DIR / "release_monitor_candidate.json"
@@ -7358,9 +7362,12 @@ def _normalize_release_payload(payload):
         return _build_empty_release_monitor_payload()
 
     previous_values = getattr(_employee_projection_context, "oplot_values", None)
+    previous_projection = getattr(_employee_projection_context, "projection", None)
     owns_projection = previous_values is None
     if owns_projection:
-        _employee_projection_context.oplot_values = tuple(_load_oplot_values())
+        employee_projection = _load_employee_projection()
+        _employee_projection_context.projection = employee_projection
+        _employee_projection_context.oplot_values = tuple(employee_projection["names"])
     previous_state_cache = getattr(_state_json_read_context, "cache", None)
     owns_state_cache = previous_state_cache is None
     if owns_state_cache:
@@ -7399,22 +7406,41 @@ def _normalize_release_payload(payload):
         current_year = datetime.now().year
         previous_year = current_year - 1
 
+        employee_projection = getattr(_employee_projection_context, "projection", {})
+        result_meta = _append_auto_incremental_meta(
+            _append_revision_meta(
+                _append_duty_schedule_meta(
+                    dict(payload.get("meta", {})),
+                    duty_projection,
+                )
+            )
+        )
+        result_meta.update(
+            {
+                "employee_directory_status": employee_projection.get("status", "missing"),
+                "employee_directory_revision": employee_projection.get("revision"),
+                "employee_directory_etag": employee_projection.get("etag", ""),
+                "employee_selection_available": bool(
+                    employee_projection.get("employee_selection_available")
+                ),
+                "employee_selection_reason": employee_projection.get(
+                    "employee_selection_reason",
+                    "",
+                ),
+            }
+        )
         return {
             "items": normalized_items,
             "manual_overrides": _normalize_manual_release_overrides(payload.get("manual_overrides") or {}),
             "summary": _build_summary(normalized_items, current_year, previous_year),
-            "meta": _append_auto_incremental_meta(
-                _append_revision_meta(
-                    _append_duty_schedule_meta(
-                        dict(payload.get("meta", {})),
-                        duty_projection,
-                    )
-                )
-            ),
+            "meta": result_meta,
         }
     finally:
         if owns_projection:
             del _employee_projection_context.oplot_values
+            del _employee_projection_context.projection
+        elif previous_projection is not None:
+            _employee_projection_context.projection = previous_projection
         if owns_state_cache:
             del _state_json_read_context.cache
 
@@ -7494,6 +7520,7 @@ def get_release_monitor_reviewer_options():
 def get_release_monitor_week_control(snapshot=None):
     snapshot = snapshot if isinstance(snapshot, dict) else (get_release_monitor_snapshot() or {})
     items = snapshot.get("items", []) if isinstance(snapshot, dict) else []
+    snapshot_meta = snapshot.get("meta") or {}
     week_start, week_end = _get_current_week_bounds()
 
     week_items = [
@@ -7515,11 +7542,24 @@ def get_release_monitor_week_control(snapshot=None):
             for item in week_items
             if _get_release_start_date(item)
         }
-    candidate_groups = _collect_week_candidate_availability(
-        week_start,
-        week_end,
-        target_dates=assignment_dates,
-    )
+    if not snapshot_meta.get("employee_selection_available", True):
+        candidate_groups = {
+            "available": [],
+            "reserve": [],
+            "excluded": [],
+            "status": "availability_unknown",
+            "authoritative": False,
+            "schedule_status": str(
+                snapshot_meta.get("employee_selection_reason")
+                or "employee_directory_unavailable"
+            ),
+        }
+    else:
+        candidate_groups = _collect_week_candidate_availability(
+            week_start,
+            week_end,
+            target_dates=assignment_dates,
+        )
     missing_responsible = []
     for item in missing_week_items:
         release_date = _get_release_start_date(item)

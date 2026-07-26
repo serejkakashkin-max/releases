@@ -4,7 +4,7 @@ from typing import Dict, List, Set
 
 from VA.schedule_manager.models.employee import Employee
 from VA.schedule_manager.models.schedule_grid import ScheduleGrid, ScheduleRow
-from VA.schedule_manager.repositories.employee_repository import EmployeeRepository
+from VA.schedule_manager.repositories.managed_employee_repository import ManagedEmployeeRepository
 from VA.schedule_manager.repositories.schedule_repository import ScheduleRepository
 from VA.schedule_manager.repositories.shift_repository import ShiftRepository
 from VA.schedule_manager.services.competency_service import COMPETENCY_MANAGER, COMPETENCY_MPR_COORDINATOR, COMPETENCY_NEWCOMER
@@ -47,7 +47,7 @@ class ScheduleAutoplanService:
     def __init__(
         self,
         schedule_repository: ScheduleRepository,
-        employee_repository: EmployeeRepository,
+        employee_repository: ManagedEmployeeRepository,
         shift_service: ShiftService = None,
         month_service: ScheduleMonthService = None,
     ) -> None:
@@ -61,6 +61,15 @@ class ScheduleAutoplanService:
             self.schedule_service.get_month_grid(sheet_name)
         except KeyError:
             return ScheduleAutoplanAvailability(False, "График не найден.")
+        try:
+            employees = self.employee_repository.load_all()
+        except RuntimeError:
+            return ScheduleAutoplanAvailability(
+                False,
+                "Current employee list is temporarily unavailable.",
+            )
+        if not [employee for employee in employees if employee.status == "active"]:
+            return ScheduleAutoplanAvailability(False, "No active employees for planning.")
         return ScheduleAutoplanAvailability(True)
 
     def autoplan(self, sheet_name: str, vacations_confirmed: bool = False) -> ScheduleAutoplanResult:

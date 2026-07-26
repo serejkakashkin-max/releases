@@ -1129,15 +1129,9 @@
                 <div id="directoryEmployeeEmpty" class="empty-state">Справочник пока не содержит сотрудников.</div>
               </div>
             </div>
-            <details class="directory-system-settings">
-              <summary><strong>Подключение сервисов</strong></summary>
-              <div class="directory-system-settings-body">
-                <div id="directoryConsumerModes" class="directory-mode-grid"></div>
-                <div class="directory-actions" style="margin-top:10px;">
-                  <button type="button" class="ghost" id="saveDirectoryModesBtn">Сохранить режимы</button>
-                </div>
-              </div>
-            </details>
+            <div class="notice notice-info">
+              Employee Directory является единственным источником сотрудников для пяти подключённых сервисов.
+            </div>
           </div>
         </section>
         <details class="card directory-legacy-card">
@@ -1503,9 +1497,7 @@
         employees: [],
         selectedIndex: 0,
         filter: "all",
-        featureFlagsRevision: "",
-        consumers: {},
-        readiness: {}
+        consumerHealth: {}
       },
       modal: { type: "", index: -1 }
     };
@@ -2065,9 +2057,7 @@
         employees: nextEmployees,
         selectedIndex,
         filter: state.directory.filter || "all",
-        featureFlagsRevision: payload.feature_flags_revision || "",
-        consumers: clone(payload.consumers || {}),
-        readiness: clone(payload.readiness || {})
+        consumerHealth: clone(payload.consumer_health || {})
       };
       const statusBadge = $("directoryStatusBadge");
       statusBadge.textContent = state.directory.status;
@@ -2081,7 +2071,6 @@
         : "Справочник нельзя редактировать до явного восстановления его состояния.";
       $("directoryStatusText").className = `status ${writable ? "success" : "error"}`;
       renderDirectoryEmployees();
-      renderDirectoryConsumerModes();
     }
 
     function directoryInitials(name) {
@@ -2279,30 +2268,6 @@
       renderDirectoryNavigator();
     }
 
-    function renderDirectoryConsumerModes() {
-      const labels = {
-        release_monitor: "Блок релизов",
-        release_zni: "Релизные ЗНИ",
-        duty_dashboard: "Рабочий стол",
-        release_notifications: "Релизные письма",
-        va_schedule_manager: "VA Schedule Manager"
-      };
-      $("directoryConsumerModes").innerHTML = Object.entries(labels).map(([name, label]) => {
-        const readiness = state.directory.readiness[name] || {};
-        const mode = state.directory.consumers[name] || "legacy";
-        const allowedModes = Array.isArray(readiness.allowed_modes) ? readiness.allowed_modes : ["legacy"];
-        return `<div class="directory-membership">
-          <label>${escapeHtml(label)}</label>
-          <select data-directory-consumer="${escapeAttr(name)}">
-            <option value="legacy" ${mode === "legacy" ? "selected" : ""}>legacy</option>
-            <option value="compare" ${allowedModes.includes("compare") ? "" : "disabled"} ${mode === "compare" ? "selected" : ""}>compare</option>
-            <option value="directory" ${allowedModes.includes("directory") ? "" : "disabled"} ${mode === "directory" ? "selected" : ""}>directory</option>
-          </select>
-          <p class="muted" style="margin-top:6px;">${escapeHtml(readiness.reason || "consumer_adapter_not_implemented")}</p>
-        </div>`;
-      }).join("");
-    }
-
     async function loadEmployeeDirectory() {
       try {
         await ensureAdminSession();
@@ -2333,29 +2298,6 @@
           ? error.payload.errors.map((item) => typeof item === "string" ? item : `${item.path}: ${item.code}`).join("\n")
           : "";
         setStatus(`${error.message}${details ? "\n" + details : ""}`, "error");
-      }
-    }
-
-    async function saveDirectoryConsumerModes() {
-      const consumers = {};
-      document.querySelectorAll("[data-directory-consumer]").forEach((select) => {
-        consumers[select.dataset.directoryConsumer] = select.value;
-      });
-      try {
-        const payload = await adminApi(BASE_PATH + "/admin/sup-parameters/employee-directory/consumers", {
-          method: "POST",
-          body: JSON.stringify({
-            expected_revision: state.directory.featureFlagsRevision,
-            consumers
-          })
-        });
-        state.directory.featureFlagsRevision = payload.feature_flags_revision || state.directory.featureFlagsRevision;
-        state.directory.consumers = clone(payload.consumers || consumers);
-        state.directory.readiness = clone(payload.readiness || state.directory.readiness);
-        renderDirectoryConsumerModes();
-        setStatus("Режимы потребителей сохранены.", "success");
-      } catch (error) {
-        setStatus(error.message, "error");
       }
     }
 
@@ -2864,7 +2806,6 @@
     });
     $("reloadDirectoryBtn").addEventListener("click", loadEmployeeDirectory);
     $("saveDirectoryBtn").addEventListener("click", saveEmployeeDirectory);
-    $("saveDirectoryModesBtn").addEventListener("click", saveDirectoryConsumerModes);
     $("addPrefixBtn").addEventListener("click", () => openPrefixModal());
     $("addSbertrackRouteBtn").addEventListener("click", () => {
       state.config = currentFormConfig();

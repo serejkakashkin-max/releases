@@ -12,7 +12,6 @@ from uuid import uuid4
 from services.feature_flags_service import (
     DEFAULT_FEATURE_FLAGS,
     DEFAULT_RELEASE_PREFIX_CONFIGS,
-    EMPLOYEE_DIRECTORY_CONSUMERS,
     FEATURE_FLAGS_FILE,
     JIRA_DOMAIN_CONFIGS,
     PREFIX_PATTERN,
@@ -20,9 +19,10 @@ from services.feature_flags_service import (
     reload_feature_flags,
 )
 from services.cross_process_file_lock import CrossProcessFileLock
+from services.runtime_paths import get_coordination_lock_path, runtime_path
 
 
-BACKUP_DIR = Path(__file__).resolve().parent.parent / "cache" / "sup_parameters_backups"
+BACKUP_DIR = runtime_path("cache", "sup_parameters_backups")
 MAX_BACKUPS = 10
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 TIME_PATTERN = re.compile(r"^\d{2}:\d{2}$")
@@ -40,171 +40,6 @@ class SupParametersValidationError(ValueError):
 
 class SupParametersConflictError(RuntimeError):
     pass
-
-
-def get_employee_directory_consumer_modes_data() -> Dict[str, Any]:
-    payload, data, _exists, read_error = _read_current_json()
-    raw_consumers = (
-        ((payload.get("employee_directory") or {}).get("consumers") or {})
-        if isinstance(payload, dict)
-        else {}
-    )
-    consumers = {
-        name: (
-            str(raw_consumers.get(name) or "legacy").strip().lower()
-            if str(raw_consumers.get(name) or "legacy").strip().lower()
-            in {"legacy", "compare", "directory"}
-            else "legacy"
-        )
-        for name in EMPLOYEE_DIRECTORY_CONSUMERS
-    }
-    readiness = {
-        name: {
-            "ready": False,
-            "reason": "consumer_adapter_not_implemented",
-            "allowed_modes": ["legacy"],
-        }
-        for name in EMPLOYEE_DIRECTORY_CONSUMERS
-    }
-    try:
-        from services.release_monitor_employee_provider import (
-            get_release_monitor_adapter_readiness,
-        )
-
-        readiness["release_monitor"] = get_release_monitor_adapter_readiness()
-    except Exception as exc:
-        readiness["release_monitor"] = {
-            "ready": False,
-            "reason": "consumer_adapter_error",
-            "error_type": type(exc).__name__,
-            "allowed_modes": ["legacy"],
-        }
-
-    try:
-        from services.jira_oplot_issue_service import get_release_zni_adapter_readiness
-
-        readiness["release_zni"] = get_release_zni_adapter_readiness()
-    except Exception as exc:
-        readiness["release_zni"] = {
-            "ready": False,
-            "reason": "consumer_adapter_error",
-            "error_type": type(exc).__name__,
-            "allowed_modes": ["legacy"],
-        }
-
-    try:
-        from services.release_monitor_responsible_email_service import (
-            get_release_notifications_adapter_readiness,
-        )
-
-        readiness["release_notifications"] = (
-            get_release_notifications_adapter_readiness()
-        )
-    except Exception as exc:
-        readiness["release_notifications"] = {
-            "ready": False,
-            "reason": "consumer_adapter_error",
-            "error_type": type(exc).__name__,
-            "allowed_modes": ["legacy"],
-        }
-
-    try:
-        from services.duty_dashboard_employee_provider import (
-            get_duty_dashboard_adapter_readiness,
-        )
-
-        readiness["duty_dashboard"] = get_duty_dashboard_adapter_readiness()
-    except Exception as exc:
-        readiness["duty_dashboard"] = {
-            "ready": False,
-            "reason": "consumer_adapter_error",
-            "error_type": type(exc).__name__,
-            "allowed_modes": ["legacy"],
-        }
-
-    if not is_module_enabled("va_schedule_manager"):
-        readiness["va_schedule_manager"] = {
-            "ready": False,
-            "reason": "va_module_disabled",
-            "allowed_modes": ["legacy"],
-        }
-    else:
-        try:
-            from VA.schedule_manager.integrations.employee_directory_adapter import (
-                get_va_schedule_manager_adapter_readiness,
-            )
-            from VA.schedule_manager.repositories.employee_repository import (
-                EmployeeRepository,
-            )
-
-            readiness["va_schedule_manager"] = (
-                get_va_schedule_manager_adapter_readiness(
-                    EmployeeRepository().load_all_legacy()
-                )
-            )
-        except Exception as exc:
-            readiness["va_schedule_manager"] = {
-                "ready": False,
-                "reason": "consumer_adapter_error",
-                "error_type": type(exc).__name__,
-                "allowed_modes": ["legacy"],
-            }
-
-    return {
-        "feature_flags_revision": _file_hash(data),
-        "read_error": bool(read_error),
-        "consumers": consumers,
-        "readiness": readiness,
-    }
-
-
-def save_employee_directory_consumer_modes(
-    raw_consumers: Any,
-    expected_revision: str,
-) -> Dict[str, Any]:
-    if not isinstance(raw_consumers, dict):
-        raise SupParametersValidationError(["employee_directory.consumers must be an object"])
-    unknown = set(raw_consumers) - set(EMPLOYEE_DIRECTORY_CONSUMERS)
-    missing = set(EMPLOYEE_DIRECTORY_CONSUMERS) - set(raw_consumers)
-    errors = []
-    if unknown:
-        errors.append("employee_directory.consumers contains unknown consumer names")
-    if missing:
-        errors.append("employee_directory.consumers must include all managed consumers")
-    readiness = get_employee_directory_consumer_modes_data()["readiness"]
-    normalized = {}
-    for name in EMPLOYEE_DIRECTORY_CONSUMERS:
-        mode = str(raw_consumers.get(name) or "").strip().lower()
-        allowed_modes = set(readiness.get(name, {}).get("allowed_modes") or ["legacy"])
-        if mode not in allowed_modes:
-            errors.append(f"{name}: {readiness.get(name, {}).get('reason') or 'consumer_adapter_not_implemented'}")
-            normalized[name] = "legacy"
-            continue
-        normalized[name] = mode
-    if errors:
-        raise SupParametersValidationError(errors)
-
-    with _feature_flags_write_lock, CrossProcessFileLock(FEATURE_FLAGS_LOCK_FILE):
-        payload, data, _exists, read_error = _read_current_json()
-        current_revision = _file_hash(data)
-        if str(expected_revision or "") != current_revision:
-            raise SupParametersConflictError(
-                "Feature flags were changed by another process. Reload and try again."
-            )
-        if read_error:
-            raise SupParametersValidationError(
-                ["feature_flags.json is invalid; consumer modes were not saved"]
-            )
-        next_payload = copy.deepcopy(payload)
-        directory = next_payload.get("employee_directory")
-        if not isinstance(directory, dict):
-            directory = {}
-        directory["consumers"] = normalized
-        next_payload["employee_directory"] = directory
-        _backup_existing_file(data, "")
-        _atomic_write_json(next_payload)
-        reload_feature_flags()
-    return get_employee_directory_consumer_modes_data()
 
 
 def _file_hash(data: bytes) -> str:
@@ -1147,7 +982,11 @@ def _merge_managed_config(base_payload: Dict[str, Any], managed: Dict[str, Any])
 
 
 def save_sup_parameters(managed_config: Any, expected_revision: str) -> Dict[str, Any]:
-    with _feature_flags_write_lock, CrossProcessFileLock(FEATURE_FLAGS_LOCK_FILE):
+    with (
+        CrossProcessFileLock(get_coordination_lock_path()),
+        _feature_flags_write_lock,
+        CrossProcessFileLock(FEATURE_FLAGS_LOCK_FILE),
+    ):
         return _save_sup_parameters_locked(managed_config, expected_revision)
 
 
@@ -1160,9 +999,50 @@ def _save_sup_parameters_locked(managed_config: Any, expected_revision: str) -> 
         )
 
     normalized = _validate_managed_config(managed_config)
-    _backup_existing_file(current_data, read_error)
     base_payload = current_payload if not read_error else copy.deepcopy(DEFAULT_FEATURE_FLAGS)
     next_payload = _merge_managed_config(base_payload, normalized)
+    _validate_feature_activation(next_payload)
+    _backup_existing_file(current_data, read_error)
     _atomic_write_json(next_payload)
     reload_feature_flags()
     return get_sup_parameters_data()
+
+
+def _validate_feature_activation(next_payload: Dict[str, Any]) -> None:
+    from services.employee_directory_operational_validator import (
+        validate_employee_directory_operations,
+    )
+    from services.employee_directory_service import load_employee_directory_context
+
+    context = load_employee_directory_context()
+    if context.status != "available" or not context.payload:
+        va_enabled = bool(
+            (((next_payload.get("modules") or {}).get("va_schedule_manager") or {}).get("enabled"))
+        )
+        personal_enabled = bool(
+            (
+                ((next_payload.get("automation") or {}).get("release_monitor_responsible_email") or {})
+                .get("enabled")
+            )
+        )
+        if va_enabled or personal_enabled:
+            raise SupParametersValidationError(
+                ["Employee Directory is unavailable for feature activation."]
+            )
+        return
+    try:
+        from VA.schedule_manager.repositories.employee_settings_repository import (
+            EmployeeSettingsRepository,
+        )
+        settings_snapshot = EmployeeSettingsRepository().read()
+    except Exception:
+        settings_snapshot = None
+    errors = validate_employee_directory_operations(
+        context.payload,
+        next_payload,
+        va_settings_snapshot=settings_snapshot,
+    )
+    if errors:
+        raise SupParametersValidationError(
+            [f"{item['path']}: {item['code']}" for item in errors]
+        )

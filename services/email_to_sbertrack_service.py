@@ -27,10 +27,11 @@ from services.feature_flags_service import (
     get_sbertrack_users_config,
 )
 from services.release_monitor_email_service import _format_timestamp
+from services.runtime_paths import runtime_path
 
 
 EMAIL_TO_SBERTRACK_AUTOMATION_FLAG = "email_to_sbertrack"
-STATE_FILE = Path(__file__).resolve().parent.parent / "cache" / "email_to_sbertrack_state.json"
+STATE_FILE = runtime_path("cache", "email_to_sbertrack_state.json")
 LOCK_FILE = STATE_FILE.with_suffix(".lock")
 LOCK_STALE_SECONDS = 900
 SUMMARY_MAX_CHARS = 220

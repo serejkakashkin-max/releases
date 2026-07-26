@@ -8,6 +8,7 @@ from config import DEFAULT_BH_PLAYBOOKS
 from utils.common import normalize_text
 from services.jira_service import get_jira_domain_and_token
 from services.release_monitor_employee_provider import get_release_monitor_names
+from services.employee_directory_service import EmployeeDirectoryUnavailableError
 
 
 def add_hyperlink(paragraph, url, text):
@@ -276,8 +277,13 @@ def check_document(document_path, context, issues, release_id):
             errors.append("PREV_VERSION: не заполнено значение")
         if context["RELEASE_ID"] == "":
             errors.append("RELEASE_ID: не заполнено значение")
-        if context["OPLOT"] not in get_release_monitor_names():
-            errors.append(f"OPLOT: недопустимое значение '{context['OPLOT']}'")
+        try:
+            release_monitor_names = get_release_monitor_names()
+        except EmployeeDirectoryUnavailableError:
+            errors.append("OPLOT: Employee Directory временно недоступен")
+        else:
+            if context["OPLOT"] not in release_monitor_names:
+                errors.append(f"OPLOT: недопустимое значение '{context['OPLOT']}'")
         if context["CHECKER"] == "":
             errors.append("CHECKER: не заполнено значение")
         
