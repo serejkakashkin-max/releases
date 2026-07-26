@@ -187,10 +187,10 @@ def get_release_monitor_projection(
     )
     members = _ordered_members(_active_employees(resolved), "release_monitor")
     return {
+        **resolved.version_token,
         "status": "ready" if members else "empty_membership",
         "count": len(members),
         "names": [item["release_name"] for item in members],
-        **resolved.version_token,
     }
 
 
@@ -238,6 +238,7 @@ def get_dashboard_projection(
     extra = _dashboard_members(employees, "extra")
     visible = primary + extra
     return {
+        **resolved.version_token,
         "status": "ready" if primary else "empty_membership",
         "primary_jira": [item["jira_names"]["delta"] for item in primary],
         "extra_jira": [item["jira_names"]["delta"] for item in extra],
@@ -245,7 +246,6 @@ def get_dashboard_projection(
         "primary_display": [item["full_name"] for item in primary],
         "extra_display": [item["full_name"] for item in extra],
         "visible_display": [item["full_name"] for item in visible],
-        **resolved.version_token,
     }
 
 

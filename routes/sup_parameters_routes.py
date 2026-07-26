@@ -116,12 +116,12 @@ def employee_directory_data():
     if auth_error is not None:
         return auth_error
     data = get_employee_directory_admin_data()
-    data.update(
-        get_consumer_health(
-            load_employee_directory_context(),
-            feature_flags=get_feature_flags(),
-        )
+    health = get_consumer_health(
+        load_employee_directory_context(),
+        feature_flags=get_feature_flags(),
     )
+    data["directory_health"] = health["directory"]
+    data["consumer_health"] = health["consumer_health"]
     return jsonify(data)
 
 
@@ -148,12 +148,12 @@ def employee_directory_save():
             expected_etag=str(payload.get("expected_etag") or ""),
             operational_validator=_validate_directory_operational,
         )
-        data.update(
-            get_consumer_health(
-                load_employee_directory_context(),
-                feature_flags=get_feature_flags(),
-            )
+        health = get_consumer_health(
+            load_employee_directory_context(),
+            feature_flags=get_feature_flags(),
         )
+        data["directory_health"] = health["directory"]
+        data["consumer_health"] = health["consumer_health"]
         return jsonify(data)
     except EmployeeDirectoryConflictError:
         return jsonify(
