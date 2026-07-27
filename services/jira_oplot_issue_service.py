@@ -186,7 +186,7 @@ def create_oplot_release_issue(item: Dict[str, Any], reporter_name: str = "") ->
     context = load_employee_directory_context()
     if context.status != "available":
         raise ValueError("Employee Directory is temporarily unavailable.")
-    eligible_users = set(get_release_zni_users(context))
+    eligible_users = set(_get_release_zni_users(context))
     if not isinstance(item, dict):
         raise ValueError("Не переданы данные строки релиза")
 
