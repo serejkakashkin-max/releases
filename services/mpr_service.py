@@ -20,23 +20,37 @@ APPENDIX_2_PLACEHOLDER = "{{APPENDIX_2_TABLE}}"
 LOCATION_PLACEHOLDER = "{{MPR_LOCATION}}"
 APPENDIX_1_SUFFIX_PLACEHOLDER = "{{APPENDIX_1_SUFFIX}}"
 APPENDIX_2_SUFFIX_PLACEHOLDER = "{{APPENDIX_2_SUFFIX}}"
-MCOD_VAVILOVA_PACKAGE_CODE = "mcod_vavilova"
+MCOD_PACKAGE_CODE = "mcod"
+SCOD_VAVILOVA_PACKAGE_CODE = "scod_vavilova"
 MCOD_DATACENTERS = ("МегаЦОД",)
+SCOD_DATACENTERS = ("Сколково",)
 VAVILOVA_DATACENTERS = ("Вавилова", "Вавилова (observer)")
 DB_HOST_KEYWORDS = ("postgres", "postgre", "_db_", "pangolin")
+LOADBALANCER_PLATFORM = "loadbalancer_osse_20_2l"
+SCOD_EXCLUDED_APP_2_PLATFORMS = ("ignite_se",)
+MCOD_EXCLUDED_APP_2_SERVICES = (
+    "clm_const_pprb_lb_o_prom",
+    "focus_admin_lboss_o_prom",
+)
+MCOD_EXCLUDED_APP_2_HOSTS = (
+    "pslsb-efs002173",
+    "pslsb-efs002176",
+    "pslsb-efs002178",
+)
+SCOD_EXCLUDED_APP_3_SERVICES = ("aef_ai_lbosse_o_prom",)
 HOST_PLACEHOLDERS = {
     "{{MPR_SOWA_HOSTS}}": ("sowa",),
     "{{MPR_POSTGRES_HOSTS}}": DB_HOST_KEYWORDS,
     "{{MPR_SYNGX_HOSTS}}": ("syngx", "syng"),
 }
 MPR_PACKAGES = {
-    "mcod_vavilova": {
-        "label": "МЦОД и Вавилова",
-        "datacenters": ("МегаЦОД", "Вавилова", "Вавилова (observer)"),
+    MCOD_PACKAGE_CODE: {
+        "label": "МЦОД",
+        "datacenters": MCOD_DATACENTERS,
     },
-    "skolkovo": {
-        "label": "Сколково",
-        "datacenters": ("Сколково",),
+    SCOD_VAVILOVA_PACKAGE_CODE: {
+        "label": "СЦОД и Вавилова",
+        "datacenters": (*SCOD_DATACENTERS, *VAVILOVA_DATACENTERS),
     },
 }
 MPR_TEMPLATE_FILENAME = "template.docx"
@@ -315,35 +329,42 @@ def generate_mpr_docx(template_path, rows, location_label=None, package_code=Non
     except Exception as exc:
         raise MprError("Не удалось открыть DOCX-шаблон") from exc
 
-    is_mcod_vavilova = _is_mcod_vavilova_package(package_code, location_label)
-    replacements = _build_host_placeholder_values(rows, package_code=package_code)
+    package_code = _normalize_generated_package_code(package_code, location_label)
+    appendix_plan = _build_appendix_plan(rows, package_code)
+    _apply_work_plan_notes(document, package_code)
+
+    replacements = _build_host_placeholder_values(rows)
     replacements[APPENDIX_1_SUFFIX_PLACEHOLDER] = (
-        " — Вавилова (observer)" if is_mcod_vavilova else ""
+        appendix_plan["suffixes"].get(APPENDIX_PLACEHOLDER, "")
     )
-    replacements[APPENDIX_2_SUFFIX_PLACEHOLDER] = " — МЦОД" if is_mcod_vavilova else ""
+    replacements[APPENDIX_2_SUFFIX_PLACEHOLDER] = (
+        appendix_plan["suffixes"].get(APPENDIX_2_PLACEHOLDER, "")
+    )
     if location_label is not None:
         if not _document_contains_placeholder(document, LOCATION_PLACEHOLDER):
             raise MprError(f"Плейсхолдер {LOCATION_PLACEHOLDER} не найден в DOCX-шаблоне")
         replacements[LOCATION_PLACEHOLDER] = location_label
     _replace_host_placeholders(document, replacements)
 
-    if is_mcod_vavilova:
-        appendix_rows = _build_mcod_vavilova_appendix_rows(rows)
-        _insert_appendix_table(
+    first_table = _insert_appendix_table(
+        document,
+        APPENDIX_PLACEHOLDER,
+        appendix_plan["tables"][0]["rows"],
+        required=True,
+    )
+    second_table = _insert_appendix_table(
+        document,
+        APPENDIX_2_PLACEHOLDER,
+        appendix_plan["tables"][1]["rows"],
+        required=True,
+    )
+    if len(appendix_plan["tables"]) > 2:
+        _insert_appendix_after_table(
             document,
-            APPENDIX_PLACEHOLDER,
-            appendix_rows["vavilova"],
-            required=True,
+            second_table or first_table,
+            appendix_plan["tables"][2]["title"],
+            appendix_plan["tables"][2]["rows"],
         )
-        _insert_appendix_table(
-            document,
-            APPENDIX_2_PLACEHOLDER,
-            appendix_rows["mcod"],
-            required=True,
-        )
-    else:
-        _insert_appendix_table(document, APPENDIX_PLACEHOLDER, rows, required=True)
-        _remove_optional_appendix_section(document, APPENDIX_2_PLACEHOLDER)
 
     output = BytesIO()
     document.save(output)
@@ -392,25 +413,103 @@ def _normalize_datacenter(value):
     return re.sub(r"\s+", " ", str(value or "").strip()).casefold()
 
 
-def _is_mcod_vavilova_package(package_code, location_label):
-    if str(package_code or "").strip() == MCOD_VAVILOVA_PACKAGE_CODE:
-        return True
-    return str(location_label or "").strip() == MPR_PACKAGES[MCOD_VAVILOVA_PACKAGE_CODE]["label"]
+def _normalize_generated_package_code(package_code, location_label):
+    code = str(package_code or "").strip()
+    if code in MPR_PACKAGES:
+        return code
+    label = str(location_label or "").strip()
+    for candidate, config in MPR_PACKAGES.items():
+        if label == config["label"]:
+            return candidate
+    return code
 
 
-def _build_host_placeholder_values(rows, package_code=None):
+def _build_appendix_plan(rows, package_code):
+    if package_code == MCOD_PACKAGE_CODE:
+        return {
+            "suffixes": {
+                APPENDIX_PLACEHOLDER: "",
+                APPENDIX_2_PLACEHOLDER: "",
+            },
+            "tables": [
+                {
+                    "title": "ПРИЛОЖЕНИЕ 1",
+                    "rows": _filter_mpr_rows(
+                        rows,
+                        datacenters=MCOD_DATACENTERS,
+                        exclude_platforms=(LOADBALANCER_PLATFORM,),
+                    ),
+                },
+                {
+                    "title": "ПРИЛОЖЕНИЕ 2",
+                    "rows": _filter_mpr_rows(
+                        rows,
+                        datacenters=MCOD_DATACENTERS,
+                        platforms=(LOADBALANCER_PLATFORM,),
+                        exclude_services=MCOD_EXCLUDED_APP_2_SERVICES,
+                        exclude_hosts=MCOD_EXCLUDED_APP_2_HOSTS,
+                    ),
+                },
+            ],
+        }
+
+    if package_code == SCOD_VAVILOVA_PACKAGE_CODE:
+        return {
+            "suffixes": {
+                APPENDIX_PLACEHOLDER: " — Вавилова (observer)",
+                APPENDIX_2_PLACEHOLDER: " — СЦОД",
+            },
+            "tables": [
+                {
+                    "title": "ПРИЛОЖЕНИЕ 1 — Вавилова (observer)",
+                    "rows": _filter_mpr_rows(
+                        rows,
+                        datacenters=VAVILOVA_DATACENTERS,
+                        keywords=DB_HOST_KEYWORDS,
+                    ),
+                },
+                {
+                    "title": "ПРИЛОЖЕНИЕ 2 — СЦОД",
+                    "rows": _filter_mpr_rows(
+                        rows,
+                        datacenters=SCOD_DATACENTERS,
+                        exclude_platforms=(
+                            LOADBALANCER_PLATFORM,
+                            *SCOD_EXCLUDED_APP_2_PLATFORMS,
+                        ),
+                    ),
+                },
+                {
+                    "title": "Приложение 3 - СЦОД",
+                    "rows": _filter_mpr_rows(
+                        rows,
+                        datacenters=SCOD_DATACENTERS,
+                        platforms=(LOADBALANCER_PLATFORM,),
+                        exclude_services=SCOD_EXCLUDED_APP_3_SERVICES,
+                    ),
+                },
+            ],
+        }
+
+    return {
+        "suffixes": {
+            APPENDIX_PLACEHOLDER: "",
+            APPENDIX_2_PLACEHOLDER: "",
+        },
+        "tables": [
+            {"title": "ПРИЛОЖЕНИЕ 1", "rows": rows},
+            {"title": "ПРИЛОЖЕНИЕ 2", "rows": []},
+        ],
+    }
+
+
+def _build_host_placeholder_values(rows):
     values = {}
     for placeholder, keywords in HOST_PLACEHOLDERS.items():
         hosts = []
         seen = set()
-        source_rows = rows
-        if (
-            package_code == MCOD_VAVILOVA_PACKAGE_CODE
-            and placeholder == "{{MPR_POSTGRES_HOSTS}}"
-        ):
-            source_rows = _filter_mpr_rows(rows, datacenters=MCOD_DATACENTERS)
-        for item in source_rows:
-            name = item.get("КТС", "")
+        for item in rows:
+            name = str(item.get("КТС", "") or "").strip()
             if not name or not _row_matches_keywords(item, keywords):
                 continue
             marker = name.casefold()
@@ -422,23 +521,67 @@ def _build_host_placeholder_values(rows, package_code=None):
     return values
 
 
-def _build_mcod_vavilova_appendix_rows(rows):
-    return {
-        "vavilova": _filter_mpr_rows(
-            rows,
-            datacenters=VAVILOVA_DATACENTERS,
-        ),
-        "mcod": _filter_mpr_rows(
-            rows,
-            datacenters=MCOD_DATACENTERS,
-        ),
-    }
+def _apply_work_plan_notes(document, package_code):
+    if not document.tables:
+        return
+    table = document.tables[0]
+    if len(table.rows) < 10 or len(table.columns) < 4:
+        return
+
+    if package_code == SCOD_VAVILOVA_PACKAGE_CODE:
+        all_appendices_note = "Список КТС взять из приложения 1 и приложение 2 и приложение 3"
+        _set_table_cell_text(table, 2, 3, all_appendices_note)
+        _set_table_cell_text(table, 5, 3, "Список КТС взять из приложения 1 ")
+        _insert_scod_update_row(table, source_row_index=5)
+        _set_table_cell_text(table, 10, 3, f"\n{all_appendices_note}")
+        return
+
+    if package_code == MCOD_PACKAGE_CODE:
+        appendices_note = "Список КТС взять из приложения 1 и приложения 2"
+        _set_table_cell_text(table, 2, 3, appendices_note)
+        _set_table_cell_text(table, 5, 3, appendices_note)
+        _set_table_cell_text(table, 9, 3, f"\n{appendices_note}")
 
 
-def _filter_mpr_rows(rows, datacenters=None, keywords=None):
+def _insert_scod_update_row(table, source_row_index):
+    source_row = table.rows[source_row_index]
+    new_row = deepcopy(source_row._tr)
+    source_row._tr.addnext(new_row)
+    _set_table_cell_text(table, source_row_index + 1, 3, "Список КТС взять из приложения 2 и приложения 3")
+
+
+def _filter_mpr_rows(
+    rows,
+    datacenters=None,
+    keywords=None,
+    platforms=None,
+    exclude_platforms=None,
+    exclude_services=None,
+    exclude_hosts=None,
+):
     datacenter_markers = {
         _normalize_datacenter(value)
         for value in (datacenters or [])
+        if str(value or "").strip()
+    }
+    platform_markers = {
+        _normalize_platform(value)
+        for value in (platforms or [])
+        if str(value or "").strip()
+    }
+    excluded_platform_markers = {
+        _normalize_platform(value)
+        for value in (exclude_platforms or [])
+        if str(value or "").strip()
+    }
+    excluded_service_markers = {
+        _normalize_service(value)
+        for value in (exclude_services or [])
+        if str(value or "").strip()
+    }
+    excluded_host_markers = {
+        _normalize_host(value)
+        for value in (exclude_hosts or [])
         if str(value or "").strip()
     }
     result = []
@@ -447,10 +590,31 @@ def _filter_mpr_rows(rows, datacenters=None, keywords=None):
             datacenter = _normalize_datacenter(item.get("ЦОД", ""))
             if datacenter not in datacenter_markers:
                 continue
+        platform = _normalize_platform(item.get("Платформа", ""))
+        if platform_markers and platform not in platform_markers:
+            continue
+        if excluded_platform_markers and platform in excluded_platform_markers:
+            continue
+        if _normalize_service(item.get("Наименование", "")) in excluded_service_markers:
+            continue
+        if _normalize_host(item.get("КТС", "")) in excluded_host_markers:
+            continue
         if keywords and not _row_matches_keywords(item, keywords):
             continue
         result.append(item)
     return result
+
+
+def _normalize_platform(value):
+    return str(value or "").strip().casefold()
+
+
+def _normalize_service(value):
+    return str(value or "").strip().casefold()
+
+
+def _normalize_host(value):
+    return str(value or "").strip().casefold()
 
 
 def _row_matches_keywords(item, keywords):
@@ -551,7 +715,7 @@ def _insert_appendix_table(document, placeholder, rows, required=True):
         return False
     table = _build_appendix_table(document, rows)
     _insert_table_at_placeholder(paragraph, table, placeholder=placeholder)
-    return True
+    return table
 
 
 def _remove_optional_appendix_section(document, placeholder):
@@ -634,6 +798,15 @@ def _insert_table_at_placeholder(paragraph, table, placeholder=APPENDIX_PLACEHOL
         parent.remove(paragraph._element)
 
 
+def _insert_appendix_after_table(document, previous_table, title, rows):
+    if previous_table is None:
+        return
+    paragraph = document.add_paragraph(str(title or ""))
+    table = _build_appendix_table(document, rows)
+    previous_table._tbl.addnext(paragraph._p)
+    paragraph._p.addnext(table._tbl)
+
+
 def _replace_paragraph_text(paragraph, text):
     for run in paragraph.runs:
         run.text = ""
@@ -641,6 +814,23 @@ def _replace_paragraph_text(paragraph, text):
         paragraph.runs[0].text = text
     else:
         paragraph.add_run(text)
+
+
+def _set_table_cell_text(table, row_index, column_index, text):
+    if row_index >= len(table.rows) or column_index >= len(table.columns):
+        return
+    _replace_cell_text(table.rows[row_index].cells[column_index], text)
+
+
+def _replace_cell_text(cell, text):
+    for paragraph in cell.paragraphs:
+        for run in paragraph.runs:
+            run.text = ""
+    paragraph = cell.paragraphs[0] if cell.paragraphs else cell.add_paragraph()
+    if paragraph.runs:
+        paragraph.runs[0].text = str(text or "")
+    else:
+        paragraph.add_run(str(text or ""))
 
 
 def _set_cell_text(cell, text, bold=False, font_name=None, font_size=None):
