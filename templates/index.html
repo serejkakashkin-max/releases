@@ -337,7 +337,7 @@
             transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease;
         }
 
-        .utility-stack.has-sandbox + .usage-panel {
+        .utility-stack + .usage-panel {
             top: 11rem;
         }
 
@@ -445,7 +445,7 @@
                 top: 7.75rem;
             }
 
-            .utility-stack.has-sandbox + .usage-panel {
+            .utility-stack + .usage-panel {
                 top: 7.75rem;
             }
         }
@@ -548,10 +548,6 @@
             document.getElementById('link-mpr').href = BASE_PATH + '/mpr';
             document.getElementById('link-release-monitor').href = BASE_PATH + '/release-monitor';
             document.getElementById('link-help').href = BASE_PATH + '/help';
-            const sandboxLink = document.getElementById('link-sandbox');
-            if (sandboxLink) {
-                sandboxLink.href = BASE_PATH + '/sandbox';
-            }
             // Дашборд теперь через onclick
         };
 
@@ -661,16 +657,14 @@
         </div>
     </div>
 
-    <div class="utility-stack{% if sandbox_modules %} has-sandbox{% endif %}">
-        {% if sandbox_modules %}
+    <div class="utility-stack">
         <div class="sandbox-entry">
-            <a id="link-sandbox" class="sandbox-pill" href="/sandbox">
+            <a id="link-sandbox" class="sandbox-pill" href="{{ sandbox_url }}">
                 <i class="bi bi-grid-3x3-gap"></i>
                 <span>Песочница</span>
                 <span class="sandbox-pill-badge">Эксперименты</span>
             </a>
         </div>
-        {% endif %}
         <button class="usage-chip" type="button" onclick="toggleUsagePanel()" title="Показать статистику использования">
             <i class="bi bi-bar-chart-line"></i>
             <span>Статистика</span>

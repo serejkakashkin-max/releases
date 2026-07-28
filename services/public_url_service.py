@@ -18,7 +18,6 @@ _ROOT_MARKERS = (
     "/release/",
     "/mpr",
     "/help",
-    "/sandbox",
 )
 
 
