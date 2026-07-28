@@ -4280,15 +4280,13 @@ Oplot умеет работать с рабочим столом дежурно�
     def _get_today_release_monitor_items(self) -> List[Dict]:
         snapshot = get_release_monitor_snapshot() or {}
         items = snapshot.get("items", []) if isinstance(snapshot, dict) else []
-        today = datetime.now().date()
 
         today_items = []
         seen = set()
         for item in items:
             if not isinstance(item, dict):
                 continue
-            start_dt = self._release_start_dt(item)
-            if not start_dt or start_dt.date() != today:
+            if not item.get("is_today"):
                 continue
             row_key = str(item.get("row_key") or item.get("release_key") or "").strip()
             if row_key and row_key in seen:

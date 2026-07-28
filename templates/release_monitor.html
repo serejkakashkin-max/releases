@@ -4162,6 +4162,7 @@
         const RELEASE_SMS_DRAFT_KEY = 'releaseMonitorSmsDraft';
         const RELEASE_SMS_SCOPE_KEY = 'releaseMonitorSmsScope';
         const RELEASE_SMS_DRAFT_TTL_MS = 12 * 60 * 60 * 1000;
+        const RELEASE_OPERATIONAL_DAY_START_HOUR = {{ release_operational_day_start_hour | default(7) | int }};
         const RELEASE_SMS_PROFILES = ['CLM', 'EMRM', 'AIST', 'AI'];
         const RELEASE_SMS_PROFILE_AVAILABILITY = {{ sms_profile_availability | default({}) | tojson | safe }};
         const RELEASE_WORK_MARK_PARTICIPANTS_KEY = 'releaseMonitorWorkMarkParticipants';
@@ -10662,7 +10663,7 @@
 
         function getReleaseOperationalDayBounds(now = new Date()) {
             const start = new Date(now);
-            start.setHours(5, 0, 0, 0);
+            start.setHours(RELEASE_OPERATIONAL_DAY_START_HOUR, 0, 0, 0);
             if (now < start) {
                 start.setDate(start.getDate() - 1);
             }

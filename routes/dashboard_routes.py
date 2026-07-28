@@ -11,6 +11,7 @@ from services.dashboard_service import (
     prune_hidden_tasks
 )
 from services.release_monitor_service import (
+    RELEASE_OPERATIONAL_DAY_START_HOUR,
     get_release_monitor_data,
     get_release_monitor_snapshot,
     start_release_monitor_refresh,
@@ -261,6 +262,7 @@ def release_monitor_page():
             release_document_playbooks=DEFAULT_BH_PLAYBOOKS,
             reviewer_options=model["reviewer_options"],
             sms_profile_availability=model["sms_profile_availability"],
+            release_operational_day_start_hour=RELEASE_OPERATIONAL_DAY_START_HOUR,
             last_update=datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
             maintenance_enabled=is_maintenance_enabled("release_monitor"),
             maintenance_scope="release_monitor",
@@ -277,6 +279,7 @@ def release_monitor_page():
             release_document_playbooks=DEFAULT_BH_PLAYBOOKS,
             reviewer_options=get_release_monitor_reviewer_options(),
             sms_profile_availability=get_sms_profile_availability(),
+            release_operational_day_start_hour=RELEASE_OPERATIONAL_DAY_START_HOUR,
             last_update=datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
             maintenance_enabled=is_maintenance_enabled("release_monitor"),
             maintenance_scope="release_monitor",
@@ -295,6 +298,7 @@ def release_monitor_page():
             release_document_playbooks=DEFAULT_BH_PLAYBOOKS,
             reviewer_options=get_release_monitor_reviewer_options(),
             sms_profile_availability=get_sms_profile_availability(),
+            release_operational_day_start_hour=RELEASE_OPERATIONAL_DAY_START_HOUR,
             last_update=datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
             maintenance_enabled=is_maintenance_enabled("release_monitor"),
             maintenance_scope="release_monitor",
