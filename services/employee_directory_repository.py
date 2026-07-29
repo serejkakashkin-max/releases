@@ -55,6 +55,7 @@ MEMBERSHIP_KEYS = {
 ALIAS_TYPES = {"full", "release", "jira", "schedule", "va"}
 JIRA_DOMAINS = {"delta", "sberbank"}
 DASHBOARD_ROLES = {"primary", "extra", "none"}
+EMPLOYEE_LOCATIONS = {"moscow", "khabarovsk"}
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 SOURCE_REF_PATTERN = re.compile(
     r"^(?:config:(?:OPLOT_VALUES|DASHBOARD_ASSIGNEES|DASHBOARD_EXTRA_ASSIGNEES)"
@@ -260,6 +261,9 @@ def validate_directory(payload: Any) -> List[Dict[str, str]]:
         for string_field in ("full_name", "release_name", "phone", "location", "personnel_number"):
             if not isinstance(employee.get(string_field), str):
                 errors.append(_error(f"{path}.{string_field}", "string_required"))
+        location = normalize_text(employee.get("location")).lower()
+        if location and location not in EMPLOYEE_LOCATIONS:
+            errors.append(_error(f"{path}.location", "unsupported"))
         full_name = normalize_text(employee.get("full_name"))
         if not full_name:
             errors.append(_error(f"{path}.full_name", "required"))
@@ -394,6 +398,8 @@ def validate_directory(payload: Any) -> List[Dict[str, str]]:
                 va_orders,
                 errors,
             )
+            if enabled and not location:
+                errors.append(_error(f"{path}.location", "required_for_va_schedule_manager"))
 
         notifications = memberships.get("release_notifications") or {}
         if notifications.get("enabled") is True and not local_emails:
@@ -635,17 +641,39 @@ def merge_server_managed_aliases(
         va_membership = ((employee.get("memberships") or {}).get("va_schedule_manager") or {})
         has_stable_schedule_identity = any(
             isinstance(alias, dict)
-            and alias.get("type") in {"schedule", "va"}
+            and alias.get("type") == "schedule"
             and normalize_text(alias.get("value"))
             for alias in aliases
         ) or any(
             normalize_text(ref).startswith("va:employees:")
             for ref in employee.get("source_refs") or []
         )
+        release_name = normalize_text(employee.get("release_name"))
+        if release_name:
+            aliases.extend(
+                (
+                    {"value": release_name, "type": "release", "jira_domain": ""},
+                    {"value": release_name, "type": "va", "jira_domain": ""},
+                )
+            )
         if va_membership.get("enabled") and not has_stable_schedule_identity:
-            full_name = normalize_text(employee.get("full_name"))
-            if full_name:
-                aliases.append({"value": full_name, "type": "schedule", "jira_domain": ""})
+            previous_va_name = next(
+                (
+                    normalize_text(alias.get("value"))
+                    for alias in aliases
+                    if isinstance(alias, dict)
+                    and alias.get("type") == "va"
+                    and normalize_text(alias.get("value"))
+                ),
+                "",
+            )
+            schedule_name = (
+                previous_va_name
+                or release_name
+                or normalize_text(employee.get("full_name"))
+            )
+            if schedule_name:
+                aliases.append({"value": schedule_name, "type": "schedule", "jira_domain": ""})
         employee["aliases"] = _deduplicate_aliases(aliases)
     return result
 

@@ -81,6 +81,10 @@
       border-color: var(--blue);
       box-shadow: 0 0 0 3px rgba(77, 149, 255, 0.14);
     }
+    select.invalid {
+      border-color: rgba(255, 99, 128, 0.68);
+      box-shadow: 0 0 0 3px rgba(255, 99, 128, 0.1);
+    }
     textarea { min-height: 96px; resize: vertical; }
     label {
       display: block;
@@ -185,31 +189,64 @@
     .badge.red { color: #ffd3dc; border-color: rgba(255, 99, 128, 0.32); background: rgba(255, 99, 128, 0.13); }
     .badge.blue { color: #d7e7ff; border-color: rgba(77, 149, 255, 0.34); background: rgba(77, 149, 255, 0.13); }
     .badge.yellow { color: #fff0c4; border-color: rgba(255, 196, 61, 0.32); background: rgba(255, 196, 61, 0.13); }
-    .tabs {
+    .settings-shell {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 8px;
+      grid-template-columns: 220px minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
       margin-top: 16px;
-      padding: 8px;
+    }
+    .settings-nav {
+      position: sticky;
+      top: 16px;
+      display: grid;
+      gap: 16px;
+      padding: 12px;
       border: 1px solid var(--line);
-      border-radius: 14px;
+      border-radius: 8px;
       background: rgba(29, 38, 51, 0.76);
     }
+    .settings-nav-group {
+      display: grid;
+      gap: 4px;
+    }
+    .settings-nav-title {
+      padding: 2px 9px 6px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
     .tab-btn {
-      min-height: 42px;
-      border-radius: 10px;
+      min-height: 40px;
+      padding: 9px 10px 9px 14px;
+      position: relative;
+      border-radius: 6px;
       background: transparent;
       border-color: transparent;
       color: var(--muted-2);
-      text-align: center;
+      text-align: left;
+      line-height: 1.25;
     }
+    .tab-btn:hover { background: rgba(255, 255, 255, 0.035); }
     .tab-btn.active {
       color: #fff;
-      border-color: rgba(77, 149, 255, 0.34);
-      background: rgba(77, 149, 255, 0.16);
+      border-color: rgba(77, 149, 255, 0.24);
+      background: rgba(77, 149, 255, 0.13);
+    }
+    .tab-btn.active::before {
+      content: "";
+      width: 3px;
+      position: absolute;
+      top: 8px;
+      bottom: 8px;
+      left: 5px;
+      border-radius: 2px;
+      background: var(--blue);
     }
     .tab-btn.has-error { border-color: rgba(255, 99, 128, 0.5); }
-    .panel { display: none; margin-top: 16px; }
+    .settings-content { min-width: 0; }
+    .panel { display: none; }
     .panel.active { display: block; }
     .card {
       border: 1px solid var(--line);
@@ -752,6 +789,47 @@
     .directory-legacy-card[open] > summary::after { content: "−"; }
     .directory-advanced-body { padding: 0 16px 16px; }
     .directory-advanced-body textarea { min-height: 110px; }
+    .directory-alias-list {
+      display: grid;
+      gap: 6px;
+      margin-bottom: 13px;
+    }
+    .directory-alias-row {
+      display: grid;
+      grid-template-columns: 88px minmax(0, 1fr);
+      gap: 9px;
+      align-items: center;
+      min-width: 0;
+      padding: 8px 9px;
+      border: 1px solid var(--line-soft);
+      border-radius: 6px;
+      background: rgba(17, 25, 38, 0.24);
+    }
+    .directory-alias-kind {
+      color: #cfe1ff;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+    .directory-alias-value {
+      overflow: hidden;
+      color: var(--muted-2);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .directory-alias-empty {
+      padding: 10px;
+      color: var(--muted);
+      border: 1px dashed var(--line);
+      border-radius: 6px;
+    }
+    .directory-alias-help {
+      display: block;
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.45;
+    }
     .directory-system-settings {
       border: 1px solid var(--line-soft);
       border-radius: 8px;
@@ -920,6 +998,23 @@
       box-shadow: var(--shadow);
     }
     .va-multi-select.open .va-multi-select-menu { display: block; }
+    .va-multi-select-layer {
+      position: fixed;
+      z-index: 1200;
+      inset: 0;
+      pointer-events: none;
+    }
+    .va-multi-select-menu.floating {
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      z-index: 1201;
+      top: 0;
+      left: 0;
+      width: 360px;
+      max-height: 380px;
+      pointer-events: auto;
+    }
     .va-multi-select-tools {
       display: grid;
       gap: 8px;
@@ -942,6 +1037,8 @@
       background: rgba(77, 149, 255, 0.12);
     }
     .va-multi-select-options {
+      flex: 1 1 auto;
+      min-height: 0;
       max-height: 240px;
       overflow-y: auto;
       padding: 6px;
@@ -995,20 +1092,44 @@
       .grid-4 {
         grid-template-columns: 1fr;
       }
-      .tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .settings-shell { grid-template-columns: 190px minmax(0, 1fr); }
       .field-row { grid-template-columns: 1fr; }
       .directory-workspace { grid-template-columns: 250px minmax(0, 1fr); }
       .directory-memberships,
       .directory-mode-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media (max-width: 880px) {
+      .settings-shell { grid-template-columns: 1fr; }
+      .settings-nav {
+        position: static;
+        display: flex;
+        gap: 6px;
+        overflow-x: auto;
+        padding: 7px;
+        scrollbar-width: thin;
+      }
+      .settings-nav-group { display: contents; }
+      .settings-nav-title { display: none; }
+      .tab-btn {
+        flex: 0 0 auto;
+        min-height: 38px;
+        padding: 8px 12px;
+        white-space: nowrap;
+      }
+      .tab-btn.active::before {
+        width: auto;
+        height: 3px;
+        top: auto;
+        right: 10px;
+        bottom: 3px;
+        left: 10px;
+      }
       .directory-workspace { grid-template-columns: 1fr; }
       .directory-sidebar { position: static; }
     }
     @media (max-width: 720px) {
       .page { width: calc(100% - 24px); margin-top: 16px; }
       .button-stack { grid-template-columns: 1fr; }
-      .tabs { grid-template-columns: 1fr; }
       .table-toolbar { grid-template-columns: 1fr; }
       .filter-tabs { justify-content: flex-start; }
       table, thead, tbody, tr, th, td { display: block; width: 100% !important; }
@@ -1084,65 +1205,27 @@
     </section>
 
     <section id="appBox" class="hidden">
-      <nav class="tabs" aria-label="Разделы СУП-параметров">
-        <button type="button" class="tab-btn active" data-tab="overview">Обзор</button>
-        <button type="button" class="tab-btn" data-tab="maintenance">Режим обслуживания</button>
-        <button type="button" class="tab-btn" data-tab="mail">Почтовые уведомления</button>
-        <button type="button" class="tab-btn" data-tab="employees">Сотрудники</button>
-        <button type="button" class="tab-btn" data-tab="prefixes">Префиксы релизов</button>
-        <button type="button" class="tab-btn" data-tab="automation">Автоматизация</button>
-        <button type="button" class="tab-btn" data-tab="sbertrack">Email → SberTrack / Jira</button>
-        <button type="button" class="tab-btn" data-tab="tools">Инструменты</button>
-        <button type="button" class="tab-btn" data-tab="diagnostics">Диагностика</button>
-      </nav>
+      <div class="settings-shell">
+        <nav class="settings-nav" aria-label="Разделы СУП-параметров">
+          <div class="settings-nav-group">
+            <div class="settings-nav-title">Рабочие настройки</div>
+            <button type="button" class="tab-btn active" data-tab="employees" aria-current="page">Сотрудники</button>
+            <button type="button" class="tab-btn" data-tab="mail">Почтовые уведомления</button>
+            <button type="button" class="tab-btn" data-tab="prefixes">Префиксы релизов</button>
+            <button type="button" class="tab-btn" data-tab="maintenance">Режим обслуживания</button>
+          </div>
+          <div class="settings-nav-group">
+            <div class="settings-nav-title">Интеграции</div>
+            <button type="button" class="tab-btn" data-tab="sbertrack">Email → SberTrack / Jira</button>
+          </div>
+          <div class="settings-nav-group">
+            <div class="settings-nav-title">Система</div>
+            <button type="button" class="tab-btn" data-tab="tools">Инструменты</button>
+            <button type="button" class="tab-btn" data-tab="diagnostics">Диагностика</button>
+          </div>
+        </nav>
 
-      <section class="panel active" data-panel="overview">
-        <div class="grid-4">
-          <div class="summary-card">
-            <div class="summary-label">Включенные рассылки</div>
-            <div class="summary-value" id="summaryMail">0</div>
-            <div class="summary-note">из 5 типов автоматизации</div>
-          </div>
-          <div class="summary-card">
-            <div class="summary-label">Активные сотрудники</div>
-            <div class="summary-value" id="summaryEmployees">0</div>
-            <div class="summary-note" id="summaryEmployeeEmails">0 email-адресов</div>
-          </div>
-          <div class="summary-card">
-            <div class="summary-label">Включенные prefix-и</div>
-            <div class="summary-value" id="summaryPrefixes">0</div>
-            <div class="summary-note">участвуют в поиске релизов</div>
-          </div>
-          <div class="summary-card">
-            <div class="summary-label">Задержка личных писем</div>
-            <div class="summary-value" id="summaryDelay">0 мин</div>
-            <div class="summary-note">антиспам-окно после назначения</div>
-          </div>
-        </div>
-        <div class="grid-4" style="margin-top:16px;">
-          <button type="button" class="zone-card" data-open-tab="mail">
-            <h3>Почта</h3>
-            <p class="muted">Оперативные письма, предварительный список недели и личные уведомления.</p>
-            <span class="badge blue">Перейти</span>
-          </button>
-          <button type="button" class="zone-card" data-open-tab="maintenance">
-            <h3>Режим обслуживания</h3>
-            <p class="muted">Закрытие разделов для пользователей с bypass-доступом администратора.</p>
-            <span class="badge yellow" id="overviewMaintenanceBadge">0 закрыто</span>
-          </button>
-          <button type="button" class="zone-card" data-open-tab="employees">
-            <h3>Сотрудники</h3>
-            <p class="muted">Справочник ФИО и email для персональных уведомлений.</p>
-            <span class="badge green" id="overviewEmployeesBadge">0 активных</span>
-          </button>
-          <button type="button" class="zone-card" data-open-tab="prefixes">
-            <h3>Префиксы релизов</h3>
-            <p class="muted">Управление prefix-ами, Jira-доменами и системами.</p>
-            <span class="badge blue" id="overviewPrefixesBadge">0 включено</span>
-          </button>
-        </div>
-      </section>
-
+        <div class="settings-content">
       <section class="panel" data-panel="maintenance">
         <section class="card">
           <div class="card-header">
@@ -1275,7 +1358,7 @@
         </div>
       </section>
 
-      <section class="panel" data-panel="employees">
+      <section class="panel active" data-panel="employees">
         <section class="card" id="employeeDirectoryCard">
           <div class="card-header">
             <h2>Сотрудники и компетенции</h2>
@@ -1418,44 +1501,6 @@
               <tbody id="prefixRows"></tbody>
             </table>
             <div id="prefixEmpty" class="empty-state hidden">Prefix-и по текущему фильтру не найдены.</div>
-          </div>
-        </section>
-      </section>
-
-      <section class="panel" data-panel="automation">
-        <section class="card">
-          <div class="card-header">
-            <h2>Автоматизация</h2>
-            <p class="muted">Обзор расписаний и антиспам-настроек. Редактирование выполняется в карточках почтовых уведомлений.</p>
-          </div>
-          <div class="card-body">
-            <div class="grid-3">
-              <div class="zone-card">
-                <h3>Предварительный список</h3>
-                <p class="muted" id="automationWeeklyText">-</p>
-                <button type="button" class="ghost" data-open-tab="mail" data-focus-card="mail-weekly-card">Редактировать в почте</button>
-              </div>
-              <div class="zone-card">
-                <h3>Понедельник без назначений</h3>
-                <p class="muted" id="automationReminderText">-</p>
-                <button type="button" class="ghost" data-open-tab="mail" data-focus-card="mail-unassigned-weekly-card">Редактировать в почте</button>
-              </div>
-              <div class="zone-card">
-                <h3>Личные письма</h3>
-                <p class="muted" id="automationPersonalText">-</p>
-                <button type="button" class="ghost" data-open-tab="mail" data-focus-card="mail-personal-card">Редактировать в почте</button>
-              </div>
-              <div class="zone-card">
-                <h3>Email → SberTrack / Jira</h3>
-                <p class="muted" id="automationSberTrackText">-</p>
-                <button type="button" class="ghost" data-open-tab="sbertrack">Открыть настройки</button>
-              </div>
-              <div class="zone-card">
-                <h3>Защита от спама</h3>
-                <p class="muted">Задержка и пауза применяются только к персональным письмам ответственным.</p>
-                <span class="badge blue">Без дублей настроек</span>
-              </div>
-            </div>
           </div>
         </section>
       </section>
@@ -1643,8 +1688,12 @@
           </section>
         </div>
       </section>
+        </div>
+      </div>
     </section>
   </main>
+
+  <div id="vaMultiSelectLayer" class="va-multi-select-layer" aria-live="polite"></div>
 
   <div id="modalBackdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true">
     <section class="modal-card">
@@ -1737,7 +1786,7 @@
       readError: "",
       rawJson: "",
       dirty: false,
-      activeTab: "overview",
+      activeTab: "employees",
       employeeFilter: "all",
       prefixFilter: "all",
       directory: {
@@ -1871,7 +1920,8 @@
 
     function initTokenFromUrl() {
       const params = new URLSearchParams(window.location.search);
-      const requestedTab = params.get("tab");
+      const legacyTabs = { overview: "employees", automation: "mail" };
+      const requestedTab = legacyTabs[params.get("tab")] || params.get("tab");
       const requestedView = params.get("view");
       if (document.querySelector(`[data-tab="${requestedTab}"]`)) {
         state.activeTab = requestedTab;
@@ -2279,10 +2329,6 @@
       };
     }
 
-    function aliasesToText(aliases) {
-      return (aliases || []).map((alias) => `${alias.type || "full"}|${alias.jira_domain || ""}|${alias.value || ""}`).join("\n");
-    }
-
     function aliasesFromText(value) {
       return String(value || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
         const parts = line.split("|");
@@ -2292,6 +2338,76 @@
           value: parts.join("|").trim()
         };
       });
+    }
+
+    function deduplicateAliases(aliases) {
+      const seen = new Set();
+      return (aliases || []).filter((alias) => {
+        const value = String(alias?.value || "").trim();
+        const type = String(alias?.type || "").trim().toLowerCase();
+        const jiraDomain = String(alias?.jira_domain || "").trim().toLowerCase();
+        const key = `${type}|${jiraDomain}|${value.toLowerCase()}`;
+        if (!value || !type || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }).map((alias) => ({
+        type: String(alias.type || "").trim().toLowerCase(),
+        jira_domain: String(alias.jira_domain || "").trim().toLowerCase(),
+        value: String(alias.value || "").trim()
+      }));
+    }
+
+    function directoryAliasPreview(employee, releaseName, vaEnabled, additionalAliases = []) {
+      const existing = deduplicateAliases([
+        ...(employee.aliases || []),
+        ...additionalAliases
+      ]);
+      const hasStableScheduleIdentity = existing.some((alias) => alias.type === "schedule")
+        || (employee.source_refs || []).some((value) => String(value || "").startsWith("va:employees:"));
+      const generated = [...existing];
+      const normalizedReleaseName = String(releaseName || "").trim();
+      if (normalizedReleaseName) {
+        generated.push(
+          { type: "release", jira_domain: "", value: normalizedReleaseName },
+          { type: "va", jira_domain: "", value: normalizedReleaseName }
+        );
+      }
+      if (vaEnabled && !hasStableScheduleIdentity) {
+        const previousVaName = existing.find((alias) => alias.type === "va")?.value || "";
+        const scheduleName = previousVaName || normalizedReleaseName || String(employee.full_name || "").trim();
+        if (scheduleName) {
+          generated.push({ type: "schedule", jira_domain: "", value: scheduleName });
+        }
+      }
+      return deduplicateAliases(generated);
+    }
+
+    function aliasKindLabel(alias) {
+      return alias.type === "jira" && alias.jira_domain
+        ? `jira:${alias.jira_domain}`
+        : alias.type;
+    }
+
+    function renderDirectoryAliasPreview(row) {
+      const index = Number(row?.dataset.directoryEmployee);
+      const employee = state.directory.employees[index];
+      const target = row?.querySelector("[data-directory-alias-preview]");
+      if (!employee || !target) return;
+      const additional = aliasesFromText(row.querySelector("[data-directory-additional-aliases]")?.value || "");
+      const aliases = directoryAliasPreview(
+        employee,
+        row.querySelector("[data-directory-release-name]")?.value,
+        Boolean(row.querySelector("[data-directory-va-enabled]")?.checked),
+        additional
+      );
+      target.innerHTML = aliases.length
+        ? aliases.map((alias) => `
+          <div class="directory-alias-row">
+            <span class="directory-alias-kind">${escapeHtml(aliasKindLabel(alias))}</span>
+            <span class="directory-alias-value" title="${escapeAttr(alias.value)}">${escapeHtml(alias.value)}</span>
+          </div>
+        `).join("")
+        : '<div class="directory-alias-empty">Алиасы появятся после заполнения Release name.</div>';
     }
 
     function optionalInteger(value) {
@@ -2506,7 +2622,8 @@
 
     function refreshVaMultiSelects() {
       document.querySelectorAll("[data-va-multi-select]").forEach((container) => {
-        const selected = Array.from(container.querySelectorAll("[data-va-competency-option] input:checked"))
+        const menu = getVaMultiSelectMenu(container);
+        const selected = Array.from(menu?.querySelectorAll("[data-va-competency-option] input:checked") || [])
           .map((input) => ({
             code: input.value,
             name: vaCompetencyByCode(input.value)?.name || input.value
@@ -2524,14 +2641,17 @@
     }
 
     function captureVaSettingsDraft(control) {
-      const section = control.closest("[data-va-settings-section]");
+      const owner = getVaMultiSelectOwner(control);
+      const section = control.closest("[data-va-settings-section]")
+        || owner?.closest("[data-va-settings-section]");
       if (!section) return;
       const employeeId = section.dataset.vaEmployeeId || "";
       if (!employeeId) return;
+      const menu = owner ? getVaMultiSelectMenu(owner) : section;
       state.vaDrafts[employeeId] = {
         status: section.querySelector("[data-va-status]")?.value || "active",
         role: section.querySelector("[data-va-role]")?.value || "employee",
-        competencies: Array.from(section.querySelectorAll("[data-va-competency-option] input:checked")).map((input) => input.value),
+        competencies: Array.from(menu?.querySelectorAll("[data-va-competency-option] input:checked") || []).map((input) => input.value),
         overtime_ready: Boolean(section.querySelector("[data-va-overtime]")?.checked)
       };
       const status = section.querySelector("[data-va-settings-status]");
@@ -2542,10 +2662,12 @@
     }
 
     function filterVaCompetencies(container) {
-      const query = (container.querySelector("[data-va-competency-search]")?.value || "").trim().toLowerCase();
-      const selectedOnly = container.querySelector("[data-va-competency-filter].active")?.dataset.vaCompetencyFilter === "selected";
+      const menu = getVaMultiSelectMenu(container);
+      if (!menu) return;
+      const query = (menu.querySelector("[data-va-competency-search]")?.value || "").trim().toLowerCase();
+      const selectedOnly = menu.querySelector("[data-va-competency-filter].active")?.dataset.vaCompetencyFilter === "selected";
       let visibleCount = 0;
-      container.querySelectorAll("[data-va-competency-option]").forEach((row) => {
+      menu.querySelectorAll("[data-va-competency-option]").forEach((row) => {
         const input = row.querySelector("input");
         const matches = (!query || row.textContent.toLowerCase().includes(query))
           && (!selectedOnly || input?.checked);
@@ -2553,10 +2675,112 @@
         row.classList.toggle("selected", Boolean(input?.checked));
         if (matches) visibleCount += 1;
       });
-      container.querySelector("[data-va-multi-select-empty]")?.classList.toggle("hidden", visibleCount > 0);
+      menu.querySelector("[data-va-multi-select-empty]")?.classList.toggle("hidden", visibleCount > 0);
+    }
+
+    const vaMultiSelectOverlay = {
+      owner: null,
+      menu: null,
+      placeholder: null,
+      frame: 0
+    };
+
+    function getVaMultiSelectOwner(element) {
+      return element?.closest?.("[data-va-multi-select]")
+        || (vaMultiSelectOverlay.menu?.contains(element) ? vaMultiSelectOverlay.owner : null);
+    }
+
+    function getVaMultiSelectMenu(container) {
+      if (vaMultiSelectOverlay.owner === container) return vaMultiSelectOverlay.menu;
+      return container?.querySelector?.(".va-multi-select-menu") || null;
+    }
+
+    function positionVaMultiSelect() {
+      const { owner, menu } = vaMultiSelectOverlay;
+      const toggle = owner?.querySelector("[data-va-multi-select-toggle]");
+      if (!owner || !menu || !toggle || !document.body.contains(toggle)) {
+        closeVaMultiSelect();
+        return;
+      }
+      const rect = toggle.getBoundingClientRect();
+      const viewportWidth = document.documentElement.clientWidth;
+      const viewportHeight = document.documentElement.clientHeight;
+      const margin = 12;
+      const gap = 6;
+      const spaceBelow = viewportHeight - rect.bottom - margin;
+      const spaceAbove = rect.top - margin;
+      const openAbove = spaceBelow < 260 && spaceAbove > spaceBelow;
+      const availableHeight = Math.max(150, Math.min(380, (openAbove ? spaceAbove : spaceBelow) - gap));
+      const width = Math.min(420, Math.max(rect.width, 300), viewportWidth - margin * 2);
+      const left = Math.max(margin, Math.min(rect.left, viewportWidth - width - margin));
+      menu.style.width = `${width}px`;
+      menu.style.maxHeight = `${availableHeight}px`;
+      menu.style.left = `${left}px`;
+      menu.style.top = openAbove
+        ? `${Math.max(margin, rect.top - gap - Math.min(menu.scrollHeight, availableHeight))}px`
+        : `${Math.min(viewportHeight - margin - availableHeight, rect.bottom + gap)}px`;
+      const toolsHeight = menu.querySelector(".va-multi-select-tools")?.offsetHeight || 0;
+      const options = menu.querySelector(".va-multi-select-options");
+      if (options) options.style.maxHeight = `${Math.max(90, availableHeight - toolsHeight - 2)}px`;
+    }
+
+    function scheduleVaMultiSelectPosition() {
+      if (!vaMultiSelectOverlay.owner || vaMultiSelectOverlay.frame) return;
+      vaMultiSelectOverlay.frame = requestAnimationFrame(() => {
+        vaMultiSelectOverlay.frame = 0;
+        positionVaMultiSelect();
+      });
+    }
+
+    function openVaMultiSelect(container) {
+      if (!container || vaMultiSelectOverlay.owner === container) {
+        closeVaMultiSelect();
+        return;
+      }
+      closeVaMultiSelect();
+      const menu = container.querySelector(".va-multi-select-menu");
+      const toggle = container.querySelector("[data-va-multi-select-toggle]");
+      if (!menu || !toggle || toggle.disabled) return;
+      const placeholder = document.createComment("va-multi-select-menu");
+      menu.parentNode.insertBefore(placeholder, menu);
+      $("vaMultiSelectLayer").appendChild(menu);
+      vaMultiSelectOverlay.owner = container;
+      vaMultiSelectOverlay.menu = menu;
+      vaMultiSelectOverlay.placeholder = placeholder;
+      container.classList.add("open");
+      menu.classList.add("floating");
+      toggle.setAttribute("aria-expanded", "true");
+      filterVaCompetencies(container);
+      positionVaMultiSelect();
+      setTimeout(() => menu.querySelector("[data-va-competency-search]")?.focus(), 0);
+    }
+
+    function closeVaMultiSelect({ restoreFocus = false } = {}) {
+      const { owner, menu, placeholder, frame } = vaMultiSelectOverlay;
+      if (frame) cancelAnimationFrame(frame);
+      const toggle = owner?.querySelector("[data-va-multi-select-toggle]");
+      owner?.classList.remove("open");
+      toggle?.setAttribute("aria-expanded", "false");
+      if (menu) {
+        menu.classList.remove("floating");
+        menu.removeAttribute("style");
+        menu.querySelector(".va-multi-select-options")?.removeAttribute("style");
+        if (placeholder?.parentNode) {
+          placeholder.parentNode.insertBefore(menu, placeholder);
+          placeholder.remove();
+        } else {
+          menu.remove();
+        }
+      }
+      vaMultiSelectOverlay.owner = null;
+      vaMultiSelectOverlay.menu = null;
+      vaMultiSelectOverlay.placeholder = null;
+      vaMultiSelectOverlay.frame = 0;
+      if (restoreFocus) toggle?.focus();
     }
 
     function showDirectoryView(view) {
+      closeVaMultiSelect();
       state.directoryView = view === "competencies" ? "competencies" : "employees";
       document.querySelectorAll("[data-directory-view]").forEach((button) => {
         button.classList.toggle("active", button.dataset.directoryView === state.directoryView);
@@ -2564,6 +2788,12 @@
       document.querySelectorAll("[data-directory-subview]").forEach((panel) => {
         panel.classList.toggle("active", panel.dataset.directorySubview === state.directoryView);
       });
+      if (state.activeTab === "employees") {
+        const params = new URLSearchParams(window.location.search);
+        params.set("tab", "employees");
+        params.set("view", state.directoryView);
+        window.history.replaceState({}, document.title, `${window.location.pathname}?${params.toString()}`);
+      }
     }
 
     function renderCompetencies() {
@@ -2597,6 +2827,7 @@
     }
 
     function renderDirectoryEmployees() {
+      closeVaMultiSelect();
       const employees = state.directory.employees || [];
       if (state.directory.selectedIndex >= employees.length) {
         state.directory.selectedIndex = Math.max(0, employees.length - 1);
@@ -2605,6 +2836,13 @@
         const memberships = employee.memberships || {};
         const release = memberships.release_monitor || { enabled: false, order: null };
         const dashboard = memberships.duty_dashboard || { enabled: false, role: "none", order: null };
+        const location = String(employee.location || "").trim().toLowerCase();
+        const locationInvalid = Boolean(location && !["moscow", "khabarovsk"].includes(location));
+        const aliases = directoryAliasPreview(
+          employee,
+          employee.release_name,
+          Boolean(memberships.va_schedule_manager?.enabled)
+        );
         return `
           <div class="directory-entry ${index === state.directory.selectedIndex ? "active" : ""}" data-directory-employee="${index}">
             <div class="directory-entry-head">
@@ -2631,7 +2869,12 @@
                 <div><label>Jira Sberbank</label><input data-directory-jira-sberbank value="${escapeAttr(employee.jira_names?.sberbank || "")}"></div>
                 <div><label>Email, по одному в строке</label><textarea data-directory-emails>${escapeHtml(lines(employee.emails || []))}</textarea></div>
                 <div><label>Телефон</label><input data-directory-phone value="${escapeAttr(employee.phone || "")}"></div>
-                <div><label>Локация</label><input data-directory-location value="${escapeAttr(employee.location || "")}"></div>
+                <div><label>Локация</label><select data-directory-location class="${locationInvalid ? "invalid" : ""}">
+                  <option value="" ${location ? "" : "selected"}>Не выбрана</option>
+                  <option value="moscow" ${location === "moscow" ? "selected" : ""}>Москва</option>
+                  <option value="khabarovsk" ${location === "khabarovsk" ? "selected" : ""}>Хабаровск</option>
+                  ${locationInvalid ? `<option value="${escapeAttr(location)}" selected>Некорректное значение: ${escapeHtml(location)}</option>` : ""}
+                </select></div>
                 <div><label>Табельный номер</label><input data-directory-personnel value="${escapeAttr(employee.personnel_number || "")}"></div>
               </div>
             </section>
@@ -2665,8 +2908,21 @@
             </section>
             ${renderVaSettingsSection(employee, index)}
             <details class="directory-advanced">
-              <summary>Дополнительные идентификаторы</summary>
-              <div class="directory-advanced-body"><label>Aliases: type|jira_domain|value</label><textarea data-directory-aliases>${escapeHtml(aliasesToText(employee.aliases || []))}</textarea></div>
+              <summary>Алиасы и исторические имена</summary>
+              <div class="directory-advanced-body">
+                <label>Автоматические и сохранённые алиасы</label>
+                <div class="directory-alias-list" data-directory-alias-preview>
+                  ${aliases.length ? aliases.map((alias) => `
+                    <div class="directory-alias-row">
+                      <span class="directory-alias-kind">${escapeHtml(aliasKindLabel(alias))}</span>
+                      <span class="directory-alias-value" title="${escapeAttr(alias.value)}">${escapeHtml(alias.value)}</span>
+                    </div>
+                  `).join("") : '<div class="directory-alias-empty">Алиасы появятся после заполнения Release name.</div>'}
+                </div>
+                <label>Добавить дополнительные алиасы</label>
+                <textarea data-directory-additional-aliases placeholder="full||Историческое ФИО&#10;jira|delta|Историческое Jira-имя"></textarea>
+                <span class="directory-alias-help">Формат: type|jira_domain|value. Обязательные release, va и schedule формируются сервером и не удаляются обычным сохранением.</span>
+              </div>
             </details>
             </div>
           `;
@@ -2690,7 +2946,10 @@
             delta: row.querySelector("[data-directory-jira-delta]").value.trim(),
             sberbank: row.querySelector("[data-directory-jira-sberbank]").value.trim()
           },
-          aliases: aliasesFromText(row.querySelector("[data-directory-aliases]").value),
+          aliases: deduplicateAliases([
+            ...(current.aliases || []),
+            ...aliasesFromText(row.querySelector("[data-directory-additional-aliases]")?.value || "")
+          ]),
           emails: splitLines(row.querySelector("[data-directory-emails]").value).map((value) => value.toLowerCase()),
           phone: row.querySelector("[data-directory-phone]").value.trim(),
           location: row.querySelector("[data-directory-location]").value.trim(),
@@ -3002,36 +3261,11 @@
       if (!state.config) return;
       const config = currentFormConfig();
       const responsible = config.automation.release_monitor_responsible_email;
-      const unassigned = config.automation.release_monitor_unassigned_email;
-      const sbertrack = config.automation.email_to_sbertrack || {};
       const employees = responsible.employee_recipients || [];
-      const prefixes = config.release_monitor.prefixes || [];
-      const sbertrackUsers = config.sbertrack_users || [];
       const activeEmployees = employees.filter((row) => row.enabled !== false).length;
       const totalEmployeeEmails = employees.reduce((total, row) => total + (row.emails || []).length, 0);
-      const enabledPrefixes = prefixes.filter((row) => row.enabled !== false).length;
-      const enabledMail = [
-        unassigned.enabled,
-        unassigned.weekly_reminder_enabled,
-        responsible.weekly_digest_enabled,
-        responsible.enabled,
-        sbertrack.enabled
-      ].filter(Boolean).length;
-      const closedSections = Object.values(config.maintenance || {}).filter(Boolean).length;
-      $("summaryMail").textContent = String(enabledMail);
-      $("summaryEmployees").textContent = String(activeEmployees);
-      $("summaryEmployeeEmails").textContent = `${totalEmployeeEmails} email-адресов`;
-      $("summaryPrefixes").textContent = String(enabledPrefixes);
-      $("summaryDelay").textContent = `${responsible.assignment_email_delay_minutes || 0} мин`;
-      $("overviewMaintenanceBadge").textContent = `${closedSections} закрыто`;
-      $("overviewEmployeesBadge").textContent = `${activeEmployees} активных`;
-      $("overviewPrefixesBadge").textContent = `${enabledPrefixes} включено`;
       $("personalActiveEmployees").textContent = String(activeEmployees);
       $("personalEmailCount").textContent = String(totalEmployeeEmails);
-      $("automationWeeklyText").textContent = `${responsible.weekly_digest_enabled ? "Включено" : "Выключено"} · понедельник ${responsible.weekly_digest_time || "16:00"}`;
-      $("automationReminderText").textContent = `${unassigned.weekly_reminder_enabled ? "Включено" : "Выключено"} · понедельник ${unassigned.weekly_reminder_time || "09:00"}`;
-      $("automationPersonalText").textContent = `${responsible.enabled ? "Включено" : "Выключено"} · задержка ${responsible.assignment_email_delay_minutes || 0} мин · пауза ${responsible.personal_email_send_interval_seconds || 0} сек`;
-      $("automationSberTrackText").textContent = `${sbertrack.enabled ? "Включено" : "Выключено"} · ${sbertrack.dry_run ? "dry-run" : "боевой режим"} · правил ${(sbertrack.routes || []).length} · users ${sbertrackUsers.length}`;
     }
 
     function renderSystemOptions() {
@@ -3062,7 +3296,7 @@
       $("appBox").classList.remove("hidden");
       markClean();
       refreshDerived();
-      showTab(state.activeTab || "overview");
+      showTab(state.activeTab || "employees");
       if (payload.read_error) {
         setStatus(`Файл feature_flags.json сейчас поврежден: ${payload.read_error}. После сохранения будет создана валидная структура, старое содержимое уйдет в backup.`, "error");
       } else {
@@ -3071,9 +3305,23 @@
     }
 
     function showTab(name, focusCardId = "") {
+      closeVaMultiSelect();
+      if (!document.querySelector(`[data-tab="${name}"]`)) name = "employees";
       state.activeTab = name;
       document.querySelectorAll("[data-panel]").forEach((panel) => panel.classList.toggle("active", panel.dataset.panel === name));
-      document.querySelectorAll("[data-tab]").forEach((button) => button.classList.toggle("active", button.dataset.tab === name));
+      document.querySelectorAll("[data-tab]").forEach((button) => {
+        const active = button.dataset.tab === name;
+        button.classList.toggle("active", active);
+        if (active) button.setAttribute("aria-current", "page");
+        else button.removeAttribute("aria-current");
+      });
+      const params = new URLSearchParams(window.location.search);
+      params.set("tab", name);
+      if (name === "employees" && !params.get("view")) params.set("view", state.directoryView);
+      if (name !== "employees") params.delete("view");
+      const nextUrl = `${window.location.pathname}?${params.toString()}`;
+      window.history.replaceState({}, document.title, nextUrl);
+      document.querySelector(`[data-tab="${name}"]`)?.scrollIntoView({ block: "nearest", inline: "nearest" });
       if (focusCardId) {
         setTimeout(() => $(focusCardId)?.scrollIntoView({ block: "center", behavior: "smooth" }), 50);
       }
@@ -3236,28 +3484,20 @@
       const vaMultiSelectToggle = event.target.closest("[data-va-multi-select-toggle]");
       if (vaMultiSelectToggle) {
         const container = vaMultiSelectToggle.closest("[data-va-multi-select]");
-        const willOpen = !container.classList.contains("open");
-        document.querySelectorAll("[data-va-multi-select].open").forEach((item) => {
-          item.classList.remove("open");
-          item.querySelector("[data-va-multi-select-toggle]")?.setAttribute("aria-expanded", "false");
-        });
-        container.classList.toggle("open", willOpen);
-        vaMultiSelectToggle.setAttribute("aria-expanded", String(willOpen));
-        if (willOpen) {
-          filterVaCompetencies(container);
-          setTimeout(() => container.querySelector("[data-va-competency-search]")?.focus(), 0);
-        }
-      } else if (!event.target.closest("[data-va-multi-select]")) {
-        document.querySelectorAll("[data-va-multi-select].open").forEach((item) => {
-          item.classList.remove("open");
-          item.querySelector("[data-va-multi-select-toggle]")?.setAttribute("aria-expanded", "false");
-        });
+        openVaMultiSelect(container);
+      } else if (
+        vaMultiSelectOverlay.owner
+        && !vaMultiSelectOverlay.owner.contains(event.target)
+        && !vaMultiSelectOverlay.menu?.contains(event.target)
+      ) {
+        closeVaMultiSelect();
       }
 
       const vaCompetencyFilter = event.target.closest("[data-va-competency-filter]");
       if (vaCompetencyFilter) {
-        const container = vaCompetencyFilter.closest("[data-va-multi-select]");
-        container.querySelectorAll("[data-va-competency-filter]").forEach((button) => {
+        const container = getVaMultiSelectOwner(vaCompetencyFilter);
+        const menu = getVaMultiSelectMenu(container);
+        menu?.querySelectorAll("[data-va-competency-filter]").forEach((button) => {
           button.classList.toggle("active", button === vaCompetencyFilter);
         });
         filterVaCompetencies(container);
@@ -3358,7 +3598,7 @@
 
     document.addEventListener("change", (event) => {
       if (event.target.matches("[data-va-competency-option] input")) {
-        const container = event.target.closest("[data-va-multi-select]");
+        const container = getVaMultiSelectOwner(event.target);
         captureVaSettingsDraft(event.target);
         refreshVaMultiSelects();
         filterVaCompetencies(container);
@@ -3389,7 +3629,8 @@
         return;
       }
       if (event.target.matches("[data-directory-va-enabled]")) {
-        const orderInput = event.target.closest("[data-directory-employee]")?.querySelector("[data-directory-va-order]");
+        const row = event.target.closest("[data-directory-employee]");
+        const orderInput = row?.querySelector("[data-directory-va-order]");
         if (event.target.checked) {
           fillDirectoryOrder(
             event.target,
@@ -3399,6 +3640,15 @@
         } else if (orderInput) {
           orderInput.value = "";
         }
+        syncDirectoryStateFromForm();
+        renderDirectoryAliasPreview(row);
+        return;
+      }
+      if (event.target.matches("[data-directory-location]")) {
+        event.target.classList.toggle(
+          "invalid",
+          Boolean(event.target.value && !["moscow", "khabarovsk"].includes(event.target.value))
+        );
         syncDirectoryStateFromForm();
         return;
       }
@@ -3460,7 +3710,13 @@
 
     document.addEventListener("input", (event) => {
       if (event.target.matches("[data-va-competency-search]")) {
-        filterVaCompetencies(event.target.closest("[data-va-multi-select]"));
+        filterVaCompetencies(getVaMultiSelectOwner(event.target));
+        return;
+      }
+      if (event.target.matches("[data-directory-release-name], [data-directory-full-name], [data-directory-additional-aliases]")) {
+        const row = event.target.closest("[data-directory-employee]");
+        syncDirectoryStateFromForm();
+        renderDirectoryAliasPreview(row);
         return;
       }
       if (event.target.matches("[data-dirty-field]")) markDirty();
@@ -3540,11 +3796,10 @@
         closeCompetencyModal();
         return;
       }
-      document.querySelectorAll("[data-va-multi-select].open").forEach((item) => {
-        item.classList.remove("open");
-        item.querySelector("[data-va-multi-select-toggle]")?.setAttribute("aria-expanded", "false");
-      });
+      closeVaMultiSelect({ restoreFocus: true });
     });
+    window.addEventListener("resize", scheduleVaMultiSelectPosition);
+    window.addEventListener("scroll", scheduleVaMultiSelectPosition, true);
     $("saveBtn").addEventListener("click", saveData);
     $("reloadBtn").addEventListener("click", () => loadData());
     $("resetBtn").addEventListener("click", resetChanges);

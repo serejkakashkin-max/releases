@@ -60,7 +60,7 @@ def get_managed_va_employees(
                 email=emails[0] if emails else "",
                 phone=employee.get("phone") or "",
                 personnel_number=employee.get("personnel_number") or None,
-                location=employee.get("location") or "moscow",
+                location=employee.get("location") or "",
                 enabled=True,
                 order=int(membership["order"]),
                 status=effective["status"],
