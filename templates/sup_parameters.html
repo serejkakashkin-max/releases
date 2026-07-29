@@ -49,8 +49,15 @@
       padding: 10px 14px;
       font-weight: 800;
       cursor: pointer;
+      transition:
+        transform 120ms ease,
+        border-color 160ms ease,
+        background-color 160ms ease,
+        box-shadow 160ms ease,
+        color 160ms ease;
     }
     button:hover { border-color: rgba(77, 149, 255, 0.7); }
+    button:not(:disabled):active { transform: translateY(1px) scale(0.985); }
     button.primary { background: #0d6efd; border-color: #0d6efd; }
     button.ghost { background: rgba(17, 25, 38, 0.42); }
     button.danger { color: #ffd7de; border-color: rgba(255, 99, 128, 0.45); }
@@ -68,6 +75,36 @@
       place-items: center;
     }
     button:disabled { opacity: 0.55; cursor: not-allowed; }
+    button.action-busy,
+    button.action-success,
+    button.action-error {
+      opacity: 1;
+      cursor: wait;
+    }
+    button.action-busy {
+      border-color: rgba(142, 188, 255, 0.72);
+      background: #245a9f;
+      box-shadow: 0 0 0 3px rgba(77, 149, 255, 0.14);
+    }
+    button.action-success {
+      border-color: rgba(33, 211, 155, 0.78);
+      background: #147a61;
+      color: #f2fff9;
+      box-shadow: 0 0 0 3px rgba(33, 211, 155, 0.14);
+      cursor: default;
+      animation: action-confirm 420ms ease-out;
+    }
+    button.action-error {
+      border-color: rgba(255, 99, 128, 0.78);
+      background: #8a2940;
+      color: #fff3f6;
+      cursor: default;
+    }
+    @keyframes action-confirm {
+      0% { transform: scale(0.97); }
+      55% { transform: scale(1.025); }
+      100% { transform: scale(1); }
+    }
     input, select, textarea {
       width: 100%;
       color: var(--text);
@@ -161,6 +198,7 @@
       color: var(--muted-2);
       white-space: pre-line;
     }
+    .status:empty { display: none; }
     .status.error {
       color: #ffd6df;
       border-color: rgba(255, 99, 128, 0.45);
@@ -565,6 +603,15 @@
     .notice-warning { border-color: rgba(245, 158, 11, 0.55); color: #fde68a; }
     .notice-success { border-color: rgba(16, 185, 129, 0.55); }
     .notice-error { border-color: rgba(239, 68, 68, 0.55); }
+    .inline-status {
+      min-height: 18px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .inline-status:empty { display: none; }
+    .inline-status.warning { color: #fde68a; }
+    .inline-status.error { color: #ffd6df; }
     .directory-actions { display: flex; gap: 8px; flex-wrap: wrap; }
     .directory-health {
       display: flex;
@@ -1350,9 +1397,6 @@
                 <div id="directoryEmployeeEmpty" class="empty-state">Справочник пока не содержит сотрудников.</div>
               </div>
             </div>
-            <div class="notice notice-info">
-              Employee Directory является единственным источником сотрудников для пяти подключённых сервисов.
-            </div>
             </div>
             <div class="directory-subview" data-directory-subview="competencies">
               <div class="directory-toolbar competency-toolbar">
@@ -1781,11 +1825,51 @@
 
     const $ = (id) => document.getElementById(id);
     const clone = (value) => JSON.parse(JSON.stringify(value || {}));
+    const buttonFeedbackTimers = new WeakMap();
 
     function setStatus(message, kind = "") {
       const box = $("statusBox");
       box.textContent = message;
       box.className = `status ${kind || ""}`.trim();
+    }
+
+    function beginButtonAction(button, label = "Сохранение...") {
+      if (!button) return;
+      const timer = buttonFeedbackTimers.get(button);
+      if (timer) clearTimeout(timer);
+      if (!button.dataset.actionIdleLabel) {
+        button.dataset.actionIdleLabel = button.textContent.trim();
+      }
+      button.classList.remove("action-success", "action-error");
+      button.classList.add("action-busy");
+      button.textContent = label;
+      button.disabled = true;
+      button.setAttribute("aria-busy", "true");
+    }
+
+    function finishButtonAction(button, {
+      success = true,
+      label = success ? "Сохранено" : "Не сохранено",
+      disabled = false,
+      duration = 1500
+    } = {}) {
+      if (!button) return;
+      const timer = buttonFeedbackTimers.get(button);
+      if (timer) clearTimeout(timer);
+      const idleLabel = button.dataset.actionIdleLabel || button.textContent.trim();
+      button.classList.remove("action-busy", "action-success", "action-error");
+      button.classList.add(success ? "action-success" : "action-error");
+      button.textContent = label;
+      button.disabled = true;
+      button.removeAttribute("aria-busy");
+      const restoreTimer = window.setTimeout(() => {
+        if (!button.isConnected) return;
+        button.classList.remove("action-success", "action-error");
+        button.textContent = idleLabel;
+        button.disabled = disabled;
+        buttonFeedbackTimers.delete(button);
+      }, duration);
+      buttonFeedbackTimers.set(button, restoreTimer);
     }
 
     function getToken() {
@@ -2400,9 +2484,9 @@
       $("saveDirectoryBtn").disabled = !writable;
       $("addDirectoryEmployeeBtn").disabled = !writable;
       $("directoryStatusText").textContent = writable
-        ? "Справочник готов к редактированию. Активные режимы потребителей отображаются ниже."
+        ? ""
         : "Справочник нельзя редактировать до явного восстановления его состояния.";
-      $("directoryStatusText").className = `status ${writable ? "success" : "error"}`;
+      $("directoryStatusText").className = `status ${writable ? "" : "error"}`.trim();
       renderDirectoryEmployees();
     }
 
@@ -2556,7 +2640,7 @@
             </label>
           </div>
           <div class="va-settings-actions">
-            <div class="status ${reason ? "warning" : "success"}" data-va-settings-status>${escapeHtml(reason || "Настройки можно сохранить независимо от общих данных сотрудника.")}</div>
+            <div class="inline-status ${reason ? "warning" : ""}" data-va-settings-status>${escapeHtml(reason)}</div>
             <button type="button" class="primary" data-save-va-settings ${disabled}>Сохранить настройки графика</button>
           </div>
         </section>
@@ -2600,7 +2684,7 @@
       const status = section.querySelector("[data-va-settings-status]");
       if (status) {
         status.textContent = "Есть несохранённые изменения настроек графика.";
-        status.className = "status warning";
+        status.className = "inline-status warning";
       }
     }
 
@@ -2749,8 +2833,8 @@
       $("competencyEtagText").textContent = `etag: ${catalog.etag || "missing"}`;
       $("competencyStatusText").textContent = catalog.status === "invalid"
         ? "Справочник компетенций повреждён. Изменения заблокированы."
-        : "Системные компетенции защищены. Код пользовательской компетенции задаётся один раз.";
-      $("competencyStatusText").className = `status ${catalog.status === "invalid" ? "error" : "success"}`;
+        : "";
+      $("competencyStatusText").className = `status ${catalog.status === "invalid" ? "error" : ""}`.trim();
       $("addCompetencyBtn").disabled = catalog.status === "invalid";
       $("competencyRows").innerHTML = items.map((item) => `
         <tr>
@@ -2943,6 +3027,9 @@
     }
 
     async function saveEmployeeDirectory() {
+      const button = $("saveDirectoryBtn");
+      setStatus("");
+      beginButtonAction(button);
       try {
         const payload = await adminApi(BASE_PATH + "/admin/sup-parameters/employee-directory/save", {
           method: "POST",
@@ -2954,12 +3041,14 @@
         });
         renderEmployeeDirectory(payload);
         await loadVaScheduleManagerData();
-        setStatus("Центральный справочник сохранён.", "success");
+        setStatus("");
+        finishButtonAction(button, { disabled: button.disabled });
       } catch (error) {
         const details = Array.isArray(error.payload?.errors)
           ? error.payload.errors.map((item) => typeof item === "string" ? item : `${item.path}: ${item.code}`).join("\n")
           : "";
         setStatus(`${error.message}${details ? "\n" + details : ""}`, "error");
+        finishButtonAction(button, { success: false, disabled: false });
       }
     }
 
@@ -3007,11 +3096,8 @@
         competencies: Array.from(section.querySelectorAll("[data-va-competency-option] input:checked")).map((input) => input.value),
         overtime_ready: section.querySelector("[data-va-overtime]").checked
       };
-      button.disabled = true;
-      if (statusBox) {
-        statusBox.textContent = "Сохраняю настройки графика...";
-        statusBox.className = "status";
-      }
+      beginButtonAction(button);
+      if (statusBox) statusBox.textContent = "";
       try {
         const payload = await adminApi(
           BASE_PATH + `/admin/sup-parameters/va-schedule-manager/employees/${encodeURIComponent(employeeId)}/settings`,
@@ -3027,12 +3113,17 @@
         );
         delete state.vaDrafts[employeeId];
         renderVaScheduleManagerData(payload);
-        setStatus("Настройки графика сотрудника сохранены.", "success");
+        setStatus("");
+        const savedSection = Array.from(document.querySelectorAll("[data-va-settings-section]"))
+          .find((item) => item.dataset.vaEmployeeId === employeeId);
+        finishButtonAction(savedSection?.querySelector("[data-save-va-settings]"), {
+          disabled: Boolean(savedSection?.querySelector("[data-save-va-settings]")?.disabled)
+        });
       } catch (error) {
-        button.disabled = false;
+        finishButtonAction(button, { success: false, disabled: false });
         if (statusBox) {
           statusBox.textContent = error.message;
-          statusBox.className = "status error";
+          statusBox.className = "inline-status error";
         }
       }
     }
@@ -3068,7 +3159,8 @@
       const path = editing
         ? BASE_PATH + `/admin/sup-parameters/va-schedule-manager/competencies/${encodeURIComponent(state.competencyModal.code)}`
         : BASE_PATH + "/admin/sup-parameters/va-schedule-manager/competencies";
-      $("competencyModalSaveBtn").disabled = true;
+      const button = $("competencyModalSaveBtn");
+      beginButtonAction(button);
       try {
         const payload = await adminApi(path, {
           method: editing ? "PATCH" : "POST",
@@ -3078,16 +3170,16 @@
           })
         });
         state.va.competencies = clone(payload.competencies);
-        closeCompetencyModal();
         renderDirectoryEmployees();
         renderCompetencies();
         showDirectoryView("competencies");
-        setStatus(editing ? "Компетенция обновлена." : "Компетенция добавлена.", "success");
+        setStatus("");
+        finishButtonAction(button, { duration: 700 });
+        window.setTimeout(closeCompetencyModal, 700);
       } catch (error) {
         $("competencyModalStatus").textContent = error.message;
         $("competencyModalStatus").className = "status error";
-      } finally {
-        $("competencyModalSaveBtn").disabled = false;
+        finishButtonAction(button, { success: false, disabled: false });
       }
     }
 
@@ -3106,7 +3198,7 @@
         renderDirectoryEmployees();
         renderCompetencies();
         showDirectoryView("competencies");
-        setStatus("Компетенция удалена.", "success");
+        setStatus("");
       } catch (error) {
         setStatus(error.message, "error");
       }
@@ -3243,7 +3335,7 @@
       if (payload.read_error) {
         setStatus(`Файл feature_flags.json сейчас поврежден: ${payload.read_error}. После сохранения будет создана валидная структура, старое содержимое уйдет в backup.`, "error");
       } else {
-        setStatus("СУП-параметры загружены.", "success");
+        setStatus("");
       }
     }
 
@@ -3300,8 +3392,9 @@
     }
 
     async function saveData() {
-      setStatus("Сохраняю СУП-параметры...");
-      $("saveBtn").disabled = true;
+      const button = $("saveBtn");
+      setStatus("");
+      beginButtonAction(button);
       clearTabErrors();
       try {
         const payload = await api(BASE_PATH + "/admin/sup-parameters/save", {
@@ -3309,7 +3402,8 @@
           body: JSON.stringify({ revision: state.revision, config: collectConfig() })
         });
         render(payload);
-        setStatus("СУП-параметры сохранены. Приложение перечитает изменения без перезапуска.", "success");
+        setStatus("");
+        finishButtonAction(button, { disabled: true });
       } catch (error) {
         const errors = error.payload && Array.isArray(error.payload.errors)
           ? error.payload.errors
@@ -3317,12 +3411,13 @@
         markErrorTabs(errors.join("\n") || error.message);
         const details = errors.length ? "\n" + errors.join("\n") : "";
         setStatus(`${error.message}${details}`, "error");
-        $("saveBtn").disabled = false;
+        finishButtonAction(button, { success: false, disabled: false });
       }
     }
 
     function resetChanges() {
       if (!state.loadedConfig) return;
+      const button = $("resetBtn");
       state.config = clone(state.loadedConfig);
       renderMaintenance(state.config.maintenance || {});
       renderMail(state.config);
@@ -3332,7 +3427,8 @@
       renderVaScheduleManager(state.metadata.va_schedule_manager || {});
       markClean();
       renderMetadata({ metadata: state.metadata, revision: state.revision, read_error: state.readError, path: state.path });
-      setStatus("Изменения сброшены до последней загруженной версии.", "success");
+      setStatus("");
+      finishButtonAction(button, { label: "Сброшено", disabled: true });
     }
 
     function clearTabErrors() {
@@ -3748,11 +3844,15 @@
     $("resetBtn").addEventListener("click", resetChanges);
     $("vaScheduleManagerEnabled").addEventListener("change", markDirty);
     $("loginAdminSessionBtn").addEventListener("click", async () => {
+      const button = $("loginAdminSessionBtn");
+      beginButtonAction(button, "Проверка...");
       try {
         await ensureAdminSession();
-        setStatus("Admin-session активна.", "success");
+        setStatus("");
+        finishButtonAction(button, { label: "Доступ открыт", disabled: false });
       } catch (error) {
         setStatus(error.message, "error");
+        finishButtonAction(button, { success: false, disabled: false });
       }
     });
     $("openVaScheduleManagerBtn").addEventListener("click", async () => {

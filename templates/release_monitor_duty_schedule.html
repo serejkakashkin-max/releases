@@ -37,7 +37,7 @@
         <div class="notice danger"><strong>Резервная копия.</strong> Эти данные показаны только для просмотра и не используются для автоматических назначений.</div>
         {% elif not provider_status.authoritative %}
         <div class="notice danger">График временно недоступен. Автоматические назначения по графику приостановлены, ручные назначения доступны.</div>
-        {% elif provider_status.status == 'mapping_warnings' %}
+        {% elif selected_month_has_mapping_warnings %}
         <div class="notice warning">В графике есть несопоставленные или неоднозначные записи. Корректные даты продолжают использоваться.</div>
         {% endif %}
 

@@ -427,11 +427,20 @@ def release_monitor_duty_schedule_page():
         fallback_month = True
 
     month_grid = get_duty_schedule_month(selected_year, selected_month)
+    selected_month_key = f"{selected_year:04d}-{selected_month:02d}"
+    selected_month_has_mapping_warnings = bool(month_grid.get("warnings"))
+    if not selected_month_has_mapping_warnings:
+        selected_month_has_mapping_warnings = any(
+            isinstance(warning, dict)
+            and str(warning.get("month") or "") == selected_month_key
+            for warning in (status.get("warnings") or [])
+        )
     return render_template(
         "release_monitor_duty_schedule.html",
         basepath=BASE_PATH,
         provider_status=status,
         month_grid=month_grid,
+        selected_month_has_mapping_warnings=selected_month_has_mapping_warnings,
         available_months=available,
         selected_year=selected_year,
         selected_month=selected_month,
