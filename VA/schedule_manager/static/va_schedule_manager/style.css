@@ -919,7 +919,6 @@ textarea:focus-visible {
 
 .employee-form label,
 .competency-form label,
-.multi-select-field,
 .shift-form label,
 .modal-shift-form label,
 .integration-form label,
@@ -993,202 +992,6 @@ textarea:focus-visible {
 .competency-form .actions,
 .wide-field {
   grid-column: 1 / -1;
-}
-
-.multi-select-field {
-  min-width: 0;
-  position: relative;
-}
-
-.multi-select-toggle {
-  align-items: flex-start;
-  background: #ffffff;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  color: var(--text);
-  cursor: pointer;
-  display: flex;
-  gap: 6px;
-  font: inherit;
-  justify-content: space-between;
-  min-height: 44px;
-  padding: 8px 36px 8px 10px;
-  position: relative;
-  text-align: left;
-  width: 100%;
-}
-
-.multi-select-toggle::after {
-  border-left: 5px solid transparent;
-  border-right: 5px solid transparent;
-  border-top: 6px solid var(--muted);
-  content: "";
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-}
-
-.multi-select-field.open .multi-select-toggle {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--focus-ring);
-}
-
-.multi-select-placeholder {
-  color: var(--muted);
-  line-height: 26px;
-}
-
-.multi-select-value {
-  display: flex;
-  flex: 1 1 auto;
-  flex-wrap: wrap;
-  gap: 5px;
-  min-width: 0;
-}
-
-.multi-select-chip {
-  align-items: center;
-  background: #edf4ff;
-  border: 1px solid #cfe1ff;
-  border-radius: 999px;
-  color: #1849a9;
-  display: inline-flex;
-  font-size: 12px;
-  font-weight: 800;
-  line-height: 1.2;
-  max-width: 100%;
-  min-height: 24px;
-  overflow: hidden;
-  padding: 4px 9px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.multi-select-chip-more {
-  background: #f1f5f9;
-  border-color: #d8e0ea;
-  color: var(--muted);
-}
-
-.multi-select-menu {
-  background: #ffffff;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  box-shadow: 0 18px 44px rgba(16, 24, 40, 0.18);
-  display: none;
-  left: 0;
-  max-height: min(360px, 58vh);
-  min-width: min(420px, calc(100vw - 48px));
-  overflow: hidden;
-  padding: 8px;
-  position: absolute;
-  right: 0;
-  top: calc(100% + 6px);
-  z-index: 20;
-}
-
-.multi-select-field.open .multi-select-menu {
-  display: grid;
-  gap: 8px;
-}
-
-.multi-select-search input {
-  background: #f8fafc;
-  border: 1px solid #d8e0ea;
-  border-radius: 9px;
-  color: var(--text);
-  min-height: 38px;
-  padding: 0 11px;
-  width: 100%;
-}
-
-.multi-select-search input:focus {
-  background: #ffffff;
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--focus-ring);
-  outline: none;
-}
-
-.multi-select-tabs {
-  background: #f1f5f9;
-  border-radius: 9px;
-  display: grid;
-  gap: 3px;
-  grid-template-columns: repeat(2, 1fr);
-  padding: 3px;
-}
-
-.multi-select-tabs button {
-  background: transparent;
-  border: 0;
-  border-radius: 7px;
-  color: var(--muted);
-  cursor: pointer;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 800;
-  min-height: 30px;
-}
-
-.multi-select-tabs button.active {
-  background: #ffffff;
-  box-shadow: 0 1px 4px rgba(16, 24, 40, 0.12);
-  color: var(--text);
-}
-
-.multi-select-options {
-  display: grid;
-  gap: 3px;
-  max-height: 224px;
-  overflow: auto;
-}
-
-.multi-select-option {
-  align-items: center;
-  border: 1px solid transparent;
-  border-radius: 9px;
-  cursor: pointer;
-  display: flex;
-  gap: 10px;
-  min-height: 38px;
-  padding: 8px 9px;
-  user-select: none;
-}
-
-.multi-select-option:hover {
-  background: #f6f9fd;
-}
-
-.multi-select-option input[type="checkbox"] {
-  accent-color: var(--primary);
-  min-height: 18px;
-  padding: 0;
-  width: 18px;
-}
-
-.multi-select-option.selected {
-  background: #eef6ff;
-  border-color: #cfe1ff;
-}
-
-.multi-select-option-title {
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 750;
-  line-height: 1.25;
-}
-
-.multi-select-empty {
-  color: var(--muted);
-  font-size: 13px;
-  padding: 12px 10px 10px;
-  text-align: center;
-}
-
-.employee-competency-field {
-  align-self: stretch;
-  grid-column: span 2;
 }
 
 .tag-list {
@@ -1274,30 +1077,6 @@ textarea:focus-visible {
 .inline-time-form span {
   color: var(--muted);
   font-size: 12px;
-}
-
-.inline-multi-select .multi-select-toggle {
-  border-color: transparent;
-  border-radius: 8px;
-  min-height: 34px;
-  padding-bottom: 5px;
-  padding-top: 5px;
-}
-
-.inline-multi-select .multi-select-toggle:hover {
-  background: #f8fafc;
-  border-color: #d8e0ea;
-}
-
-.inline-multi-select .multi-select-placeholder {
-  font-size: 12px;
-  line-height: 22px;
-}
-
-.inline-multi-select .multi-select-chip {
-  font-size: 11px;
-  min-height: 21px;
-  padding: 3px 7px;
 }
 
 .button-compact {
@@ -2024,11 +1803,6 @@ textarea:focus-visible {
 .message-close,
 .modal-close,
 .employee-item,
-.multi-select-toggle,
-.multi-select-menu,
-.multi-select-tabs,
-.multi-select-tabs button.active,
-.multi-select-search input,
 .inline-field,
 .inline-edit-form select,
 .integration-form input,
@@ -2055,9 +1829,7 @@ textarea:focus-visible {
 .top-nav a:hover,
 .button-light:hover,
 .inline-field:hover,
-.inline-edit-form select:hover,
-.multi-select-toggle:hover,
-.multi-select-search input:focus {
+.inline-edit-form select:hover {
   background: #344257;
   border-color: #557194;
   color: #ffffff;
@@ -2083,23 +1855,19 @@ textarea:focus-visible {
 }
 
 .shift-table tr:hover td,
-.employee-item:hover,
-.multi-select-option:hover {
+.employee-item:hover {
   background: #253346;
 }
 
-.multi-select-option.selected,
 .tag,
 .today-label span,
-.short-badge,
-.multi-select-chip {
+.short-badge {
   background: #12345d;
   border-color: #24588f;
   color: #cfe3ff;
 }
 
-.tag-muted,
-.multi-select-chip-more {
+.tag-muted {
   background: #233044;
   border-color: #3c4d63;
   color: #b8c8dc;
@@ -2166,10 +1934,6 @@ input[readonly],
 
   .employee-form {
     grid-template-columns: 1fr;
-  }
-
-  .employee-competency-field {
-    grid-column: 1 / -1;
   }
 
   .competency-form {

@@ -17,7 +17,7 @@ def build_integration_manifest() -> dict:
         },
         "ui": {
             "entrypoint": prefixed_path("/"),
-            "settings": prefixed_path("/settings/employees"),
+            "settings": "/admin/sup-parameters?tab=employees&view=employees",
             "docs": prefixed_path("/docs"),
         },
         "health": {

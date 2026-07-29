@@ -53,4 +53,46 @@
         yearSelect.addEventListener('change', renderAvailableMonths);
         renderAvailableMonths();
     }
+
+    const autoplanTooltip = document.getElementById('autoplanTooltip');
+    let activeHintCell = null;
+
+    function hideAutoplanTooltip() {
+        activeHintCell = null;
+        if (autoplanTooltip) autoplanTooltip.hidden = true;
+    }
+
+    function showAutoplanTooltip(cell) {
+        if (!autoplanTooltip || !cell?.dataset.autoplanHint) return;
+        activeHintCell = cell;
+        autoplanTooltip.textContent = cell.dataset.autoplanHint;
+        autoplanTooltip.hidden = false;
+        const cellRect = cell.getBoundingClientRect();
+        const tooltipRect = autoplanTooltip.getBoundingClientRect();
+        const margin = 8;
+        let left = cellRect.left + (cellRect.width - tooltipRect.width) / 2;
+        left = Math.max(margin, Math.min(left, window.innerWidth - tooltipRect.width - margin));
+        let top = cellRect.top - tooltipRect.height - margin;
+        if (top < margin) top = cellRect.bottom + margin;
+        autoplanTooltip.style.left = `${Math.round(left)}px`;
+        autoplanTooltip.style.top = `${Math.round(top)}px`;
+    }
+
+    document.addEventListener('pointerover', function (event) {
+        const cell = event.target.closest('[data-autoplan-hint]');
+        if (cell && cell !== activeHintCell) showAutoplanTooltip(cell);
+    });
+    document.addEventListener('pointerout', function (event) {
+        const cell = event.target.closest('[data-autoplan-hint]');
+        if (cell && !cell.contains(event.relatedTarget)) hideAutoplanTooltip();
+    });
+    document.addEventListener('focusin', function (event) {
+        const cell = event.target.closest('[data-autoplan-hint]');
+        if (cell) showAutoplanTooltip(cell);
+    });
+    document.addEventListener('focusout', function (event) {
+        if (event.target.closest('[data-autoplan-hint]')) hideAutoplanTooltip();
+    });
+    window.addEventListener('scroll', hideAutoplanTooltip, { passive: true });
+    window.addEventListener('resize', hideAutoplanTooltip);
 }());

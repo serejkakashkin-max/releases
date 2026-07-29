@@ -10,6 +10,7 @@ from VA.schedule_manager.services.schedule_service import ScheduleService
 EMPLOYEE_STATUSES = {
     "active": "Активен",
     "long_leave": "Длительный отпуск",
+    "dismissed": "Уволен",
 }
 
 EMPLOYEE_LOCATIONS = {

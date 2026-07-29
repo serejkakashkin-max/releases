@@ -80,6 +80,8 @@ class DutyScheduleProviderRegistry:
             "days": [],
             "employees": [],
             "shifts": [],
+            "autoplan_artifact": {},
+            "autoplan_hints": {},
         }
         return self._call("get_month", fallback, year, month)
 
@@ -175,5 +177,14 @@ def get_duty_schedule_months(*, registry=None) -> Dict[str, Any]:
 def get_duty_schedule_month(year: int, month: int, *, registry=None) -> Dict[str, Any]:
     current = get_duty_schedule_provider_registry(registry=registry)
     if current is None:
-        return {**_missing_status(), "year": year, "month": month, "days": [], "employees": [], "shifts": []}
+        return {
+            **_missing_status(),
+            "year": year,
+            "month": month,
+            "days": [],
+            "employees": [],
+            "shifts": [],
+            "autoplan_artifact": {},
+            "autoplan_hints": {},
+        }
     return current.month(year, month)

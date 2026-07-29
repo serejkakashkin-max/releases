@@ -177,6 +177,63 @@ html[data-theme="light"] .source-status { background: rgba(255, 255, 255, 0.72);
 .notice.danger { border-left-color: var(--danger); }
 .notice.info { border-left-color: var(--accent); }
 
+.autoplan-summary {
+    margin: 0 0 8px;
+    border: 1px solid rgba(88, 166, 255, 0.34);
+    border-radius: 10px;
+    background: var(--content-gradient), var(--panel-base);
+    box-shadow: 0 6px 18px var(--shadow);
+}
+
+.autoplan-summary summary {
+    min-height: 50px;
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    padding: 9px 11px;
+    cursor: pointer;
+    list-style: none;
+}
+
+.autoplan-summary summary::-webkit-details-marker { display: none; }
+
+.autoplan-summary-icon {
+    width: 30px;
+    height: 30px;
+    display: grid;
+    place-items: center;
+    border-radius: 8px;
+    color: #ffffff;
+    background: var(--accent);
+}
+
+.autoplan-summary-copy { min-width: 0; }
+.autoplan-summary-copy strong,
+.autoplan-summary-copy span { display: block; }
+.autoplan-summary-copy strong { font-size: 12px; }
+.autoplan-summary-copy span {
+    margin-top: 2px;
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.autoplan-summary time { color: var(--muted); font-size: 10px; }
+.autoplan-summary-details {
+    padding: 0 12px 11px 52px;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 11px;
+}
+.autoplan-summary-details ul {
+    margin: 10px 0;
+    padding-left: 18px;
+}
+.autoplan-summary-details li + li { margin-top: 5px; }
+.autoplan-summary-details p { margin: 8px 0 0; }
+
 .schedule-toolbar {
     min-height: 58px;
     display: flex;
@@ -390,6 +447,45 @@ html[data-theme="light"] .schedule-table thead th { color: #17324d; }
     color: var(--shift-text);
 }
 
+.shift-cell.has-autoplan-hint {
+    position: relative;
+    cursor: help;
+}
+
+.shift-cell.has-autoplan-hint::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 5px;
+    height: 5px;
+    border: 1px solid rgba(255, 255, 255, 0.88);
+    border-radius: 50%;
+    background: #58a6ff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.38);
+}
+
+.shift-cell.has-autoplan-hint:focus-visible {
+    z-index: 2;
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
+
+.autoplan-tooltip {
+    position: fixed;
+    z-index: 200;
+    width: min(360px, calc(100vw - 20px));
+    padding: 9px 10px;
+    border: 1px solid rgba(88, 166, 255, 0.52);
+    border-radius: 8px;
+    color: var(--text);
+    background: var(--surface);
+    box-shadow: 0 10px 28px var(--shadow);
+    font-size: 11px;
+    line-height: 1.45;
+    pointer-events: none;
+}
+
 .today { box-shadow: inset 0 3px 0 var(--accent); }
 .row-warning .employee-col { box-shadow: inset 3px 0 0 var(--warning); }
 .row-warning i { margin-left: 5px; color: var(--warning); }
@@ -465,4 +561,7 @@ html[data-theme="light"] .schedule-table thead th { color: #17324d; }
     .legend-item { font-size: 9px; }
     .legend-item span:last-child { display: none; }
     .source-meta { justify-content: flex-start; flex-wrap: wrap; }
+    .autoplan-summary summary { grid-template-columns: 30px minmax(0, 1fr); }
+    .autoplan-summary time { grid-column: 2; }
+    .autoplan-summary-details { padding-left: 12px; }
 }

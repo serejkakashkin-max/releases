@@ -109,128 +109,6 @@
     });
   }
 
-  function multiSelectOptionLabel(input) {
-    return input.closest('[data-multi-select-option-row]')?.querySelector('[data-multi-select-label]')?.textContent.trim() || '';
-  }
-
-  function selectedMultiSelectLabels(container) {
-    return Array.from(container.querySelectorAll('[data-multi-select-option]:checked'))
-      .map(multiSelectOptionLabel)
-      .filter(Boolean);
-  }
-
-  function updateMultiSelectLabel(container) {
-    const value = container.querySelector('[data-multi-select-value]');
-    const placeholder = container.querySelector('[data-multi-select-placeholder]');
-    if (!value) {
-      return;
-    }
-    const labels = selectedMultiSelectLabels(container);
-    value.replaceChildren();
-    if (placeholder) {
-      placeholder.hidden = labels.length > 0;
-    }
-    value.hidden = labels.length === 0;
-    labels.slice(0, 3).forEach((label) => {
-      const chip = document.createElement('span');
-      chip.className = 'multi-select-chip';
-      chip.textContent = label;
-      value.appendChild(chip);
-    });
-    if (labels.length > 3) {
-      const counter = document.createElement('span');
-      counter.className = 'multi-select-chip multi-select-chip-more';
-      counter.textContent = `+${labels.length - 3}`;
-      value.appendChild(counter);
-    }
-  }
-
-  function applyMultiSelectFilter(container) {
-    const search = (container.querySelector('[data-multi-select-search]')?.value || '').trim().toLowerCase();
-    const mode = container.dataset.multiSelectMode || 'all';
-    const rows = Array.from(container.querySelectorAll('[data-multi-select-option-row]'));
-    const empty = container.querySelector('[data-multi-select-empty]');
-    let visibleCount = 0;
-
-    rows.forEach((row) => {
-      const input = row.querySelector('[data-multi-select-option]');
-      const title = row.querySelector('[data-multi-select-label]')?.textContent.trim().toLowerCase() || '';
-      const isSelected = Boolean(input?.checked);
-      const isVisible = (!search || title.includes(search)) && (mode === 'all' || isSelected);
-      row.hidden = !isVisible;
-      row.classList.toggle('selected', isSelected);
-      row.setAttribute('aria-selected', isSelected ? 'true' : 'false');
-      if (isVisible) {
-        visibleCount += 1;
-      }
-    });
-
-    if (empty) {
-      empty.hidden = visibleCount > 0;
-      empty.textContent = mode === 'selected' ? 'Нет выбранных компетенций' : 'Ничего не найдено';
-    }
-  }
-
-  function closeMultiSelect(container) {
-    const toggle = container.querySelector('[data-multi-select-toggle]');
-    container.classList.remove('open');
-    if (toggle) {
-      toggle.setAttribute('aria-expanded', 'false');
-    }
-  }
-
-  function setupMultiSelects() {
-    const controls = Array.from(document.querySelectorAll('[data-multi-select]'));
-    controls.forEach((container) => {
-      const toggle = container.querySelector('[data-multi-select-toggle]');
-      if (!toggle) {
-        return;
-      }
-      updateMultiSelectLabel(container);
-      applyMultiSelectFilter(container);
-      toggle.addEventListener('click', () => {
-        const isOpen = container.classList.toggle('open');
-        toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-        if (isOpen) {
-          container.querySelector('[data-multi-select-search]')?.focus({ preventScroll: true });
-        }
-      });
-      container.querySelector('[data-multi-select-search]')?.addEventListener('input', () => {
-        applyMultiSelectFilter(container);
-      });
-      container.querySelectorAll('[data-multi-select-filter]').forEach((button) => {
-        button.addEventListener('click', () => {
-          container.dataset.multiSelectMode = button.dataset.multiSelectFilter || 'all';
-          container.querySelectorAll('[data-multi-select-filter]').forEach((item) => {
-            item.classList.toggle('active', item === button);
-          });
-          applyMultiSelectFilter(container);
-        });
-      });
-      container.querySelectorAll('[data-multi-select-option]').forEach((input) => {
-        input.addEventListener('change', () => {
-          updateMultiSelectLabel(container);
-          applyMultiSelectFilter(container);
-        });
-      });
-    });
-
-    document.addEventListener('click', (event) => {
-      controls.forEach((container) => {
-        if (!container.contains(event.target)) {
-          closeMultiSelect(container);
-        }
-      });
-    });
-
-    document.addEventListener('keydown', (event) => {
-      if (event.key !== 'Escape') {
-        return;
-      }
-      controls.forEach(closeMultiSelect);
-    });
-  }
-
   function parseJsonScript(container, selector) {
     const node = container.querySelector(selector);
     if (!node) {
@@ -965,7 +843,6 @@
     restoreFocusAfterModalClose();
     setupBackdropClose();
     setupAutoSubmitForms();
-    setupMultiSelects();
     document.querySelectorAll('[data-modal]').forEach(setupModal);
     document.querySelectorAll('[data-schedule-editor]').forEach(setupScheduleEditor);
     setupInlineToggle(

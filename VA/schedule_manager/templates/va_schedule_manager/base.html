@@ -29,8 +29,8 @@
 
       <nav class="top-nav" aria-label="Основная навигация">
         <a class="{% if active_page == 'schedule' %}active{% endif %}" href="{{ va_url_for('va_schedule_manager.web.index') }}">График</a>
-        <a class="{% if active_page == 'employees' %}active{% endif %}" href="{{ va_url_for('va_schedule_manager.settings.employees') }}">Сотрудники</a>
-        <a class="{% if active_page == 'competencies' %}active{% endif %}" href="{{ va_url_for('va_schedule_manager.settings.competencies') }}">Компетенции</a>
+        <a href="{{ va_url_for('sup_parameters.sup_parameters_page', tab='employees', view='employees') }}">Сотрудники</a>
+        <a href="{{ va_url_for('sup_parameters.sup_parameters_page', tab='employees', view='competencies') }}">Компетенции</a>
         <a class="{% if active_page == 'shifts' %}active{% endif %}" href="{{ va_url_for('va_schedule_manager.settings.shifts') }}">Смены</a>
         <a class="{% if active_page == 'integrations' %}active{% endif %}" href="{{ va_url_for('va_schedule_manager.settings.integrations') }}">Интеграции</a>
         <a class="top-nav-docs {% if active_page == 'docs' %}active{% endif %}" href="{{ va_url_for('va_schedule_manager.web.docs_index') }}">Документация</a>

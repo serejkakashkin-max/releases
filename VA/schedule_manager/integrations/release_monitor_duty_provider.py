@@ -13,6 +13,10 @@ from typing import Any, Dict, List, Tuple
 from VA.schedule_manager.config import SCHEDULE_DATA_FILE, SHIFTS_DATA_FILE
 from VA.schedule_manager.repositories.json_file_store import JsonFileStore
 from VA.schedule_manager.services.shift_service import DEFAULT_SHIFTS
+from VA.schedule_manager.services.autoplan_hint_service import (
+    build_autoplan_hints,
+    normalize_autoplan_artifact,
+)
 
 
 PROVIDER_CONTRACT = "provider-contract:v1"
@@ -120,6 +124,8 @@ class ReleaseMonitorDutyProvider:
             "days": [],
             "employees": [],
             "shifts": copy.deepcopy(state["effective_shifts"]),
+            "autoplan_artifact": {},
+            "autoplan_hints": {},
             "warnings": [_warning("month_unavailable")],
         }
 
@@ -424,6 +430,15 @@ class ReleaseMonitorDutyProvider:
                 "label": str(raw_month.get("label") or f"{month_name[month]} {year}"),
                 "days": days,
                 "employees": employees,
+                "autoplan_artifact": normalize_autoplan_artifact(
+                    raw_month.get("autoplan"),
+                    year=year,
+                    month=month,
+                    employee_names=[
+                        employee["employee_name"] for employee in employees
+                    ],
+                    valid_days=valid_days,
+                ),
             })
         return normalized, warnings
 
@@ -607,6 +622,12 @@ class ReleaseMonitorDutyProvider:
                 "days": copy.deepcopy(month["days"]),
                 "employees": display_rows,
                 "shifts": copy.deepcopy(shifts),
+                "autoplan_artifact": copy.deepcopy(
+                    month.get("autoplan_artifact") or {}
+                ),
+                "autoplan_hints": build_autoplan_hints(
+                    month.get("autoplan_artifact") or {}
+                ),
                 "warnings": [],
             }
 

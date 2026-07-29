@@ -3,6 +3,10 @@ from typing import Optional
 from VA.schedule_manager.services.schedule_service import ScheduleService
 from VA.schedule_manager.services.schedule_validator import build_validation_rules, validate_schedule
 from VA.schedule_manager.services.shift_service import ShiftService
+from VA.schedule_manager.services.autoplan_hint_service import (
+    build_autoplan_hints,
+    normalize_autoplan_artifact,
+)
 
 
 class ScheduleDisplayService:
@@ -73,7 +77,19 @@ class ScheduleDisplayService:
         if selected_option is not None:
             try:
                 schedule_grid = snapshot.get_month_grid(selected_option["sheet_name"])
-                autoplan_artifact = snapshot.get_month_metadata(selected_option["sheet_name"], "autoplan")
+                raw_autoplan_artifact = snapshot.get_month_metadata(
+                    selected_option["sheet_name"],
+                    "autoplan",
+                )
+                autoplan_artifact = normalize_autoplan_artifact(
+                    raw_autoplan_artifact,
+                    year=selected_year,
+                    month=selected_month,
+                    employee_names=[
+                        row.employee_name for row in schedule_grid.employees
+                    ],
+                    valid_days=[day.day for day in schedule_grid.days],
+                )
                 schedule_violations = validate_schedule(
                     schedule_grid,
                     build_validation_rules(self.shift_service.list_shifts()),
@@ -105,7 +121,7 @@ class ScheduleDisplayService:
             "selected_month": selected_month,
             "selected_sheet_name": selected_option["sheet_name"] if selected_option is not None else None,
             "autoplan_artifact": autoplan_artifact,
-            "autoplan_hints": self._autoplan_hints(autoplan_artifact),
+            "autoplan_hints": build_autoplan_hints(autoplan_artifact),
         }
 
     def _empty_context(self, schedule_source: str) -> dict:
@@ -140,44 +156,3 @@ class ScheduleDisplayService:
             except KeyError:
                 return None
         return None
-
-    def _autoplan_hints(self, artifact: dict) -> dict:
-        if not artifact:
-            return {}
-        hints = {}
-        hidden_codes = {"8", "п", "праздник", "о", "отпуск"}
-        for explanation in artifact.get("assignment_explanations", []):
-            if not isinstance(explanation, dict):
-                continue
-            shift_code = str(explanation.get("shift_code", "")).strip()
-            if shift_code.lower() in hidden_codes:
-                continue
-            employee_name = str(explanation.get("employee_name", "")).strip()
-            if not employee_name:
-                continue
-            text = self._hint_text(explanation)
-            for day in explanation.get("days", []):
-                try:
-                    day_number = int(day)
-                except (TypeError, ValueError):
-                    continue
-                hints[f"{employee_name}|{day_number}"] = text
-        return hints
-
-    def _hint_text(self, explanation: dict) -> str:
-        shift_code = str(explanation.get("shift_code", "")).strip()
-        shift_name = str(explanation.get("shift_name", "")).strip()
-        period = str(explanation.get("period", "")).strip()
-        reason = str(explanation.get("reason", "")).strip()
-        candidate_count = explanation.get("candidate_count", "")
-        load_before = explanation.get("load_before", "")
-        title = f"{shift_code}"
-        if shift_name and shift_name != shift_code:
-            title = f"{title} · {shift_name}"
-        parts = [f"Автоплан: {title}"]
-        if period:
-            parts.append(period)
-        if reason:
-            parts.append(reason)
-        parts.append(f"Кандидатов: {candidate_count}; нагрузка до назначения: {load_before}.")
-        return " ".join(parts)

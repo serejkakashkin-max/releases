@@ -66,6 +66,26 @@
         </section>
         <script id="availableScheduleMonths" type="application/json">{{ available_months|tojson }}</script>
 
+        {% set autoplan = month_grid.autoplan_artifact or {} %}
+        {% if autoplan %}
+        <details class="autoplan-summary">
+            <summary>
+                <span class="autoplan-summary-icon"><i class="bi bi-stars"></i></span>
+                <span class="autoplan-summary-copy">
+                    <strong>{{ autoplan.title }}</strong>
+                    <span>{{ autoplan.summary }}</span>
+                </span>
+                {% if autoplan.created_at %}<time>{{ autoplan.created_at }}</time>{% endif %}
+            </summary>
+            <div class="autoplan-summary-details">
+                {% if autoplan.reasons %}
+                <ul>{% for reason in autoplan.reasons %}<li>{{ reason }}</li>{% endfor %}</ul>
+                {% endif %}
+                <p>Пояснения доступны у отмеченных ячеек при наведении мыши или фокусе с клавиатуры.</p>
+            </div>
+        </details>
+        {% endif %}
+
         {% if month_grid.employees and month_grid.days %}
         <section class="schedule-panel">
             <div class="schedule-table-wrap" aria-label="Таблица графика дежурств">
@@ -78,10 +98,12 @@
                         {% for day in month_grid.days %}
                         {% set code = employee.assignments.get(day.day ~ '', '') %}
                         {% set shift = (month_grid.shifts|selectattr('code', 'equalto', code)|list|first) %}
+                        {% set autoplan_hint = (month_grid.autoplan_hints or {}).get(employee.employee_name ~ '|' ~ day.day) %}
                         <td
-                            class="shift-cell {% if shift %}has-shift{% endif %} {% if day.date == today %}today{% endif %}"
+                            class="shift-cell {% if shift %}has-shift{% endif %} {% if day.date == today %}today{% endif %} {% if autoplan_hint %}has-autoplan-hint{% endif %}"
                             {% if shift %}style="--shift-color: {{ shift.color }}; --shift-text: {{ shift.text_color }}"{% endif %}
-                            title="{{ shift.name if shift else code }}"
+                            {% if not autoplan_hint %}title="{{ shift.name if shift else code }}"{% endif %}
+                            {% if autoplan_hint %}data-autoplan-hint="{{ autoplan_hint }}" tabindex="0" aria-label="{{ autoplan_hint }}"{% endif %}
                         >{{ shift.short_name if shift else code }}</td>
                         {% endfor %}
                     </tr>
@@ -99,6 +121,7 @@
 
         <footer class="source-meta">Обновлено: {{ provider_status.updated_at or 'не указано' }}{% if provider_status.revision %}<span>Версия {{ provider_status.revision[:18] }}…</span>{% endif %}</footer>
     </main>
+    <div class="autoplan-tooltip" id="autoplanTooltip" role="tooltip" hidden></div>
     <script src="{{ basepath }}/static/js/release_monitor_duty_schedule.js"></script>
 </body>
 </html>

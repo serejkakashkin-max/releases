@@ -29,8 +29,8 @@ DEFAULT_EMPLOYEE_SETTINGS = {
     "overtime_ready": True,
 }
 MIGRATION_STATUSES = {"not_required", "required", "complete", "failed"}
-VA_STATUSES = {"active", "long_leave"}
-PERSISTED_VA_STATUSES = VA_STATUSES | {"dismissed"}
+VA_STATUSES = {"active", "long_leave", "dismissed"}
+PERSISTED_VA_STATUSES = VA_STATUSES
 VA_ROLES = {"employee", "manager"}
 
 
@@ -108,7 +108,7 @@ class EmployeeSettingsRepository:
             context = load_employee_directory_context()
             if context.status != "available":
                 raise EmployeeSettingsConflictError("Employee directory is unavailable.")
-            if expected_directory_etag and context.etag != expected_directory_etag:
+            if not expected_directory_etag or context.etag != expected_directory_etag:
                 raise EmployeeSettingsConflictError("Employee directory changed.")
             employee = next(
                 (
@@ -121,12 +121,42 @@ class EmployeeSettingsRepository:
             membership = ((employee or {}).get("memberships") or {}).get("va_schedule_manager") or {}
             if not employee or not employee.get("enabled") or not membership.get("enabled"):
                 raise EmployeeSettingsConflictError("Employee is not an active VA member.")
+            from VA.schedule_manager.repositories.competency_repository import (
+                CompetencyRepository,
+            )
+            from VA.schedule_manager.services.competency_service import (
+                CompetencyService,
+            )
+
+            valid_competencies = {
+                item.code
+                for item in CompetencyService(
+                    CompetencyRepository()
+                ).list_competencies()
+            }
+            unknown_competencies = sorted(
+                set(normalized["competencies"]) - valid_competencies
+            )
+            if unknown_competencies:
+                raise EmployeeSettingsValidationError(
+                    "Unknown VA competency."
+                )
 
             self.lock_path.parent.mkdir(parents=True, exist_ok=True)
             with CrossProcessFileLock(self.lock_path):
                 current = self.read()
                 if current.status != "available" or current.payload is None:
                     raise EmployeeSettingsValidationError("VA settings migration is required.")
+                migration = current.payload.get("migration") or {}
+                if (
+                    migration.get("status") not in {"complete", "not_required"}
+                    or int(migration.get("unresolved") or 0)
+                    or int(migration.get("ambiguous") or 0)
+                    or int(migration.get("conflicts") or 0)
+                ):
+                    raise EmployeeSettingsValidationError(
+                        "VA settings migration is required."
+                    )
                 try:
                     normalized_expected_revision = int(expected_revision)
                 except (TypeError, ValueError):

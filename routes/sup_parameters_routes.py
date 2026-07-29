@@ -23,6 +23,26 @@ from services.employee_directory_operational_validator import (
     validate_employee_directory_operations,
 )
 from services.sup_admin_auth_service import csrf_protect_request, require_sup_admin_request
+from services.va_schedule_manager_admin_service import (
+    build_va_schedule_manager_admin_data,
+)
+from VA.schedule_manager.repositories.competency_repository import (
+    CompetencyRepository,
+)
+from VA.schedule_manager.repositories.employee_settings_repository import (
+    EmployeeSettingsConflictError,
+    EmployeeSettingsRepository,
+    EmployeeSettingsValidationError,
+)
+from VA.schedule_manager.repositories.managed_employee_repository import (
+    ManagedEmployeeRepository,
+)
+from VA.schedule_manager.services.competency_service import (
+    CompetencyConflictError,
+    CompetencyInUseError,
+    CompetencyService,
+    CompetencyValidationError,
+)
 
 
 sup_parameters_bp = Blueprint("sup_parameters", __name__, url_prefix="/admin")
@@ -67,6 +87,13 @@ def _validate_directory_operational(directory_payload):
         directory_payload,
         get_feature_flags(),
         va_settings_snapshot=settings_snapshot,
+    )
+
+
+def _va_competency_service() -> CompetencyService:
+    return CompetencyService(
+        CompetencyRepository(),
+        ManagedEmployeeRepository(),
     )
 
 
@@ -174,5 +201,192 @@ def employee_directory_save():
             {
                 "success": False,
                 "error": f"Employee directory save failed: {type(exc).__name__}",
+            }
+        ), 500
+
+
+@sup_parameters_bp.get("/sup-parameters/va-schedule-manager")
+def va_schedule_manager_admin_data():
+    auth_error = require_sup_admin_request()
+    if auth_error is not None:
+        return auth_error
+    try:
+        return jsonify(build_va_schedule_manager_admin_data())
+    except Exception as exc:
+        return jsonify(
+            {
+                "success": False,
+                "error": (
+                    "VA Schedule Manager settings load failed: "
+                    f"{type(exc).__name__}"
+                ),
+            }
+        ), 500
+
+
+@sup_parameters_bp.put(
+    "/sup-parameters/va-schedule-manager/employees/<employee_id>/settings"
+)
+def va_employee_settings_save(employee_id: str):
+    auth_error = require_sup_admin_request()
+    if auth_error is not None:
+        return auth_error
+    csrf_error = csrf_protect_request()
+    if csrf_error is not None:
+        return csrf_error
+    payload = request.get_json(silent=True)
+    allowed_keys = {
+        "directory_etag",
+        "settings_revision",
+        "settings_etag",
+        "settings",
+    }
+    if not isinstance(payload, dict) or set(payload) != allowed_keys:
+        return jsonify(
+            {
+                "success": False,
+                "error": "Unsupported VA employee settings payload.",
+            }
+        ), 400
+    values = payload.get("settings")
+    if not isinstance(values, dict) or set(values) != {
+        "status",
+        "role",
+        "competencies",
+        "overtime_ready",
+    }:
+        return jsonify(
+            {
+                "success": False,
+                "error": "Unsupported VA employee settings fields.",
+            }
+        ), 400
+    try:
+        EmployeeSettingsRepository().save_employee_settings(
+            employee_id,
+            values,
+            expected_revision=payload.get("settings_revision"),
+            expected_etag=str(payload.get("settings_etag") or ""),
+            expected_directory_etag=str(
+                payload.get("directory_etag") or ""
+            ),
+        )
+        return jsonify(build_va_schedule_manager_admin_data())
+    except EmployeeSettingsConflictError as exc:
+        return jsonify(
+            {
+                "success": False,
+                "error": str(exc),
+                "conflict": True,
+            }
+        ), 409
+    except EmployeeSettingsValidationError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify(
+            {
+                "success": False,
+                "error": (
+                    "VA employee settings save failed: "
+                    f"{type(exc).__name__}"
+                ),
+            }
+        ), 500
+
+
+@sup_parameters_bp.post(
+    "/sup-parameters/va-schedule-manager/competencies"
+)
+def va_competency_add():
+    return _mutate_va_competency("add")
+
+
+@sup_parameters_bp.patch(
+    "/sup-parameters/va-schedule-manager/competencies/<code>"
+)
+def va_competency_update(code: str):
+    return _mutate_va_competency("update", code)
+
+
+@sup_parameters_bp.delete(
+    "/sup-parameters/va-schedule-manager/competencies/<code>"
+)
+def va_competency_delete(code: str):
+    return _mutate_va_competency("delete", code)
+
+
+def _mutate_va_competency(operation: str, code: str = ""):
+    auth_error = require_sup_admin_request()
+    if auth_error is not None:
+        return auth_error
+    csrf_error = csrf_protect_request()
+    if csrf_error is not None:
+        return csrf_error
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify(
+            {"success": False, "error": "JSON object required."}
+        ), 400
+    expected_keys = (
+        {"expected_etag"}
+        if operation == "delete"
+        else {"expected_etag", "competency"}
+    )
+    if set(payload) != expected_keys:
+        return jsonify(
+            {
+                "success": False,
+                "error": "Unsupported competency payload.",
+            }
+        ), 400
+    competency = payload.get("competency")
+    if operation != "delete" and (
+        not isinstance(competency, dict)
+        or set(competency) != {"code", "name", "description"}
+    ):
+        return jsonify(
+            {
+                "success": False,
+                "error": "Unsupported competency fields.",
+            }
+        ), 400
+    try:
+        service = _va_competency_service()
+        expected_etag = str(payload.get("expected_etag") or "")
+        if operation == "add":
+            result = service.add_competency(
+                competency,
+                expected_etag=expected_etag,
+            )
+        elif operation == "update":
+            result = service.update_competency(
+                code,
+                competency,
+                expected_etag=expected_etag,
+            )
+        else:
+            result = service.delete_competency(
+                code,
+                expected_etag=expected_etag,
+            )
+        return jsonify({"success": True, "competencies": result})
+    except CompetencyConflictError as exc:
+        return jsonify(
+            {
+                "success": False,
+                "error": str(exc),
+                "conflict": True,
+            }
+        ), 409
+    except (CompetencyValidationError, CompetencyInUseError) as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify(
+            {
+                "success": False,
+                "error": (
+                    "Competency update failed: "
+                    f"{type(exc).__name__}"
+                ),
             }
         ), 500
