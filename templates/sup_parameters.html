@@ -190,42 +190,29 @@
     .badge.blue { color: #d7e7ff; border-color: rgba(77, 149, 255, 0.34); background: rgba(77, 149, 255, 0.13); }
     .badge.yellow { color: #fff0c4; border-color: rgba(255, 196, 61, 0.32); background: rgba(255, 196, 61, 0.13); }
     .settings-shell {
-      display: grid;
-      grid-template-columns: 220px minmax(0, 1fr);
-      gap: 16px;
-      align-items: start;
+      display: block;
       margin-top: 16px;
     }
     .settings-nav {
-      position: sticky;
-      top: 16px;
       display: grid;
-      gap: 16px;
-      padding: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 8px;
+      margin-bottom: 16px;
+      padding: 8px;
       border: 1px solid var(--line);
-      border-radius: 8px;
+      border-radius: 14px;
       background: rgba(29, 38, 51, 0.76);
     }
-    .settings-nav-group {
-      display: grid;
-      gap: 4px;
-    }
-    .settings-nav-title {
-      padding: 2px 9px 6px;
-      color: var(--muted);
-      font-size: 10px;
-      font-weight: 800;
-      text-transform: uppercase;
-    }
+    .settings-nav-group { display: contents; }
+    .settings-nav-title { display: none; }
     .tab-btn {
-      min-height: 40px;
-      padding: 9px 10px 9px 14px;
-      position: relative;
-      border-radius: 6px;
+      min-height: 42px;
+      padding: 9px 10px;
+      border-radius: 10px;
       background: transparent;
       border-color: transparent;
       color: var(--muted-2);
-      text-align: left;
+      text-align: center;
       line-height: 1.25;
     }
     .tab-btn:hover { background: rgba(255, 255, 255, 0.035); }
@@ -233,16 +220,6 @@
       color: #fff;
       border-color: rgba(77, 149, 255, 0.24);
       background: rgba(77, 149, 255, 0.13);
-    }
-    .tab-btn.active::before {
-      content: "";
-      width: 3px;
-      position: absolute;
-      top: 8px;
-      bottom: 8px;
-      left: 5px;
-      border-radius: 2px;
-      background: var(--blue);
     }
     .tab-btn.has-error { border-color: rgba(255, 99, 128, 0.5); }
     .settings-content { min-width: 0; }
@@ -1092,44 +1069,20 @@
       .grid-4 {
         grid-template-columns: 1fr;
       }
-      .settings-shell { grid-template-columns: 190px minmax(0, 1fr); }
+      .settings-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .field-row { grid-template-columns: 1fr; }
       .directory-workspace { grid-template-columns: 250px minmax(0, 1fr); }
       .directory-memberships,
       .directory-mode-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media (max-width: 880px) {
-      .settings-shell { grid-template-columns: 1fr; }
-      .settings-nav {
-        position: static;
-        display: flex;
-        gap: 6px;
-        overflow-x: auto;
-        padding: 7px;
-        scrollbar-width: thin;
-      }
-      .settings-nav-group { display: contents; }
-      .settings-nav-title { display: none; }
-      .tab-btn {
-        flex: 0 0 auto;
-        min-height: 38px;
-        padding: 8px 12px;
-        white-space: nowrap;
-      }
-      .tab-btn.active::before {
-        width: auto;
-        height: 3px;
-        top: auto;
-        right: 10px;
-        bottom: 3px;
-        left: 10px;
-      }
       .directory-workspace { grid-template-columns: 1fr; }
       .directory-sidebar { position: static; }
     }
     @media (max-width: 720px) {
       .page { width: calc(100% - 24px); margin-top: 16px; }
       .button-stack { grid-template-columns: 1fr; }
+      .settings-nav { grid-template-columns: 1fr; }
       .table-toolbar { grid-template-columns: 1fr; }
       .filter-tabs { justify-content: flex-start; }
       table, thead, tbody, tr, th, td { display: block; width: 100% !important; }
@@ -1208,18 +1161,11 @@
       <div class="settings-shell">
         <nav class="settings-nav" aria-label="Разделы СУП-параметров">
           <div class="settings-nav-group">
-            <div class="settings-nav-title">Рабочие настройки</div>
+            <button type="button" class="tab-btn" data-tab="maintenance">Режим обслуживания</button>
             <button type="button" class="tab-btn active" data-tab="employees" aria-current="page">Сотрудники</button>
             <button type="button" class="tab-btn" data-tab="mail">Почтовые уведомления</button>
             <button type="button" class="tab-btn" data-tab="prefixes">Префиксы релизов</button>
-            <button type="button" class="tab-btn" data-tab="maintenance">Режим обслуживания</button>
-          </div>
-          <div class="settings-nav-group">
-            <div class="settings-nav-title">Интеграции</div>
             <button type="button" class="tab-btn" data-tab="sbertrack">Email → SberTrack / Jira</button>
-          </div>
-          <div class="settings-nav-group">
-            <div class="settings-nav-title">Система</div>
             <button type="button" class="tab-btn" data-tab="tools">Инструменты</button>
             <button type="button" class="tab-btn" data-tab="diagnostics">Диагностика</button>
           </div>
@@ -1365,9 +1311,6 @@
             <p class="muted">Единый справочник участников сервисов и настройки планирования графика.</p>
           </div>
           <div class="card-body stack">
-            <div class="notice notice-warning">
-              Изменения в центральном справочнике пока не изменяют раздел Email → SberTrack / Jira. Этот раздел продолжает использовать собственные legacy-настройки.
-            </div>
             <div class="directory-view-tabs" role="tablist" aria-label="Раздел справочника">
               <button type="button" class="active" data-directory-view="employees" role="tab">Сотрудники</button>
               <button type="button" data-directory-view="competencies" role="tab">Компетенции</button>
