@@ -122,6 +122,14 @@
       border-color: rgba(255, 99, 128, 0.68);
       box-shadow: 0 0 0 3px rgba(255, 99, 128, 0.1);
     }
+    .field-error {
+      display: block;
+      margin-top: 6px;
+      color: #ffb7c4;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .field-error:empty { display: none; }
     textarea { min-height: 96px; resize: vertical; }
     label {
       display: block;
@@ -892,6 +900,21 @@
     .directory-membership-title input { width: auto; }
     .directory-membership-field { margin-top: 8px; }
     .directory-membership-field label { font-size: 10px; }
+    .directory-membership-requirement {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 9px;
+      color: #fde68a;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .directory-membership-requirement button.link {
+      flex: 0 0 auto;
+      color: #a9ceff;
+      font-size: 12px;
+      font-weight: 800;
+    }
     .directory-meta { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
     .directory-view-tabs {
       display: inline-flex;
@@ -2442,7 +2465,18 @@
       return normalized === "" ? null : Number(normalized);
     }
 
-    function nextDirectoryOrder(enabledSelector, orderSelector, role = null) {
+    function vaOrderForDisplay(value) {
+      return Number.isInteger(value) && value >= 0 ? value + 1 : null;
+    }
+
+    function vaOrderForStorage(value) {
+      const displayOrder = optionalInteger(value);
+      return Number.isInteger(displayOrder) && displayOrder >= 1
+        ? displayOrder - 1
+        : displayOrder;
+    }
+
+    function nextDirectoryOrder(enabledSelector, orderSelector, role = null, minimum = 0) {
       const orders = Array.from(document.querySelectorAll("[data-directory-employee]"))
         .filter((row) => {
           const enabled = row.querySelector(enabledSelector);
@@ -2451,15 +2485,21 @@
           return row.querySelector("[data-directory-dashboard-role]")?.value === role;
         })
         .map((row) => optionalInteger(row.querySelector(orderSelector)?.value))
-        .filter((value) => Number.isInteger(value) && value >= 0);
-      return orders.length ? Math.max(...orders) + 1 : 0;
+        .filter((value) => Number.isInteger(value) && value >= minimum);
+      return orders.length ? Math.max(...orders) + 1 : minimum;
     }
 
-    function fillDirectoryOrder(target, orderSelector, enabledSelector, role = null) {
+    function fillDirectoryOrder(target, orderSelector, enabledSelector, role = null, minimum = 0) {
       const row = target.closest("[data-directory-employee]");
       const orderInput = row?.querySelector(orderSelector);
       if (!orderInput || String(orderInput.value || "").trim() !== "") return;
-      orderInput.value = String(nextDirectoryOrder(enabledSelector, orderSelector, role));
+      orderInput.value = String(nextDirectoryOrder(
+        enabledSelector,
+        orderSelector,
+        role,
+        minimum
+      ));
+      orderInput.dataset.previousValue = orderInput.value;
     }
 
     function renderEmployeeDirectory(payload) {
@@ -2571,16 +2611,24 @@
         competencies: ["support"],
         overtime_ready: true
       });
-      const editable = Boolean(serverState?.editable);
+      const editable = Boolean(
+        state.va.directory.status === "available"
+        && state.va.settings.ready
+        && employee.enabled
+        && vaMembership.enabled
+      );
       const disabled = editable ? "" : "disabled";
-      const stateLabel = serverState?.explicit ? "явные настройки" : "по умолчанию";
+      const stateLabel = state.vaDrafts[employee.employee_id]
+        ? "изменено"
+        : serverState?.explicit
+          ? "явные настройки"
+          : "по умолчанию";
       let reason = "";
       if (state.va.directory.status !== "available") reason = "Employee Directory недоступен.";
       else if (!state.va.settings.ready) reason = "Хранилище настроек VA не готово.";
       else if (!employee.enabled) reason = "Архивный сотрудник доступен только для просмотра.";
-      else if (!vaMembership.enabled) reason = "Сначала включите VA Schedule Manager и сохраните справочник.";
-      else if (!serverState) reason = "Сначала сохраните нового сотрудника в Employee Directory.";
-      else if (state.vaDrafts[employee.employee_id]) reason = "Есть несохранённые изменения настроек графика.";
+      else if (!vaMembership.enabled) reason = "Включите VA Schedule Manager, чтобы настроить участие в графике.";
+      else if (state.vaDrafts[employee.employee_id]) reason = "Настройки будут сохранены общей кнопкой «Сохранить».";
       const options = (state.va.competencies.items || []).map((competency) => {
         const checked = (settings.competencies || []).includes(competency.code);
         return `<label class="va-multi-select-option ${checked ? "selected" : ""}" data-va-competency-option data-code="${escapeAttr(competency.code)}">
@@ -2641,7 +2689,6 @@
           </div>
           <div class="va-settings-actions">
             <div class="inline-status ${reason ? "warning" : ""}" data-va-settings-status>${escapeHtml(reason)}</div>
-            <button type="button" class="primary" data-save-va-settings ${disabled}>Сохранить настройки графика</button>
           </div>
         </section>
       `;
@@ -2683,7 +2730,7 @@
       };
       const status = section.querySelector("[data-va-settings-status]");
       if (status) {
-        status.textContent = "Есть несохранённые изменения настроек графика.";
+        status.textContent = "Настройки будут сохранены общей кнопкой «Сохранить».";
         status.className = "inline-status warning";
       }
     }
@@ -2865,10 +2912,18 @@
         const dashboard = memberships.duty_dashboard || { enabled: false, role: "none", order: null };
         const location = String(employee.location || "").trim().toLowerCase();
         const locationInvalid = Boolean(location && !["moscow", "khabarovsk"].includes(location));
+        const vaEnabled = Boolean(memberships.va_schedule_manager?.enabled);
+        const vaDisplayOrder = vaOrderForDisplay(memberships.va_schedule_manager?.order);
+        const locationRequired = employee.enabled !== false && vaEnabled && !location;
+        const locationError = locationInvalid
+          ? "Выберите поддерживаемую локацию: Москва или Хабаровск."
+          : locationRequired
+            ? "Для участия в графике дежурств необходимо выбрать локацию."
+            : "";
         const aliases = directoryAliasPreview(
           employee,
           employee.release_name,
-          Boolean(memberships.va_schedule_manager?.enabled)
+          vaEnabled
         );
         return `
           <div class="directory-entry ${index === state.directory.selectedIndex ? "active" : ""}" data-directory-employee="${index}">
@@ -2896,12 +2951,12 @@
                 <div><label>Jira Sberbank</label><input data-directory-jira-sberbank value="${escapeAttr(employee.jira_names?.sberbank || "")}"></div>
                 <div><label>Email, по одному в строке</label><textarea data-directory-emails>${escapeHtml(lines(employee.emails || []))}</textarea></div>
                 <div><label>Телефон</label><input data-directory-phone value="${escapeAttr(employee.phone || "")}"></div>
-                <div><label>Локация</label><select data-directory-location class="${locationInvalid ? "invalid" : ""}">
+                <div data-directory-location-field><label>Локация</label><select data-directory-location class="${locationError ? "invalid" : ""}" aria-invalid="${locationError ? "true" : "false"}">
                   <option value="" ${location ? "" : "selected"}>Не выбрана</option>
                   <option value="moscow" ${location === "moscow" ? "selected" : ""}>Москва</option>
                   <option value="khabarovsk" ${location === "khabarovsk" ? "selected" : ""}>Хабаровск</option>
                   ${locationInvalid ? `<option value="${escapeAttr(location)}" selected>Некорректное значение: ${escapeHtml(location)}</option>` : ""}
-                </select></div>
+                </select><span class="field-error" data-directory-location-error>${escapeHtml(locationError)}</span></div>
                 <div><label>Табельный номер</label><input data-directory-personnel value="${escapeAttr(employee.personnel_number || "")}"></div>
               </div>
             </section>
@@ -2929,7 +2984,11 @@
               </div>
               <div class="directory-membership">
                 <label class="directory-membership-title"><input type="checkbox" data-directory-va-enabled ${memberships.va_schedule_manager?.enabled ? "checked" : ""}> VA Schedule Manager</label>
-                <div class="directory-membership-field"><label>Порядок</label><input type="number" min="0" data-directory-va-order value="${memberships.va_schedule_manager?.order == null ? "" : Number(memberships.va_schedule_manager.order)}" placeholder="Автоматически"></div>
+                <div class="directory-membership-field"><label>Позиция в графике</label><input type="number" min="1" step="1" data-directory-va-order data-previous-value="${vaDisplayOrder ?? ""}" value="${vaDisplayOrder ?? ""}" placeholder="Автоматически"><span class="field-error" data-directory-va-order-error></span></div>
+                <div class="directory-membership-requirement ${locationRequired ? "" : "hidden"}" data-directory-va-location-requirement>
+                  <span>Для графика нужна локация.</span>
+                  <button type="button" class="link" data-focus-directory-location>Выбрать</button>
+                </div>
               </div>
               </div>
             </section>
@@ -2996,7 +3055,7 @@
             va_schedule_manager: {
               enabled: row.querySelector("[data-directory-va-enabled]").checked,
               order: row.querySelector("[data-directory-va-enabled]").checked
-                ? optionalInteger(row.querySelector("[data-directory-va-order]").value)
+                ? vaOrderForStorage(row.querySelector("[data-directory-va-order]").value)
                 : null
             }
           },
@@ -3010,6 +3069,178 @@
       if (!rows.length) return;
       state.directory.employees = collectDirectoryEmployees();
       renderDirectoryNavigator();
+    }
+
+    function updateDirectoryLocationValidation(row, { focus = false } = {}) {
+      const locationSelect = row?.querySelector("[data-directory-location]");
+      if (!locationSelect) return true;
+      const value = String(locationSelect.value || "").trim().toLowerCase();
+      const employeeEnabled = Boolean(row.querySelector("[data-directory-enabled]")?.checked);
+      const vaEnabled = Boolean(row.querySelector("[data-directory-va-enabled]")?.checked);
+      const unsupported = Boolean(value && !["moscow", "khabarovsk"].includes(value));
+      const required = employeeEnabled && vaEnabled && !value;
+      const message = unsupported
+        ? "Выберите поддерживаемую локацию: Москва или Хабаровск."
+        : required
+          ? "Для участия в графике дежурств необходимо выбрать локацию."
+          : "";
+      locationSelect.classList.toggle("invalid", Boolean(message));
+      locationSelect.setAttribute("aria-invalid", message ? "true" : "false");
+      const error = row.querySelector("[data-directory-location-error]");
+      if (error) error.textContent = message;
+      row.querySelector("[data-directory-va-location-requirement]")
+        ?.classList.toggle("hidden", !required);
+      if (focus && message) {
+        locationSelect.scrollIntoView({ block: "center", behavior: "smooth" });
+        window.setTimeout(() => locationSelect.focus(), 180);
+      }
+      return !message;
+    }
+
+    function validateDirectoryLocationsBeforeSave(employees) {
+      const invalidIndex = employees.findIndex((employee) => {
+        const location = String(employee.location || "").trim().toLowerCase();
+        const vaEnabled = Boolean(employee.memberships?.va_schedule_manager?.enabled);
+        const required = employee.enabled !== false && vaEnabled && !location;
+        const unsupported = Boolean(location && !["moscow", "khabarovsk"].includes(location));
+        return required || unsupported;
+      });
+      if (invalidIndex < 0) return true;
+
+      state.directory.employees = employees;
+      state.directory.selectedIndex = invalidIndex;
+      state.directory.filter = "all";
+      renderDirectoryEmployees();
+      const row = document.querySelector(`[data-directory-employee="${invalidIndex}"]`);
+      updateDirectoryLocationValidation(row, { focus: true });
+      setStatus(
+        "Не удалось сохранить сотрудника: для участия в графике дежурств выберите локацию «Москва» или «Хабаровск».",
+        "error"
+      );
+      return false;
+    }
+
+    function setVaOrderError(input, message = "") {
+      if (!input) return;
+      input.classList.toggle("invalid", Boolean(message));
+      input.setAttribute("aria-invalid", message ? "true" : "false");
+      const error = input.closest(".directory-membership-field")
+        ?.querySelector("[data-directory-va-order-error]");
+      if (error) error.textContent = message;
+    }
+
+    function vaEmployeeNameFromRow(row) {
+      return String(
+        row?.querySelector("[data-directory-full-name]")?.value
+        || row?.querySelector("[data-directory-release-name]")?.value
+        || "сотрудник без имени"
+      ).trim();
+    }
+
+    function activeVaOrderRows() {
+      return Array.from(document.querySelectorAll("[data-directory-employee]"))
+        .filter((row) => row.querySelector("[data-directory-enabled]")?.checked)
+        .filter((row) => row.querySelector("[data-directory-va-enabled]")?.checked);
+    }
+
+    function resolveVaOrderChange(input) {
+      const row = input?.closest("[data-directory-employee]");
+      if (!row) return true;
+      const desired = optionalInteger(input.value);
+      if (!Number.isInteger(desired) || desired < 1) {
+        setVaOrderError(input, "Укажите целую позицию, начиная с 1.");
+        return false;
+      }
+      setVaOrderError(input);
+
+      const rows = activeVaOrderRows();
+      const occupants = rows.filter((candidate) => (
+        candidate !== row
+        && optionalInteger(candidate.querySelector("[data-directory-va-order]")?.value) === desired
+      ));
+      if (!occupants.length) {
+        input.dataset.previousValue = String(desired);
+        return true;
+      }
+
+      const occupiedBy = occupants.map(vaEmployeeNameFromRow).join(", ");
+      const confirmed = window.confirm(
+        `Позиция ${desired} уже занята: ${occupiedBy}.\n\n`
+        + `Поставить «${vaEmployeeNameFromRow(row)}» на позицию ${desired}? `
+        + "Сотрудник на этой позиции и все следующие участники графика "
+        + "будут сдвинуты на одну позицию вниз."
+      );
+      if (!confirmed) {
+        input.value = input.dataset.previousValue || "";
+        setVaOrderError(input);
+        return true;
+      }
+
+      const orderedRows = rows
+        .filter((candidate) => candidate !== row)
+        .map((candidate, originalIndex) => ({
+          row: candidate,
+          order: optionalInteger(candidate.querySelector("[data-directory-va-order]")?.value),
+          originalIndex
+        }))
+        .sort((left, right) => {
+          const leftOrder = Number.isInteger(left.order) ? left.order : Number.MAX_SAFE_INTEGER;
+          const rightOrder = Number.isInteger(right.order) ? right.order : Number.MAX_SAFE_INTEGER;
+          return leftOrder - rightOrder || left.originalIndex - right.originalIndex;
+        })
+        .map((item) => item.row);
+      orderedRows.splice(Math.min(desired - 1, orderedRows.length), 0, row);
+      orderedRows.forEach((candidate, index) => {
+        const candidateInput = candidate.querySelector("[data-directory-va-order]");
+        if (!candidateInput) return;
+        candidateInput.value = String(index + 1);
+        candidateInput.dataset.previousValue = candidateInput.value;
+        setVaOrderError(candidateInput);
+      });
+      return true;
+    }
+
+    function validateVaOrdersBeforeSave() {
+      for (const row of activeVaOrderRows()) {
+        const input = row.querySelector("[data-directory-va-order]");
+        if (!resolveVaOrderChange(input)) {
+          state.directory.selectedIndex = Number(row.dataset.directoryEmployee);
+          input.scrollIntoView({ block: "center", behavior: "smooth" });
+          window.setTimeout(() => input.focus(), 180);
+          setStatus("Проверьте позицию сотрудника в графике дежурств.", "error");
+          return false;
+        }
+      }
+      return true;
+    }
+
+    function formatDirectoryValidationError(item) {
+      if (typeof item === "string") return item;
+      const path = String(item?.path || "");
+      const code = String(item?.code || "");
+      const match = path.match(/^employees\[(\d+)]\.location$/);
+      if (match && code === "required_for_va_schedule_manager") {
+        const employee = state.directory.employees[Number(match[1])] || {};
+        return `${employee.full_name || "Сотрудник"}: выберите локацию для участия в графике дежурств.`;
+      }
+      if (match && code === "unsupported") {
+        const employee = state.directory.employees[Number(match[1])] || {};
+        return `${employee.full_name || "Сотрудник"}: выбрана неподдерживаемая локация.`;
+      }
+      const vaOrderMatch = path.match(/^employees\[(\d+)]\.memberships\.va_schedule_manager\.order$/);
+      if (vaOrderMatch && code === "duplicate_active") {
+        const employee = state.directory.employees[Number(vaOrderMatch[1])] || {};
+        const storedOrder = employee.memberships?.va_schedule_manager?.order;
+        const occupiedBy = state.directory.employees.find((candidate, index) => (
+          index !== Number(vaOrderMatch[1])
+          && candidate.enabled !== false
+          && candidate.memberships?.va_schedule_manager?.enabled
+          && candidate.memberships.va_schedule_manager.order === storedOrder
+        ));
+        return `Позиция ${vaOrderForDisplay(storedOrder) ?? ""} уже занята`
+          + `${occupiedBy?.full_name ? ` сотрудником «${occupiedBy.full_name}»` : ""}.`;
+      }
+      return `${path || "Справочник"}: ${code || "ошибка проверки"}`;
     }
 
     async function loadEmployeeDirectory() {
@@ -3029,26 +3260,58 @@
     async function saveEmployeeDirectory() {
       const button = $("saveDirectoryBtn");
       setStatus("");
+      if (!validateVaOrdersBeforeSave()) {
+        finishButtonAction(button, {
+          success: false,
+          label: "Проверьте порядок",
+          disabled: false
+        });
+        return;
+      }
+      const employees = collectDirectoryEmployees();
+      if (!validateDirectoryLocationsBeforeSave(employees)) {
+        finishButtonAction(button, {
+          success: false,
+          label: "Проверьте данные",
+          disabled: false
+        });
+        return;
+      }
       beginButtonAction(button);
+      let directorySaved = false;
       try {
         const payload = await adminApi(BASE_PATH + "/admin/sup-parameters/employee-directory/save", {
           method: "POST",
           body: JSON.stringify({
             expected_revision: state.directory.revision,
             expected_etag: state.directory.etag,
-            employees: collectDirectoryEmployees()
+            employees
           })
         });
+        directorySaved = true;
         renderEmployeeDirectory(payload);
-        await loadVaScheduleManagerData();
+        const vaLoaded = await loadVaScheduleManagerData();
+        if (!vaLoaded && Object.keys(state.vaDrafts).length) {
+          const error = new Error("Не удалось загрузить актуальное состояние настроек графика.");
+          error.vaSettingsSave = true;
+          throw error;
+        }
+        await savePendingVaEmployeeSettings();
         setStatus("");
         finishButtonAction(button, { disabled: button.disabled });
       } catch (error) {
         const details = Array.isArray(error.payload?.errors)
-          ? error.payload.errors.map((item) => typeof item === "string" ? item : `${item.path}: ${item.code}`).join("\n")
+          ? error.payload.errors.map(formatDirectoryValidationError).join("\n")
           : "";
-        setStatus(`${error.message}${details ? "\n" + details : ""}`, "error");
-        finishButtonAction(button, { success: false, disabled: false });
+        const message = directorySaved && error.vaSettingsSave
+          ? `Справочник сотрудников сохранён, но настройки графика не сохранены: ${error.message}`
+          : `${error.message}${details ? "\n" + details : ""}`;
+        setStatus(message, "error");
+        finishButtonAction(button, {
+          success: false,
+          label: directorySaved ? "Сохранено частично" : "Не сохранено",
+          disabled: false
+        });
       }
     }
 
@@ -3067,63 +3330,46 @@
       try {
         const payload = await adminApi(BASE_PATH + "/admin/sup-parameters/va-schedule-manager");
         renderVaScheduleManagerData(payload);
+        return true;
       } catch (error) {
         state.va.settings.ready = false;
         $("competencyStatusText").textContent = error.message;
         $("competencyStatusText").className = "status error";
         renderDirectoryEmployees();
+        return false;
       }
     }
 
-    async function saveVaEmployeeSettings(button) {
-      syncDirectoryStateFromForm();
-      const section = button.closest("[data-va-settings-section]");
-      const employeeId = section?.dataset.vaEmployeeId || "";
-      const row = section?.closest("[data-directory-employee]");
-      const employeeEnabled = row?.querySelector("[data-directory-enabled]")?.checked;
-      const vaEnabled = row?.querySelector("[data-directory-va-enabled]")?.checked;
-      const statusBox = section?.querySelector("[data-va-settings-status]");
-      if (!employeeEnabled || !vaEnabled) {
-        if (statusBox) {
-          statusBox.textContent = "Сначала включите сотрудника и участие в VA, затем сохраните Employee Directory.";
-          statusBox.className = "status warning";
+    async function savePendingVaEmployeeSettings() {
+      const drafts = Object.entries(clone(state.vaDrafts));
+      for (const [employeeId, settings] of drafts) {
+        const employee = state.directory.employees.find((item) => item.employee_id === employeeId);
+        if (
+          !employee
+          || employee.enabled === false
+          || !employee.memberships?.va_schedule_manager?.enabled
+        ) {
+          delete state.vaDrafts[employeeId];
+          continue;
         }
-        return;
-      }
-      const settings = {
-        status: section.querySelector("[data-va-status]").value,
-        role: section.querySelector("[data-va-role]").value,
-        competencies: Array.from(section.querySelectorAll("[data-va-competency-option] input:checked")).map((input) => input.value),
-        overtime_ready: section.querySelector("[data-va-overtime]").checked
-      };
-      beginButtonAction(button);
-      if (statusBox) statusBox.textContent = "";
-      try {
-        const payload = await adminApi(
-          BASE_PATH + `/admin/sup-parameters/va-schedule-manager/employees/${encodeURIComponent(employeeId)}/settings`,
-          {
-            method: "PUT",
-            body: JSON.stringify({
-              directory_etag: state.va.directory.etag,
-              settings_revision: state.va.settings.revision,
-              settings_etag: state.va.settings.etag,
-              settings
-            })
-          }
-        );
-        delete state.vaDrafts[employeeId];
-        renderVaScheduleManagerData(payload);
-        setStatus("");
-        const savedSection = Array.from(document.querySelectorAll("[data-va-settings-section]"))
-          .find((item) => item.dataset.vaEmployeeId === employeeId);
-        finishButtonAction(savedSection?.querySelector("[data-save-va-settings]"), {
-          disabled: Boolean(savedSection?.querySelector("[data-save-va-settings]")?.disabled)
-        });
-      } catch (error) {
-        finishButtonAction(button, { success: false, disabled: false });
-        if (statusBox) {
-          statusBox.textContent = error.message;
-          statusBox.className = "inline-status error";
+        try {
+          const payload = await adminApi(
+            BASE_PATH + `/admin/sup-parameters/va-schedule-manager/employees/${encodeURIComponent(employeeId)}/settings`,
+            {
+              method: "PUT",
+              body: JSON.stringify({
+                directory_etag: state.va.directory.etag,
+                settings_revision: state.va.settings.revision,
+                settings_etag: state.va.settings.etag,
+                settings
+              })
+            }
+          );
+          delete state.vaDrafts[employeeId];
+          renderVaScheduleManagerData(payload);
+        } catch (error) {
+          error.vaSettingsSave = true;
+          throw error;
         }
       }
     }
@@ -3542,9 +3788,6 @@
         filterVaCompetencies(container);
       }
 
-      const saveVaSettings = event.target.closest("[data-save-va-settings]");
-      if (saveVaSettings) saveVaEmployeeSettings(saveVaSettings);
-
       const editCompetency = event.target.closest("[data-edit-competency]");
       if (editCompetency && !editCompetency.disabled) {
         openCompetencyModal(editCompetency.dataset.editCompetency);
@@ -3606,6 +3849,14 @@
         state.directory.employees.splice(Number(removeDirectoryEmployee.dataset.removeDirectoryEmployee), 1);
         state.directory.selectedIndex = Math.min(state.directory.selectedIndex, Math.max(0, state.directory.employees.length - 1));
         renderDirectoryEmployees();
+        return;
+      }
+
+      const focusDirectoryLocation = event.target.closest("[data-focus-directory-location]");
+      if (focusDirectoryLocation) {
+        const row = focusDirectoryLocation.closest("[data-directory-employee]");
+        updateDirectoryLocationValidation(row, { focus: true });
+        return;
       }
 
       const editPrefix = event.target.closest("[data-edit-prefix]");
@@ -3650,7 +3901,12 @@
       if (event.target.matches("[data-directory-enabled]")) {
         const label = event.target.closest("label")?.querySelector("[data-directory-enabled-label]");
         if (label) label.textContent = event.target.checked ? "Активен" : "Уволен / архив";
+        const row = event.target.closest("[data-directory-employee]");
+        const employeeId = row?.querySelector("[data-va-settings-section]")?.dataset.vaEmployeeId;
+        if (!event.target.checked && employeeId) delete state.vaDrafts[employeeId];
+        updateDirectoryLocationValidation(event.target.closest("[data-directory-employee]"));
         syncDirectoryStateFromForm();
+        renderDirectoryEmployees();
         return;
       }
       if (event.target.matches("[data-directory-release-enabled]")) {
@@ -3674,20 +3930,27 @@
           fillDirectoryOrder(
             event.target,
             "[data-directory-va-order]",
-            "[data-directory-va-enabled]"
+            "[data-directory-va-enabled]",
+            null,
+            1
           );
         } else if (orderInput) {
           orderInput.value = "";
+          const employeeId = row?.querySelector("[data-va-settings-section]")?.dataset.vaEmployeeId;
+          if (employeeId) delete state.vaDrafts[employeeId];
         }
+        updateDirectoryLocationValidation(row);
         syncDirectoryStateFromForm();
-        renderDirectoryAliasPreview(row);
+        renderDirectoryEmployees();
+        return;
+      }
+      if (event.target.matches("[data-directory-va-order]")) {
+        resolveVaOrderChange(event.target);
+        syncDirectoryStateFromForm();
         return;
       }
       if (event.target.matches("[data-directory-location]")) {
-        event.target.classList.toggle(
-          "invalid",
-          Boolean(event.target.value && !["moscow", "khabarovsk"].includes(event.target.value))
-        );
+        updateDirectoryLocationValidation(event.target.closest("[data-directory-employee]"));
         syncDirectoryStateFromForm();
         return;
       }

@@ -192,7 +192,11 @@ def employee_directory_save():
         ), 409
     except EmployeeDirectoryValidationError as exc:
         return jsonify(
-            {"success": False, "error": "Employee directory validation failed.", "errors": exc.errors}
+            {
+                "success": False,
+                "error": "Не удалось сохранить справочник сотрудников.",
+                "errors": exc.errors,
+            }
         ), 400
     except EmployeeDirectoryStateError as exc:
         return jsonify({"success": False, "error": str(exc)}), 409
