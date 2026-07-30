@@ -10,6 +10,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta, time as dt_time
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set, Tuple
+from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 from flask import current_app, has_app_context
 
@@ -863,7 +864,7 @@ def _build_weekly_digest_content(
     period = _week_period(now)
     system_summary_html = _system_summary_html(items)
     system_summary_text = _system_summary_text(items)
-    release_monitor_url, assignment_center_url = _release_monitor_links()
+    release_monitor_url, _assignment_center_url = _release_monitor_links()
     subject = (
         f"[Блок релизов] Предварительная сводка недели: "
         f"{assigned_count} назначено, {missing_count} без ответственного"
@@ -915,8 +916,6 @@ def _build_weekly_digest_content(
           <div style="margin-top:8px;color:#64748b;font-size:12px;">Период: {html.escape(period)} · Сформировано: {now.strftime('%d.%m.%Y %H:%M')} · Снимок: {html.escape(_snapshot_label(snapshot))}</div>
           <div style="padding:18px 0;text-align:center;">
             <a href="{html.escape(release_monitor_url, quote=True)}" style="display:inline-block;padding:11px 22px;background:#2563eb;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;border-radius:4px;">Открыть Блок релизов</a>
-            <span style="display:inline-block;width:10px;line-height:10px;">&nbsp;</span>
-            <a href="{html.escape(assignment_center_url, quote=True)}" style="display:inline-block;padding:11px 22px;background:#0f766e;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;border-radius:4px;">Открыть Центр назначений</a>
           </div>
         </td></tr>
         <tr><td style="padding:0 26px 20px;">
@@ -946,7 +945,6 @@ def _build_weekly_digest_content(
         f"Период: {period}",
         f"Сформировано: {now.strftime('%d.%m.%Y %H:%M:%S')}",
         f"Блок релизов: {release_monitor_url}",
-        f"Центр назначений: {assignment_center_url}",
         "",
         "Релизы текущей недели:",
     ]
@@ -1003,10 +1001,42 @@ def _worker_with_app_context(app) -> None:
 
 def _release_monitor_links() -> Tuple[str, str]:
     public_url = _mail_settings()["public_url"].rstrip("/")
-    assignment_suffix = "/assignment-center"
-    if public_url.endswith(assignment_suffix):
-        return public_url[: -len(assignment_suffix)], public_url
-    return public_url, f"{public_url}{assignment_suffix}"
+    parsed = urlsplit(public_url)
+    path = parsed.path.rstrip("/")
+    known_suffixes = (
+        "/dashboard/release-monitor/assignment-center",
+        "/dashboard/release-monitor",
+        "/release-monitor",
+    )
+    prefix = path
+    for suffix in known_suffixes:
+        if path.endswith(suffix):
+            prefix = path[: -len(suffix)]
+            break
+    prefix = prefix.rstrip("/")
+    release_monitor_path = f"{prefix}/release-monitor"
+    assignment_center_path = (
+        f"{prefix}/dashboard/release-monitor/assignment-center"
+    )
+    release_monitor_url = urlunsplit(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            release_monitor_path,
+            "",
+            "",
+        )
+    )
+    assignment_center_url = urlunsplit(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            assignment_center_path,
+            "",
+            "",
+        )
+    )
+    return release_monitor_url, assignment_center_url
 
 
 def _merge_assignment_event(
