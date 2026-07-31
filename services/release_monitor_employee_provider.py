@@ -31,6 +31,7 @@ def get_release_monitor_projection(
             "etag": resolved.etag,
             "count": 0,
             "names": [],
+            "employees": [],
             "employee_selection_available": False,
             "employee_selection_reason": f"employee_directory_{exc.status}",
         }

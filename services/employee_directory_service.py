@@ -186,11 +186,29 @@ def get_release_monitor_projection(
         operation="projection",
     )
     members = _ordered_members(_active_employees(resolved), "release_monitor")
+    employees = []
+    for item in members:
+        release_name = normalize_text(item.get("release_name"))
+        release_aliases = []
+        for alias in item.get("aliases") or []:
+            if alias.get("type") != "release":
+                continue
+            value = normalize_text(alias.get("value"))
+            if value and value != release_name and value not in release_aliases:
+                release_aliases.append(value)
+        employees.append(
+            {
+                "employee_id": item["employee_id"],
+                "release_name": release_name,
+                "release_aliases": release_aliases,
+            }
+        )
     return {
         **resolved.version_token,
         "status": "ready" if members else "empty_membership",
         "count": len(members),
         "names": [item["release_name"] for item in members],
+        "employees": employees,
     }
 
 

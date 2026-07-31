@@ -4171,7 +4171,8 @@
         const RELEASE_WORK_MARK_WEEK_KEY = 'releaseMonitorWorkMarkWeek';
         const RELEASE_WORK_MARK_AUTO_COLLAPSE_MS = 30000;
         let releaseScrollRestoreAttempted = false;
-        const RELEASE_REVIEWER_OPTIONS = {{ reviewer_options | tojson | safe }};
+        let RELEASE_REVIEWER_OPTIONS = {{ reviewer_options | tojson | safe }};
+        let releaseResponsibleDirectoryOptions = [];
         let releaseEmployeeSelectionAvailable = {{ release_monitor_meta.employee_selection_available | default(false) | tojson }};
         let releaseWorkMarkParticipants = [];
         let activeReleaseWorkMark = '';
@@ -4272,6 +4273,37 @@
         function getReleaseMonitorRevision(meta = releaseMonitorMeta) {
             return String(meta?.view_revision || meta?.data_revision || meta?.last_updated || '').trim();
         }
+
+        function normalizeReleaseResponsibleIdentity(value) {
+            return String(value || '').trim().toLocaleLowerCase('ru-RU');
+        }
+
+        function syncReleaseEmployeeDirectoryProjection(meta = releaseMonitorMeta) {
+            const rawOptions = Array.isArray(meta?.employee_filter_options)
+                ? meta.employee_filter_options
+                : [];
+            releaseResponsibleDirectoryOptions = rawOptions
+                .map(option => {
+                    const employeeId = String(option?.employee_id || '').trim();
+                    const releaseName = String(option?.release_name || '').trim();
+                    const identities = Array.from(new Set([
+                        releaseName,
+                        ...(Array.isArray(option?.release_aliases) ? option.release_aliases : []),
+                    ]
+                        .map(value => String(value || '').trim())
+                        .filter(Boolean)));
+                    return {
+                        employeeId,
+                        releaseName,
+                        identities,
+                        normalizedIdentities: new Set(identities.map(normalizeReleaseResponsibleIdentity)),
+                    };
+                })
+                .filter(option => option.employeeId && option.releaseName);
+            RELEASE_REVIEWER_OPTIONS = releaseResponsibleDirectoryOptions.map(option => option.releaseName);
+        }
+
+        syncReleaseEmployeeDirectoryProjection({{ release_monitor_meta | default({}) | tojson | safe }});
 
         function isCustomDutyText(value) {
             const text = String(value || '').trim();
@@ -8754,6 +8786,7 @@
             releaseEmployeeSelectionAvailable = Boolean(
                 releaseMonitorMeta.employee_selection_available
             );
+            syncReleaseEmployeeDirectoryProjection(releaseMonitorMeta);
             const directoryWarning = document.getElementById('releaseEmployeeDirectoryWarning');
             if (directoryWarning) {
                 directoryWarning.hidden = releaseEmployeeSelectionAvailable;
@@ -8893,6 +8926,11 @@
                 return;
             }
             releaseMonitorMeta = statusData.release_monitor_meta || releaseMonitorMeta;
+            releaseEmployeeSelectionAvailable = Boolean(
+                releaseMonitorMeta.employee_selection_available
+            );
+            syncReleaseEmployeeDirectoryProjection(releaseMonitorMeta);
+            populateResponsibleFilterOptions();
             const participantsChanged = syncReleaseWorkMarkSuggestedParticipants();
             releaseMonitorKnownRevision = getReleaseMonitorRevision(releaseMonitorMeta) || releaseMonitorKnownRevision;
             updateReleaseAutoRefreshBadge(releaseMonitorMeta);
@@ -9094,18 +9132,27 @@
             }
 
             const selectedYear = String(getSelectedReleaseYear());
-            const values = Array.from(new Set(
+            const assignedIdentities = new Set(
                 releaseMonitorItems
                     .filter(item => String(item?.year ?? '') === selectedYear)
                     .flatMap(item => Array.isArray(item?.psi_responsibles) ? item.psi_responsibles : [])
-                    .map(value => String(value || '').trim())
+                    .map(normalizeReleaseResponsibleIdentity)
                     .filter(Boolean)
-            )).sort((a, b) => a.localeCompare(b, 'ru'));
+            );
+            const options = releaseEmployeeSelectionAvailable
+                ? releaseResponsibleDirectoryOptions
+                    .filter(option => option.identities.some(
+                        identity => assignedIdentities.has(normalizeReleaseResponsibleIdentity(identity))
+                    ))
+                    .sort((left, right) => left.releaseName.localeCompare(right.releaseName, 'ru'))
+                : [];
 
-            const currentValue = values.includes(currentReleaseResponsibleFilter) ? currentReleaseResponsibleFilter : 'all';
+            const currentValue = options.some(option => option.employeeId === currentReleaseResponsibleFilter)
+                ? currentReleaseResponsibleFilter
+                : 'all';
             select.innerHTML = `
                 <option value="all">Все ФИО</option>
-                ${values.map(value => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join('')}
+                ${options.map(option => `<option value="${escapeHtml(option.employeeId)}">${escapeHtml(option.releaseName)}</option>`).join('')}
             `;
             select.value = currentValue;
             currentReleaseResponsibleFilter = currentValue;
@@ -10722,6 +10769,11 @@
             const statusValue = document.getElementById('releaseStatusFilter')?.value || 'all';
             const workMarkFilterValue = document.getElementById('releaseWorkMarkFilter')?.value || 'all';
             const responsibleValue = currentReleaseResponsibleFilter || 'all';
+            const responsibleOption = responsibleValue === 'all'
+                ? null
+                : releaseResponsibleDirectoryOptions.find(
+                    option => option.employeeId === responsibleValue
+                );
             const rawYearItems = getYearFilteredReleaseItems(releaseMonitorItems);
             const yearItems = applyReleaseOrderDraft(rawYearItems);
             const filteredItems = yearItems.filter(item => {
@@ -10730,7 +10782,11 @@
                 const itemResponsibles = Array.isArray(item.psi_responsibles) ? item.psi_responsibles : [];
                 const matchesResponsible = (
                     responsibleValue === 'all' ||
-                    itemResponsibles.some(value => String(value || '').trim() === responsibleValue)
+                    Boolean(responsibleOption) && itemResponsibles.some(value => (
+                        responsibleOption.normalizedIdentities.has(
+                            normalizeReleaseResponsibleIdentity(value)
+                        )
+                    ))
                 );
                 const matchesView = (
                     currentReleaseViewFilter === 'all' ||

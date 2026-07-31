@@ -7427,6 +7427,9 @@ def _normalize_release_payload(payload):
                     "employee_selection_reason",
                     "",
                 ),
+                "employee_filter_options": copy.deepcopy(
+                    employee_projection.get("employees") or []
+                ),
             }
         )
         return {
