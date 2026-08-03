@@ -97,8 +97,12 @@ class ScheduleEditService:
             grid = self._fill_days(base_grid, {day}, shift_code)
         else:
             grid = self._update_grid_cell(base_grid, employee_name, day, shift_code)
-        self.schedule_service.save_month_grid(sheet_name, grid)
-        autoplan_artifact_cleared = self.schedule_service.clear_month_metadata(sheet_name, "autoplan")
+        cleared_metadata = self.schedule_service.save_month_grid(
+            sheet_name,
+            grid,
+            clear_metadata_keys=("autoplan",),
+        )
+        autoplan_artifact_cleared = "autoplan" in cleared_metadata
         row = next(item for item in grid.employees if item.employee_name == employee_name)
         shift = self.shift_service.lookup().get(shift_code) or self.shift_service.lookup().get(shift_code.lower())
         violations = validate_schedule(grid, build_validation_rules(self.shift_service.list_shifts()))
@@ -161,8 +165,12 @@ class ScheduleEditService:
             days=grid.days,
             employees=[*grid.employees, row],
         )
-        self.schedule_service.save_month_grid(sheet_name, updated_grid)
-        autoplan_artifact_cleared = self.schedule_service.clear_month_metadata(sheet_name, "autoplan")
+        cleared_metadata = self.schedule_service.save_month_grid(
+            sheet_name,
+            updated_grid,
+            clear_metadata_keys=("autoplan",),
+        )
+        autoplan_artifact_cleared = "autoplan" in cleared_metadata
         violations = validate_schedule(updated_grid, build_validation_rules(self.shift_service.list_shifts()))
 
         return ScheduleEmployeeAdd(
@@ -206,8 +214,12 @@ class ScheduleEditService:
             days=grid.days,
             employees=[row for row in grid.employees if row.employee_name != employee_name],
         )
-        self.schedule_service.save_month_grid(sheet_name, updated_grid)
-        autoplan_artifact_cleared = self.schedule_service.clear_month_metadata(sheet_name, "autoplan")
+        cleared_metadata = self.schedule_service.save_month_grid(
+            sheet_name,
+            updated_grid,
+            clear_metadata_keys=("autoplan",),
+        )
+        autoplan_artifact_cleared = "autoplan" in cleared_metadata
         violations = validate_schedule(updated_grid, build_validation_rules(self.shift_service.list_shifts()))
 
         return ScheduleEmployeeDelete(
@@ -262,8 +274,12 @@ class ScheduleEditService:
         else:
             updated_grid = self._fill_cells(grid, normalized_cells, shift_code)
 
-        self.schedule_service.save_month_grid(sheet_name, updated_grid)
-        autoplan_artifact_cleared = self.schedule_service.clear_month_metadata(sheet_name, "autoplan")
+        cleared_metadata = self.schedule_service.save_month_grid(
+            sheet_name,
+            updated_grid,
+            clear_metadata_keys=("autoplan",),
+        )
+        autoplan_artifact_cleared = "autoplan" in cleared_metadata
         violations = validate_schedule(updated_grid, build_validation_rules(self.shift_service.list_shifts()))
         touched_rows = {
             row.employee_name

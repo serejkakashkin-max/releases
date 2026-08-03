@@ -1,3 +1,5 @@
+import logging
+
 from flask import Blueprint, jsonify, render_template, request
 
 from config import TOKENS
@@ -19,6 +21,10 @@ from services.employee_directory_service import (
     load_employee_directory_context,
 )
 from services.feature_flags_service import get_feature_flags
+from services.release_monitor_service import (
+    get_release_monitor_refresh_admin_status,
+    start_release_monitor_refresh,
+)
 from services.employee_directory_operational_validator import (
     validate_employee_directory_operations,
 )
@@ -133,6 +139,69 @@ def sup_parameters_save():
             {
                 "success": False,
                 "error": f"Не удалось сохранить СУП-параметры: {type(exc).__name__}",
+            }
+        ), 500
+
+
+@sup_parameters_bp.get("/sup-parameters/release-monitor-refresh")
+def release_monitor_refresh_data():
+    auth_error = require_sup_admin_request()
+    if auth_error is not None:
+        return auth_error
+    try:
+        return jsonify(get_release_monitor_refresh_admin_status())
+    except Exception:
+        logging.exception("Failed to read release monitor refresh status")
+        return jsonify(
+            {
+                "success": False,
+                "error": "Не удалось получить статус обновления Блока релизов.",
+            }
+        ), 500
+
+
+@sup_parameters_bp.post("/sup-parameters/release-monitor-refresh/start")
+def release_monitor_refresh_start():
+    auth_error = require_sup_admin_request()
+    if auth_error is not None:
+        return auth_error
+    csrf_error = csrf_protect_request()
+    if csrf_error is not None:
+        return csrf_error
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or set(payload) != {"mode"}:
+        return jsonify(
+            {"success": False, "error": "Поддерживается только параметр mode."}
+        ), 400
+    mode = str(payload.get("mode") or "").strip().lower()
+    if mode not in {"quick", "full", "reliable_full"}:
+        return jsonify(
+            {"success": False, "error": "Неизвестный режим обновления."}
+        ), 400
+    try:
+        result = start_release_monitor_refresh(mode=mode, trigger="manual")
+        if not result.get("started"):
+            return jsonify(
+                {
+                    "success": False,
+                    "error": "Обновление Блока релизов уже выполняется.",
+                    "conflict": True,
+                    "refresh": result.get("status") or {},
+                }
+            ), 409
+        return jsonify(
+            {
+                "success": True,
+                "started": True,
+                "refresh": result.get("status") or {},
+            }
+        ), 202
+    except Exception:
+        logging.exception("Failed to start release monitor refresh")
+        return jsonify(
+            {
+                "success": False,
+                "error": "Не удалось запустить обновление Блока релизов.",
             }
         ), 500
 

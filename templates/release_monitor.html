@@ -1938,11 +1938,7 @@
 
         .release-monitor-button-row {
             display: grid;
-            grid-template-columns:
-                minmax(180px, 0.9fr)
-                minmax(210px, 1fr)
-                minmax(220px, 1.15fr)
-                minmax(180px, 0.95fr);
+            grid-template-columns: repeat(2, minmax(220px, 1fr));
             gap: 0.35rem;
             align-items: start;
             justify-content: flex-end;
@@ -1952,11 +1948,7 @@
         }
 
         .release-monitor-button-row.is-order-mode {
-            grid-template-columns:
-                minmax(180px, 0.9fr)
-                minmax(210px, 1fr)
-                minmax(220px, 1.15fr)
-                minmax(180px, 0.95fr);
+            grid-template-columns: repeat(2, minmax(220px, 1fr));
         }
 
         .release-action-stack {
@@ -1973,121 +1965,6 @@
 
         .release-action-stack.confluence-stack {
             min-width: 220px;
-        }
-
-        .release-action-stack.manual-refresh-stack {
-            position: relative;
-            min-width: 210px;
-        }
-
-        .release-monitor-btn.refresh-menu {
-            color: var(--release-action-quick);
-        }
-
-        .release-monitor-btn.refresh-menu .menu-caret {
-            font-size: 0.78rem;
-            opacity: 0.72;
-            transition: transform 0.18s ease;
-        }
-
-        .release-monitor-btn.refresh-menu.menu-open .menu-caret {
-            transform: rotate(180deg);
-        }
-
-        .release-refresh-menu {
-            position: absolute;
-            top: calc(100% + 0.4rem);
-            left: 0;
-            right: 0;
-            z-index: 1200;
-            display: none;
-            padding: 0.42rem;
-            border: 1px solid rgba(88, 166, 255, 0.28);
-            border-radius: 14px;
-            background: #ffffff;
-            box-shadow: 0 24px 54px rgba(15, 23, 42, 0.26), 0 0 0 1px rgba(15, 23, 42, 0.04);
-        }
-
-        .release-refresh-menu.open {
-            display: grid;
-            gap: 0.36rem;
-        }
-
-        [data-theme="dark"] .release-refresh-menu {
-            background: #161b22;
-            border-color: rgba(88, 166, 255, 0.36);
-            box-shadow: 0 26px 58px rgba(0, 0, 0, 0.58), 0 0 0 1px rgba(255, 255, 255, 0.04);
-        }
-
-        .release-refresh-menu-action {
-            width: 100%;
-            border: 0;
-            border-radius: 11px;
-            background: #f6f8fa;
-            color: var(--text-primary);
-            box-shadow: inset 0 0 0 1px var(--release-soft-border);
-            padding: 0.52rem 0.58rem;
-            display: grid;
-            grid-template-columns: auto 1fr;
-            column-gap: 0.5rem;
-            align-items: center;
-            text-align: left;
-            cursor: pointer;
-            transition: all 0.18s ease;
-        }
-
-        .release-refresh-menu-action:hover:not(:disabled) {
-            background: #eef5ff;
-            box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.22);
-        }
-
-        [data-theme="dark"] .release-refresh-menu-action {
-            background: #21262d;
-        }
-
-        [data-theme="dark"] .release-refresh-menu-action:hover:not(:disabled) {
-            background: #263241;
-        }
-
-        .release-refresh-menu-action:disabled {
-            opacity: 0.65;
-            cursor: wait;
-        }
-
-        .release-refresh-menu-action i {
-            grid-row: span 2;
-            font-size: 1rem;
-        }
-
-        .release-refresh-menu-action.quick i,
-        .release-refresh-menu-action.quick .release-refresh-menu-title {
-            color: var(--release-action-quick);
-        }
-
-        .release-refresh-menu-action.full i,
-        .release-refresh-menu-action.full .release-refresh-menu-title {
-            color: var(--release-action-full);
-        }
-
-        .release-refresh-menu-action.reliable i,
-        .release-refresh-menu-action.reliable .release-refresh-menu-title {
-            color: #f59e0b;
-        }
-
-        .release-refresh-menu-title {
-            font-size: 0.78rem;
-            font-weight: 800;
-            line-height: 1.15;
-        }
-
-        .release-refresh-menu-note {
-            color: var(--text-secondary);
-            font-size: 0.68rem;
-            line-height: 1.2;
-        }
-
-        .release-refresh-menu-action.spinning i {
-            animation: spin 1s linear infinite;
         }
 
         .release-order-actions {
@@ -2217,19 +2094,11 @@
             }
 
             .release-monitor-button-row {
-                grid-template-columns:
-                    minmax(180px, 0.95fr)
-                    minmax(200px, 1fr)
-                    minmax(220px, 1.15fr)
-                    minmax(180px, 0.95fr);
+                grid-template-columns: repeat(2, minmax(220px, 1fr));
             }
 
             .release-monitor-button-row.is-order-mode {
-                grid-template-columns:
-                    minmax(180px, 0.95fr)
-                    minmax(200px, 1fr)
-                    minmax(220px, 1.15fr)
-                    minmax(180px, 0.95fr);
+                grid-template-columns: repeat(2, minmax(220px, 1fr));
             }
 
             .release-action-stack.confluence-stack {
@@ -3709,41 +3578,6 @@
                                 Обновлено: <strong id="releaseMonitorLastUpdated">{{ release_monitor_meta.last_updated or 'еще не загружалось' }}</strong>
                             </div>
                         </div>
-                        <div id="releaseManualRefreshStack" class="release-action-stack manual-refresh-stack">
-                            <button
-                                id="releaseManualRefreshMenuBtn"
-                                class="release-monitor-btn refresh-menu"
-                                type="button"
-                                onclick="toggleReleaseManualRefreshMenu(event)"
-                                aria-haspopup="true"
-                                aria-expanded="false"
-                            >
-                                <i class="bi bi-arrow-clockwise"></i>
-                                <span class="btn-label">Ручное обновление</span>
-                                <i class="bi bi-chevron-down menu-caret"></i>
-                            </button>
-                            <div class="release-action-meta" id="releaseMonitorFullRefreshMeta">
-                                Быстрое: <strong id="releaseMonitorLastQuickSync">{{ release_monitor_meta.last_quick_sync or 'еще не выполнялось' }}</strong>
-                                · Полное: <strong id="releaseMonitorLastFullSync">{{ release_monitor_meta.last_full_sync or 'еще не выполнялось' }}</strong>
-                            </div>
-                            <div id="releaseManualRefreshMenu" class="release-refresh-menu" role="menu" aria-label="Ручное обновление">
-                                <button id="releaseMonitorQuickRefreshBtn" class="release-refresh-menu-action quick" type="button" onclick="refreshReleaseMonitor('quick')" role="menuitem">
-                                    <i class="bi bi-lightning-charge"></i>
-                                    <span class="release-refresh-menu-title">Быстрое обновление</span>
-                                    <span class="release-refresh-menu-note">Инкрементально, для оперативной сверки.</span>
-                                </button>
-                                <button id="releaseMonitorRefreshBtn" class="release-refresh-menu-action full" type="button" onclick="refreshReleaseMonitor('full')" role="menuitem">
-                                    <i class="bi bi-arrow-repeat"></i>
-                                    <span class="release-refresh-menu-title">Полное обновление</span>
-                                    <span class="release-refresh-menu-note">Полный пересбор таблицы из Jira.</span>
-                                </button>
-                                <button id="releaseMonitorReliableRefreshBtn" class="release-refresh-menu-action reliable" type="button" onclick="refreshReleaseMonitor('reliable_full')" role="menuitem">
-                                    <i class="bi bi-shield-check"></i>
-                                    <span class="release-refresh-menu-title">&#1053;&#1072;&#1076;&#1077;&#1078;&#1085;&#1086;&#1077; &#1087;&#1086;&#1083;&#1085;&#1086;&#1077;</span>
-                                    <span class="release-refresh-menu-note">&#1055;&#1086;&#1074;&#1090;&#1086;&#1088;&#1103;&#1077;&#1090; Jira-&#1079;&#1072;&#1087;&#1088;&#1086;&#1089;&#1099; &#1087;&#1088;&#1080; 500/503 &#1080; &#1085;&#1077; &#1089;&#1086;&#1093;&#1088;&#1072;&#1085;&#1103;&#1077;&#1090; &#1095;&#1072;&#1089;&#1090;&#1080;&#1095;&#1085;&#1099;&#1081; &#1089;&#1085;&#1080;&#1084;&#1086;&#1082;.</span>
-                                </button>
-                            </div>
-                        </div>
                         <div class="release-action-stack confluence-stack">
                             <button id="releaseMonitorConfluenceSyncBtn" class="release-monitor-btn confluence" onclick="syncReleaseMonitorFromConfluence()">
                                 <i class="bi bi-cloud-arrow-down"></i>
@@ -4154,8 +3988,6 @@
         let releaseMonitorKnownRevision = '';
         let releaseMonitorDismissedRevision = '';
         let releaseMonitorGlobalRefreshing = false;
-        let releaseMonitorLocalRefreshing = false;
-        let releaseMonitorActiveRefreshMode = '';
         let releaseUpdateBannerMeta = null;
         let releaseUpdateBannerTimer = null;
         const RELEASE_SCROLL_RESTORE_KEY = 'releaseMonitorScrollRestore';
@@ -8776,8 +8608,6 @@
             const tableWrap = document.getElementById('releaseTableWrap');
             const emptyState = document.getElementById('releaseMonitorEmptyState');
             const lastUpdated = document.getElementById('releaseMonitorLastUpdated');
-            const lastQuickSync = document.getElementById('releaseMonitorLastQuickSync');
-            const lastFullSync = document.getElementById('releaseMonitorLastFullSync');
             const lastConfluenceSync = document.getElementById('releaseMonitorLastConfluenceSync');
             const yearSelect = document.getElementById('releaseYearFilter');
 
@@ -8817,12 +8647,6 @@
 
             if (lastUpdated) {
                 lastUpdated.textContent = meta?.last_updated || 'еще не загружалось';
-            }
-            if (lastQuickSync) {
-                lastQuickSync.textContent = meta?.last_quick_sync || 'еще не выполнялось';
-            }
-            if (lastFullSync) {
-                lastFullSync.textContent = meta?.last_full_sync || 'еще не выполнялось';
             }
             if (lastConfluenceSync) {
                 lastConfluenceSync.textContent = meta?.last_confluence_sync || 'еще не выполнялось';
@@ -9095,13 +8919,7 @@
                 throw new Error(data.error || 'Не удалось сохранить порядок релизов');
             }
 
-            const statusResponse = await fetch(BASE_PATH + '/dashboard/release-monitor/status');
-            const statusData = await statusResponse.json();
-            if (!statusResponse.ok || !statusData.success) {
-                throw new Error(statusData.error || 'Не удалось перечитать таблицу релизов после сохранения порядка');
-            }
-
-            return statusData;
+            return data;
         }
 
         function ensureResponsibleHeaderFilter() {
@@ -9317,16 +9135,6 @@
             releaseOrderDirty = false;
             releaseManualOverrideDraft = {};
             refreshReleaseOrderModeUi();
-            try {
-                const response = await fetch(BASE_PATH + '/dashboard/release-monitor/status');
-                const data = await response.json();
-                if (response.ok && data.success) {
-                    renderReleaseMonitor(data.release_monitor || [], data.release_monitor_meta || {});
-                    return;
-                }
-            } catch (error) {
-                console.error('Release settings cancel refresh error:', error);
-            }
             applyReleaseFilters();
         }
 
@@ -9426,17 +9234,11 @@
                     throw new Error(data.error || 'Не удалось сохранить порядок релизов');
                 }
 
-                const statusResponse = await fetch(BASE_PATH + '/dashboard/release-monitor/status');
-                const statusData = await statusResponse.json();
-                if (!statusResponse.ok || !statusData.success) {
-                    throw new Error(statusData.error || 'Не удалось перечитать таблицу релизов после сохранения порядка');
-                }
-
                 isReleaseOrderMode = false;
                 releaseOrderDraft = null;
                 releaseOrderDirty = false;
                 releaseManualOverrideDraft = {};
-                renderReleaseMonitor(statusData.release_monitor || [], statusData.release_monitor_meta || {});
+                renderReleaseMonitor(data.release_monitor || [], data.release_monitor_meta || {});
                 refreshReleaseOrderModeUi();
                 alert('Порядок строк сохранен');
             } catch (error) {
@@ -9501,6 +9303,36 @@
         function getReleaseItemResponsibles(releaseKey) {
             const item = getReleaseMonitorItem(releaseKey);
             return Array.isArray(item?.psi_responsibles) ? [...item.psi_responsibles] : [];
+        }
+
+        function applyCompactReleaseMutation(data, fallbackRowKey = '') {
+            const updatedRow = data?.row;
+            if (!updatedRow || typeof updatedRow !== 'object') {
+                return false;
+            }
+            const updatedRowKey = String(
+                updatedRow.row_key || updatedRow.release_key || fallbackRowKey || ''
+            ).trim();
+            if (!updatedRowKey) {
+                return false;
+            }
+            let replaced = false;
+            releaseMonitorItems = releaseMonitorItems.map(item => {
+                const itemRowKey = String(item?.row_key || item?.release_key || '').trim();
+                if (itemRowKey !== updatedRowKey) {
+                    return item;
+                }
+                replaced = true;
+                return updatedRow;
+            });
+            if (!replaced) {
+                return false;
+            }
+            renderReleaseMonitor(
+                releaseMonitorItems,
+                data.release_monitor_meta || releaseMonitorMeta
+            );
+            return true;
         }
 
         function addResponsibleAssignment(releaseKey) {
@@ -9590,7 +9422,8 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         release_key: releaseKey,
-                        reporter
+                        reporter,
+                        compact: true
                     })
                 });
                 const data = await response.json();
@@ -9598,7 +9431,9 @@
                     throw new Error(data.error || 'Не удалось создать ЗНИ');
                 }
 
-                renderReleaseMonitor(data.release_monitor || [], data.release_monitor_meta || {});
+                if (!applyCompactReleaseMutation(data, releaseKey)) {
+                    renderReleaseMonitor(data.release_monitor || [], data.release_monitor_meta || {});
+                }
                 if (!options.silent) {
                     alert(`ЗНИ создана: ${data.issue?.key || ''}`);
                 }
@@ -9948,7 +9783,8 @@
                     body: JSON.stringify({
                         release_key: releaseKey,
                         enabled,
-                        level: nextLevel
+                        level: nextLevel,
+                        compact: true
                     })
                 });
                 const data = await response.json();
@@ -10169,64 +10005,14 @@
             }, 'duty');
         }
 
-        function closeReleaseManualRefreshMenu() {
-            const menu = document.getElementById('releaseManualRefreshMenu');
-            const button = document.getElementById('releaseManualRefreshMenuBtn');
-            if (menu) {
-                menu.classList.remove('open');
-            }
-            if (button) {
-                button.classList.remove('menu-open');
-                button.setAttribute('aria-expanded', 'false');
-            }
-        }
-
-        function toggleReleaseManualRefreshMenu(event) {
-            if (event) {
-                event.stopPropagation();
-            }
-            const menu = document.getElementById('releaseManualRefreshMenu');
-            const button = document.getElementById('releaseManualRefreshMenuBtn');
-            if (!menu || !button || button.disabled) {
-                return;
-            }
-            const nextOpen = !menu.classList.contains('open');
-            menu.classList.toggle('open', nextOpen);
-            button.classList.toggle('menu-open', nextOpen);
-            button.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
-        }
-
-        document.addEventListener('click', event => {
-            const stack = document.getElementById('releaseManualRefreshStack');
-            if (stack && !stack.contains(event.target)) {
-                closeReleaseManualRefreshMenu();
-            }
-        });
-
-        document.addEventListener('keydown', event => {
-            if (event.key === 'Escape') {
-                closeReleaseManualRefreshMenu();
-            }
-        });
-
         function setReleaseRefreshButtonsLoading(isLoading) {
-            const effectiveLoading = Boolean(isLoading || releaseMonitorGlobalRefreshing || releaseMonitorLocalRefreshing);
-            if (effectiveLoading) {
-                closeReleaseManualRefreshMenu();
-            }
-            ['releaseManualRefreshMenuBtn', 'releaseMonitorQuickRefreshBtn', 'releaseMonitorRefreshBtn', 'releaseMonitorReliableRefreshBtn', 'releaseMonitorConfluenceSyncBtn', 'releaseMonitorCurrentWeekReportBtn', 'releaseMonitorAssignmentCenterBtn', 'releaseManualCreateBtn'].forEach(id => {
+            const effectiveLoading = Boolean(isLoading || releaseMonitorGlobalRefreshing);
+            ['releaseMonitorConfluenceSyncBtn', 'releaseMonitorCurrentWeekReportBtn', 'releaseMonitorAssignmentCenterBtn', 'releaseManualCreateBtn'].forEach(id => {
                 const btn = document.getElementById(id);
                 if (!btn) {
                     return;
                 }
                 btn.disabled = effectiveLoading;
-                const isActiveQuick = releaseMonitorActiveRefreshMode === 'quick' && id === 'releaseMonitorQuickRefreshBtn';
-                const isActiveFull = releaseMonitorActiveRefreshMode === 'full' && id === 'releaseMonitorRefreshBtn';
-                const isActiveReliable = releaseMonitorActiveRefreshMode === 'reliable_full' && id === 'releaseMonitorReliableRefreshBtn';
-                const isGlobalRefresh = !releaseMonitorActiveRefreshMode && releaseMonitorGlobalRefreshing && id === 'releaseMonitorRefreshBtn';
-                const isLoadingButton = effectiveLoading && (isActiveQuick || isActiveFull || isActiveReliable || isGlobalRefresh);
-                btn.classList.toggle('spinning', isLoadingButton);
-                btn.classList.toggle('loading', isLoadingButton);
             });
         }
 
@@ -10262,34 +10048,6 @@
 
         function openReleaseAssignmentCenter() {
             window.open(BASE_PATH + '/dashboard/release-monitor/assignment-center', '_blank', 'noopener');
-        }
-
-        async function refreshReleaseMonitor(mode = 'full') {
-            closeReleaseManualRefreshMenu();
-            releaseMonitorLocalRefreshing = true;
-            releaseMonitorActiveRefreshMode = ['quick', 'full', 'reliable_full'].includes(mode) ? mode : 'full';
-            setReleaseRefreshButtonsLoading(true);
-
-            try {
-                const response = await fetch(BASE_PATH + '/dashboard/release-monitor/refresh', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ mode })
-                });
-                const data = await response.json();
-                if (!data.success) {
-                    throw new Error(data.error || 'Не удалось обновить релизы');
-                }
-            } catch (error) {
-                console.error('Release monitor refresh error:', error);
-                alert('Ошибка обновления релизов: ' + error.message);
-                releaseMonitorLocalRefreshing = false;
-                releaseMonitorActiveRefreshMode = '';
-                setReleaseRefreshButtonsLoading(false);
-                return;
-            }
-
-            await pollReleaseMonitorRefresh(true);
         }
 
         function hideReleaseSnapshotProtectionWarning() {
@@ -10488,7 +10246,7 @@
         async function handleReleaseMonitorCompactStatus(data) {
             updateReleaseEmailNotificationStatus(data.email || {});
             const refreshStatus = data.refresh || {};
-            const isRefreshing = Boolean(data.refresh_in_progress || refreshStatus.state === 'refreshing');
+            const isRefreshing = Boolean(data.refresh_in_progress);
             setReleaseMonitorGlobalRefreshing(isRefreshing);
 
             const autoIncrementalStatus = data.auto_incremental || {};
@@ -10514,32 +10272,6 @@
                 view_updated_at: data.updated_at || '',
                 last_updated: data.updated_at || '',
             };
-            if (releaseMonitorLocalRefreshing) {
-                if (refreshStatus.state === 'completed' || refreshStatus.state === 'idle') {
-                    try {
-                        await loadReleaseMonitorFullStatus(latestRevision);
-                        releaseMonitorLocalRefreshing = false;
-                        releaseMonitorActiveRefreshMode = '';
-                        setReleaseRefreshButtonsLoading(false);
-                    } catch (error) {
-                        if (error.name !== 'AbortError') {
-                            console.error('Release monitor refresh result error:', error);
-                        }
-                        releaseMonitorLocalRefreshing = false;
-                        releaseMonitorActiveRefreshMode = '';
-                        setReleaseRefreshButtonsLoading(false);
-                        showReleaseUpdateBanner(compactMeta);
-                    }
-                } else if (refreshStatus.state === 'failed' || refreshStatus.state === 'rejected') {
-                    releaseMonitorLocalRefreshing = false;
-                    releaseMonitorActiveRefreshMode = '';
-                    setReleaseRefreshButtonsLoading(false);
-                } else {
-                    setReleaseRefreshButtonsLoading(true);
-                }
-                return;
-            }
-
             if (
                 latestRevision &&
                 releaseMonitorKnownRevision &&
@@ -10547,6 +10279,16 @@
                 latestRevision !== releaseMonitorDismissedRevision
             ) {
                 releaseMonitorKnownRevision = latestRevision;
+                if (refreshStatus.state === 'completed') {
+                    try {
+                        await loadReleaseMonitorFullStatus(latestRevision);
+                        return;
+                    } catch (error) {
+                        if (error.name !== 'AbortError') {
+                            console.error('Release monitor refresh result error:', error);
+                        }
+                    }
+                }
                 showReleaseUpdateBanner(compactMeta);
             }
         }
@@ -10598,7 +10340,7 @@
                 releaseMonitorPollingDebugState.maxCompactRequestsInFlight,
                 releaseMonitorPollingDebugState.compactRequestsInFlight
             );
-            let nextDelay = releaseMonitorLocalRefreshing ? 2000 : 15000;
+            let nextDelay = releaseMonitorGlobalRefreshing ? 2000 : 15000;
             try {
                 const response = await fetch(
                     BASE_PATH + '/dashboard/release-monitor/status?compact=1',
@@ -10612,8 +10354,7 @@
                 await handleReleaseMonitorCompactStatus(data);
                 nextDelay = (
                     data.refresh_in_progress ||
-                    data.auto_refresh_in_progress ||
-                    releaseMonitorLocalRefreshing
+                    data.auto_refresh_in_progress
                 ) ? 2000 : 15000;
             } catch (error) {
                 if (error.name !== 'AbortError') {
@@ -10644,10 +10385,6 @@
             if (!document.hidden) {
                 scheduleReleaseMonitorStatusPoll(controller, immediate ? 0 : 15000);
             }
-        }
-
-        async function pollReleaseMonitorRefresh() {
-            startReleaseMonitorGlobalStatusPolling(true);
         }
 
         document.addEventListener('visibilitychange', () => {

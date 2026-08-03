@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import shutil
 from datetime import datetime
@@ -15,9 +16,18 @@ SCHEMA_VERSION = 1
 
 
 class JsonFileStore:
-    def __init__(self, data_file: Path, schema_name: str) -> None:
+    def __init__(
+        self,
+        data_file: Path,
+        schema_name: str,
+        *,
+        backup_limit: Optional[int] = None,
+    ) -> None:
         self.data_file = data_file
         self.schema_name = schema_name
+        if backup_limit is not None and backup_limit < 1:
+            raise ValueError("backup_limit must be positive")
+        self.backup_limit = backup_limit
 
     def load(self) -> Optional[dict]:
         with self._lock():
@@ -130,6 +140,7 @@ class JsonFileStore:
                     "payload": payload,
                 }
             )
+            self._prune_backups()
 
     def clear(self) -> None:
         with self._lock():
@@ -137,6 +148,7 @@ class JsonFileStore:
                 return
             self._backup_existing("clear")
             self.data_file.unlink()
+            self._prune_backups()
 
     def _lock(self):
         LOCK_DIR.mkdir(parents=True, exist_ok=True)
@@ -184,7 +196,7 @@ class JsonFileStore:
             return None
         backups = sorted(
             backup_dir.glob(f"*_{self.data_file.name}"),
-            key=lambda path: path.stat().st_mtime,
+            key=lambda path: path.name,
             reverse=True,
         )
         for backup in backups:
@@ -194,6 +206,27 @@ class JsonFileStore:
             except Exception:
                 continue
         return None
+
+    def _prune_backups(self) -> None:
+        if self.backup_limit is None:
+            return
+        backup_dir = BACKUP_DIR / self.data_file.stem
+        if not backup_dir.exists():
+            return
+        backups = sorted(
+            backup_dir.glob(f"*_{self.data_file.name}"),
+            key=lambda path: path.name,
+            reverse=True,
+        )
+        for backup in backups[self.backup_limit :]:
+            try:
+                backup.unlink()
+            except OSError as exc:
+                logging.warning(
+                    "VA schedule backup cleanup failed for %s: %s",
+                    self.schema_name,
+                    type(exc).__name__,
+                )
 
     def _is_versioned(self, data: object) -> bool:
         return isinstance(data, dict) and "schema_version" in data and "payload" in data

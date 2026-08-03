@@ -28,6 +28,12 @@ from services.release_monitor_duty_overlay import (
     apply_duty_schedule_overlay,
     get_effective_release_reviewer,
 )
+from services.release_monitor_refresh_coordinator import (
+    get_shared_refresh_status,
+    is_refresh_lock_held,
+    try_acquire_refresh_lock,
+    write_persisted_refresh_status,
+)
 from services.release_monitor_employee_provider import (
     get_release_monitor_names as _load_oplot_values,
     get_release_monitor_projection as _load_employee_projection,
@@ -108,6 +114,7 @@ ATTEMPTS_FILE = SNAPSHOT_DIR / "release_monitor_attempts.json"
 REVISION_FILE = SNAPSHOT_DIR / "release_monitor_revision.txt"
 _employee_projection_context = threading.local()
 _state_json_read_context = threading.local()
+_date_parse_context = threading.local()
 CONFLUENCE_DELTA_BASE = "https://confluence.delta.sbrf.ru"
 JIRA_DELTA_BASE = "https://jira.delta.sbrf.ru"
 RELEASE_TYPE_VALUES = {"release", "hotfix", "reroll", "technical"}
@@ -268,6 +275,10 @@ _refresh_status = {
     "error": None,
     "mode": None,
     "trigger": None,
+}
+_refresh_snapshot_summary_cache = {
+    "signature": None,
+    "summary": None,
 }
 
 
@@ -723,9 +734,23 @@ def _append_auto_incremental_meta(meta):
     return meta
 
 
-def is_release_monitor_refreshing():
-    with _cache_lock:
-        return bool(_refresh_thread and _refresh_thread.is_alive()) or _refresh_status.get("state") == "refreshing"
+MUTATION_BLOCKING_REFRESH_MODES = frozenset({
+    "quick",
+    "full",
+    RELIABLE_FULL_REFRESH_MODE,
+})
+
+
+def is_release_monitor_refresh_operation_running():
+    return is_refresh_lock_held()
+
+
+def is_release_monitor_refreshing(refresh_state=None):
+    status = refresh_state if isinstance(refresh_state, dict) else get_release_monitor_refresh_state()
+    return (
+        status.get("state") == "refreshing"
+        and status.get("mode") in MUTATION_BLOCKING_REFRESH_MODES
+    )
 
 
 def ensure_release_monitor_not_refreshing():
@@ -876,8 +901,101 @@ def get_release_monitor_base_revision():
 
 
 def get_release_monitor_refresh_state():
+    return get_shared_refresh_status()
+
+
+def _update_release_monitor_refresh_status(**updates):
     with _cache_lock:
-        return dict(_refresh_status)
+        _refresh_status.update(updates)
+        status = dict(_refresh_status)
+    try:
+        return write_persisted_refresh_status(status)
+    except OSError:
+        logging.exception("Release monitor: failed to persist refresh status")
+        return status
+
+
+def _snapshot_summary_signature():
+    try:
+        stat = SNAPSHOT_FILE.stat()
+    except OSError:
+        return (False, 0, 0)
+    return (True, int(stat.st_mtime_ns), int(stat.st_size))
+
+
+def _read_snapshot_tail_sections():
+    if not SNAPSHOT_FILE.exists():
+        return {}, {}
+    try:
+        with SNAPSHOT_FILE.open("rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            handle.seek(max(0, size - (256 * 1024)))
+            tail = handle.read().decode("utf-8")
+    except (OSError, UnicodeDecodeError):
+        return {}, {}
+
+    decoder = json.JSONDecoder()
+
+    def read_section(name):
+        marker = f'"{name}"'
+        marker_index = tail.rfind(marker)
+        if marker_index < 0:
+            return {}
+        value_start = tail.find(":", marker_index + len(marker))
+        if value_start < 0:
+            return {}
+        try:
+            value, _ = decoder.raw_decode(tail[value_start + 1 :].lstrip())
+        except (TypeError, ValueError):
+            return {}
+        return value if isinstance(value, dict) else {}
+
+    return read_section("summary"), read_section("meta")
+
+
+def _get_release_monitor_snapshot_summary():
+    signature = _snapshot_summary_signature()
+    with _cache_lock:
+        if _refresh_snapshot_summary_cache["signature"] == signature:
+            return copy.deepcopy(
+                _refresh_snapshot_summary_cache["summary"]
+                or {
+                    "count": 0,
+                    "data_revision": "",
+                    "last_updated": "",
+                    "last_quick_sync": "",
+                    "last_full_sync": "",
+                    "last_sync_mode": "",
+                }
+            )
+
+    snapshot_summary, meta = _read_snapshot_tail_sections()
+    summary = {
+        "count": max(0, int(snapshot_summary.get("total") or 0)),
+        "data_revision": str(meta.get("data_revision") or ""),
+        "last_updated": str(meta.get("last_updated") or ""),
+        "last_quick_sync": str(meta.get("last_quick_sync") or ""),
+        "last_full_sync": str(meta.get("last_full_sync") or ""),
+        "last_sync_mode": str(meta.get("last_sync_mode") or ""),
+    }
+    with _cache_lock:
+        _refresh_snapshot_summary_cache["signature"] = signature
+        _refresh_snapshot_summary_cache["summary"] = copy.deepcopy(summary)
+    return summary
+
+
+def get_release_monitor_refresh_admin_status():
+    from services.release_monitor_view_revision import get_release_monitor_view_state
+
+    view_state = get_release_monitor_view_state()
+    return {
+        "success": True,
+        "refresh": get_release_monitor_refresh_state(),
+        "snapshot": _get_release_monitor_snapshot_summary(),
+        "view_revision": str(view_state.get("view_revision") or ""),
+        "updated_at": str(view_state.get("updated_at") or ""),
+    }
 
 
 def get_release_monitor_auto_incremental_status():
@@ -2156,15 +2274,28 @@ def _parse_release_monitor_date(value):
     if not value:
         return None
 
-    parsed = _parse_jira_date(str(value))
+    raw_value = str(value)
+    cache = getattr(_date_parse_context, "cache", None)
+    cache_key = ("release_monitor", raw_value)
+    if cache is not None and cache_key in cache:
+        return cache[cache_key]
+
+    parsed = _parse_jira_date(raw_value)
     if parsed:
+        if cache is not None:
+            cache[cache_key] = parsed
         return parsed
 
     for fmt in ("%d.%m.%Y", "%d.%m.%Y %H:%M", "%d.%m.%Y %H:%M:%S"):
         try:
-            return datetime.strptime(str(value), fmt)
+            parsed = datetime.strptime(raw_value, fmt)
+            if cache is not None:
+                cache[cache_key] = parsed
+            return parsed
         except ValueError:
             continue
+    if cache is not None:
+        cache[cache_key] = None
     return None
 
 
@@ -3188,6 +3319,11 @@ def _parse_jira_date(value):
     if not value:
         return None
 
+    cache = getattr(_date_parse_context, "cache", None)
+    cache_key = ("jira", value) if isinstance(value, str) else None
+    if cache is not None and cache_key is not None and cache_key in cache:
+        return cache[cache_key]
+
     for fmt in (
         "%Y-%m-%dT%H:%M:%S.%f%z",
         "%Y-%m-%dT%H:%M:%S%z",
@@ -3199,10 +3335,14 @@ def _parse_jira_date(value):
         try:
             parsed = datetime.strptime(value, fmt)
             if parsed.tzinfo is not None:
-                return parsed.astimezone().replace(tzinfo=None)
+                parsed = parsed.astimezone().replace(tzinfo=None)
+            if cache is not None and cache_key is not None:
+                cache[cache_key] = parsed
             return parsed
         except ValueError:
             continue
+    if cache is not None and cache_key is not None:
+        cache[cache_key] = None
     return None
 
 
@@ -6660,23 +6800,36 @@ def _run_auto_incremental_release_monitor_refresh():
     global _cached_data, _last_cache_update, _last_auto_incremental_refresh_at
 
     trace_started_at = time.monotonic()
+    refresh_lock = try_acquire_refresh_lock()
+    if refresh_lock is None:
+        with _cache_lock:
+            _auto_incremental_status.update(
+                {
+                    "state": "skipped",
+                    "last_finished_at": _format_timestamp(),
+                    "last_changed": False,
+                    "last_error": None,
+                }
+            )
+            _last_auto_incremental_refresh_at = time.time()
+        return
+
+    _update_release_monitor_refresh_status(
+        state="refreshing",
+        message="Идёт автоматическое тихое обновление таблицы Блока релизов.",
+        started_at=_format_timestamp(),
+        finished_at=None,
+        error_code="",
+        mode="auto_incremental",
+        trigger="auto",
+        previous_total=None,
+        candidate_total=None,
+        confirmed_snapshot_at=None,
+    )
     try:
         started_at = _format_timestamp()
         _rm_trace("RM_SILENT_REFRESH", "start", started_at_text=started_at)
         with _cache_lock:
-            manual_refresh_running = bool(
-                (_refresh_thread and _refresh_thread.is_alive())
-                or _refresh_status.get("state") == "refreshing"
-            )
-            if manual_refresh_running:
-                logging.info("Release monitor: skipped auto incremental refresh because manual refresh is running")
-                _rm_trace(
-                    "RM_SILENT_REFRESH",
-                    "skip_manual_refresh_running",
-                    started_at=trace_started_at,
-                )
-                return
-
             _auto_incremental_status.update(
                 {
                     "state": "running",
@@ -6812,26 +6965,6 @@ def _run_auto_incremental_release_monitor_refresh():
             return
 
         with _cache_lock:
-            manual_refresh_running = bool(
-                (_refresh_thread and _refresh_thread.is_alive())
-                or _refresh_status.get("state") == "refreshing"
-            )
-            if manual_refresh_running:
-                logging.info("Release monitor: skipped saving auto incremental refresh because manual refresh started")
-                _auto_incremental_status.update(
-                    {
-                        "state": "skipped",
-                        "last_finished_at": _format_timestamp(),
-                        "last_changed": False,
-                        "last_error": None,
-                    }
-                )
-                _rm_trace(
-                    "RM_SILENT_REFRESH",
-                    "skip_save_manual_refresh_started",
-                    started_at=trace_started_at,
-                )
-                return
             _cached_data = finalized
             _last_cache_update = time.time()
             _save_snapshot_to_disk(_cached_data)
@@ -6885,6 +7018,29 @@ def _run_auto_incremental_release_monitor_refresh():
         with _cache_lock:
             _last_auto_incremental_refresh_at = time.time()
             final_state = _auto_incremental_status.get("state")
+        shared_state = "failed" if final_state == "failed" else (
+            "skipped" if final_state in {"waiting", "skipped"} else "completed"
+        )
+        shared_message = {
+            "failed": "Автоматическое тихое обновление завершилось ошибкой.",
+            "skipped": "Автоматическое тихое обновление пропущено.",
+            "completed": "Автоматическое тихое обновление завершено.",
+        }[shared_state]
+        _update_release_monitor_refresh_status(
+            state=shared_state,
+            message=shared_message,
+            finished_at=_format_timestamp(),
+            error_code=(
+                "auto_incremental_failed"
+                if final_state == "failed"
+                else "auto_incremental_partial"
+                if final_state == "partial"
+                else ""
+            ),
+            mode="auto_incremental",
+            trigger="auto",
+        )
+        refresh_lock.release()
         _rm_trace(
             "RM_SILENT_REFRESH",
             "worker_exit",
@@ -6915,10 +7071,7 @@ def _ensure_scheduler_started():
                 with _cache_lock:
                     snapshot = _cached_data or _load_snapshot_from_disk() or _build_empty_release_monitor_payload()
                     last_full_sync = (snapshot.get("meta") or {}).get("last_full_sync")
-                    running = bool(
-                        (_refresh_thread is not None and _refresh_thread.is_alive())
-                        or _refresh_status.get("state") == "refreshing"
-                    )
+                    running = is_release_monitor_refresh_operation_running()
                     auto_running = _auto_incremental_thread is not None and _auto_incremental_thread.is_alive()
                     last_auto_ts = _last_auto_incremental_refresh_at
 
@@ -6955,11 +7108,8 @@ def _ensure_scheduler_started():
 
                 if should_run_auto_incremental:
                     with _cache_lock:
-                        manual_refresh_running = bool(
-                            (_refresh_thread and _refresh_thread.is_alive())
-                            or _refresh_status.get("state") == "refreshing"
-                        )
-                        if not manual_refresh_running:
+                        refresh_operation_running = is_release_monitor_refresh_operation_running()
+                        if not refresh_operation_running:
                             _rm_trace(
                                 "RM_SCHEDULER",
                                 "launch_silent_refresh",
@@ -7211,19 +7361,20 @@ def _run_release_monitor_refresh(mode="full", trigger="manual"):
                 _last_cache_update = time.time()
 
         now_str = _format_timestamp()
-        with _cache_lock:
-            _refresh_status.update(
-                {
-                    "state": "completed",
-                    "message": "Р”Р°РЅРЅС‹Рµ РїРѕ СЂРµР»РёР·Р°Рј РѕР±РЅРѕРІР»РµРЅС‹",
-                    "started_at": _refresh_status.get("started_at"),
-                    "finished_at": now_str,
-                    "error": None,
-                    "mode": mode,
-                    "trigger": trigger,
-                    "validation_report": validation_report if mode in {"full", RELIABLE_FULL_REFRESH_MODE} else None,
-                }
-            )
+        _update_release_monitor_refresh_status(
+            state="completed",
+            message="Данные таблицы Блока релизов обновлены.",
+            finished_at=now_str,
+            error=None,
+            error_code="",
+            mode=mode,
+            trigger=trigger,
+            validation_report=(
+                validation_report
+                if mode in {"full", RELIABLE_FULL_REFRESH_MODE}
+                else None
+            ),
+        )
         logging.info("Release monitor: background %s refresh completed, items=%s", mode, len(data.get("items", [])))
         _rm_trace(
             trace_tag,
@@ -7246,21 +7397,19 @@ def _run_release_monitor_refresh(mode="full", trigger="manual"):
         report = dict(exc.validation_report or {})
         baseline = dict(report.get("baseline") or {})
         candidate_profile = dict(report.get("candidate") or {})
-        with _cache_lock:
-            _refresh_status.update(
-                {
-                    "state": "rejected",
-                    "message": "Обновление не применено: Jira вернула неполные данные",
-                    "finished_at": _format_timestamp(),
-                    "error": str(exc),
-                    "mode": mode,
-                    "trigger": trigger,
-                    "validation_report": report,
-                    "previous_total": int(baseline.get("total") or 0),
-                    "candidate_total": int(candidate_profile.get("total") or 0),
-                    "confirmed_snapshot_at": _confirmed_snapshot_timestamp(_cached_data),
-                }
-            )
+        _update_release_monitor_refresh_status(
+            state="rejected",
+            message="Обновление не применено: Jira вернула неполные данные.",
+            finished_at=_format_timestamp(),
+            error=str(exc),
+            error_code="candidate_rejected",
+            mode=mode,
+            trigger=trigger,
+            validation_report=report,
+            previous_total=int(baseline.get("total") or 0),
+            candidate_total=int(candidate_profile.get("total") or 0),
+            confirmed_snapshot_at=_confirmed_snapshot_timestamp(_cached_data),
+        )
         _rm_trace(
             trace_tag,
             "worker_rejected",
@@ -7274,20 +7423,18 @@ def _run_release_monitor_refresh(mode="full", trigger="manual"):
             state="failed",
             error=str(exc),
         )
-        with _cache_lock:
-            _refresh_status.update(
-                {
-                    "state": "failed",
-                    "message": "Обновление не применено: обязательный источник Jira недоступен",
-                    "finished_at": _format_timestamp(),
-                    "error": str(exc),
-                    "mode": mode,
-                    "trigger": trigger,
-                    "previous_total": _count_payload_items(_cached_data),
-                    "candidate_total": _count_payload_items(exc.candidate),
-                    "confirmed_snapshot_at": _confirmed_snapshot_timestamp(_cached_data),
-                }
-            )
+        _update_release_monitor_refresh_status(
+            state="failed",
+            message="Обновление не применено: обязательный источник Jira недоступен.",
+            finished_at=_format_timestamp(),
+            error=str(exc),
+            error_code="source_unavailable",
+            mode=mode,
+            trigger=trigger,
+            previous_total=_count_payload_items(_cached_data),
+            candidate_total=_count_payload_items(exc.candidate),
+            confirmed_snapshot_at=_confirmed_snapshot_timestamp(_cached_data),
+        )
         _rm_trace(
             trace_tag,
             "worker_source_failed",
@@ -7296,17 +7443,15 @@ def _run_release_monitor_refresh(mode="full", trigger="manual"):
         )
     except Exception as exc:
         logging.exception("Release monitor: background %s refresh failed", mode)
-        with _cache_lock:
-            _refresh_status.update(
-                {
-                    "state": "failed",
-                    "message": "РћС€РёР±РєР° РѕР±РЅРѕРІР»РµРЅРёСЏ СЂРµР»РёР·РѕРІ",
-                    "finished_at": _format_timestamp(),
-                    "error": str(exc),
-                    "mode": mode,
-                    "trigger": trigger,
-                }
-            )
+        _update_release_monitor_refresh_status(
+            state="failed",
+            message="Обновление таблицы Блока релизов завершилось ошибкой.",
+            finished_at=_format_timestamp(),
+            error=str(exc),
+            error_code="refresh_failed",
+            mode=mode,
+            trigger=trigger,
+        )
         _rm_trace(
             trace_tag,
             "worker_failed",
@@ -7315,46 +7460,86 @@ def _run_release_monitor_refresh(mode="full", trigger="manual"):
         )
 
 
+def _run_release_monitor_refresh_with_lock(refresh_lock, *, mode, trigger):
+    try:
+        _run_release_monitor_refresh(mode=mode, trigger=trigger)
+    finally:
+        refresh_lock.release()
+
+
 def start_release_monitor_refresh(mode="full", trigger="manual"):
     global _refresh_thread
 
-    with _cache_lock:
-        _ensure_scheduler_started()
-        if _refresh_thread and _refresh_thread.is_alive():
-            return {
-                "started": False,
-                "status": dict(_refresh_status),
-            }
+    mode = str(mode or "").strip().lower()
+    trigger = "auto" if str(trigger or "").strip().lower() == "auto" else "manual"
+    if mode not in {"quick", "full", RELIABLE_FULL_REFRESH_MODE}:
+        raise ValueError("Unsupported release monitor refresh mode.")
 
-        _refresh_status.update(
-            {
-                "state": "refreshing",
-                "message": "РРґРµС‚ РїРѕР»РЅРѕРµ РѕР±РЅРѕРІР»РµРЅРёРµ СЂРµР»РёР·РѕРІ РёР· Jira" if mode == "full" else f"РРґРµС‚ Р±С‹СЃС‚СЂРѕРµ РѕР±РЅРѕРІР»РµРЅРёРµ СЂРµР»РёР·РѕРІ Р·Р° РїРѕСЃР»РµРґРЅРёРµ {QUICK_REFRESH_DAYS} РґРЅРµР№",
-                "started_at": _format_timestamp(),
-                "finished_at": None,
-                "error": None,
-                "mode": mode,
-                "trigger": trigger,
-                "validation_report": None,
-                "previous_total": None,
-                "candidate_total": None,
-                "confirmed_snapshot_at": None,
-            }
+    refresh_lock = try_acquire_refresh_lock()
+    if refresh_lock is None:
+        return {
+            "started": False,
+            "status": get_release_monitor_refresh_state(),
+        }
+
+    try:
+        with _cache_lock:
+            _ensure_scheduler_started()
+            if _refresh_thread and _refresh_thread.is_alive():
+                refresh_lock.release()
+                return {
+                    "started": False,
+                    "status": get_release_monitor_refresh_state(),
+                }
+
+        messages = {
+            "quick": (
+                "Идёт быстрое обновление таблицы Блока релизов "
+                f"за последние {QUICK_REFRESH_DAYS} дней."
+            ),
+            "full": "Идёт полное обновление таблицы Блока релизов из Jira.",
+            RELIABLE_FULL_REFRESH_MODE: (
+                "Идёт надёжное полное обновление таблицы Блока релизов из Jira."
+            ),
+        }
+        status = _update_release_monitor_refresh_status(
+            state="refreshing",
+            message=messages[mode],
+            started_at=_format_timestamp(),
+            finished_at=None,
+            error=None,
+            error_code="",
+            mode=mode,
+            trigger=trigger,
+            validation_report=None,
+            previous_total=None,
+            candidate_total=None,
+            confirmed_snapshot_at=None,
         )
         worker_app = current_app._get_current_object() if has_app_context() else None
         _refresh_thread = threading.Thread(
             target=_run_in_app_context,
-            args=(worker_app, _run_release_monitor_refresh),
-            kwargs={"mode": mode, "trigger": trigger},
+            args=(worker_app, _run_release_monitor_refresh_with_lock),
+            kwargs={"refresh_lock": refresh_lock, "mode": mode, "trigger": trigger},
             daemon=True,
             name=f"release-monitor-{mode}-refresh",
         )
         _refresh_thread.start()
-
         return {
             "started": True,
-            "status": dict(_refresh_status),
+            "status": status,
         }
+    except Exception:
+        refresh_lock.release()
+        _update_release_monitor_refresh_status(
+            state="failed",
+            message="Не удалось запустить обновление таблицы Блока релизов.",
+            finished_at=_format_timestamp(),
+            error_code="refresh_start_failed",
+            mode=mode,
+            trigger=trigger,
+        )
+        raise
 
 
 def _normalize_release_payload(payload):
@@ -7372,6 +7557,10 @@ def _normalize_release_payload(payload):
     owns_state_cache = previous_state_cache is None
     if owns_state_cache:
         _state_json_read_context.cache = {}
+    previous_date_cache = getattr(_date_parse_context, "cache", None)
+    owns_date_cache = previous_date_cache is None
+    if owns_date_cache:
+        _date_parse_context.cache = {}
 
     try:
         normalized_items = [dict(item) for item in (payload.get("items") or []) if isinstance(item, dict)]
@@ -7383,17 +7572,12 @@ def _normalize_release_payload(payload):
         _apply_release_status_consistency(normalized_items)
         _apply_date_overrides(normalized_items)
         _apply_release_attempt_outcomes(normalized_items)
-        _apply_duty_schedule_assignments(
-            normalized_items,
-            persist=False,
-            duty_projection=duty_projection,
-            reviewer_assignments=reviewer_assignments,
-        )
         _apply_zni_assignments(normalized_items)
         _apply_manual_release_overrides(normalized_items, payload.get("manual_overrides") or {})
         _apply_template_system_classification(normalized_items)
         _apply_work_marks(normalized_items)
         _apply_manual_duplicate_reconciliation(normalized_items)
+        # Reconciliation is the final stage that can alter assignment fields.
         _apply_duty_schedule_assignments(
             normalized_items,
             persist=False,
@@ -7446,6 +7630,8 @@ def _normalize_release_payload(payload):
             _employee_projection_context.projection = previous_projection
         if owns_state_cache:
             del _state_json_read_context.cache
+        if owns_date_cache:
+            del _date_parse_context.cache
 
 
 def _finalize_release_monitor_payload(payload, manual_overrides=None):
@@ -7474,12 +7660,16 @@ def get_effective_release_monitor_snapshot(*, base_snapshot=None):
 def get_release_monitor_refresh_status():
     with _cache_lock:
         _ensure_scheduler_started()
-        _reload_snapshot_from_disk_if_newer()
+        reloaded_from_disk = _reload_snapshot_from_disk_if_newer()
 
         payload = {
-            "status": dict(_refresh_status),
+            "status": get_release_monitor_refresh_state(),
         }
-        data = get_effective_release_monitor_snapshot()
+        data = (
+            copy.deepcopy(_cached_data)
+            if reloaded_from_disk and _cached_data is not None
+            else get_effective_release_monitor_snapshot()
+        )
         data["meta"] = _append_auto_incremental_meta(data.get("meta", {}))
         payload["data"] = data
         persisted_state = str(
@@ -7504,11 +7694,15 @@ def get_release_monitor_refresh_status():
 def get_release_monitor_snapshot():
     with _cache_lock:
         _ensure_scheduler_started()
-        _reload_snapshot_from_disk_if_newer()
+        reloaded_from_disk = _reload_snapshot_from_disk_if_newer()
         if _cached_data is None:
             return _build_empty_release_monitor_payload()
 
-        payload = get_effective_release_monitor_snapshot()
+        payload = (
+            copy.deepcopy(_cached_data)
+            if reloaded_from_disk
+            else get_effective_release_monitor_snapshot()
+        )
         payload["meta"] = {
             **payload.get("meta", {}),
             "is_cached": True,

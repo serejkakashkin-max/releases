@@ -52,11 +52,6 @@ DOC_FILES = [
         "path": "api.md",
     },
     {
-        "title": "Источник требований",
-        "description": "Зафиксированные правила из приложенного файла требований.",
-        "path": "ui-and-integrations-source.md",
-    },
-    {
         "title": "Миграционная сборка",
         "description": "Как подключить модуль графиков к родительской АС с минимальными правками.",
         "path": "migration-build.md",
@@ -72,7 +67,7 @@ DOC_FILES = [
         "path": "changelog.md",
     },
 ]
-ALLOWED_DOC_PATHS = {item["path"] for item in DOC_FILES} | {"README.md", "source/ui-and-integrations-guide.html"}
+ALLOWED_DOC_PATHS = {item["path"] for item in DOC_FILES} | {"README.md"}
 
 
 def _doc_title(filename: str) -> str:
@@ -476,7 +471,6 @@ def docs_index():
         "va_schedule_manager/docs.html",
         active_page="docs",
         docs_files=DOC_FILES,
-        source_html_path="source/ui-and-integrations-guide.html",
     )
 
 

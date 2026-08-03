@@ -14,10 +14,10 @@ from services.release_monitor_service import (
     RELEASE_OPERATIONAL_DAY_START_HOUR,
     get_release_monitor_data,
     get_release_monitor_snapshot,
-    start_release_monitor_refresh,
     get_release_monitor_refresh_status,
     get_release_monitor_refresh_state,
     get_release_monitor_auto_incremental_status,
+    is_release_monitor_refreshing,
     ensure_release_monitor_not_refreshing,
     get_release_monitor_reviewer_options,
     get_release_monitor_week_control,
@@ -117,6 +117,35 @@ def _build_consistent_release_monitor_model(builder):
         if before.get("view_revision") == latest_state.get("view_revision"):
             return model, latest_state
     raise ReleaseMonitorViewChanged(latest_state.get("view_revision"))
+
+
+def _build_compact_release_monitor_mutation(payload, row_key):
+    payload = payload if isinstance(payload, dict) else {}
+    normalized_row_key = str(row_key or "").strip()
+    row = next(
+        (
+            item
+            for item in (payload.get("items") or [])
+            if isinstance(item, dict)
+            and normalized_row_key in {
+                str(item.get("row_key") or "").strip(),
+                str(item.get("release_key") or "").strip(),
+            }
+        ),
+        None,
+    )
+    view_state = get_release_monitor_view_state()
+    meta = {
+        **dict(payload.get("meta") or {}),
+        "view_revision": view_state["view_revision"],
+        "view_updated_at": view_state["updated_at"],
+    }
+    return {
+        "row": row,
+        "release_monitor_summary": payload.get("summary", {}),
+        "release_monitor_meta": meta,
+        "view_revision": view_state["view_revision"],
+    }
 
 @dashboard_bp.route('/dashboard')
 def dashboard():
@@ -502,32 +531,6 @@ def api_dashboard_data():
         logging.error(f"Ошибка API дашборда: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
-@dashboard_bp.route('/dashboard/release-monitor/refresh', methods=['POST'])
-def refresh_release_monitor():
-    """Запускает фоновое обновление блока релизов."""
-    try:
-        request_data = request.get_json(silent=True) or {}
-        mode = (request_data.get("mode") or "full").strip().lower()
-        if mode not in {"full", "quick", "reliable_full"}:
-            mode = "full"
-        refresh_info = start_release_monitor_refresh(mode=mode, trigger="manual")
-        return jsonify({
-            "success": True,
-            "started": refresh_info.get("started", False),
-            "refresh_status": refresh_info.get("status", {}),
-            "message": (
-                "Полное обновление релизов запущено"
-                if mode == "full" and refresh_info.get("started")
-                else "Быстрое обновление релизов запущено"
-                if mode == "quick" and refresh_info.get("started")
-                else "Обновление релизов уже выполняется"
-            )
-        })
-    except Exception as e:
-        logging.error(f"Ошибка обновления блока релизов: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
 @dashboard_bp.route('/dashboard/release-monitor/status', methods=['GET'])
 def release_monitor_status():
     """Возвращает статус фонового обновления и последний снимок данных релизов."""
@@ -536,6 +539,7 @@ def release_monitor_status():
             view_state = get_release_monitor_view_state()
             refresh_state = get_release_monitor_refresh_state()
             auto_incremental_status = get_release_monitor_auto_incremental_status()
+            refresh_blocks_actions = is_release_monitor_refreshing(refresh_state)
             return jsonify({
                 "success": True,
                 "refresh": refresh_state,
@@ -543,8 +547,11 @@ def release_monitor_status():
                 "email": get_unassigned_email_status(),
                 "view_revision": view_state["view_revision"],
                 "updated_at": view_state["updated_at"],
-                "refresh_in_progress": refresh_state.get("state") == "refreshing",
-                "auto_refresh_in_progress": bool(auto_incremental_status.get("running")),
+                "refresh_in_progress": refresh_blocks_actions,
+                "auto_refresh_in_progress": (
+                    refresh_state.get("state") == "refreshing"
+                    and refresh_state.get("mode") == "auto_incremental"
+                ) or bool(auto_incremental_status.get("running")),
             })
         except Exception as exc:
             logging.exception(
@@ -666,13 +673,21 @@ def create_release_monitor_zni_issue():
         reporter = data.get("reporter", "")
         result = create_release_monitor_zni(release_key, reporter=reporter)
         payload = result.get("data", {})
-        return jsonify({
+        response_payload = {
             "success": True,
             "issue": result.get("issue", {}),
-            "release_monitor": payload.get("items", []),
-            "release_monitor_summary": payload.get("summary", {}),
-            "release_monitor_meta": payload.get("meta", {}),
-        })
+        }
+        if data.get("compact") is True:
+            response_payload.update(
+                _build_compact_release_monitor_mutation(payload, release_key)
+            )
+        else:
+            response_payload.update({
+                "release_monitor": payload.get("items", []),
+                "release_monitor_summary": payload.get("summary", {}),
+                "release_monitor_meta": payload.get("meta", {}),
+            })
+        return jsonify(response_payload)
     except Exception as e:
         logging.error(f"Ошибка создания ЗНИ по релизу: {e}")
         return jsonify({"success": False, "error": str(e)}), 400
@@ -866,17 +881,25 @@ def update_release_monitor_rollout_notes():
         level = data.get("level", "")
         result = set_release_monitor_rollout_notes(release_key, enabled=enabled, level=level)
         payload = result.get("data", {})
-        return jsonify({
+        response_payload = {
             "success": True,
             "release_key": result.get("release_key"),
             "has_rollout_notes": result.get("has_rollout_notes"),
             "rollout_notes_level": result.get("rollout_notes_level"),
             "work_mark_cleared": result.get("work_mark_cleared", False),
             "work_mark_cleanup_failed": result.get("work_mark_cleanup_failed", False),
-            "release_monitor": payload.get("items", []),
-            "release_monitor_summary": payload.get("summary", {}),
-            "release_monitor_meta": payload.get("meta", {}),
-        })
+        }
+        if data.get("compact") is True:
+            response_payload.update(
+                _build_compact_release_monitor_mutation(payload, release_key)
+            )
+        else:
+            response_payload.update({
+                "release_monitor": payload.get("items", []),
+                "release_monitor_summary": payload.get("summary", {}),
+                "release_monitor_meta": payload.get("meta", {}),
+            })
+        return jsonify(response_payload)
     except Exception as e:
         logging.error(f"Ошибка сохранения ручной подсветки релиза: {e}")
         return jsonify({"success": False, "error": str(e)}), 400

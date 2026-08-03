@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Dict, Iterable, Optional, Set
 from pathlib import Path
 
 from VA.schedule_manager.models.schedule_grid import ScheduleGrid
@@ -26,11 +26,27 @@ class ScheduleService:
             raise KeyError(sheet_name)
         return snapshot.get_month_grid(sheet_name)
 
-    def save_month_grid(self, sheet_name: str, grid: ScheduleGrid) -> None:
+    def save_month_grid(
+        self,
+        sheet_name: str,
+        grid: ScheduleGrid,
+        *,
+        clear_metadata_keys: Iterable[str] = (),
+        metadata_updates: Optional[Dict[str, dict]] = None,
+    ) -> Set[str]:
         snapshot = self.get_current()
         if snapshot is None:
             raise KeyError(sheet_name)
-        self.repository.save(snapshot.replace_month_grid(sheet_name, grid))
+        updated = snapshot.replace_month_grid(sheet_name, grid)
+        cleared = set()
+        for key in clear_metadata_keys:
+            if updated.get_month_metadata(sheet_name, key):
+                updated = updated.clear_month_metadata(sheet_name, key)
+                cleared.add(key)
+        for key, value in (metadata_updates or {}).items():
+            updated = updated.set_month_metadata(sheet_name, key, value)
+        self.repository.save(updated)
+        return cleared
 
     def get_month_metadata(self, sheet_name: str, key: str) -> dict:
         snapshot = self.get_current()

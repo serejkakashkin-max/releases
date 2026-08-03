@@ -1,7 +1,9 @@
+import logging
 from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
+import portalocker
 from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 
@@ -12,7 +14,7 @@ from VA.schedule_manager.parsers.monthly_workbook_parser import parse_all_month_
 from VA.schedule_manager.repositories.managed_employee_repository import ManagedEmployeeRepository
 from VA.schedule_manager.repositories.schedule_repository import ScheduleRepository
 from VA.schedule_manager.services.competency_service import COMPETENCY_SUPPORT
-from VA.schedule_manager.config import ALLOWED_EXTENSIONS, MAX_UPLOAD_SIZE_BYTES, UPLOAD_DIR
+from VA.schedule_manager.config import ALLOWED_EXTENSIONS, LOCK_DIR, MAX_UPLOAD_SIZE_BYTES, UPLOAD_DIR
 
 
 class UploadValidationError(Exception):
@@ -25,6 +27,16 @@ class ImportService:
         self.employee_repository = employee_repository or ManagedEmployeeRepository()
 
     def import_file(self, file: FileStorage) -> ScheduleSnapshot:
+        LOCK_DIR.mkdir(parents=True, exist_ok=True)
+        with portalocker.Lock(str(LOCK_DIR / "schedule_upload.lock"), timeout=30):
+            existing_uploads = self._upload_files()
+            try:
+                return self._import_file_locked(file)
+            except Exception:
+                self._remove_new_uploads(existing_uploads)
+                raise
+
+    def _import_file_locked(self, file: FileStorage) -> ScheduleSnapshot:
         original_filename = file.filename or ""
         self._validate_filename(original_filename)
         self._validate_file_size(file)
@@ -61,6 +73,7 @@ class ImportService:
             month_schedules=month_schedules,
         )
         self.repository.save(snapshot)
+        self._remove_old_uploads(stored_path)
         return snapshot
 
     def _with_directory_competencies(self, employees: list) -> list:
@@ -107,6 +120,37 @@ class ImportService:
                 pass
             raise UploadValidationError("Файл слишком большой.")
         return path
+
+    @staticmethod
+    def _upload_files() -> set:
+        if not UPLOAD_DIR.exists():
+            return set()
+        return {path for path in UPLOAD_DIR.iterdir() if path.is_file()}
+
+    @staticmethod
+    def _remove_file(path: Path) -> bool:
+        try:
+            path.unlink(missing_ok=True)
+            return True
+        except OSError as exc:
+            logging.warning(
+                "VA schedule upload cleanup failed: %s",
+                type(exc).__name__,
+            )
+            return False
+
+    def _remove_new_uploads(self, existing_uploads: set) -> None:
+        for path in self._upload_files() - existing_uploads:
+            self._remove_file(path)
+
+    def _remove_old_uploads(self, current_path: Path) -> None:
+        removed = sum(
+            1
+            for path in self._upload_files()
+            if path != current_path and self._remove_file(path)
+        )
+        if removed:
+            logging.info("VA schedule uploads cleaned up: removed=%s", removed)
 
     def _validate_file_size(self, file: FileStorage) -> None:
         if file.content_length and file.content_length > MAX_UPLOAD_SIZE_BYTES:

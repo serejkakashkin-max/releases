@@ -1647,10 +1647,6 @@
                     <div class="release-monitor-meta">
                         Обновлено: <strong id="releaseMonitorLastUpdated">{{ release_monitor_meta.last_updated or 'еще не загружалось' }}</strong>
                     </div>
-                    <button id="releaseMonitorRefreshBtn" class="release-monitor-btn" onclick="event.stopPropagation(); refreshReleaseMonitor()">
-                        <i class="bi bi-arrow-repeat"></i>
-                        Обновить релизы
-                    </button>
                     <button id="releaseMonitorToggleBtn" class="release-monitor-btn" onclick="event.stopPropagation(); toggleReleaseMonitorExpand()">
                         <i class="bi bi-arrows-expand"></i>
                         Показать все
@@ -2171,7 +2167,6 @@
         let releaseMonitorItems = [];
         let releaseMonitorSummary = {};
         let releaseMonitorMeta = {};
-        let releaseMonitorRefreshPoll = null;
 
         function escapeHtml(value) {
             return String(value || '')
@@ -2414,129 +2409,6 @@
             const section = document.getElementById('releaseMonitorSection');
             if (section) {
                 section.classList.toggle('collapsed');
-            }
-        }
-
-        async function refreshReleaseMonitor() {
-            const btn = document.getElementById('releaseMonitorRefreshBtn');
-            if (btn) {
-                btn.disabled = true;
-                btn.classList.add('spinning');
-            }
-
-            try {
-                const response = await fetch(BASE_PATH + '/dashboard/release-monitor/refresh', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
-                });
-                const data = await response.json();
-
-                if (!data.success) {
-                    throw new Error(data.error || 'Не удалось обновить релизы');
-                }
-            } catch (error) {
-                console.error('Release monitor refresh error:', error);
-                alert('Ошибка обновления релизов: ' + error.message);
-                if (btn) {
-                    btn.disabled = false;
-                    btn.classList.remove('spinning');
-                }
-                return;
-            }
-
-            await pollReleaseMonitorRefresh(true);
-        }
-
-        async function pollReleaseMonitorRefresh(forceStart = false) {
-            const btn = document.getElementById('releaseMonitorRefreshBtn');
-            if (releaseMonitorRefreshPoll && !forceStart) {
-                return;
-            }
-
-            const loadStatus = async () => {
-                const response = await fetch(BASE_PATH + '/dashboard/release-monitor/status');
-                const data = await response.json();
-
-                if (!data.success) {
-                    throw new Error(data.error || 'Не удалось получить статус обновления релизов');
-                }
-
-                const refreshStatus = data.refresh_status || {};
-                window.dashboardData.release_monitor = data.release_monitor || [];
-                window.dashboardData.release_monitor_summary = data.release_monitor_summary || {};
-                window.dashboardData.release_monitor_meta = data.release_monitor_meta || {};
-                renderReleaseMonitor(
-                    data.release_monitor || [],
-                    data.release_monitor_summary || {},
-                    data.release_monitor_meta || {}
-                );
-
-                if (refreshStatus.state === 'completed' || refreshStatus.state === 'idle') {
-                    if (releaseMonitorRefreshPoll) {
-                        clearInterval(releaseMonitorRefreshPoll);
-                        releaseMonitorRefreshPoll = null;
-                    }
-                    if (btn) {
-                        btn.disabled = false;
-                        btn.classList.remove('spinning');
-                    }
-                    return refreshStatus.state;
-                }
-
-                if (refreshStatus.state === 'failed' || refreshStatus.state === 'rejected') {
-                    if (releaseMonitorRefreshPoll) {
-                        clearInterval(releaseMonitorRefreshPoll);
-                        releaseMonitorRefreshPoll = null;
-                    }
-                    if (btn) {
-                        btn.disabled = false;
-                        btn.classList.remove('spinning');
-                    }
-                    throw new Error(
-                        refreshStatus.error
-                        || (refreshStatus.state === 'rejected'
-                            ? 'Обновление не применено: Jira вернула неполные данные'
-                            : 'Ошибка фонового обновления релизов')
-                    );
-                }
-
-                return refreshStatus.state;
-            };
-
-            try {
-                const currentState = await loadStatus();
-                if (currentState === 'completed' || currentState === 'idle') {
-                    return;
-                }
-            } catch (error) {
-                console.error('Release monitor status error:', error);
-                if (releaseMonitorRefreshPoll) {
-                    clearInterval(releaseMonitorRefreshPoll);
-                    releaseMonitorRefreshPoll = null;
-                }
-                if (btn) {
-                    btn.disabled = false;
-                    btn.classList.remove('spinning');
-                }
-                alert('Ошибка обновления релизов: ' + error.message);
-                return;
-            }
-
-            if (!releaseMonitorRefreshPoll) {
-                releaseMonitorRefreshPoll = setInterval(async () => {
-                    try {
-                        await loadStatus();
-                    } catch (error) {
-                        console.error('Release monitor status polling error:', error);
-                        clearInterval(releaseMonitorRefreshPoll);
-                        releaseMonitorRefreshPoll = null;
-                        if (btn) {
-                            btn.disabled = false;
-                            btn.classList.remove('spinning');
-                        }
-                        alert('Ошибка обновления релизов: ' + error.message);
-                    }
-                }, 2000);
             }
         }
 

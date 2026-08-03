@@ -83,7 +83,6 @@ class ScheduleAutoplanService:
         grid = self.schedule_service.get_month_grid(sheet_name)
         employees = {employee.name: employee for employee in self.employee_repository.load_all()}
         planned, assignment_explanations = self._plan_grid(grid, employees)
-        self.schedule_service.save_month_grid(sheet_name, planned)
 
         violations = validate_schedule(
             planned,
@@ -92,7 +91,11 @@ class ScheduleAutoplanService:
         )
         assigned_cells_count = self._assigned_cells_count(grid, planned)
         artifact = self._build_artifact(planned, assigned_cells_count, len(violations), assignment_explanations)
-        self.schedule_service.set_month_metadata(sheet_name, "autoplan", artifact)
+        self.schedule_service.save_month_grid(
+            sheet_name,
+            planned,
+            metadata_updates={"autoplan": artifact},
+        )
         return ScheduleAutoplanResult(sheet_name, planned.title, assigned_cells_count, len(violations), artifact)
 
     def _month_service(self) -> ScheduleMonthService:
