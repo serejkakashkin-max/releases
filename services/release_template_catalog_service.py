@@ -275,6 +275,7 @@ def build_template_catalog(root: Path = DOC_TEMPLATES_ROOT, deep: bool = True) -
             "category": category,
             "release_clean": clean_name,
             "release_full": release_full,
+            "relative_dir": relative.as_posix(),
             "ke": ke,
             "variant": variant,
             "requires_playbooks": requires_playbooks,

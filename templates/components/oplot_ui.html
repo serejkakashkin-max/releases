@@ -1,0 +1,18 @@
+{% macro badge(text, color='secondary') -%}
+  {% if text %}<span class="badge bg-{{ color }}-lt">{{ text }}</span>{% endif %}
+{%- endmacro %}
+
+{% macro empty_state(title, message) -%}
+  <div class="empty py-6" role="status">
+    <div class="empty-icon">∅</div>
+    <p class="empty-title">{{ title }}</p>
+    <p class="empty-subtitle text-secondary">{{ message }}</p>
+  </div>
+{%- endmacro %}
+
+{% macro error_state(title, message) -%}
+  <div class="alert alert-danger" role="alert">
+    <div class="fw-semibold">{{ title }}</div>
+    <div>{{ message }}</div>
+  </div>
+{%- endmacro %}

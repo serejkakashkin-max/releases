@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="ru">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Vendor assets недоступны</title></head>
+<body>
+  <main>
+    <h1>Центр шаблонов временно недоступен</h1>
+    <p>Отсутствуют или повреждены обязательные локальные vendor assets:</p>
+    <ul>{% for problem in problems %}<li>{{ problem }}</li>{% endfor %}</ul>
+    <p>Запустите локальную проверку <code>python tools/verify_vendor_assets.py</code>. CDN fallback намеренно отключён.</p>
+    <p><a href="{{ public_url_for('main.index') }}">Вернуться на главную</a></p>
+  </main>
+</body>
+</html>
