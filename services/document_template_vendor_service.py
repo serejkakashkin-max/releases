@@ -2,11 +2,30 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
+import time
+from collections import OrderedDict
 from pathlib import Path
 from typing import Dict, List
 
 
 MANIFEST_RELATIVE_PATH = Path("vendor") / "manifest.json"
+_CACHE: "OrderedDict[str, tuple[float, tuple, Dict[str, object]]]" = OrderedDict()
+_CACHE_TTL_SECONDS = 60
+_CACHE_MAX_ROOTS = 8
+_CACHE_LOCK = threading.RLock()
+
+
+def clear_document_template_vendor_cache(root: Path | None = None) -> None:
+    with _CACHE_LOCK:
+        if root is None:
+            _CACHE.clear()
+            return
+        try:
+            key = str(Path(root).resolve())
+        except (OSError, RuntimeError):
+            return
+        _CACHE.pop(key, None)
 
 
 def _sha256(path: Path) -> str:
@@ -17,8 +36,44 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _sha256_with_checkout_normalization(path: Path) -> set[str]:
+    payload = path.read_bytes()
+    hashes = {hashlib.sha256(payload).hexdigest()}
+    # Git for Windows may materialize text bundles with CRLF even though the
+    # pinned upstream artifact and manifest use LF. Only that exact reversible
+    # newline transformation is accepted; all other byte changes still fail.
+    if b"\r\n" in payload:
+        hashes.add(hashlib.sha256(payload.replace(b"\r\n", b"\n")).hexdigest())
+    return hashes
+
+
+def _signature(static_root: Path) -> tuple:
+    manifest = static_root / MANIFEST_RELATIVE_PATH
+    try:
+        manifest_stat = manifest.stat()
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+        values = [(str(MANIFEST_RELATIVE_PATH), manifest_stat.st_size, manifest_stat.st_mtime_ns)]
+        for asset in payload.get("assets", []):
+            relative = str(asset.get("path") or "")
+            path = static_root / relative
+            try:
+                item = path.stat(); values.append((relative, item.st_size, item.st_mtime_ns))
+            except OSError:
+                values.append((relative, -1, -1))
+        return tuple(values)
+    except Exception:
+        return (("manifest", -1, -1),)
+
+
 def verify_vendor_assets(static_root: Path) -> Dict[str, object]:
     static_root = Path(static_root).resolve()
+    cache_key = str(static_root)
+    signature = _signature(static_root)
+    with _CACHE_LOCK:
+        cached = _CACHE.get(cache_key)
+        if cached and time.monotonic() - cached[0] <= _CACHE_TTL_SECONDS and cached[1] == signature:
+            _CACHE.move_to_end(cache_key)
+            return {"ok": cached[2]["ok"], "problems": list(cached[2]["problems"])}
     manifest_path = static_root / MANIFEST_RELATIVE_PATH
     problems: List[str] = []
     try:
@@ -47,9 +102,15 @@ def verify_vendor_assets(static_root: Path) -> Dict[str, object]:
             problems.append(name)
             continue
         try:
-            if not candidate.is_file() or _sha256(candidate) != expected_hash:
+            if not candidate.is_file() or expected_hash not in _sha256_with_checkout_normalization(candidate):
                 problems.append(name)
         except OSError:
             problems.append(name)
 
-    return {"ok": not problems, "problems": list(dict.fromkeys(problems))}
+    result = {"ok": not problems, "problems": list(dict.fromkeys(problems))}
+    with _CACHE_LOCK:
+        _CACHE[cache_key] = (time.monotonic(), signature, result)
+        _CACHE.move_to_end(cache_key)
+        while len(_CACHE) > _CACHE_MAX_ROOTS:
+            _CACHE.popitem(last=False)
+    return {"ok": result["ok"], "problems": list(result["problems"])}

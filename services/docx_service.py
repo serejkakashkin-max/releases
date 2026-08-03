@@ -31,7 +31,7 @@ def add_hyperlink(paragraph, url, text):
     hyperlink.append(new_run)
     paragraph._p.append(hyperlink)
 
-def replace_keys_in_doc(doc, context, issues, release_id, instruction_url=None):
+def replace_keys_in_doc(doc, context, issues, release_id, instruction_url=None, jira_base_url=None):
     def replace_in_paragraph(paragraph):
         runs = list(paragraph.runs)
         text = ''.join(run.text for run in runs)
@@ -116,7 +116,8 @@ def replace_keys_in_doc(doc, context, issues, release_id, instruction_url=None):
                 row = table.add_row().cells
                 row[0].text = str(idx)
                 p = row[1].paragraphs[0]
-                add_hyperlink(p, f"{get_jira_domain_and_token(release_id)[0]}/browse/{issue['key']}", issue['key'])
+                jira_base = str(jira_base_url or get_jira_domain_and_token(release_id)[0]).rstrip('/')
+                add_hyperlink(p, f"{jira_base}/browse/{issue['key']}", issue['key'])
                 row[2].text = issue['summary']
                 row[3].text = issue['type']
             

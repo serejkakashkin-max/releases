@@ -1,0 +1,6 @@
+{% extends 'layouts/oplot_base.html' %}
+{% block title %}Кандидат — Центр шаблонов{% endblock %}
+{% block styles %}<link rel="stylesheet" href="{{ public_url_for('static', filename='css/document_templates.css') }}">{% endblock %}
+{% block content %}<div class="mb-3"><a href="{{ public_url_for('document_templates.index') }}" class="btn btn-ghost-secondary">← К каталогу</a></div><section id="candidate-panel">{% include 'document_templates/_candidate_panel.html' %}</section>{% endblock %}
+{% block overlays %}{% include 'document_templates/_preview_modal.html' %}{% endblock %}
+{% block scripts %}<script defer src="{{ public_url_for('static', filename='js/document_templates.js') }}"></script>{% endblock %}

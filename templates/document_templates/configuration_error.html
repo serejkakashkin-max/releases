@@ -1,0 +1,14 @@
+{% extends 'layouts/oplot_base.html' %}
+{% block title %}Центр шаблонов — требуется настройка{% endblock %}
+{% block styles %}<link rel="stylesheet" href="{{ public_url_for('static', filename='css/document_templates.css') }}">{% endblock %}
+{% block content %}
+<div class="oplot-state-page">
+  <div class="oplot-state-card">
+    <div class="oplot-state-mark">!</div>
+    <div class="page-pretitle">Центр шаблонов</div>
+    <h1>Редактор пока недоступен</h1>
+    <p>Для безопасной работы требуется завершить серверную настройку. Обратитесь к администратору Oplot.</p>
+    <a class="btn btn-outline-primary" href="{{ public_url_for('main.index') }}">Вернуться на главную</a>
+  </div>
+</div>
+{% endblock %}

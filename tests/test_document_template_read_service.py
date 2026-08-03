@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import stat
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,6 +11,7 @@ from tests._support import create_docx, prepare_config_import
 prepare_config_import()
 
 from services.document_template_read_service import (
+    _contains_symlink,
     build_catalog_page,
     build_document_whitelist,
     document_id_for_relative_path,
@@ -76,6 +78,21 @@ class DocumentTemplateReadServiceTests(unittest.TestCase):
         except (OSError, NotImplementedError) as exc:
             self.skipTest(f"Symlinks are not available: {exc}")
         self.assertEqual({}, build_document_whitelist(self.root))
+
+    def test_symlink_component_check_is_always_testable_without_os_privilege(self):
+        directory = self.make_kit()
+        candidate = directory / "Документ 1.docx"
+        linked_component = directory
+
+        def injected_lstat(path):
+            result = os.lstat(path)
+            if Path(path) == linked_component:
+                values = list(result)
+                values[0] = stat.S_IFLNK | 0o777
+                return os.stat_result(values)
+            return result
+
+        self.assertTrue(_contains_symlink(self.root, candidate, lstat=injected_lstat))
 
     def test_catalog_metadata_search_and_filters(self):
         self.make_kit(category="CAT_A", name="Комплект PL (12345)", documents=2)

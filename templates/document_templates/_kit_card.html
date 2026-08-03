@@ -1,41 +1,9 @@
 {% import 'components/oplot_ui.html' as ui %}
 <article class="card template-kit-card">
-  <div class="card-header align-items-start">
-    <div class="flex-fill">
-      <div class="d-flex flex-wrap gap-2 mb-2">
-        {{ ui.badge(kit.category, 'azure') }}
-        {{ ui.badge('КЭ ' ~ kit.ke, 'blue') if kit.ke else '' }}
-        {{ ui.badge(kit.variant, 'purple') if kit.variant else '' }}
-      </div>
-      <h3 class="card-title mb-1">{{ kit.release_full }}</h3>
-      <div class="text-secondary">Clean name: {{ kit.release_clean }}</div>
-    </div>
-    <div class="text-end text-secondary small">
-      <div>{{ kit.doc_count }} DOCX</div>
-      <div>Изменено {{ kit.modified_at }}</div>
-    </div>
-  </div>
-  <div class="table-responsive">
-    <table class="table table-vcenter card-table">
-      <thead><tr><th>Документ</th><th>Размер</th><th>Изменён</th><th>SHA-256</th><th class="w-1" aria-label="Действия"></th></tr></thead>
-      <tbody>
-      {% for document in kit.documents %}
-        {% set preview_url = public_url_for('document_templates.preview_document', document_id=document.document_id) %}
-        {% set download_url = public_url_for('document_templates.download_document', document_id=document.document_id) %}
-        <tr>
-          <td><span class="fw-semibold text-break">{{ document.filename }}</span></td>
-          <td class="text-secondary text-nowrap">{{ document.size_display }}</td>
-          <td class="text-secondary text-nowrap">{{ document.modified_at }}</td>
-          <td><code>{{ document.sha256_short }}</code></td>
-          <td>
-            <div class="btn-list flex-nowrap">
-              <button class="btn btn-outline-primary btn-sm js-document-preview" type="button" data-preview-url="{{ preview_url }}" data-document-name="{{ document.filename }}">Просмотреть</button>
-              <a class="btn btn-primary btn-sm" href="{{ download_url }}">Скачать</a>
-            </div>
-          </td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
+  <div class="card-header align-items-start"><div class="flex-fill"><div class="d-flex flex-wrap gap-2 mb-2">{{ ui.badge(kit.category, 'azure') }}{{ ui.badge('КЭ ' ~ kit.ke, 'blue') if kit.ke else '' }}{{ ui.badge(kit.variant, 'purple') if kit.variant else '' }}</div><h3 class="card-title mb-1">{{ kit.release_full }}</h3><div class="text-secondary">Clean name: {{ kit.release_clean }}</div></div><div class="text-end text-secondary small"><div>{{ kit.doc_count }} DOCX</div><div>Изменено {{ kit.modified_at }}</div></div></div>
+  <div class="table-responsive"><table class="table table-vcenter card-table oplot-document-table"><thead><tr><th>Документ</th><th>Версия</th><th>Изменён</th><th>Состояние</th><th class="text-end">Действия</th></tr></thead><tbody>
+  {% for document in kit.documents %}
+    {% set preview_url = public_url_for('document_templates.preview_document', document_id=document.document_id) %}{% set download_url = public_url_for('document_templates.download_document', document_id=document.document_id) %}
+    <tr id="document-{{ document.document_id }}"><td><div class="oplot-document-name">{{ document.filename }}</div><div class="small text-secondary">{{ document.size_display }} · SHA <code>{{ document.sha256_short }}</code></div></td><td><span class="badge bg-green-lt">Актуальная</span>{% if document.candidate_count %}<span class="badge bg-yellow-lt ms-1">Кандидатов: {{ document.candidate_count }}</span>{% endif %}</td><td class="text-secondary text-nowrap">{{ document.modified_at }}</td><td><span class="oplot-state-badge is-{{ document.status }}">{{ {'active':'Готов','uploaded':'Кандидат загружен','validating':'Проверяется','valid':'Проверка успешна','invalid_security':'Ошибка безопасности','invalid_contract':'Есть ошибки','invalid_generation':'Ошибка генерации','conflict':'Конфликт','published':'Опубликовано'}.get(document.status, document.status) }}</span></td><td><div class="oplot-actions"><button class="btn btn-primary btn-sm js-document-preview" type="button" data-preview-url="{{ preview_url }}" data-document-name="{{ document.filename }}" data-preview-source="Активный шаблон">Просмотреть</button><a class="btn btn-outline-secondary btn-sm" href="{{ download_url }}">Скачать</a><button class="btn btn-warning btn-sm js-candidate-upload" type="button" data-upload-url="{{ public_url_for('document_templates.upload_candidate', document_id=document.document_id) }}" data-document-name="{{ document.filename }}" data-document-sha="{{ document.sha256_short }}">Заменить</button><a class="btn btn-ghost-secondary btn-sm" href="{{ public_url_for('document_templates.document_history', document_id=document.document_id) }}">История</a></div>{% if document.candidates %}<div class="oplot-candidate-links mt-2">{% for candidate in document.candidates %}<a href="{{ public_url_for('document_templates.candidate_detail', document_id=document.document_id, candidate_uuid=candidate.candidate_uuid) }}">{{ candidate.source_filename }} · {{ candidate.state }}</a>{% endfor %}</div>{% endif %}</td></tr>
+  {% endfor %}</tbody></table></div>
 </article>
