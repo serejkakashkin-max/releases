@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "assets": [
+    {
+      "name": "Tabler CSS",
+      "component": "@tabler/core",
+      "version": "1.4.0",
+      "source": "https://registry.npmjs.org/@tabler/core/-/core-1.4.0.tgz",
+      "path": "vendor/tabler/1.4.0/tabler.min.css",
+      "sha256": "7ef750bd10546a695d0b12767ad8048bd8f3ec5de7daefb1067f9d0daa3d1c9a",
+      "license": "MIT",
+      "status": "ready"
+    },
+    {
+      "name": "Tabler JavaScript",
+      "component": "@tabler/core",
+      "version": "1.4.0",
+      "source": "https://registry.npmjs.org/@tabler/core/-/core-1.4.0.tgz",
+      "path": "vendor/tabler/1.4.0/tabler.min.js",
+      "sha256": "b60c76160e97624574dbb8cf10abe6aee9a6493b60096fdfc15dd1dd2bd99eb9",
+      "license": "MIT",
+      "status": "ready"
+    },
+    {
+      "name": "HTMX",
+      "component": "htmx.org",
+      "version": "2.0.10",
+      "source": "https://raw.githubusercontent.com/bigskysoftware/htmx/v2.0.10/dist/htmx.min.js",
+      "path": "vendor/htmx/2.0.10/htmx.min.js",
+      "sha256": "71ea67185bfa8c98c39d31717c6fce5d852370fcdfd129db4543774d3145c0de",
+      "license": "0BSD",
+      "status": "ready"
+    },
+    {
+      "name": "JSZip",
+      "component": "jszip",
+      "version": "3.10.1",
+      "source": "https://raw.githubusercontent.com/Stuk/jszip/v3.10.1/dist/jszip.min.js",
+      "path": "vendor/jszip/3.10.1/jszip.min.js",
+      "sha256": "acc7e41455a80765b5fd9c7ee1b8078a6d160bbbca455aeae854de65c947d59e",
+      "license": "MIT OR GPL-3.0-or-later",
+      "status": "ready"
+    },
+    {
+      "name": "docx-preview",
+      "component": "docx-preview",
+      "version": "0.3.6",
+      "source": "https://raw.githubusercontent.com/VolodymyrBaydalka/docxjs/0.3.6/dist/docx-preview.min.js",
+      "path": "vendor/docx-preview/0.3.6/docx-preview.min.js",
+      "sha256": "3573b8d993442316042e95c782338b503b2a7cd573d336db894b87799c9d3097",
+      "license": "Apache-2.0",
+      "status": "ready"
+    }
+  ]
+}

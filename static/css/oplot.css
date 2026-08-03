@@ -1,0 +1,45 @@
+:root {
+  --oplot-sidebar-width: 16rem;
+}
+
+.oplot-sidebar {
+  --tblr-navbar-bg: #182433;
+}
+
+.oplot-topbar {
+  min-height: 4rem;
+  border-bottom: 1px solid var(--tblr-border-color);
+  background: var(--tblr-bg-surface);
+}
+
+.oplot-operation-indicator {
+  position: fixed;
+  z-index: 1090;
+  right: 1rem;
+  bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .65rem .9rem;
+  border-radius: var(--tblr-border-radius);
+  color: var(--tblr-body-color);
+  background: var(--tblr-bg-surface);
+  border: 1px solid var(--tblr-border-color);
+  box-shadow: var(--tblr-box-shadow-card);
+}
+
+.oplot-operation-indicator[hidden] {
+  display: none;
+}
+
+.empty-icon {
+  font-size: 3rem;
+  line-height: 1;
+  color: var(--tblr-secondary);
+}
+
+@media (min-width: 992px) {
+  .oplot-sidebar {
+    width: var(--oplot-sidebar-width);
+  }
+}

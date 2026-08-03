@@ -1,0 +1,53 @@
+{% extends 'layouts/oplot_base.html' %}
+
+{% block title %}Центр шаблонов документов — Oplot{% endblock %}
+
+{% block styles %}
+  <link rel="stylesheet" href="{{ public_url_for('static', filename='css/document_templates.css') }}">
+{% endblock %}
+
+{% block content %}
+  <div class="page-header d-print-none mb-4">
+    <div class="row g-2 align-items-center">
+      <div class="col">
+        <div class="page-pretitle">Только чтение</div>
+        <h2 class="page-title">Центр шаблонов документов</h2>
+        <p class="text-secondary mt-2 mb-0">Просмотр актуального каталога DOCX без изменения рабочих файлов.</p>
+      </div>
+    </div>
+  </div>
+
+  <section id="template-catalog" aria-live="polite">
+    {% if catalog %}
+      {% include 'document_templates/_catalog.html' %}
+    {% else %}
+      {% include 'document_templates/_catalog_error.html' %}
+    {% endif %}
+  </section>
+
+  <div class="modal modal-blur fade" id="document-preview-modal" tabindex="-1" aria-labelledby="document-preview-title" aria-hidden="true">
+    <div class="modal-dialog modal-full-width modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <div>
+            <h3 class="modal-title" id="document-preview-title">Просмотр документа</h3>
+            <div class="text-secondary small">Предпросмотр может отличаться от отображения в Microsoft Word.</div>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+        </div>
+        <div class="modal-body">
+          <div id="document-preview-loader" class="text-center py-6" hidden>
+            <span class="spinner-border" aria-hidden="true"></span>
+            <div class="mt-3">Подготавливаем безопасный предпросмотр…</div>
+          </div>
+          <div id="document-preview-error" class="alert alert-danger" role="alert" hidden></div>
+          <div id="document-preview-container" class="document-preview-container"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script defer src="{{ public_url_for('static', filename='js/document_templates.js') }}"></script>
+{% endblock %}

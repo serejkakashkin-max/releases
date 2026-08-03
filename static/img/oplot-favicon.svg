@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Oplot">
+  <rect width="64" height="64" rx="14" fill="#066fd1"/>
+  <path d="M32 9 51 17v14c0 12-7.7 20.8-19 25-11.3-4.2-19-13-19-25V17l19-8Z" fill="#fff" opacity=".96"/>
+  <circle cx="32" cy="31" r="10" fill="#066fd1"/>
+  <circle cx="32" cy="31" r="4" fill="#fff"/>
+</svg>

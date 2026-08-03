@@ -11,6 +11,7 @@ def register_routes(app):
     from routes.chatbot_routes import chatbot_bp
     from routes.sup_admin_session_routes import sup_admin_session_bp
     from routes.sup_parameters_routes import sup_parameters_bp
+    from routes.document_template_routes import document_template_bp
 
     init_duty_schedule_provider_registry(app)
     app.register_blueprint(main_bp)
@@ -21,6 +22,7 @@ def register_routes(app):
     app.register_blueprint(chatbot_bp)
     app.register_blueprint(sup_admin_session_bp)
     app.register_blueprint(sup_parameters_bp)
+    app.register_blueprint(document_template_bp)
 
     try:
         from services.va_schedule_manager_registry import register_va_schedule_manager
