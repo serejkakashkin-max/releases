@@ -1,0 +1,34 @@
+{% extends 'layouts/oplot_base.html' %}
+{% block title %}История — Центр шаблонов{% endblock %}
+{% block styles %}<link rel="stylesheet" href="{{ public_url_for('static', filename='css/document_templates.css') }}">{% endblock %}
+{% block content %}
+<div class="d-flex align-items-start justify-content-between mb-4">
+  <div><div class="page-pretitle">История версий</div><h1>{{ document.filename }}</h1><p class="text-secondary">Текущая версия не пропадёт при восстановлении — она будет добавлена в историю.</p></div>
+  <a class="btn btn-ghost-secondary" href="{{ public_url_for('document_templates.index') }}">К каталогу</a>
+</div>
+<div class="oplot-history">
+  <div class="oplot-history-item is-active"><span class="oplot-history-dot"></span><div class="card"><div class="card-body"><span class="badge bg-green-lt">Активная версия</span><h3 class="mt-2">Сейчас используется</h3><code>{{ document.sha256_short }}</code></div></div></div>
+  {% for version in versions %}
+  <div class="oplot-history-item">
+    <span class="oplot-history-dot"></span>
+    <div class="card"><div class="card-body"><div class="d-flex justify-content-between gap-4">
+      <div><div class="page-pretitle">{{ version.created_at_display }}</div><h3>{{ version.action }} · {{ version.actor }}</h3><p>{{ version.comment }}</p><code>{{ version.sha256[:12] }}</code></div>
+      <div class="oplot-history-actions">
+        <button class="btn btn-outline-primary btn-sm js-document-preview" data-preview-url="{{ public_url_for('document_templates.preview_history', document_id=document.document_id, version_uuid=version.version_uuid) }}" data-document-name="{{ document.filename }}" data-preview-source="Историческая версия">Просмотреть</button>
+        <a class="btn btn-outline-secondary btn-sm" href="{{ public_url_for('document_templates.download_history', document_id=document.document_id, version_uuid=version.version_uuid) }}">Скачать</a>
+        <button class="btn btn-warning btn-sm js-rollback-open" type="button" data-bs-toggle="modal" data-bs-target="#rollback-confirm-modal" data-rollback-url="{{ public_url_for('document_templates.rollback_history', document_id=document.document_id, version_uuid=version.version_uuid) }}" data-version-sha="{{ version.sha256[:12] }}" data-version-actor="{{ version.actor }}" data-version-date="{{ version.created_at_display }}">Восстановить</button>
+      </div>
+    </div></div></div>
+  </div>
+  {% else %}<div class="card"><div class="card-body text-center py-6"><h3>История пока пуста</h3><p class="text-secondary">Первая сохранённая версия появится после публикации.</p></div></div>{% endfor %}
+</div>
+{% endblock %}
+{% block overlays %}
+  {% include 'document_templates/_preview_modal.html' %}
+  <div class="modal modal-blur fade" id="rollback-confirm-modal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content"><form id="rollback-confirm-form" method="post">
+    <div class="modal-header"><div><div class="page-pretitle">Восстановление версии</div><h3 class="modal-title">Вернуть выбранную версию?</h3></div><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Закрыть"></button></div>
+    <div class="modal-body"><div class="oplot-publish-summary"><div><span>Сейчас активна</span><code>{{ document.sha256_short }}</code></div><div><span>Будет восстановлена</span><code id="rollback-version-sha"></code></div><div><span>Версию изменил</span><strong id="rollback-version-actor"></strong></div><div><span>Дата версии</span><strong id="rollback-version-date"></strong></div></div><div class="alert alert-warning">Текущая версия не исчезнет: она будет сохранена в истории как отдельная точка восстановления.</div><input type="hidden" name="_csrf_token" value="{{ csrf_token }}"><input type="hidden" name="expected_active_sha" value="{{ document.sha256 }}"><label class="form-label" for="rollback-reason">Причина восстановления</label><textarea class="form-control" id="rollback-reason" name="reason" minlength="3" maxlength="500" rows="3" required placeholder="Почему требуется вернуться к этой версии"></textarea></div>
+    <div class="modal-footer"><button class="btn btn-ghost-secondary" type="button" data-bs-dismiss="modal">Отмена</button><button class="btn btn-warning btn-lg" type="submit">Восстановить с сохранением текущей</button></div>
+  </form></div></div></div>
+{% endblock %}
+{% block scripts %}<script defer src="{{ public_url_for('static', filename='js/document_templates.js') }}"></script>{% endblock %}

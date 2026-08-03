@@ -151,6 +151,7 @@
     return {
       modal: document.getElementById("document-preview-modal"),
       title: document.getElementById("document-preview-title"),
+      source: document.getElementById("document-preview-source"),
       loader: document.getElementById("document-preview-loader"),
       error: document.getElementById("document-preview-error"),
       container: document.getElementById("document-preview-container")
@@ -201,6 +202,9 @@
     var generation = previewGeneration;
     activeController = new AbortController();
     view.title.textContent = button.dataset.documentName || "Просмотр документа";
+    if (view.source) {
+      view.source.textContent = button.dataset.previewSource || "Документ";
+    }
     view.loader.hidden = false;
     var renderTarget = document.createElement("div");
     view.container.appendChild(renderTarget);
@@ -267,7 +271,57 @@
         event.preventDefault();
         openPreview(button);
       }
+      var uploadButton = event.target.closest(".js-candidate-upload");
+      if (uploadButton) {
+        event.preventDefault();
+        var uploadModal = document.getElementById("candidate-upload-modal");
+        var form = document.getElementById("candidate-upload-form");
+        var Modal = window.tabler && (window.tabler.Modal || (window.tabler.bootstrap && window.tabler.bootstrap.Modal));
+        if (uploadModal && form && Modal) {
+          form.action = uploadButton.dataset.uploadUrl;
+          document.getElementById("upload-active-name").textContent = uploadButton.dataset.documentName || "";
+          document.getElementById("upload-active-sha").textContent = uploadButton.dataset.documentSha || "";
+          Modal.getOrCreateInstance(uploadModal).show();
+        }
+      }
+      var rollbackButton = event.target.closest(".js-rollback-open");
+      if (rollbackButton) {
+        var rollbackForm = document.getElementById("rollback-confirm-form");
+        if (rollbackForm) {
+          rollbackForm.action = rollbackButton.dataset.rollbackUrl;
+          document.getElementById("rollback-version-sha").textContent = rollbackButton.dataset.versionSha || "";
+          document.getElementById("rollback-version-actor").textContent = rollbackButton.dataset.versionActor || "";
+          document.getElementById("rollback-version-date").textContent = rollbackButton.dataset.versionDate || "";
+        }
+      }
     });
+    document.addEventListener("submit", function (event) {
+      var form = event.target;
+      if (form.dataset.confirm && !window.confirm(form.dataset.confirm)) {
+        event.preventDefault();
+        return;
+      }
+      if (!event.defaultPrevented) {
+        Array.prototype.forEach.call(form.querySelectorAll('button[type="submit"]'), function (button) {
+          button.disabled = true;
+          button.classList.add("is-loading");
+        });
+      }
+    });
+    var candidateFile = document.getElementById("candidate-file");
+    if (candidateFile) {
+      candidateFile.addEventListener("change", function () {
+        var caption = document.getElementById("candidate-file-caption");
+        var file = candidateFile.files && candidateFile.files[0];
+        if (caption) {
+          caption.textContent = file ? file.name + " · " + (file.size / 1024 / 1024).toFixed(2) + " МиБ" : "Файл ещё не выбран";
+        }
+        var submit = document.getElementById("candidate-upload-submit");
+        if (submit) {
+          submit.disabled = Boolean(file && file.size > 10 * 1024 * 1024);
+        }
+      });
+    }
     var view = elements();
     if (view.modal) {
       view.modal.addEventListener("hidden.bs.modal", cleanupPreview);

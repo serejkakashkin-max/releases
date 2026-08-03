@@ -7,6 +7,8 @@ import re
 import stat
 import sys
 import unicodedata
+import time
+from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -17,6 +19,26 @@ from services.release_template_catalog_service import build_runtime_template_cat
 
 DOCUMENT_ID_RE = re.compile(r"^dt1_[0-9a-f]{64}$")
 DEFAULT_PAGE_SIZE = 12
+_READ_CACHE: "OrderedDict[str, tuple[float, tuple, Dict[str, ResolvedDocument]]]" = OrderedDict()
+_READ_CACHE_TTL_SECONDS = 60
+_READ_CACHE_MAX_ROOTS = 4
+
+
+def clear_document_template_read_cache(root: Path | None = None) -> None:
+    """Public invalidation hook used after an atomic template mutation.
+
+    The current whitelist is intentionally rebuilt for every access so a deleted or
+    replaced file can never be served from a stale path. The hook is kept explicit
+    for callers and for a future metadata-only snapshot cache.
+    """
+    if root is None:
+        _READ_CACHE.clear()
+        return
+    try:
+        key = str(Path(root).absolute())
+    except (OSError, RuntimeError):
+        return
+    _READ_CACHE.pop(key, None)
 
 
 class DocumentTemplateRootUnavailable(RuntimeError):
@@ -42,6 +64,7 @@ class ResolvedDocument:
             "size_display": _format_size(self.size),
             "modified_at": _format_timestamp(self.modified_ns),
             "sha256_short": self.sha256[:12],
+            "sha256": self.sha256,
         }
 
 
@@ -53,8 +76,11 @@ def _path_is_within(path: Path, root: Path) -> bool:
         return False
 
 
-def _contains_symlink(root: Path, candidate: Path) -> bool:
-    if root.is_symlink():
+def _contains_symlink(root: Path, candidate: Path, *, lstat=os.lstat) -> bool:
+    try:
+        if stat.S_ISLNK(lstat(root).st_mode):
+            return True
+    except OSError:
         return True
     try:
         relative = candidate.relative_to(root)
@@ -63,7 +89,11 @@ def _contains_symlink(root: Path, candidate: Path) -> bool:
     current = root
     for part in relative.parts:
         current = current / part
-        if current.is_symlink():
+        try:
+            is_link = stat.S_ISLNK(lstat(current).st_mode)
+        except OSError:
+            return True
+        if is_link:
             return True
     return False
 
@@ -108,8 +138,30 @@ def _root_paths(root: Path) -> tuple[Path, Path]:
     return lexical_root, resolved_root
 
 
-def build_document_whitelist(root: Path) -> Dict[str, ResolvedDocument]:
+def _root_signature(root: Path) -> tuple:
+    values = []
+    try:
+        for candidate in root.rglob("*"):
+            if candidate.suffix.casefold() != ".docx":
+                continue
+            try:
+                item = candidate.stat(follow_symlinks=False)
+                values.append((candidate.relative_to(root).as_posix(), item.st_size, item.st_mtime_ns, item.st_mode))
+            except (OSError, ValueError):
+                values.append((str(candidate), -1, -1, -1))
+    except OSError:
+        return (("unavailable",),)
+    return tuple(sorted(values))
+
+
+def build_document_whitelist(root: Path, *, fresh: bool = False) -> Dict[str, ResolvedDocument]:
     lexical_root, resolved_root = _root_paths(root)
+    cache_key = str(lexical_root)
+    signature = _root_signature(lexical_root)
+    cached = _READ_CACHE.get(cache_key)
+    if not fresh and cached and time.monotonic() - cached[0] <= _READ_CACHE_TTL_SECONDS and cached[1] == signature:
+        _READ_CACHE.move_to_end(cache_key)
+        return dict(cached[2])
     result: Dict[str, ResolvedDocument] = {}
 
     try:
@@ -153,13 +205,18 @@ def build_document_whitelist(root: Path) -> Dict[str, ResolvedDocument]:
             )
     except OSError as exc:
         raise DocumentTemplateRootUnavailable("Template root cannot be read") from exc
+    if not fresh:
+        _READ_CACHE[cache_key] = (time.monotonic(), signature, dict(result))
+        _READ_CACHE.move_to_end(cache_key)
+        while len(_READ_CACHE) > _READ_CACHE_MAX_ROOTS:
+            _READ_CACHE.popitem(last=False)
     return result
 
 
 def resolve_document(document_id: str, root: Path) -> Optional[ResolvedDocument]:
     if not DOCUMENT_ID_RE.fullmatch(str(document_id or "")):
         return None
-    return build_document_whitelist(root).get(document_id)
+    return build_document_whitelist(root, fresh=True).get(document_id)
 
 
 def _format_timestamp(modified_ns: int) -> str:

@@ -157,3 +157,14 @@ feature_flags.json
 
 # Local Playwright MCP artifacts
 .playwright-mcp/
+
+# Document Template Center runtime state (never commit)
+/cache/document_template_center/
+/data/document_template_center/
+/document_template_center/
+**/document_template_center/auth/
+**/document_template_center/candidates/
+**/document_template_center/history/
+**/document_template_center/audit/
+**/document_template_center/locks/
+**/document_template_center/cleanup_state.json

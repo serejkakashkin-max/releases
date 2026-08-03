@@ -93,16 +93,25 @@
     initOplotComponents(document);
   });
   document.addEventListener("htmx:beforeRequest", beginOperation);
+  document.addEventListener("htmx:configRequest", function (event) {
+    var meta = document.querySelector('meta[name="oplot-csrf-token"]');
+    if (meta && event.detail && event.detail.headers) {
+      event.detail.headers["X-CSRF-Token"] = meta.content;
+    }
+  });
   document.addEventListener("htmx:afterRequest", function (event) {
     endOperation();
-    if (event.detail && event.detail.failed) {
+    var status = event.detail && event.detail.xhr ? event.detail.xhr.status : 0;
+    var target = event.detail && event.detail.target;
+    if (event.detail && event.detail.failed && !(status === 422 && target && target.id === "candidate-panel")) {
       showToast("Не удалось обновить каталог.", "danger");
     }
   });
   document.addEventListener("htmx:beforeSwap", function (event) {
     var detail = event.detail || {};
     var status = detail.xhr ? detail.xhr.status : 0;
-    if (status === 503 && detail.target && detail.target.id === "template-catalog") {
+    if ((status === 503 && detail.target && detail.target.id === "template-catalog") ||
+        (status === 422 && detail.target && detail.target.id === "candidate-panel")) {
       detail.shouldSwap = true;
       detail.isError = false;
     }

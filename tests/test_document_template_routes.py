@@ -37,8 +37,11 @@ def build_test_app(root: Path, *, enabled=True, static_folder=None) -> Flask:
     )
     app.config.update(
         TESTING=True,
+        SECRET_KEY="stage2-test-session-secret-0123456789abcdef",
         DOCUMENT_TEMPLATE_CENTER_ENABLED=enabled,
         DOCUMENT_TEMPLATE_CENTER_ROOT=root,
+        DOCUMENT_TEMPLATE_CENTER_RUNTIME_ROOT=root.parent / "runtime",
+        DOCUMENT_TEMPLATE_EDITOR_TOKEN="stage2-editor-token",
     )
     app.add_url_rule("/", endpoint="main.index", view_func=lambda: "home")
     app.add_url_rule("/help", endpoint="main.help_page", view_func=lambda: "help")
@@ -58,6 +61,12 @@ class DocumentTemplateRouteTests(unittest.TestCase):
         clear_template_catalog_cache()
         self.app = build_test_app(self.root)
         self.client = self.app.test_client()
+        login = self.client.post("/admin/document-templates/session/login", data={
+            "display_name": "Тестовый редактор",
+            "token": "stage2-editor-token",
+            "next": "/admin/document-templates",
+        })
+        self.assertEqual(303, login.status_code)
         self.document_id = next(
             item.document_id
             for item in build_document_whitelist(self.root).values()
@@ -124,8 +133,10 @@ class DocumentTemplateRouteTests(unittest.TestCase):
         client = app.test_client()
         for path in (
             "/admin/document-templates",
+            "/admin/document-templates/login",
             f"/admin/document-templates/documents/{self.document_id}/preview",
             f"/admin/document-templates/documents/{self.document_id}/download",
+            f"/admin/document-templates/documents/{self.document_id}/history",
         ):
             with self.subTest(path=path):
                 self.assertEqual(404, client.get(path).status_code)
@@ -148,11 +159,13 @@ class DocumentTemplateRouteTests(unittest.TestCase):
         missing_static = Path(self.temporary.name) / "empty-static"
         missing_static.mkdir()
         app = build_test_app(self.root, static_folder=missing_static)
-        response = app.test_client().get("/admin/document-templates")
+        client = app.test_client()
+        client.post("/admin/document-templates/session/login", data={"display_name": "Редактор", "token": "stage2-editor-token"})
+        response = client.get("/admin/document-templates")
         self.assertEqual(503, response.status_code)
         self.assertIn("vendor manifest", response.get_data(as_text=True))
         self.assertNotIn(str(missing_static), response.get_data(as_text=True))
-        partial = app.test_client().get("/admin/document-templates", headers={"HX-Request": "true"})
+        partial = client.get("/admin/document-templates", headers={"HX-Request": "true"})
         self.assertEqual(503, partial.status_code)
         self.assertNotIn("<html", partial.get_data(as_text=True).lower())
         self.assertIn("vendor manifest", partial.get_data(as_text=True))
