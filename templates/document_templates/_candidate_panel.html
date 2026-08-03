@@ -46,12 +46,13 @@
       <div class="page-pretitle">Версия</div>
       <dl><dt>Загрузил</dt><dd>{{ candidate.uploaded_by }}</dd><dt>Размер</dt><dd>{{ '%.1f'|format(candidate.candidate_size / 1024) }} КиБ</dd><dt>Текущая SHA</dt><dd><code>{{ candidate.active_sha_at_upload[:12] }}</code></dd><dt>Новая SHA</dt><dd><code>{{ candidate.candidate_sha[:12] }}</code></dd></dl>
       <div class="d-grid gap-2">
-        {% if candidate.state not in ['invalid_security','cancelled','expired'] %}<button class="btn btn-outline-primary js-document-preview" type="button" data-preview-url="{{ public_url_for('document_templates.preview_candidate', document_id=document.document_id, candidate_uuid=candidate.candidate_uuid) }}" data-document-name="{{ candidate.source_filename }}" data-preview-source="Загруженный кандидат">Просмотреть кандидат</button>{% endif %}
-        {% if candidate.state == 'valid' %}
+        {% set basic_preview = candidate.validation and candidate.validation.checks.get('security') and candidate.validation.checks.get('structure') and candidate.state not in ['uploaded','validating','validation_interrupted','invalid_security','cancelled','expired'] %}
+        {% if basic_preview %}<button class="btn btn-outline-primary js-document-preview" type="button" data-preview-url="{{ public_url_for('document_templates.preview_candidate', document_id=document.document_id, candidate_uuid=candidate.candidate_uuid) }}" data-document-name="{{ candidate.source_filename }}" data-preview-source="Загруженный кандидат">Просмотреть кандидат</button>{% endif %}
+        {% if candidate.validation and candidate.validation.checks.get('generation') and candidate.test_sha %}
           <button class="btn btn-outline-secondary js-document-preview" type="button" data-preview-url="{{ public_url_for('document_templates.preview_test_document', document_id=document.document_id, candidate_uuid=candidate.candidate_uuid) }}" data-document-name="Тестовый документ" data-preview-source="Тестовый документ">Тестовый документ</button>
           <button class="btn btn-success" type="button" data-bs-toggle="modal" data-bs-target="#publish-confirm-modal">Опубликовать версию</button>
         {% endif %}
-        {% if candidate.state not in ['published','cancelled','expired','publishing'] %}<form method="post" action="{{ public_url_for('document_templates.cancel_candidate_route', document_id=document.document_id, candidate_uuid=candidate.candidate_uuid) }}"><input type="hidden" name="_csrf_token" value="{{ csrf_token }}"><button class="btn btn-ghost-danger w-100" type="submit">Отменить кандидат</button></form>{% endif %}
+        {% if candidate.state not in ['published','cancelled','expired','publishing','publish_failed'] and not candidate.recovery_blocking %}<form method="post" action="{{ public_url_for('document_templates.cancel_candidate_route', document_id=document.document_id, candidate_uuid=candidate.candidate_uuid) }}"><input type="hidden" name="_csrf_token" value="{{ csrf_token }}"><button class="btn btn-ghost-danger w-100" type="submit">Отменить кандидат</button></form>{% endif %}
       </div>
     </div></div>
   </aside>

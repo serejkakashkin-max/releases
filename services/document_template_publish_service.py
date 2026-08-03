@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import stat
 import tempfile
 import time
@@ -17,6 +18,7 @@ from services.document_template_storage_service import (
     CandidateNotFound,
     CandidateStateConflict,
     candidate_directory,
+    candidate_recovery_sensitive,
     candidate_file,
     candidate_lock,
     create_history_version,
@@ -88,14 +90,55 @@ def _finalize_history(item: dict[str, Any], updates: dict[str, Any]) -> dict[str
 
 def _blocked_by_recovery(document_id: str) -> bool:
     return (
-        any(item.get("state") == "publish_failed" for item in list_candidates(document_id))
-        or any(item.get("state") == "publish_failed" for item in list_history(document_id))
+        any(candidate_recovery_sensitive(item) for item in list_candidates(document_id, allow_expired=True))
+        or any(item.get("state") in {"prepared", "publishing", "publish_failed"} or item.get("audit_pending") or item.get("recovery_blocking") for item in list_history(document_id))
     )
 
 
 def _failure_point(injector, name: str) -> None:
     if callable(injector):
         injector(name)
+
+
+def _audit_values(**values: Any) -> dict[str, Any]:
+    return {key: value for key, value in values.items() if value not in (None, "")}
+
+
+def _require_attempt_audit(**values: Any) -> None:
+    try:
+        append_audit_event(**values)
+    except Exception as exc:
+        raise DocumentMutationBlocked("Operation audit is unavailable") from exc
+
+
+def _pending_candidate_audit(candidate_uuid: str, document_id: str, values: dict[str, Any]) -> None:
+    update_candidate(candidate_uuid, {"audit_pending": values}, document_id=document_id)
+    try:
+        append_audit_event(**values)
+    except Exception:
+        return
+    update_candidate(candidate_uuid, {"audit_pending": None}, document_id=document_id)
+
+
+def _pending_history_audit(history: dict[str, Any], values: dict[str, Any]) -> None:
+    _finalize_history(history, {"audit_pending": values})
+    try:
+        append_audit_event(**values)
+    except Exception:
+        return
+    _finalize_history(history, {"audit_pending": None})
+
+
+def _invalidate_siblings(document_id: str, candidate_uuid: str, old_sha: str, *, failure_injector=None) -> None:
+    for sibling in list_candidates(document_id, allow_expired=True):
+        if sibling["candidate_uuid"] == candidate_uuid:
+            continue
+        with candidate_lock(sibling["candidate_uuid"]):
+            current = get_candidate(sibling["candidate_uuid"], document_id=document_id)
+            if current.get("active_sha_at_upload") != old_sha or current.get("state") in {"published", "cancelled", "expired"}:
+                continue
+            _failure_point(failure_injector, "during_sibling_invalidation")
+            update_candidate(sibling["candidate_uuid"], {"state": "conflict"}, document_id=document_id)
 
 
 def publish_candidate(document, candidate_uuid: str, actor: str, *, failure_injector=None) -> dict[str, Any]:
@@ -123,20 +166,30 @@ def publish_candidate(document, candidate_uuid: str, actor: str, *, failure_inje
                 raise CandidateStateConflict("Synthetic generation failed")
             candidate_bytes = candidate_path.read_bytes()
             candidate_sha = sha256_bytes(candidate_bytes)
+            if candidate_sha != metadata.get("candidate_sha"):
+                update_candidate(candidate_uuid, {"state": "invalid_security", "error_code": "candidate_sha_mismatch"}, document_id=document.document_id)
+                raise CandidateStateConflict("Candidate bytes changed after validation")
             _failure_point(failure_injector, "before_history")
+            operation_uuid = str(uuid.uuid4())
+            _require_attempt_audit(
+                actor=actor, action="publish_attempt", document_id=document.document_id,
+                relative_target=document.relative_path, candidate_uuid=candidate_uuid,
+                comment=metadata.get("comment"), old_sha=active_sha, new_sha=candidate_sha,
+                result="attempt", operation_uuid=operation_uuid,
+            )
             history = create_history_version(document.document_id, active_bytes, {
                 "created_at": utc_now(), "updated_at": utc_now(), "state": "prepared",
                 "source_filename": document.filename, "sha256": active_sha,
                 "actor": actor, "action": "publish_previous", "comment": metadata.get("comment", ""),
                 "contract": build_contract(document.path), "candidate_uuid": candidate_uuid,
+                "operation_uuid": operation_uuid,
             })
-            update_candidate(candidate_uuid, {"prepared_history_version_uuid": history["version_uuid"]}, document_id=document.document_id)
+            update_candidate(candidate_uuid, {"prepared_history_version_uuid": history["version_uuid"], "operation_uuid": operation_uuid}, document_id=document.document_id)
             _failure_point(failure_injector, "after_prepared_history")
-            operation_uuid = str(uuid.uuid4())
             update_candidate(candidate_uuid, {
                 "state": "publishing", "operation_uuid": operation_uuid,
                 "expected_old_sha": active_sha, "expected_new_sha": candidate_sha,
-                "history_version_uuid": history["version_uuid"],
+                "history_version_uuid": history["version_uuid"], "publishing_by": actor,
             }, document_id=document.document_id)
             _failure_point(failure_injector, "after_publishing_metadata")
             try:
@@ -154,25 +207,33 @@ def publish_candidate(document, candidate_uuid: str, actor: str, *, failure_inje
                     raise DocumentMutationBlocked("Publish recovery is required")
                 update_candidate(candidate_uuid, {"state": "recovered", "error_code": "publish_recovered", "prepared_history_version_uuid": ""}, document_id=document.document_id)
                 _finalize_history(history, {"state": "recovered"})
-                append_audit_event(actor=actor, action="publish", document_id=document.document_id, relative_target=document.relative_path, candidate_uuid=candidate_uuid, old_sha=active_sha, new_sha=candidate_sha, result="recovered", error_code="publish_recovered")
+                _pending_candidate_audit(candidate_uuid, document.document_id, _audit_values(actor=actor, action="publish", document_id=document.document_id, relative_target=document.relative_path, candidate_uuid=candidate_uuid, old_sha=active_sha, new_sha=candidate_sha, result="recovered", error_code="publish_recovered", operation_uuid=operation_uuid))
                 raise
             _finalize_history(history, {"state": "committed"})
-            for sibling in list_candidates(document.document_id):
-                if sibling["candidate_uuid"] != candidate_uuid and sibling.get("active_sha_at_upload") == active_sha and sibling.get("state") not in {"published", "cancelled", "expired"}:
-                    _failure_point(failure_injector, "during_sibling_invalidation")
-                    with candidate_lock(sibling["candidate_uuid"]):
-                        update_candidate(sibling["candidate_uuid"], {"state": "conflict"}, document_id=document.document_id)
+            terminal_event = _audit_values(
+                actor=actor, action="publish", document_id=document.document_id,
+                relative_target=document.relative_path, candidate_uuid=candidate_uuid,
+                version_uuid=history["version_uuid"], comment=metadata.get("comment"),
+                old_sha=active_sha, new_sha=candidate_sha, result="published",
+                operation_uuid=operation_uuid,
+            )
+            published = update_candidate(candidate_uuid, {
+                "state": "published", "published_at": utc_now(), "published_by": actor,
+                "prepared_history_version_uuid": "", "audit_pending": terminal_event,
+            }, document_id=document.document_id)
+            _invalidate_siblings(document.document_id, candidate_uuid, active_sha, failure_injector=failure_injector)
             prune_history(document.document_id)
-            clear_document_template_read_cache(document.path.parent.parent.parent)
+            clear_document_template_read_cache(document.template_root)
             clear_template_catalog_cache()
             _failure_point(failure_injector, "before_audit")
-            append_audit_event(actor=actor, action="publish", document_id=document.document_id, relative_target=document.relative_path, candidate_uuid=candidate_uuid, version_uuid=history["version_uuid"], comment=metadata.get("comment"), old_sha=active_sha, new_sha=candidate_sha, result="published")
+            _pending_candidate_audit(candidate_uuid, document.document_id, terminal_event)
             _failure_point(failure_injector, "after_audit")
-            published = update_candidate(candidate_uuid, {"state": "published", "published_at": utc_now(), "prepared_history_version_uuid": ""}, document_id=document.document_id)
-            return published
+            return get_candidate(candidate_uuid, document_id=document.document_id)
 
 
 def rollback_version(document, version_uuid: str, *, actor: str, reason: str, expected_active_sha: str, failure_injector=None) -> dict[str, Any]:
+    if re.fullmatch(r"[0-9a-f]{64}", str(expected_active_sha or "")) is None:
+        raise ValueError("Invalid expected SHA")
     with document_lock(document.document_id):
         if _blocked_by_recovery(document.document_id):
             raise DocumentMutationBlocked("Document requires controlled recovery")
@@ -182,6 +243,8 @@ def rollback_version(document, version_uuid: str, *, actor: str, reason: str, ex
             raise DocumentConflict("Active document has changed")
         historical = get_history_version(document.document_id, version_uuid)
         historical_path = history_file(document.document_id, version_uuid)
+        if historical.get("state") != "committed":
+            raise DocumentMutationBlocked("Historical version is not committed")
         errors, _ = inspect_docx(historical_path)
         if errors:
             raise DocumentMutationBlocked("Historical document is unsafe")
@@ -198,8 +261,16 @@ def rollback_version(document, version_uuid: str, *, actor: str, reason: str, ex
             raise DocumentMutationBlocked("Historical contract is unavailable") from exc
         historical_bytes = historical_path.read_bytes()
         historical_sha = sha256_bytes(historical_bytes)
+        if historical_sha != historical.get("sha256"):
+            raise DocumentMutationBlocked("Historical SHA verification failed")
         _failure_point(failure_injector, "before_history")
         operation_uuid = str(uuid.uuid4())
+        _require_attempt_audit(
+            actor=actor, action="rollback_attempt", document_id=document.document_id,
+            relative_target=document.relative_path, version_uuid=version_uuid,
+            comment=reason, old_sha=active_sha, new_sha=historical_sha,
+            result="attempt", operation_uuid=operation_uuid,
+        )
         current_history = create_history_version(document.document_id, active_bytes, {
             "created_at": utc_now(), "updated_at": utc_now(), "state": "prepared",
             "source_filename": document.filename, "sha256": active_sha, "actor": actor,
@@ -221,102 +292,222 @@ def rollback_version(document, version_uuid: str, *, actor: str, reason: str, ex
             try:
                 _write_adjacent_and_replace(document.path, active_bytes)
             except Exception as exc:
+                _finalize_history(current_history, {"state": "publish_failed", "error_code": "rollback_restore_failed"})
                 raise DocumentMutationBlocked("Rollback recovery is required") from exc
             _finalize_history(current_history, {"state": "recovered"})
             raise
+        terminal_event = _audit_values(
+            actor=actor, action="rollback", document_id=document.document_id,
+            relative_target=document.relative_path, version_uuid=version_uuid,
+            comment=reason, old_sha=active_sha, new_sha=historical_sha,
+            result="published", operation_uuid=operation_uuid,
+        )
+        _finalize_history(current_history, {"state": "committed", "audit_pending": terminal_event})
         prune_history(document.document_id)
-        clear_template_catalog_cache(); clear_document_template_read_cache()
+        clear_template_catalog_cache(); clear_document_template_read_cache(document.template_root)
         _failure_point(failure_injector, "before_audit")
-        append_audit_event(actor=actor, action="rollback", document_id=document.document_id, relative_target=document.relative_path, version_uuid=version_uuid, comment=reason, old_sha=active_sha, new_sha=historical_sha, result="published")
+        _pending_history_audit(current_history, terminal_event)
         _failure_point(failure_injector, "after_audit")
-        _finalize_history(current_history, {"state": "committed"})
         return {"state": "published", "sha256": historical_sha, "previous_version_uuid": current_history["version_uuid"]}
+
+
+def _actual_file_sha(path_getter) -> str | None:
+    try:
+        return sha256_file(path_getter())
+    except (CandidateNotFound, ValueError, OSError):
+        return None
 
 
 def recover_stale_operations(*, document_resolver=None, now: float | None = None) -> dict[str, int]:
     timestamp = time.time() if now is None else now
-    outcome = {"validation_interrupted": 0, "published": 0, "recovered": 0, "publish_failed": 0}
-    for item in list_candidates():
+    outcome = {"validation_interrupted": 0, "published": 0, "recovered": 0, "publish_failed": 0, "audit_completed": 0}
+    for item in list_candidates(allow_expired=True):
+        candidate_uuid = item["candidate_uuid"]
+        document_id = item["document_id"]
+        if isinstance(item.get("audit_pending"), dict):
+            with candidate_lock(candidate_uuid), document_lock(document_id):
+                item = get_candidate(candidate_uuid, document_id=document_id)
+                if item.get("state") == "published":
+                    document = document_resolver(document_id) if callable(document_resolver) else None
+                    try:
+                        history = get_history_version(document_id, item.get("history_version_uuid", ""))
+                    except (CandidateNotFound, ValueError, OSError):
+                        history = None
+                    evidence_ok = bool(
+                        document and history and item.get("operation_uuid")
+                        and item.get("operation_uuid") == history.get("operation_uuid")
+                        and history.get("state") == "committed"
+                        and sha256_file(document.path) == item.get("expected_new_sha") == item.get("candidate_sha")
+                        and _actual_file_sha(lambda: candidate_file(candidate_uuid)) == item.get("expected_new_sha")
+                        and _actual_file_sha(lambda: history_file(document_id, history["version_uuid"])) == history.get("sha256") == item.get("expected_old_sha")
+                    )
+                    if not evidence_ok:
+                        update_candidate(candidate_uuid, {"state": "publish_failed", "recovery_blocking": True, "error_code": "pending_audit_evidence_inconsistent"}, document_id=document_id)
+                        if history:
+                            _finalize_history(history, {"state": "publish_failed", "recovery_blocking": True})
+                        outcome["publish_failed"] += 1
+                        continue
+                    _invalidate_siblings(document_id, candidate_uuid, item.get("expected_old_sha", ""))
+                try:
+                    append_audit_event(**item["audit_pending"])
+                except Exception:
+                    pass
+                else:
+                    update_candidate(candidate_uuid, {"audit_pending": None}, document_id=document_id)
+                    item["audit_pending"] = None
+                    outcome["audit_completed"] += 1
         try:
             age = timestamp - datetime.fromisoformat(str(item["updated_at"])).timestamp()
         except (ValueError, TypeError, KeyError):
             continue
         if item.get("state") == "validating" and age > 15 * 60:
-            with candidate_lock(item["candidate_uuid"]):
-                update_candidate(item["candidate_uuid"], {"state": "validation_interrupted", "error_code": "validation_interrupted"})
-            outcome["validation_interrupted"] += 1
-        elif item.get("state") == "valid" and item.get("prepared_history_version_uuid") and age > 2 * 60:
-            candidate_uuid = item["candidate_uuid"]; document_id = item["document_id"]
             with candidate_lock(candidate_uuid):
-                with document_lock(document_id):
+                updated = update_candidate(candidate_uuid, {"state": "validation_interrupted", "error_code": "validation_interrupted"})
+                _pending_candidate_audit(candidate_uuid, document_id, _audit_values(actor=updated.get("uploaded_by"), action="validation_recovery", document_id=document_id, candidate_uuid=candidate_uuid, result="validation_interrupted", error_code="validation_interrupted"))
+            outcome["validation_interrupted"] += 1
+            continue
+        prepared_uuid = item.get("prepared_history_version_uuid")
+        if item.get("state") == "valid" and prepared_uuid and age > 2 * 60:
+            with candidate_lock(candidate_uuid), document_lock(document_id):
+                document = document_resolver(document_id) if callable(document_resolver) else None
+                history = None
+                try:
+                    history = get_history_version(document_id, prepared_uuid)
+                except (CandidateNotFound, ValueError, OSError):
+                    pass
+                active_actual = sha256_file(document.path) if document is not None else None
+                candidate_actual = _actual_file_sha(lambda: candidate_file(candidate_uuid))
+                history_actual = _actual_file_sha(lambda: history_file(document_id, prepared_uuid)) if history else None
+                consistent = bool(
+                    document and history
+                    and active_actual == item.get("active_sha_at_upload")
+                    and candidate_actual == item.get("candidate_sha")
+                    and history_actual == item.get("active_sha_at_upload") == history.get("sha256")
+                    and history.get("state") == "prepared"
+                    and item.get("operation_uuid")
+                    and item.get("operation_uuid") == history.get("operation_uuid")
+                )
+                state = "recovered" if consistent else "publish_failed"
+                if history:
+                    _finalize_history(history, {"state": "recovered" if consistent else "publish_failed", "recovery_blocking": not consistent})
+                updates = {"prepared_history_version_uuid": "", "error_code": f"recovery_prepared_{state}"}
+                if not consistent:
+                    updates.update({"state": "publish_failed", "recovery_blocking": True})
+                update_candidate(candidate_uuid, updates, document_id=document_id)
+                _pending_candidate_audit(candidate_uuid, document_id, _audit_values(actor=item.get("uploaded_by"), action="publish_recovery", document_id=document_id, relative_target=getattr(document, "relative_path", ""), candidate_uuid=candidate_uuid, old_sha=item.get("active_sha_at_upload"), new_sha=item.get("candidate_sha"), result=state, error_code=f"recovery_prepared_{state}", operation_uuid=item.get("operation_uuid")))
+                outcome[state] += 1
+            continue
+        if item.get("state") != "publishing" or age <= 2 * 60:
+            continue
+        with candidate_lock(candidate_uuid), document_lock(document_id):
+            document = document_resolver(document_id) if callable(document_resolver) else None
+            try:
+                history = get_history_version(document_id, item.get("history_version_uuid", ""))
+            except (CandidateNotFound, ValueError, OSError):
+                history = None
+            active_actual = sha256_file(document.path) if document is not None else None
+            candidate_actual = _actual_file_sha(lambda: candidate_file(candidate_uuid))
+            history_actual = _actual_file_sha(lambda: history_file(document_id, history["version_uuid"])) if history else None
+            evidence_ok = bool(
+                document and history and item.get("operation_uuid")
+                and item.get("operation_uuid") == history.get("operation_uuid")
+                and history.get("state") in {"prepared", "publishing"}
+                and candidate_actual == item.get("candidate_sha") == item.get("expected_new_sha")
+                and history_actual == history.get("sha256") == item.get("expected_old_sha")
+            )
+            if evidence_ok and active_actual == item.get("expected_new_sha"):
+                state = "published"
+                _finalize_history(history, {"state": "committed", "recovery_blocking": False})
+                for sibling in list_candidates(document_id, allow_expired=True):
+                    if sibling["candidate_uuid"] == candidate_uuid or sibling.get("active_sha_at_upload") != item.get("expected_old_sha") or sibling.get("state") in {"published", "cancelled", "expired"}:
+                        continue
+                    with candidate_lock(sibling["candidate_uuid"]):
+                        update_candidate(sibling["candidate_uuid"], {"state": "conflict"}, document_id=document_id)
+            elif evidence_ok and active_actual == item.get("expected_old_sha"):
+                state = "recovered"
+                _finalize_history(history, {"state": "recovered", "recovery_blocking": False})
+            else:
+                state = "publish_failed"
+                if history:
+                    _finalize_history(history, {"state": "publish_failed", "recovery_blocking": True})
+            updates = {"state": state, "error_code": f"recovery_{state}", "prepared_history_version_uuid": "", "recovery_blocking": state == "publish_failed"}
+            if state == "published":
+                updates.update({"published_at": utc_now(), "published_by": item.get("publishing_by") or item.get("uploaded_by")})
+            update_candidate(candidate_uuid, updates, document_id=document_id)
+            _pending_candidate_audit(candidate_uuid, document_id, _audit_values(actor=item.get("publishing_by") or item.get("uploaded_by"), action="publish_recovery", document_id=document_id, relative_target=getattr(document, "relative_path", ""), candidate_uuid=candidate_uuid, old_sha=item.get("expected_old_sha"), new_sha=item.get("expected_new_sha"), result=state, error_code=f"recovery_{state}", operation_uuid=item.get("operation_uuid")))
+            outcome[state] += 1
+            if document is not None and state == "published":
+                clear_document_template_read_cache(document.template_root); clear_template_catalog_cache()
+
+    history_root = data_root() / "history"
+    if not history_root.is_dir():
+        return outcome
+    for metadata_path in history_root.glob("*/*/metadata.json"):
+        try:
+            document_id = metadata_path.parent.parent.name
+            item = get_history_version(document_id, metadata_path.parent.name)
+        except (CandidateNotFound, ValueError, OSError):
+            continue
+        if isinstance(item.get("audit_pending"), dict):
+            with document_lock(document_id):
+                if item.get("action") == "rollback_previous" and item.get("state") == "committed":
                     document = document_resolver(document_id) if callable(document_resolver) else None
                     try:
-                        history = get_history_version(document_id, item["prepared_history_version_uuid"])
-                        if document is not None and sha256_file(document.path) == item.get("active_sha_at_upload") and history.get("state") == "prepared":
-                            _finalize_history(history, {"state": "recovered"})
-                            update_candidate(candidate_uuid, {"prepared_history_version_uuid": "", "error_code": "recovery_prepared_history"})
-                            outcome["recovered"] += 1
-                        else:
-                            update_candidate(candidate_uuid, {"state": "publish_failed", "error_code": "recovery_prepared_history_inconsistent"})
-                            outcome["publish_failed"] += 1
+                        target = get_history_version(document_id, item.get("target_version_uuid", ""))
                     except (CandidateNotFound, ValueError, OSError):
-                        update_candidate(candidate_uuid, {"state": "publish_failed", "error_code": "recovery_prepared_history_missing"})
+                        target = None
+                    evidence_ok = bool(
+                        document and target and item.get("operation_uuid")
+                        and sha256_file(document.path) == item.get("expected_new_sha")
+                        and _actual_file_sha(lambda: history_file(document_id, item["version_uuid"])) == item.get("sha256") == item.get("expected_old_sha")
+                        and _actual_file_sha(lambda: history_file(document_id, target["version_uuid"])) == target.get("sha256") == item.get("expected_new_sha")
+                        and target.get("state") == "committed"
+                    )
+                    if not evidence_ok:
+                        _finalize_history(item, {"state": "publish_failed", "recovery_blocking": True, "error_code": "pending_rollback_audit_evidence_inconsistent"})
                         outcome["publish_failed"] += 1
-        elif item.get("state") == "publishing" and age > 2 * 60:
-            candidate_uuid = item["candidate_uuid"]
-            document_id = item["document_id"]
-            with candidate_lock(candidate_uuid):
-                with document_lock(document_id):
-                    # Recovery deliberately never replaces files. The active path is stored only as
-                    # an opaque relative target in audit, so callers must supply a resolver hook.
-                    document = document_resolver(document_id) if callable(document_resolver) else None
-                    if document is None:
-                        state = "publish_failed"
-                    else:
-                        actual_sha = sha256_file(document.path)
-                        try:
-                            history = get_history_version(document_id, item.get("history_version_uuid", ""))
-                            history_ok = history.get("sha256") == item.get("expected_old_sha") and history_file(document_id, history["version_uuid"]).is_file()
-                        except (CandidateNotFound, ValueError, OSError):
-                            history = None; history_ok = False
-                        if actual_sha == item.get("expected_new_sha") and history_ok:
-                            state = "published"
-                            _finalize_history(history, {"state": "committed"})
-                            for sibling in list_candidates(document_id):
-                                if sibling["candidate_uuid"] != candidate_uuid and sibling.get("active_sha_at_upload") == item.get("expected_old_sha") and sibling.get("state") not in {"published", "cancelled", "expired"}:
-                                    update_candidate(sibling["candidate_uuid"], {"state": "conflict"})
-                        elif actual_sha == item.get("expected_old_sha") and history_ok:
-                            state = "recovered"
-                            _finalize_history(history, {"state": "recovered"})
-                        else:
-                            state = "publish_failed"
-                    update_candidate(candidate_uuid, {"state": state, "error_code": f"recovery_{state}", "prepared_history_version_uuid": ""})
-                    append_audit_event(actor=item.get("uploaded_by", ""), action="publish_recovery", document_id=document_id, relative_target=getattr(document, "relative_path", ""), candidate_uuid=candidate_uuid, old_sha=item.get("expected_old_sha"), new_sha=item.get("expected_new_sha"), result=state, error_code=f"recovery_{state}")
-                    outcome[state] += 1
-    history_root = data_root() / "history"
-    if history_root.is_dir():
-        for metadata_path in history_root.glob("*/*/metadata.json"):
-            try:
-                document_id = metadata_path.parent.parent.name
-                item = get_history_version(document_id, metadata_path.parent.name)
-                age = timestamp - datetime.fromisoformat(str(item["updated_at"])).timestamp()
-            except (CandidateNotFound, ValueError, TypeError, KeyError, OSError):
-                continue
-            if item.get("action") != "rollback_previous" or item.get("state") not in {"prepared", "publishing"} or age <= 2 * 60:
-                continue
-            with document_lock(document_id):
-                document = document_resolver(document_id) if callable(document_resolver) else None
-                if document is None:
-                    state = "publish_failed"
+                        continue
+                try:
+                    append_audit_event(**item["audit_pending"])
+                except Exception:
+                    pass
                 else:
-                    actual_sha = sha256_file(document.path)
-                    if actual_sha == item.get("expected_new_sha"):
-                        state = "published"
-                    elif actual_sha == item.get("expected_old_sha"):
-                        state = "recovered"
-                    else:
-                        state = "publish_failed"
-                _finalize_history(item, {"state": "committed" if state == "published" else state, "error_code": f"rollback_recovery_{state}"})
-                append_audit_event(actor=item.get("actor", ""), action="rollback_recovery", document_id=document_id, relative_target=getattr(document, "relative_path", ""), version_uuid=item.get("target_version_uuid"), old_sha=item.get("expected_old_sha"), new_sha=item.get("expected_new_sha"), result=state, error_code=f"rollback_recovery_{state}")
-                outcome[state] += 1
+                    _finalize_history(item, {"audit_pending": None})
+                    item["audit_pending"] = None
+                    outcome["audit_completed"] += 1
+        try:
+            age = timestamp - datetime.fromisoformat(str(item["updated_at"])).timestamp()
+        except (ValueError, TypeError, KeyError):
+            continue
+        if item.get("action") != "rollback_previous" or item.get("state") not in {"prepared", "publishing"} or age <= 2 * 60:
+            continue
+        with document_lock(document_id):
+            document = document_resolver(document_id) if callable(document_resolver) else None
+            try:
+                target = get_history_version(document_id, item.get("target_version_uuid", ""))
+            except (CandidateNotFound, ValueError, OSError):
+                target = None
+            active_actual = sha256_file(document.path) if document is not None else None
+            current_history_actual = _actual_file_sha(lambda: history_file(document_id, item["version_uuid"]))
+            target_actual = _actual_file_sha(lambda: history_file(document_id, target["version_uuid"])) if target else None
+            evidence_ok = bool(
+                document and target and item.get("operation_uuid")
+                and item.get("state") in {"prepared", "publishing"}
+                and current_history_actual == item.get("sha256") == item.get("expected_old_sha")
+                and target_actual == target.get("sha256") == item.get("expected_new_sha")
+                and target.get("state") == "committed"
+            )
+            if evidence_ok and active_actual == item.get("expected_new_sha"):
+                state = "published"
+            elif evidence_ok and active_actual == item.get("expected_old_sha"):
+                state = "recovered"
+            else:
+                state = "publish_failed"
+            history_state = "committed" if state == "published" else state
+            _finalize_history(item, {"state": history_state, "error_code": f"rollback_recovery_{state}", "recovery_blocking": state == "publish_failed"})
+            event = _audit_values(actor=item.get("actor"), action="rollback_recovery", document_id=document_id, relative_target=getattr(document, "relative_path", ""), version_uuid=item.get("target_version_uuid"), old_sha=item.get("expected_old_sha"), new_sha=item.get("expected_new_sha"), result=state, error_code=f"rollback_recovery_{state}", operation_uuid=item.get("operation_uuid"))
+            _pending_history_audit(item, event)
+            outcome[state] += 1
+            if document is not None and state == "published":
+                clear_document_template_read_cache(document.template_root); clear_template_catalog_cache()
     return outcome

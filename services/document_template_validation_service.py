@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import io
 import posixpath
 import re
 import unicodedata
@@ -23,7 +22,7 @@ REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
 REQUIRED_PARTS = {"[Content_Types].xml", "_rels/.rels", "word/document.xml"}
 LEGACY_PLACEHOLDERS = (
     "RELEASE_VERSION", "PREV_VERSION", "RELEASE_ID", "OPLOT", "CHECKER",
-    "DATE", "PLUS_1", "PLAYBOOKS", "INSTRUCTION_BLOCK", "POB", "RELNUMBER",
+    "DATE", "PLUS_1", "PLAYBOOKS", "INSTRUCTION_BLOCK", "ИНСТРУКЦИЯ", "POB", "RELNUMBER",
 )
 PLACEHOLDER_RE = re.compile(
     r"\{\{[^{}]+\}\}|\$\{[^{}]+\}|<<[^<>]+>>|\[\[[^\[\]]+\]\]|\b(?:"
@@ -56,6 +55,27 @@ def _relationship_files(archive: zipfile.ZipFile) -> list[str]:
     return [name for name in archive.namelist() if name.casefold().endswith(".rels")]
 
 
+def _unique_failures(errors: list[ValidationFailure]) -> list[ValidationFailure]:
+    unique = {(item.code, item.message, item.group): item for item in errors}
+    return list(unique.values())
+
+
+def _read_bounded(archive: zipfile.ZipFile, name: str, *, limit: int = MAX_ENTRY) -> bytes:
+    """Read one already-vetted ZIP member without trusting its declared size."""
+    payload = bytearray()
+    with archive.open(name, "r") as source:
+        remaining = limit + 1
+        while remaining:
+            chunk = source.read(min(1024 * 1024, remaining))
+            if not chunk:
+                break
+            payload.extend(chunk)
+            remaining -= len(chunk)
+    if len(payload) > limit:
+        raise ValueError("zip_entry_too_large")
+    return bytes(payload)
+
+
 def _safe_xml(payload: bytes) -> etree._Element:
     if re.search(br"<!\s*(?:DOCTYPE|ENTITY)\b", payload, re.I):
         raise ValueError("xml_dtd")
@@ -81,6 +101,7 @@ def inspect_docx(path: Path) -> tuple[list[ValidationFailure], set[str]]:
                 errors.append(ValidationFailure("zip_too_many_entries", "В документе слишком много внутренних частей.", "security"))
             seen: set[str] = set()
             total = 0
+            total_compressed = 0
             for info in infos:
                 key = unicodedata.normalize("NFC", info.filename).casefold()
                 if key in seen:
@@ -89,6 +110,7 @@ def inspect_docx(path: Path) -> tuple[list[ValidationFailure], set[str]]:
                 if _unsafe_zip_name(info.filename):
                     errors.append(ValidationFailure("zip_unsafe_path", "DOCX содержит небезопасный внутренний путь.", "security"))
                 total += info.file_size
+                total_compressed += info.compress_size
                 if info.flag_bits & 1:
                     errors.append(ValidationFailure("zip_encrypted", "Зашифрованные DOCX не поддерживаются.", "security"))
                 if info.file_size > MAX_ENTRY:
@@ -100,11 +122,19 @@ def inspect_docx(path: Path) -> tuple[list[ValidationFailure], set[str]]:
                     errors.append(ValidationFailure("forbidden_embedded_content", "Документ содержит неподдерживаемое встроенное содержимое.", "security"))
             if total > MAX_UNCOMPRESSED:
                 errors.append(ValidationFailure("zip_uncompressed_too_large", "Распакованный DOCX превышает безопасный размер.", "security"))
+            if total > 0 and (total_compressed == 0 or total / total_compressed > MAX_RATIO):
+                errors.append(ValidationFailure("zip_overall_compression_ratio", "DOCX имеет небезопасную общую степень сжатия.", "security"))
             if not REQUIRED_PARTS.issubset(set(names)):
                 errors.append(ValidationFailure("ooxml_required_parts", "Файл не является полноценным документом Word.", "structure"))
+
+            # Phase A is central-directory-only. Never decompress any member when a
+            # size/path/encryption/structure gate has already failed.
+            if errors:
+                return _unique_failures(errors), external_images
+
             for rel_path in _relationship_files(archive):
                 try:
-                    root = _safe_xml(archive.read(rel_path))
+                    root = _safe_xml(_read_bounded(archive, rel_path))
                 except (KeyError, etree.XMLSyntaxError, ValueError):
                     errors.append(ValidationFailure("relationship_xml_invalid", "Связи DOCX повреждены или небезопасны.", "security"))
                     continue
@@ -136,7 +166,7 @@ def inspect_docx(path: Path) -> tuple[list[ValidationFailure], set[str]]:
             for name in names:
                 if name.casefold().endswith(".xml") or name.casefold().endswith(".rels"):
                     try:
-                        _safe_xml(archive.read(name))
+                        _safe_xml(_read_bounded(archive, name))
                     except (etree.XMLSyntaxError, ValueError):
                         errors.append(ValidationFailure("xml_unsafe", "Одна из XML-частей DOCX повреждена или небезопасна.", "security"))
                         break
@@ -147,28 +177,41 @@ def inspect_docx(path: Path) -> tuple[list[ValidationFailure], set[str]]:
             Document(path)
         except Exception:
             errors.append(ValidationFailure("python_docx_reopen", "Документ не открывается стандартным обработчиком Word.", "structure"))
-    unique = {(item.code, item.message, item.group): item for item in errors}
-    return list(unique.values()), external_images
+    return _unique_failures(errors), external_images
 
 
-def _paragraph_placeholders(document: Document) -> tuple[Counter, dict[str, Counter]]:
+def _damaged_recognized_placeholders(text: str) -> set[str]:
+    damaged: set[str] = set()
+    for match in re.finditer(r"[A-ZА-ЯЁ][A-ZА-ЯЁ0-9]*(?:(?:\s+_?|_\s+)[A-ZА-ЯЁ0-9]+)+", text):
+        raw = match.group(0)
+        canonical = re.sub(r"\s+", "", raw)
+        if canonical in LEGACY_PLACEHOLDERS and raw != canonical:
+            damaged.add(canonical)
+    return damaged
+
+
+def _paragraph_placeholders(document: Document) -> tuple[Counter, dict[str, Counter], set[str]]:
     total: Counter = Counter()
     areas: dict[str, Counter] = {"body": Counter(), "table": Counter(), "unsupported": Counter()}
+    damaged: set[str] = set()
     for paragraph in document.paragraphs:
         values = PLACEHOLDER_RE.findall(paragraph.text)
         total.update(values); areas["body"].update(values)
+        damaged.update(_damaged_recognized_placeholders(paragraph.text))
     for table in document.tables:
         for row in table.rows:
             for cell in row.cells:
                 for paragraph in cell.paragraphs:
                     values = PLACEHOLDER_RE.findall(paragraph.text)
                     total.update(values); areas["table"].update(values)
+                    damaged.update(_damaged_recognized_placeholders(paragraph.text))
     for section in document.sections:
         for story in (section.header, section.footer):
             for paragraph in story.paragraphs:
                 values = PLACEHOLDER_RE.findall(paragraph.text)
                 total.update(values); areas["unsupported"].update(values)
-    return total, areas
+                damaged.update(_damaged_recognized_placeholders(paragraph.text))
+    return total, areas, damaged
 
 
 def _jira_table_count(document: Document) -> tuple[int, list[ValidationFailure]]:
@@ -188,22 +231,31 @@ def _jira_table_count(document: Document) -> tuple[int, list[ValidationFailure]]
 
 def build_contract(path: Path) -> dict[str, Any]:
     document = Document(path)
-    total, areas = _paragraph_placeholders(document)
+    total, areas, damaged = _paragraph_placeholders(document)
     try:
         with zipfile.ZipFile(path) as archive:
-            document_xml = archive.read("word/document.xml")
-        xml_root = _safe_xml(document_xml)
-        textbox_values = []
-        for node in xml_root.xpath("//*[local-name()='txbxContent']"):
-            textbox_values.extend(PLACEHOLDER_RE.findall("".join(node.itertext())))
-        if textbox_values:
-            total.update(textbox_values); areas["unsupported"].update(textbox_values)
+            for part_name in ("word/document.xml", "word/footnotes.xml", "word/endnotes.xml"):
+                if part_name not in archive.namelist():
+                    continue
+                xml_root = _safe_xml(_read_bounded(archive, part_name))
+                if part_name == "word/document.xml":
+                    nodes = xml_root.xpath("//*[local-name()='txbxContent']")
+                else:
+                    nodes = [xml_root]
+                unsupported_values = []
+                for node in nodes:
+                    logical_text = "".join(node.itertext())
+                    unsupported_values.extend(PLACEHOLDER_RE.findall(logical_text))
+                    damaged.update(_damaged_recognized_placeholders(logical_text))
+                if unsupported_values:
+                    total.update(unsupported_values); areas["unsupported"].update(unsupported_values)
     except (OSError, KeyError, zipfile.BadZipFile, etree.XMLSyntaxError, ValueError):
         pass
     jira_count, jira_errors = _jira_table_count(document)
     return {
         "placeholders": dict(total),
         "areas": {key: dict(value) for key, value in areas.items()},
+        "damaged_placeholders": sorted(damaged),
         "jira_table_count": jira_count,
         "jira_errors": [item.as_dict() for item in jira_errors],
     }
@@ -219,6 +271,8 @@ def compare_contract(active_path: Path, candidate_path: Path) -> tuple[list[Vali
         errors.append(ValidationFailure("placeholder_area", "Служебное поле перемещено в неподдерживаемую область документа.", "placeholders"))
     if candidate["areas"].get("unsupported"):
         errors.append(ValidationFailure("placeholder_unsupported_area", "Служебные поля в колонтитулах и специальных областях не поддерживаются.", "placeholders"))
+    if candidate.get("damaged_placeholders"):
+        errors.append(ValidationFailure("placeholder_whitespace_damaged", "Распознанное служебное поле повреждено пробелами.", "placeholders"))
     if active["jira_table_count"] != candidate["jira_table_count"]:
         errors.append(ValidationFailure("jira_table_count", "Количество Jira-таблиц должно совпадать с действующим шаблоном.", "jira"))
     errors.extend(ValidationFailure(**item) for item in candidate["jira_errors"])
@@ -232,8 +286,11 @@ def validate_candidate(active_path: Path, candidate_path: Path) -> dict[str, Any
     if active_errors:
         errors.append(ValidationFailure("active_template_unavailable", "Действующий шаблон не прошёл контрольное чтение.", "structure"))
     added_images = candidate_external_images - active_external_images
+    warnings: list[ValidationFailure] = []
     if added_images:
         errors.append(ValidationFailure("new_external_image", "Новая версия добавляет внешние изображения.", "security"))
+    elif candidate_external_images:
+        warnings.append(ValidationFailure("grandfathered_external_image", "Сохранены ранее существовавшие внешние изображения; они не загружаются автоматически.", "security"))
     contract: dict[str, Any] = {}
     if not errors:
         try:
@@ -244,7 +301,7 @@ def validate_candidate(active_path: Path, candidate_path: Path) -> dict[str, Any
     return {
         "ok": not errors,
         "errors": [item.as_dict() for item in errors],
-        "warnings": [],
+        "warnings": [item.as_dict() for item in warnings],
         "contract": contract,
         "checks": {
             "security": not any(item.group == "security" for item in errors),

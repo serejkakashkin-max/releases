@@ -8,6 +8,7 @@ import io
 import json
 import os
 import sys
+import zipfile
 from pathlib import Path
 
 from docx import Document
@@ -35,6 +36,9 @@ def _docx(path: Path, heading: str, *, complete: bool = True) -> bytes:
     document.add_paragraph("Версия RELEASE_VERSION")
     if complete:
         document.add_paragraph("Дата DATE")
+    table = document.add_table(rows=1, cols=4)
+    headers = table.rows[0].cells
+    headers[0].text = "№"; headers[1].text = "ЗНИ/JIRA ID"; headers[2].text = "Issue"; headers[3].text = "Issue Type"
     document.save(path)
     return path.read_bytes()
 
@@ -62,21 +66,30 @@ def create_visual_app(base: Path) -> tuple[Flask, dict]:
         valid_payload = _docx(source / "valid.docx", "Новая версия чек-листа")
         valid = write_uploaded_candidate(io.BytesIO(valid_payload), document_id=validation_doc.document_id, source_filename="Чек-лист 2.0.docx", active_filename=validation_doc.filename, active_sha=validation_doc.sha256, uploaded_by="Анна Редактор", comment="Уточнены шаги проверки и визуальная структура")
         validate_staged_candidate(validation_doc.document_id, valid["candidate_uuid"], validation_doc.path)
+        uploaded = write_uploaded_candidate(io.BytesIO(valid_payload), document_id=validation_doc.document_id, source_filename="Новый кандидат.docx", active_filename=validation_doc.filename, active_sha=validation_doc.sha256, uploaded_by="Ольга Редактор", comment="Файл ожидает первичной проверки")
         validating = write_uploaded_candidate(io.BytesIO(valid_payload), document_id=validation_doc.document_id, source_filename="Кандидат в проверке.docx", active_filename=validation_doc.filename, active_sha=validation_doc.sha256, uploaded_by="Иван Редактор", comment="Проверяем обновлённые формулировки")
         update_candidate(validating["candidate_uuid"], {"state": "validating"})
         invalid_payload = _docx(source / "invalid.docx", "Неполная версия", complete=False)
         invalid = write_uploaded_candidate(io.BytesIO(invalid_payload), document_id=validation_doc.document_id, source_filename="Версия с ошибкой.docx", active_filename=validation_doc.filename, active_sha=validation_doc.sha256, uploaded_by="Анна Редактор", comment="Тестовое состояние ошибки контракта")
         validate_staged_candidate(validation_doc.document_id, invalid["candidate_uuid"], validation_doc.path)
+        bomb_payload = io.BytesIO()
+        with zipfile.ZipFile(bomb_payload, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("[Content_Types].xml", "<Types/>"); archive.writestr("_rels/.rels", "<Relationships/>"); archive.writestr("word/document.xml", b"A" * (2 * 1024 * 1024))
+        invalid_security = write_uploaded_candidate(io.BytesIO(bomb_payload.getvalue()), document_id=validation_doc.document_id, source_filename="Небезопасный кандидат.docx", active_filename=validation_doc.filename, active_sha=validation_doc.sha256, uploaded_by="Ольга Редактор", comment="Синтетическое небезопасное состояние")
+        validate_staged_candidate(validation_doc.document_id, invalid_security["candidate_uuid"], validation_doc.path)
         conflict = write_uploaded_candidate(io.BytesIO(valid_payload), document_id=validation_doc.document_id, source_filename="Конфликтный кандидат.docx", active_filename=validation_doc.filename, active_sha=validation_doc.sha256, uploaded_by="Пётр Редактор", comment="Версия основана на предыдущем active SHA")
         validate_staged_candidate(validation_doc.document_id, conflict["candidate_uuid"], validation_doc.path)
         update_candidate(conflict["candidate_uuid"], {"state": "conflict"})
+        recovery_blocked = write_uploaded_candidate(io.BytesIO(valid_payload), document_id=validation_doc.document_id, source_filename="Recovery blocked.docx", active_filename=validation_doc.filename, active_sha=validation_doc.sha256, uploaded_by="Служебная проверка", comment="Требуется контролируемое восстановление")
+        validate_staged_candidate(validation_doc.document_id, recovery_blocked["candidate_uuid"], validation_doc.path)
+        update_candidate(recovery_blocked["candidate_uuid"], {"state": "publish_failed", "recovery_blocking": True, "error_code": "visual_recovery_block"})
         history_doc = by_name["Описание агента.docx"]
         history_payload = _docx(source / "published.docx", "Опубликованная версия AI-агента")
         published = write_uploaded_candidate(io.BytesIO(history_payload), document_id=history_doc.document_id, source_filename="Описание агента 2.0.docx", active_filename=history_doc.filename, active_sha=history_doc.sha256, uploaded_by="Мария Редактор", comment="Обновлено описание поведения агента")
         validate_staged_candidate(history_doc.document_id, published["candidate_uuid"], history_doc.path)
         publish_candidate(history_doc, published["candidate_uuid"], "Мария Редактор")
         manifest["documents"] = {name: item.document_id for name, item in by_name.items()}
-        manifest["candidates"] = {"valid": valid["candidate_uuid"], "validating": validating["candidate_uuid"], "invalid": invalid["candidate_uuid"], "conflict": conflict["candidate_uuid"]}
+        manifest["candidates"] = {"uploaded": uploaded["candidate_uuid"], "valid": valid["candidate_uuid"], "validating": validating["candidate_uuid"], "invalid_security": invalid_security["candidate_uuid"], "invalid_contract": invalid["candidate_uuid"], "conflict": conflict["candidate_uuid"], "recovery_blocked": recovery_blocked["candidate_uuid"]}
     (base / "visual_manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     return app, manifest
 

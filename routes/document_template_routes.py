@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import hashlib
-import os
-import stat
+import re
+import shutil
 from io import BytesIO
 from pathlib import Path
 
@@ -14,23 +13,26 @@ from flask import (
 from config import DOC_TEMPLATES_ROOT
 from services.cross_process_file_lock import FileLockTimeoutError
 from services.document_template_auth_service import (
-    RateLimitStorageError, UnsafeSessionConfiguration, clear_editor_session,
+    BLOCK_SECONDS, RateLimitStorageError, UnsafeSessionConfiguration, clear_editor_session,
     csrf_is_valid, csrf_token, editor_session_actor, login_editor, login_url,
     safe_next, strong_session_secret,
 )
-from services.document_template_candidate_service import validate_staged_candidate
+from services.document_template_audit_service import append_audit_event
+from services.document_template_candidate_service import (
+    CandidatePreviewDenied, candidate_preview_payload, validate_staged_candidate,
+)
 from services.document_template_publish_service import (
     DocumentConflict, DocumentMutationBlocked, publish_candidate, recover_stale_operations, rollback_version,
 )
 from services.document_template_runtime_service import RuntimeStateError
 from services.document_template_read_service import (
-    DocumentTemplateRootUnavailable, build_catalog_page, resolve_document,
+    DocumentTemplateRootUnavailable, build_catalog_page, read_document_payload, resolve_document,
 )
 from services.document_template_storage_service import (
     MAX_UPLOAD_BYTES, UPLOAD_REQUEST_OVERHEAD, CandidateNotFound,
     CandidateStateConflict, CandidateUploadTooLarge, cancel_candidate, claim_maintenance_window, cleanup_candidates,
-    candidate_file, get_candidate, history_file, list_candidates, list_history,
-    write_uploaded_candidate,
+    candidate_directory, get_candidate, history_file, list_candidates, list_history,
+    update_candidate, write_uploaded_candidate,
 )
 from services.document_template_vendor_service import verify_vendor_assets
 from services.public_url_service import public_url_for
@@ -156,7 +158,10 @@ def login_session():
             status, message = 503, "Вход редактора пока не настроен."
         else:
             status, message = 403, "Имя или общий токен не приняты."
-        return render_template("document_templates/login.html", error=message, next_url=destination, navigation_links=_navigation_links(), public_url_for=public_url_for), status
+        response = make_response(render_template("document_templates/login.html", error=message, next_url=destination, navigation_links=_navigation_links(), public_url_for=public_url_for), status)
+        if status == 429:
+            response.headers["Retry-After"] = str(BLOCK_SECONDS)
+        return response
     if _is_htmx_request():
         response = make_response("", 204); response.headers["HX-Redirect"] = destination; return response
     return redirect(destination, code=303)
@@ -231,19 +236,10 @@ def _docx_response(path: Path, filename: str, *, attachment: bool):
 
 
 def _active_docx_response(document_id: str, *, attachment: bool):
-    document = _resolved_or_404(document_id)
-    try:
-        with document.path.open("rb") as handle:
-            opened = os.fstat(handle.fileno())
-            if not stat.S_ISREG(opened.st_mode):
-                abort(404)
-            payload = handle.read()
-    except OSError:
+    resolved = read_document_payload(document_id, _template_root())
+    if resolved is None:
         abort(404)
-    payload_sha = hashlib.sha256(payload).hexdigest()
-    confirmed = resolve_document(document_id, _template_root())
-    if confirmed is None or confirmed.sha256 != payload_sha or confirmed.filename != document.filename:
-        abort(404)
+    document, payload = resolved
     return send_file(BytesIO(payload), mimetype=DOCX_CONTENT_TYPE, as_attachment=attachment, download_name=document.filename, conditional=False, etag=False, max_age=0)
 
 
@@ -281,6 +277,11 @@ def upload_candidate(document_id: str):
         return make_response("Файл превышает допустимый размер 10 МиБ.", 413)
     except ValueError as exc:
         return make_response(str(exc), 400)
+    try:
+        append_audit_event(actor=metadata.get("uploaded_by"), action="upload", document_id=document_id, relative_target=document.relative_path, candidate_uuid=metadata["candidate_uuid"], comment=comment, old_sha=document.sha256, new_sha=metadata.get("candidate_sha"), result="uploaded")
+    except Exception:
+        shutil.rmtree(candidate_directory(metadata["candidate_uuid"]), ignore_errors=True)
+        return make_response("Журнал операций временно недоступен. Загрузка не сохранена.", 503)
     target = public_url_for("document_templates.candidate_detail", document_id=document_id, candidate_uuid=metadata["candidate_uuid"])
     if _is_htmx_request():
         response = make_response("", 201); response.headers["HX-Redirect"] = target; return response
@@ -318,11 +319,13 @@ def validate_candidate_route(document_id: str, candidate_uuid: str):
 
 
 def _candidate_doc_response(document_id: str, candidate_uuid: str, name: str, attachment: bool):
-    document, candidate = _candidate_context(document_id, candidate_uuid)
-    try: path = candidate_file(candidate_uuid, name)
+    document = _resolved_or_404(document_id)
+    try: payload, candidate = candidate_preview_payload(document_id, candidate_uuid, test_document=name == "test.docx")
+    except ValueError: abort(400)
     except CandidateNotFound: abort(404)
+    except CandidatePreviewDenied: return make_response("Документ ещё не прошёл необходимую безопасную проверку.", 409)
     filename = candidate["source_filename"] if name == "candidate.docx" else f"test-{candidate['source_filename']}"
-    return _docx_response(path, filename, attachment=attachment)
+    return send_file(BytesIO(payload), mimetype=DOCX_CONTENT_TYPE, as_attachment=attachment, download_name=filename, conditional=False, etag=False, max_age=0)
 
 
 @document_template_bp.get("/documents/<document_id>/candidates/<candidate_uuid>/preview")
@@ -362,11 +365,16 @@ def publish_candidate_route(document_id, candidate_uuid):
 def cancel_candidate_route(document_id, candidate_uuid):
     guard = _auth_guard();
     if guard is not None: return guard
-    _resolved_or_404(document_id)
+    document, candidate = _candidate_context(document_id, candidate_uuid)
     try: cancel_candidate(candidate_uuid, document_id)
     except ValueError: abort(400)
     except CandidateNotFound: abort(404)
     except CandidateStateConflict: return make_response("Кандидат уже нельзя отменить.", 409)
+    event = dict(actor=editor_session_actor(touch=False) or "", action="cancel", document_id=document_id, relative_target=document.relative_path, candidate_uuid=candidate_uuid, comment=candidate.get("comment"), old_sha=candidate.get("active_sha_at_upload"), new_sha=candidate.get("candidate_sha"), result="cancelled")
+    try:
+        append_audit_event(**event)
+    except Exception:
+        update_candidate(candidate_uuid, {"audit_pending": event}, document_id=document_id)
     return redirect(public_url_for("document_templates.index"), code=303)
 
 
@@ -406,7 +414,7 @@ def rollback_history(document_id, version_uuid):
     if guard is not None: return guard
     document = _resolved_or_404(document_id)
     reason = str(request.form.get("reason") or "").strip(); expected = str(request.form.get("expected_active_sha") or "")
-    if not 3 <= len(reason) <= 500 or len(expected) != 64: return make_response("Укажите причину отката и актуальную SHA.", 400)
+    if not 3 <= len(reason) <= 500 or re.fullmatch(r"[0-9a-f]{64}", expected) is None: return make_response("Укажите причину отката и актуальную SHA.", 400)
     try: rollback_version(document, version_uuid, actor=editor_session_actor(touch=False) or "", reason=reason, expected_active_sha=expected)
     except ValueError: abort(400)
     except CandidateNotFound: abort(404)

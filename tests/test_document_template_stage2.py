@@ -51,6 +51,12 @@ def make_template(path: Path, *, heading: str = "Шаблон") -> bytes:
     document.add_heading(heading, level=1)
     document.add_paragraph("Версия RELEASE_VERSION")
     document.add_paragraph("Дата DATE")
+    table = document.add_table(rows=1, cols=4)
+    headers = table.rows[0].cells
+    headers[0].text = "№"
+    headers[1].text = "ЗНИ/JIRA ID"
+    headers[2].text = "Issue"
+    headers[3].text = "Issue Type"
     document.save(path)
     return path.read_bytes()
 
@@ -351,9 +357,9 @@ class Stage2WorkflowTests(unittest.TestCase):
             "before_replace": "recovered",
             "after_replace": "published",
             "after_active_verification": "published",
-            "during_sibling_invalidation": "published",
-            "before_audit": "published",
-            "after_audit": "published",
+            "during_sibling_invalidation": "terminal_pending",
+            "before_audit": "terminal_pending",
+            "after_audit": "terminal_done",
         }
 
         class SimulatedCrash(BaseException):
@@ -388,11 +394,14 @@ class Stage2WorkflowTests(unittest.TestCase):
                     if expected is None:
                         self.assertEqual(old_bytes, active_path.read_bytes())
                         self.assertEqual("valid", get_candidate(candidate["candidate_uuid"])["state"])
+                    elif expected in {"terminal_pending", "terminal_done"}:
+                        self.assertEqual("published", get_candidate(candidate["candidate_uuid"])["state"])
+                        self.assertEqual(1 if expected == "terminal_pending" else 0, outcome["audit_completed"])
                     else:
                         self.assertEqual(1, outcome[expected])
                         expected_state = "valid" if point == "after_prepared_history" else expected
                         self.assertEqual(expected_state, get_candidate(candidate["candidate_uuid"])["state"])
-                    if sibling_uuid and expected == "published":
+                    if sibling_uuid and expected in {"published", "terminal_pending", "terminal_done"}:
                         self.assertEqual("conflict", get_candidate(sibling_uuid)["state"])
 
     def test_rollback_failure_injection_points_have_deterministic_recovery(self):
@@ -403,8 +412,8 @@ class Stage2WorkflowTests(unittest.TestCase):
             "before_replace": "recovered",
             "after_replace": "published",
             "after_active_verification": "published",
-            "before_audit": "published",
-            "after_audit": "published",
+            "before_audit": "terminal_pending",
+            "after_audit": "terminal_done",
         }
 
         class SimulatedCrash(BaseException):
@@ -436,13 +445,20 @@ class Stage2WorkflowTests(unittest.TestCase):
                     self.assertEqual(before_recovery, active_path.read_bytes(), "Rollback recovery must never repeat replace")
                     if expected is None:
                         self.assertEqual(replacement, active_path.read_bytes())
+                    elif expected in {"terminal_pending", "terminal_done"}:
+                        self.assertEqual(1 if expected == "terminal_pending" else 0, outcome["audit_completed"])
+                        self.assertEqual(original, active_path.read_bytes())
                     else:
                         self.assertEqual(1, outcome[expected])
                         self.assertEqual(original if expected == "published" else replacement, active_path.read_bytes())
 
     def test_upload_actual_byte_limit_removes_partial_candidate(self):
         response = self._upload(b"x" * (10 * 1024 * 1024 + 1))
-        self.assertEqual(413, response.status_code)
+        try:
+            self.assertEqual(413, response.status_code)
+        finally:
+            response.request.environ["wsgi.input"].close()
+            response.close()
         candidates = Path(self.temp.name) / "runtime/cache/document_template_center/candidates"
         self.assertFalse(candidates.exists() and any(candidates.iterdir()))
 
@@ -479,7 +495,7 @@ class Stage2WorkflowTests(unittest.TestCase):
             archive.writestr("word/document.xml", "<document/>")
         errors, _ = inspect_docx(unsafe)
         codes = {item.code for item in errors}
-        self.assertIn("zip_unsafe_path", codes); self.assertIn("xml_unsafe", codes)
+        self.assertIn("zip_unsafe_path", codes); self.assertNotIn("xml_unsafe", codes)
 
 
 if __name__ == "__main__":

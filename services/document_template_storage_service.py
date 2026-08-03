@@ -20,6 +20,9 @@ MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 UPLOAD_REQUEST_OVERHEAD = 256 * 1024
 CANDIDATE_TTL_SECONDS = 24 * 60 * 60
 UUID_REPR_LENGTH = 36
+RECOVERY_CANDIDATE_STATES = {"publishing", "publish_failed"}
+TERMINAL_CANDIDATE_STATES = {"published", "cancelled", "expired", "recovered", "conflict"}
+RECOVERY_HISTORY_STATES = {"prepared", "publishing", "publish_failed"}
 
 
 class CandidateNotFound(LookupError):
@@ -154,12 +157,6 @@ def get_candidate(candidate_uuid: str, *, document_id: str | None = None, allow_
         raise CandidateNotFound("Candidate not found")
     if document_id is not None and metadata.get("document_id") != document_id:
         raise CandidateNotFound("Candidate not found")
-    if not allow_expired and metadata.get("state") not in {"published", "cancelled", "expired"}:
-        created = datetime.fromisoformat(str(metadata.get("created_at"))).timestamp()
-        if time.time() - created > CANDIDATE_TTL_SECONDS:
-            metadata["state"] = "expired"
-            metadata["updated_at"] = utc_now()
-            atomic_write_json(directory / "metadata.json", metadata)
     return metadata
 
 
@@ -201,7 +198,7 @@ def list_candidates(document_id: str | None = None, *, allow_expired: bool = Fal
 def cancel_candidate(candidate_uuid: str, document_id: str) -> dict[str, Any]:
     with candidate_lock(candidate_uuid):
         metadata = get_candidate(candidate_uuid, document_id=document_id)
-        if metadata.get("state") in {"published", "publishing", "cancelled", "expired"}:
+        if metadata.get("state") in {"published", "publishing", "publish_failed", "cancelled", "expired"} or candidate_recovery_sensitive(metadata):
             raise CandidateStateConflict("Candidate cannot be cancelled")
         for name in ("candidate.docx", "test.docx"):
             (candidate_directory(candidate_uuid) / name).unlink(missing_ok=True)
@@ -258,25 +255,46 @@ def list_history(document_id: str) -> list[dict[str, Any]]:
 
 
 def prune_history(document_id: str, keep: int = 30) -> None:
-    for item in list_history(document_id)[max(1, keep):]:
+    eligible = [
+        item for item in list_history(document_id)
+        if item.get("state") == "committed"
+        and not item.get("audit_pending")
+        and not item.get("recovery_blocking")
+    ]
+    for item in eligible[max(0, keep):]:
         shutil.rmtree(history_directory(document_id, item["version_uuid"]), ignore_errors=True)
+
+
+def candidate_recovery_sensitive(item: dict[str, Any]) -> bool:
+    return (
+        item.get("state") in RECOVERY_CANDIDATE_STATES
+        or bool(item.get("prepared_history_version_uuid"))
+        or bool(item.get("audit_pending"))
+        or bool(item.get("recovery_blocking"))
+    )
 
 
 def cleanup_candidates(*, now: float | None = None) -> int:
     timestamp = time.time() if now is None else now
     changed = 0
     for item in list_candidates(allow_expired=True):
-        if item.get("state") in {"published", "cancelled", "expired"}:
-            continue
         try:
             created = datetime.fromisoformat(str(item["created_at"])).timestamp()
         except (ValueError, TypeError, KeyError):
             continue
-        if timestamp - created > CANDIDATE_TTL_SECONDS:
-            with candidate_lock(item["candidate_uuid"]):
+        with candidate_lock(item["candidate_uuid"]):
+            try:
+                current = get_candidate(item["candidate_uuid"], allow_expired=True)
+            except CandidateNotFound:
+                continue
+            if candidate_recovery_sensitive(current):
+                continue
+            directory = candidate_directory(item["candidate_uuid"])
+            if current.get("state") in TERMINAL_CANDIDATE_STATES:
                 for name in ("candidate.docx", "test.docx"):
-                    (candidate_directory(item["candidate_uuid"]) / name).unlink(missing_ok=True)
-                update_candidate(item["candidate_uuid"], {"state": "expired", "validation": None})
+                    (directory / name).unlink(missing_ok=True)
+            if timestamp - created > CANDIDATE_TTL_SECONDS:
+                shutil.rmtree(directory, ignore_errors=True)
                 changed += 1
     return changed
 

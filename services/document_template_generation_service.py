@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from docx import Document
+from docx.opc.constants import RELATIONSHIP_TYPE as RT
 
 from services.docx_service import replace_keys_in_doc
 from services.document_template_runtime_service import atomic_write_bytes
@@ -12,6 +13,11 @@ from services.document_template_validation_service import PLACEHOLDER_RE, inspec
 
 
 SYNTHETIC_JIRA_BASE = "https://example.invalid/jira"
+SYNTHETIC_ISSUE = {
+    "key": "SYNTHETIC-1",
+    "summary": "Синтетическая задача без сетевых запросов",
+    "type": "Task",
+}
 
 
 def _synthetic_context(document: Document) -> dict[str, str]:
@@ -34,6 +40,7 @@ def _synthetic_context(document: Document) -> dict[str, str]:
         "PLUS_1": (today + timedelta(days=1)).strftime("%d.%m.%Y"),
         "PLAYBOOKS": "SYNTHETIC_PLAYBOOK",
         "INSTRUCTION_BLOCK": "Отсутствуют",
+        "ИНСТРУКЦИЯ": "",
         "POB": "Синтетический ПОВ",
         "RELNUMBER": "SYNTHETIC-1",
     }
@@ -43,15 +50,40 @@ def _synthetic_context(document: Document) -> dict[str, str]:
     return context
 
 
+def _body_paragraphs(document: Document):
+    yield from document.paragraphs
+    for table in document.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                yield from cell.paragraphs
+
+
+def _verify_synthetic_jira(document: Document) -> bool:
+    expected_url = f"{SYNTHETIC_JIRA_BASE}/browse/{SYNTHETIC_ISSUE['key']}"
+    matching_row = False
+    for table in document.tables:
+        if not table.rows or "ЗНИ/JIRA ID" not in [cell.text.strip() for cell in table.rows[0].cells]:
+            continue
+        for row in table.rows[1:]:
+            cells = [cell.text.strip() for cell in row.cells]
+            if len(cells) >= 4 and cells[1] == SYNTHETIC_ISSUE["key"] and cells[2] == SYNTHETIC_ISSUE["summary"] and cells[3] == SYNTHETIC_ISSUE["type"]:
+                matching_row = True
+                break
+    relationships = [
+        rel for rel in document.part.rels.values()
+        if rel.reltype == RT.HYPERLINK and rel.is_external and rel.target_ref == expected_url
+    ]
+    return matching_row and bool(relationships)
+
+
 def generate_synthetic_document(candidate_path: Path, output: Path) -> tuple[Path | None, list[dict[str, str]]]:
     try:
         document = Document(candidate_path)
         context = _synthetic_context(document)
-        issue = {"key": "SYNTHETIC-1", "summary": "Синтетическая задача без сетевых запросов", "type": "Task"}
         generated = replace_keys_in_doc(
             document,
             context,
-            [issue],
+            [SYNTHETIC_ISSUE],
             "SYNTHETIC-1",
             jira_base_url=SYNTHETIC_JIRA_BASE,
         )
@@ -68,11 +100,14 @@ def generate_synthetic_document(candidate_path: Path, output: Path) -> tuple[Pat
             return None, [{"code": "generation_security", "message": "Тестовый документ не прошёл контрольное открытие.", "group": "generation"}]
         reopened = Document(output)
         unresolved = []
-        for paragraph in reopened.paragraphs:
+        for paragraph in _body_paragraphs(reopened):
             unresolved.extend(PLACEHOLDER_RE.findall(paragraph.text))
         if unresolved:
             output.unlink(missing_ok=True)
             return None, [{"code": "generation_placeholders", "message": "В тестовом документе остались незаполненные служебные поля.", "group": "generation"}]
+        if not _verify_synthetic_jira(reopened):
+            output.unlink(missing_ok=True)
+            return None, [{"code": "generation_jira", "message": "Тестовая Jira-строка или безопасная ссылка сформированы неверно.", "group": "generation"}]
         return output, []
     except Exception:
         return None, [{"code": "generation_failed", "message": "Не удалось создать тестовый документ.", "group": "generation"}]
