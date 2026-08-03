@@ -43,6 +43,23 @@ $env:DOCUMENT_TEMPLATE_CENTER_ENABLED='0'
 - publish/rollback automation разрешён только на temporary synthetic roots;
 - первый publish/rollback реального шаблона требует отдельного разрешения, свежего backup и SHA-256 baseline.
 
+## Отложенная проверка перед развёртыванием
+
+Контролируемый publish/rollback одного рабочего шаблона отложен до pre-deployment проверки в окружении, максимально близком к стенду.
+
+Перед первым включением записи необходимо выполнить:
+
+1. backup выбранного DOCX;
+2. фиксацию исходного SHA-256;
+3. upload byte-for-byte candidate;
+4. validation и test generation;
+5. publish;
+6. обычную генерацию документа;
+7. rollback;
+8. финальную сверку SHA-256.
+
+До этой проверки Центр может быть развёрнут с выключенным флагом записи.
+
 ## Проверки перед commit
 
 Использовать только explicit staging paths, затем:
