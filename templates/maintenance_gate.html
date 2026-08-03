@@ -1,4 +1,5 @@
 {% if maintenance_enabled %}
+{% if not maintenance_external_assets|default(false) %}
 <style>
     .app-maintenance-active {
         overflow: hidden;
@@ -100,6 +101,7 @@
         }
     })();
 </script>
+{% endif %}
 <div class="app-maintenance-gate" role="status" aria-live="polite">
     <div class="app-maintenance-card">
         <div class="app-maintenance-icon"><i class="bi bi-tools"></i></div>

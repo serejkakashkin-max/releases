@@ -17,7 +17,6 @@ def index():
         maintenance_scope="index",
         maintenance_title="Главная страница на обслуживании",
         chatbot_maintenance=is_maintenance_enabled("chatbot"),
-        sandbox_url="/releases/sandbox/",
     )
 
 

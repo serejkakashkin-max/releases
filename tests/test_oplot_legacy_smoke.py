@@ -13,6 +13,7 @@ from routes.dashboard_routes import dashboard_bp
 from routes.main_routes import main_bp
 from routes.mpr_routes import mpr_bp
 from routes.sup_parameters_routes import sup_parameters_bp
+from services.oplot_ui_service import register_oplot_ui
 
 
 def build_app() -> Flask:
@@ -24,11 +25,12 @@ def build_app() -> Flask:
     app.config.update(TESTING=True, SECRET_KEY="legacy-smoke")
     for blueprint in (main_bp, dashboard_bp, mpr_bp, sup_parameters_bp):
         app.register_blueprint(blueprint)
+    register_oplot_ui(app)
     return app
 
 
 class LegacyGetSmokeTests(unittest.TestCase):
-    def test_important_legacy_pages_keep_their_standalone_layout(self):
+    def test_core_pages_use_shell_and_remaining_legacy_pages_stay_standalone(self):
         monitor_model = {
             "snapshot": {"items": [], "summary": {}, "meta": {}},
             "template_hints": {},
@@ -62,9 +64,12 @@ class LegacyGetSmokeTests(unittest.TestCase):
         )
         with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9], patches[10], patches[11], patches[12]:
             client = build_app().test_client()
+            for path in ("/", "/help"):
+                with self.subTest(path=path):
+                    response = client.get(path)
+                    self.assertEqual(200, response.status_code)
+                    self.assertIn("oplot-shell", response.get_data(as_text=True))
             for path in (
-                "/",
-                "/help",
                 "/dashboard",
                 "/release-monitor",
                 "/mpr",

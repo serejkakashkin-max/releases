@@ -1,0 +1,48 @@
+.oplot-help-layout { display: grid; min-width: 0; grid-template-columns: 248px minmax(0, 1fr); align-items: start; gap: var(--oplot-space-6); }
+.oplot-help-toc { position: sticky; top: calc(var(--oplot-topbar-height) + var(--oplot-space-4)); min-width: 0; padding: var(--oplot-space-4); border: 1px solid var(--oplot-border); border-radius: var(--oplot-radius-md); background: var(--oplot-surface); box-shadow: var(--oplot-shadow-sm); }
+.oplot-help-toc > strong { display: block; margin-bottom: var(--oplot-space-3); color: var(--oplot-text); font-size: .82rem; }
+.oplot-help-toc ol { display: grid; gap: var(--oplot-space-1); margin: 0; padding: 0; list-style: none; }
+.oplot-help-toc a { display: block; padding: 8px 10px; border-radius: var(--oplot-radius-sm); color: var(--oplot-muted); font-size: .78rem; line-height: 1.35; text-decoration: none; transition: color .16s ease, background-color .16s ease; }
+.oplot-help-toc a:hover,
+.oplot-help-toc a[aria-current="location"] { color: var(--oplot-primary); background: var(--oplot-primary-soft); }
+.oplot-help-content { display: grid; min-width: 0; gap: var(--oplot-space-4); }
+.oplot-help-section { min-width: 0; padding: var(--oplot-space-6); scroll-margin-top: calc(var(--oplot-topbar-height) + var(--oplot-space-6)); border: 1px solid var(--oplot-border); border-radius: var(--oplot-radius-lg); background: var(--oplot-surface); box-shadow: var(--oplot-shadow-sm); }
+.oplot-help-section h2 { margin: 0 0 var(--oplot-space-4); color: var(--oplot-text); font-size: 1.35rem; letter-spacing: -.02em; }
+.oplot-help-section h3 { margin: 0 0 var(--oplot-space-2); color: var(--oplot-text); font-size: 1rem; }
+.oplot-help-section p { max-width: 88ch; color: var(--oplot-text); line-height: 1.65; }
+.oplot-help-section > p:first-of-type { margin-top: 0; }
+.oplot-help-grid { display: grid; min-width: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--oplot-space-4); align-items: start; }
+.oplot-help-card { min-width: 0; height: 100%; padding: var(--oplot-space-4); border: 1px solid var(--oplot-border); border-radius: var(--oplot-radius-md); background: var(--oplot-surface-muted); }
+.oplot-help-card p:last-child { margin-bottom: 0; }
+.oplot-help-list { margin: var(--oplot-space-3) 0 0; padding-left: 1.25rem; color: var(--oplot-text); }
+.oplot-help-list li { margin-bottom: var(--oplot-space-2); line-height: 1.55; }
+.oplot-help-figure { min-width: 0; margin: 0; }
+.oplot-help-figure img { display: block; width: 100%; max-width: 100%; height: auto; border: 1px solid var(--oplot-border); border-radius: var(--oplot-radius-md); background: var(--oplot-surface-muted); box-shadow: var(--oplot-shadow-sm); }
+.oplot-help-figure figcaption { margin-top: var(--oplot-space-2); color: var(--oplot-muted); font-size: .75rem; line-height: 1.45; }
+.oplot-help-flow { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--oplot-space-2); margin: var(--oplot-space-4) 0; padding: 0; counter-reset: help-step; list-style: none; }
+.oplot-help-flow li { min-width: 0; padding: var(--oplot-space-3); border: 1px solid var(--oplot-border); border-radius: var(--oplot-radius-sm); color: var(--oplot-text); background: var(--oplot-surface-muted); text-align: center; font-size: .75rem; font-weight: 700; overflow-wrap: anywhere; }
+.oplot-help-flow li::before { display: block; margin-bottom: var(--oplot-space-1); color: var(--oplot-primary); counter-increment: help-step; content: counter(help-step, decimal-leading-zero); }
+.oplot-help-callout { margin-top: var(--oplot-space-4); padding: var(--oplot-space-4); border: 1px solid color-mix(in srgb, var(--oplot-primary) 38%, var(--oplot-border)); border-left: 4px solid var(--oplot-primary); border-radius: var(--oplot-radius-sm); color: var(--oplot-text); background: var(--oplot-primary-soft); line-height: 1.55; }
+.oplot-help-report { display: grid; gap: var(--oplot-space-4); margin-top: var(--oplot-space-4); padding: var(--oplot-space-4); border: 1px solid var(--oplot-border); border-radius: var(--oplot-radius-md); background: var(--oplot-surface-muted); }
+.oplot-help-report header,
+.oplot-help-report > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--oplot-space-3); }
+.oplot-help-report header span { color: var(--oplot-muted); font-size: .75rem; }
+.oplot-help-report > div span { display: flex; align-items: baseline; gap: var(--oplot-space-2); color: var(--oplot-muted); font-size: .78rem; }
+.oplot-help-report > div strong { color: var(--oplot-text); font-size: 1.25rem; }
+.oplot-help code { max-width: 100%; overflow-wrap: anywhere; color: var(--oplot-primary); background: var(--oplot-primary-soft); }
+.oplot-help-command-list { display: grid; min-width: 0; gap: var(--oplot-space-2); }
+.oplot-help-command-row { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--oplot-space-3); padding: var(--oplot-space-3) var(--oplot-space-4); border: 1px solid var(--oplot-border); border-radius: var(--oplot-radius-sm); background: var(--oplot-surface-muted); }
+.oplot-help-command-row code { display: block; min-width: 0; overflow-x: auto; padding: var(--oplot-space-2); white-space: nowrap; scrollbar-width: thin; }
+.oplot-help-command-row button { padding: 7px 11px; border: 1px solid var(--oplot-border); border-radius: 8px; color: var(--oplot-primary); background: var(--oplot-surface); font-size: .75rem; font-weight: 700; }
+.oplot-help-command-row button:hover { border-color: var(--oplot-primary); background: var(--oplot-primary-soft); }
+.oplot-help-copy-status { min-height: 1.4em; margin: var(--oplot-space-3) 0 0; color: var(--oplot-success); font-size: .78rem; }
+.oplot-help-copy-status.is-error { color: var(--oplot-danger); }
+
+@media (min-width: 1920px) {
+  .oplot-help-layout { grid-template-columns: 272px minmax(0, 1fr); gap: var(--oplot-space-8); }
+  .oplot-help-section { padding: var(--oplot-space-8); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oplot-help-toc a { transition: none; }
+}
