@@ -164,6 +164,13 @@ def publish_candidate(document, candidate_uuid: str, actor: str, *, failure_inje
                 result["ok"] = False; result["errors"].extend(generation_errors)
                 update_candidate(candidate_uuid, {"state": "invalid_generation", "validation": result}, document_id=document.document_id)
                 raise CandidateStateConflict("Synthetic generation failed")
+            result["checks"]["generation"] = True
+            update_candidate(candidate_uuid, {
+                "state": "valid",
+                "validation": result,
+                "test_sha": sha256_file(test_path),
+                "test_size": test_path.stat().st_size,
+            }, document_id=document.document_id)
             candidate_bytes = candidate_path.read_bytes()
             candidate_sha = sha256_bytes(candidate_bytes)
             if candidate_sha != metadata.get("candidate_sha"):
@@ -203,7 +210,10 @@ def publish_candidate(document, candidate_uuid: str, actor: str, *, failure_inje
                 try:
                     _write_adjacent_and_replace(document.path, active_bytes)
                 except Exception:
-                    update_candidate(candidate_uuid, {"state": "publish_failed", "error_code": "restore_failed"}, document_id=document.document_id)
+                    terminal_event = _audit_values(actor=actor, action="publish", document_id=document.document_id, relative_target=document.relative_path, candidate_uuid=candidate_uuid, old_sha=active_sha, new_sha=candidate_sha, result="publish_failed", error_code="restore_failed", operation_uuid=operation_uuid)
+                    update_candidate(candidate_uuid, {"state": "publish_failed", "error_code": "restore_failed", "recovery_blocking": True, "audit_pending": terminal_event}, document_id=document.document_id)
+                    _finalize_history(history, {"state": "publish_failed", "recovery_blocking": True})
+                    _pending_candidate_audit(candidate_uuid, document.document_id, terminal_event)
                     raise DocumentMutationBlocked("Publish recovery is required")
                 update_candidate(candidate_uuid, {"state": "recovered", "error_code": "publish_recovered", "prepared_history_version_uuid": ""}, document_id=document.document_id)
                 _finalize_history(history, {"state": "recovered"})
@@ -292,9 +302,13 @@ def rollback_version(document, version_uuid: str, *, actor: str, reason: str, ex
             try:
                 _write_adjacent_and_replace(document.path, active_bytes)
             except Exception as exc:
-                _finalize_history(current_history, {"state": "publish_failed", "error_code": "rollback_restore_failed"})
+                terminal_event = _audit_values(actor=actor, action="rollback", document_id=document.document_id, relative_target=document.relative_path, version_uuid=version_uuid, old_sha=active_sha, new_sha=historical_sha, result="publish_failed", error_code="rollback_restore_failed", operation_uuid=operation_uuid)
+                _finalize_history(current_history, {"state": "publish_failed", "error_code": "rollback_restore_failed", "recovery_blocking": True, "audit_pending": terminal_event})
+                _pending_history_audit(current_history, terminal_event)
                 raise DocumentMutationBlocked("Rollback recovery is required") from exc
-            _finalize_history(current_history, {"state": "recovered"})
+            terminal_event = _audit_values(actor=actor, action="rollback", document_id=document.document_id, relative_target=document.relative_path, version_uuid=version_uuid, old_sha=active_sha, new_sha=historical_sha, result="recovered", error_code="rollback_recovered", operation_uuid=operation_uuid)
+            _finalize_history(current_history, {"state": "recovered", "audit_pending": terminal_event})
+            _pending_history_audit(current_history, terminal_event)
             raise
         terminal_event = _audit_values(
             actor=actor, action="rollback", document_id=document.document_id,

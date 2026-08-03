@@ -6,6 +6,7 @@ import unicodedata
 import zipfile
 from collections import Counter
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import unquote, urlsplit
@@ -32,6 +33,9 @@ FORBIDDEN_PREFIXES = (
     "word/activeX/", "word/embeddings/", "word/vbaProject", "word/oleObject",
 )
 FORBIDDEN_SUFFIXES = (".exe", ".dll", ".com", ".bat", ".cmd", ".js", ".vbs", ".ps1", ".msi", ".scr")
+JIRA_ID_HEADER = "ЗНИ/JIRA ID"
+JIRA_SUMMARY_HEADERS = {"issue", "summary", "issue summary", "суть доработки", "описание задачи"}
+JIRA_TYPE_HEADERS = {"issue type", "type"}
 
 
 @dataclass(frozen=True)
@@ -90,11 +94,12 @@ def _owner_for_relationship(path: str) -> str:
     return f"{match.group(1)}/{match.group(2)}" if match else ""
 
 
-def inspect_docx(path: Path) -> tuple[list[ValidationFailure], set[str]]:
+def inspect_docx(path: Path | bytes) -> tuple[list[ValidationFailure], set[str]]:
     errors: list[ValidationFailure] = []
     external_images: set[str] = set()
     try:
-        with zipfile.ZipFile(path) as archive:
+        archive_source = BytesIO(path) if isinstance(path, bytes) else path
+        with zipfile.ZipFile(archive_source) as archive:
             infos = archive.infolist()
             names = [info.filename for info in infos]
             if len(infos) > MAX_ENTRIES:
@@ -174,7 +179,7 @@ def inspect_docx(path: Path) -> tuple[list[ValidationFailure], set[str]]:
         errors.append(ValidationFailure("not_docx", "Выбранный файл не является корректным DOCX.", "structure"))
     if not errors:
         try:
-            Document(path)
+            Document(BytesIO(path) if isinstance(path, bytes) else path)
         except Exception:
             errors.append(ValidationFailure("python_docx_reopen", "Документ не открывается стандартным обработчиком Word.", "structure"))
     return _unique_failures(errors), external_images
@@ -214,19 +219,74 @@ def _paragraph_placeholders(document: Document) -> tuple[Counter, dict[str, Coun
     return total, areas, damaged
 
 
-def _jira_table_count(document: Document) -> tuple[int, list[ValidationFailure]]:
-    count = 0
-    errors: list[ValidationFailure] = []
+def _normalize_jira_header(value: str) -> str:
+    return " ".join(unicodedata.normalize("NFC", str(value or "")).split()).casefold()
+
+
+def _header_index(headers: list[str], accepted: set[str]) -> int | None:
+    return next((index for index, header in enumerate(headers) if header in accepted), None)
+
+
+def _jira_table_signatures(document: Document) -> list[dict[str, Any]]:
+    signatures: list[dict[str, Any]] = []
+    normalized_id = _normalize_jira_header(JIRA_ID_HEADER)
     for table in document.tables:
         if not table.rows:
             continue
-        headers = [cell.text.strip() for cell in table.rows[0].cells]
-        if "ЗНИ/JIRA ID" in headers:
-            count += 1
-            folded = {item.casefold() for item in headers}
-            if len(headers) < 4 or not folded.intersection({"issue type", "issue", "type"}):
-                errors.append(ValidationFailure("jira_table_columns", "Таблица Jira должна содержать не менее четырёх колонок и колонку типа задачи.", "jira"))
-    return count, errors
+        raw_headers = [unicodedata.normalize("NFC", cell.text).strip() for cell in table.rows[0].cells]
+        normalized_headers = [_normalize_jira_header(item) for item in raw_headers]
+        jira_id_index = next((index for index, header in enumerate(normalized_headers) if header == normalized_id), None)
+        if jira_id_index is None:
+            continue
+        summary_index = _header_index(normalized_headers, JIRA_SUMMARY_HEADERS)
+        type_index = _header_index(normalized_headers, JIRA_TYPE_HEADERS)
+        generator_supported = len(raw_headers) >= 4 and jira_id_index == 1 and raw_headers[1] == JIRA_ID_HEADER
+        modern_supported = generator_supported and summary_index == 2 and type_index == 3
+        normalized_format_changed = any(raw.casefold() != normalized for raw, normalized in zip(raw_headers, normalized_headers))
+        signatures.append({
+            "normalized_headers": normalized_headers,
+            "column_count": len(raw_headers),
+            "jira_id_index": jira_id_index,
+            "summary_index": summary_index,
+            "type_index": type_index,
+            "generator_supported": generator_supported,
+            "modern_supported": modern_supported,
+            "legacy": generator_supported and (not modern_supported or normalized_format_changed),
+        })
+    return signatures
+
+
+def _legacy_jira_warning() -> ValidationFailure:
+    return ValidationFailure("legacy_jira_table", "Сохранена поддерживаемая историческая структура Jira-таблицы.", "jira")
+
+
+def _jira_contract_comparison(active: dict[str, Any], candidate: dict[str, Any]) -> tuple[list[ValidationFailure], list[ValidationFailure]]:
+    errors: list[ValidationFailure] = []
+    warnings: list[ValidationFailure] = []
+    active_signatures = list(active.get("jira_signatures") or [])
+    candidate_signatures = list(candidate.get("jira_signatures") or [])
+    if len(candidate_signatures) < len(active_signatures):
+        errors.append(ValidationFailure("jira_table_count", "Нельзя удалять Jira-таблицы действующего шаблона.", "jira"))
+    for index, active_signature in enumerate(active_signatures):
+        if index >= len(candidate_signatures):
+            break
+        candidate_signature = candidate_signatures[index]
+        active_headers = Counter(active_signature.get("normalized_headers") or [])
+        candidate_headers = Counter(candidate_signature.get("normalized_headers") or [])
+        loses_active_header = bool(active_headers - candidate_headers)
+        if (
+            not candidate_signature.get("generator_supported")
+            or int(candidate_signature.get("column_count") or 0) < int(active_signature.get("column_count") or 0)
+            or loses_active_header
+            or (active_signature.get("modern_supported") and not candidate_signature.get("modern_supported"))
+        ):
+            errors.append(ValidationFailure("jira_table_columns", "Структура Jira-таблицы несовместима с действующим шаблоном или генератором.", "jira"))
+        elif candidate_signature.get("legacy"):
+            warnings.append(_legacy_jira_warning())
+    for candidate_signature in candidate_signatures[len(active_signatures):]:
+        if not candidate_signature.get("modern_supported"):
+            errors.append(ValidationFailure("jira_table_columns", "Новая Jira-таблица должна соответствовать современной поддерживаемой структуре.", "jira"))
+    return _unique_failures(errors), _unique_failures(warnings)
 
 
 def build_contract(path: Path) -> dict[str, Any]:
@@ -251,13 +311,17 @@ def build_contract(path: Path) -> dict[str, Any]:
                     total.update(unsupported_values); areas["unsupported"].update(unsupported_values)
     except (OSError, KeyError, zipfile.BadZipFile, etree.XMLSyntaxError, ValueError):
         pass
-    jira_count, jira_errors = _jira_table_count(document)
+    jira_signatures = _jira_table_signatures(document)
+    jira_warnings = [_legacy_jira_warning()] if any(item.get("legacy") for item in jira_signatures) else []
     return {
         "placeholders": dict(total),
         "areas": {key: dict(value) for key, value in areas.items()},
         "damaged_placeholders": sorted(damaged),
-        "jira_table_count": jira_count,
-        "jira_errors": [item.as_dict() for item in jira_errors],
+        "jira_table_count": len(jira_signatures),
+        "jira_signatures": jira_signatures,
+        "jira_blocking_errors": [],
+        "jira_warnings": [item.as_dict() for item in jira_warnings],
+        "jira_errors": [],
     }
 
 
@@ -273,9 +337,10 @@ def compare_contract(active_path: Path, candidate_path: Path) -> tuple[list[Vali
         errors.append(ValidationFailure("placeholder_unsupported_area", "Служебные поля в колонтитулах и специальных областях не поддерживаются.", "placeholders"))
     if candidate.get("damaged_placeholders"):
         errors.append(ValidationFailure("placeholder_whitespace_damaged", "Распознанное служебное поле повреждено пробелами.", "placeholders"))
-    if active["jira_table_count"] != candidate["jira_table_count"]:
-        errors.append(ValidationFailure("jira_table_count", "Количество Jira-таблиц должно совпадать с действующим шаблоном.", "jira"))
-    errors.extend(ValidationFailure(**item) for item in candidate["jira_errors"])
+    jira_errors, jira_warnings = _jira_contract_comparison(active, candidate)
+    errors.extend(jira_errors)
+    candidate["jira_blocking_errors"] = [item.as_dict() for item in jira_errors]
+    candidate["jira_warnings"] = [item.as_dict() for item in jira_warnings]
     return errors, candidate
 
 
@@ -296,6 +361,7 @@ def validate_candidate(active_path: Path, candidate_path: Path) -> dict[str, Any
         try:
             contract_errors, contract = compare_contract(active_path, candidate_path)
             errors.extend(contract_errors)
+            warnings.extend(ValidationFailure(**item) for item in contract.get("jira_warnings") or [])
         except Exception:
             errors.append(ValidationFailure("contract_read", "Не удалось проверить структуру служебных полей.", "structure"))
     return {

@@ -31,7 +31,7 @@ from services.document_template_read_service import (
 from services.document_template_storage_service import (
     MAX_UPLOAD_BYTES, UPLOAD_REQUEST_OVERHEAD, CandidateNotFound,
     CandidateStateConflict, CandidateUploadTooLarge, cancel_candidate, claim_maintenance_window, cleanup_candidates,
-    candidate_directory, get_candidate, history_file, list_candidates, list_history,
+    HistoryPreviewDenied, candidate_directory, committed_history_payload, get_candidate, list_candidates, list_history,
     update_candidate, write_uploaded_candidate,
 )
 from services.document_template_vendor_service import verify_vendor_assets
@@ -388,10 +388,11 @@ def document_history(document_id):
 
 def _history_response(document_id, version_uuid, attachment):
     document = _resolved_or_404(document_id)
-    try: path = history_file(document_id, version_uuid)
+    try: payload, _ = committed_history_payload(document_id, version_uuid)
     except ValueError: abort(400)
     except CandidateNotFound: abort(404)
-    return _docx_response(path, document.filename, attachment=attachment)
+    except HistoryPreviewDenied: return make_response("Историческая версия недоступна или не прошла безопасную проверку.", 409)
+    return send_file(BytesIO(payload), mimetype=DOCX_CONTENT_TYPE, as_attachment=attachment, download_name=document.filename, conditional=False, etag=False, max_age=0)
 
 
 @document_template_bp.get("/documents/<document_id>/history/<version_uuid>/preview")

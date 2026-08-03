@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
+import stat
 import time
 import uuid
 from datetime import datetime, timezone
@@ -34,6 +35,10 @@ class CandidateUploadTooLarge(ValueError):
 
 
 class CandidateStateConflict(RuntimeError):
+    pass
+
+
+class HistoryPreviewDenied(RuntimeError):
     pass
 
 
@@ -233,6 +238,54 @@ def history_file(document_id: str, version_uuid: str) -> Path:
     if not path.is_file() or path.is_symlink():
         raise CandidateNotFound("History version not found")
     return path
+
+
+def committed_history_payload(document_id: str, version_uuid: str, *, lstat=None) -> tuple[bytes, dict[str, Any]]:
+    if not str(document_id).startswith("dt1_") or len(str(document_id)) != 68 or not all(char in "0123456789abcdef" for char in str(document_id)[4:]):
+        raise CandidateNotFound("History version not found")
+    metadata = get_history_version(document_id, version_uuid)
+    if metadata.get("state") != "committed" or metadata.get("recovery_blocking"):
+        raise HistoryPreviewDenied("Historical version is not available")
+    expected_sha = metadata.get("sha256")
+    if not isinstance(expected_sha, str) or len(expected_sha) != 64 or any(char not in "0123456789abcdef" for char in expected_sha):
+        raise HistoryPreviewDenied("Historical version metadata is inconsistent")
+
+    inspect_lstat = os.lstat if lstat is None else lstat
+    root = data_root()
+    directory = history_directory(document_id, version_uuid)
+    path = directory / "document.docx"
+    components = (root, root / "history", root / "history" / document_id, directory, path)
+    try:
+        for component in components:
+            info = inspect_lstat(component)
+            if stat.S_ISLNK(info.st_mode):
+                raise HistoryPreviewDenied("Historical version is not available")
+            if component == path:
+                if not stat.S_ISREG(info.st_mode):
+                    raise HistoryPreviewDenied("Historical version is not available")
+            elif not stat.S_ISDIR(info.st_mode):
+                raise HistoryPreviewDenied("Historical version is not available")
+        with path.open("rb") as handle:
+            before = os.fstat(handle.fileno())
+            if not stat.S_ISREG(before.st_mode):
+                raise HistoryPreviewDenied("Historical version is not available")
+            payload = handle.read()
+            after = os.fstat(handle.fileno())
+        final = inspect_lstat(path)
+    except HistoryPreviewDenied:
+        raise
+    except OSError as exc:
+        raise CandidateNotFound("History version not found") from exc
+    signature = lambda value: (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns)
+    if signature(before) != signature(after) or signature(after) != signature(final) or stat.S_ISLNK(final.st_mode):
+        raise HistoryPreviewDenied("Historical version changed while reading")
+    if sha256_bytes(payload) != expected_sha:
+        raise HistoryPreviewDenied("Historical version SHA does not match metadata")
+    from services.document_template_validation_service import inspect_docx
+    errors, _ = inspect_docx(payload)
+    if errors:
+        raise HistoryPreviewDenied("Historical version failed basic DOCX validation")
+    return payload, metadata
 
 
 def list_history(document_id: str) -> list[dict[str, Any]]:
