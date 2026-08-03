@@ -25,6 +25,7 @@ from services.document_template_read_service import build_document_whitelist
 from services.document_template_storage_service import get_candidate, list_history, update_candidate, write_uploaded_candidate
 from services.document_template_publish_service import publish_candidate, recover_stale_operations, rollback_version
 from services.document_template_read_service import resolve_document
+from services.oplot_ui_service import register_oplot_ui
 from services.document_template_validation_service import inspect_docx
 from services.release_template_catalog_service import clear_template_catalog_cache
 
@@ -76,6 +77,7 @@ def build_app(root: Path, runtime: Path, *, secret=SECRET, enabled=True) -> Flas
     app.add_url_rule("/release-monitor", endpoint="dashboard.release_monitor_page", view_func=lambda: "monitor")
     app.add_url_rule("/mpr", endpoint="mpr.mpr_page", view_func=lambda: "mpr")
     app.register_blueprint(document_template_bp)
+    register_oplot_ui(app)
     return app
 
 
@@ -110,6 +112,16 @@ class Stage2AuthTests(unittest.TestCase):
         self.assertEqual(403, htmx.status_code); self.assertIn("HX-Redirect", htmx.headers)
         self.assertNotIn("Войти", htmx.get_data(as_text=True))
         self.assertEqual(403, mutation.status_code)
+
+    def test_login_uses_auth_shell_without_document_viewer_dependencies(self):
+        response = self.client.get("/admin/document-templates/login")
+        self.assertEqual(200, response.status_code)
+        html = response.get_data(as_text=True)
+        self.assertIn("oplot-shell-mode-auth", html)
+        self.assertIn("css/oplot.css", html)
+        self.assertNotIn("htmx.min.js", html)
+        self.assertNotIn("jszip.min.js", html)
+        self.assertNotIn("docx-preview.min.js", html)
 
     def test_login_csrf_logout_preserves_other_session_keys(self):
         with self.client.session_transaction() as session:
@@ -159,6 +171,9 @@ class Stage2AuthTests(unittest.TestCase):
         csp = response.headers["Content-Security-Policy"]
         self.assertIn("connect-src 'self'", csp); self.assertIn("object-src 'none'", csp)
         html = response.get_data(as_text=True)
+        self.assertIn("htmx.min.js", html)
+        self.assertIn("jszip.min.js", html)
+        self.assertIn("docx-preview.min.js", html)
         self.assertNotRegex(html, r'(?:src|href|action|hx-get)=["\'](?:https?:)?//')
 
     def test_safe_next_rejects_external_and_encoded_escape(self):

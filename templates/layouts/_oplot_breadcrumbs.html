@@ -1,0 +1,13 @@
+{% if oplot_breadcrumbs|default([]) %}
+<nav class="oplot-breadcrumbs" aria-label="Хлебные крошки">
+  <ol>
+    {% for crumb in oplot_breadcrumbs %}
+      {% set crumb_values = crumb.get('values', {}) %}
+      {% set crumb_url = safe_public_url_for(crumb.endpoint, **crumb_values) if crumb.endpoint|default('') else none %}
+      <li{% if loop.last %} aria-current="page"{% endif %}>
+        {% if crumb_url and not loop.last %}<a href="{{ crumb_url }}">{{ crumb.label }}</a>{% else %}<span>{{ crumb.label }}</span>{% endif %}
+      </li>
+    {% endfor %}
+  </ol>
+</nav>
+{% endif %}

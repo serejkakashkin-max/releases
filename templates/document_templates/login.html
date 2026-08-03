@@ -1,15 +1,9 @@
-<!doctype html>
-<html lang="ru" data-theme="light" data-bs-theme="light">
-<head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark">
-  <link rel="icon" type="image/svg+xml" href="{{ public_url_for('static', filename='img/oplot-favicon.svg') }}">
-  <title>Вход — Центр шаблонов Oplot</title>
-  <script src="{{ public_url_for('static', filename='js/oplot-theme.js') }}"></script>
-  <link rel="stylesheet" href="{{ public_url_for('static', filename='vendor/tabler/1.4.0/tabler.min.css') }}">
-  <link rel="stylesheet" href="{{ public_url_for('static', filename='css/oplot.css') }}">
-  <link rel="stylesheet" href="{{ public_url_for('static', filename='css/document_templates.css') }}">
-</head>
-<body class="oplot-login-body">
+{% extends 'layouts/oplot_base.html' %}
+{% set oplot_shell_mode = 'auth' %}
+{% block title %}Вход — Центр шаблонов Oplot{% endblock %}
+{% block body_class %}oplot-login-body{% endblock %}
+{% block styles %}<link rel="stylesheet" href="{{ public_url_for('static', filename='css/document_templates.css') }}">{% endblock %}
+{% block auth_content %}
   <main class="oplot-login-shell">
     <section class="oplot-login-story" aria-label="О Центре шаблонов">
       <div class="oplot-brand-lockup"><span class="oplot-brand-mark">O</span><span>Oplot</span></div>
@@ -23,7 +17,7 @@
     <section class="oplot-login-card">
       <div class="d-flex justify-content-between align-items-center mb-4">
         <div><div class="page-pretitle">Редактор</div><h2 class="mb-0">Войти в систему</h2></div>
-        <button id="oplot-theme-toggle" class="btn btn-icon btn-ghost-secondary" type="button" aria-label="Сменить тему"><span class="theme-label">◐</span></button>
+        <button class="btn btn-icon btn-ghost-secondary oplot-theme-toggle" data-oplot-theme-toggle type="button" aria-label="Сменить тему" aria-pressed="false"><span class="theme-label">Тёмная тема</span></button>
       </div>
       <p class="text-secondary mb-4">Используйте общее секретное слово редактора. Ваше имя будет указано в истории изменений.</p>
       {% if error %}<div class="alert alert-danger oplot-login-error" role="alert">{{ error }}</div>{% endif %}
@@ -39,6 +33,4 @@
       <div class="oplot-login-security mt-4">Сессия автоматически завершится после периода бездействия.</div>
     </section>
   </main>
-  <script defer src="{{ public_url_for('static', filename='vendor/tabler/1.4.0/tabler.min.js') }}"></script>
-  <script defer src="{{ public_url_for('static', filename='js/oplot.js') }}"></script>
-</body></html>
+{% endblock %}

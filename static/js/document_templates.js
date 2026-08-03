@@ -326,6 +326,29 @@
     if (view.modal) {
       view.modal.addEventListener("hidden.bs.modal", cleanupPreview);
     }
+    document.addEventListener("htmx:afterRequest", function (event) {
+      var status = event.detail && event.detail.xhr ? event.detail.xhr.status : 0;
+      var target = event.detail && event.detail.target;
+      if (event.detail && event.detail.failed && !(status === 422 && target && target.id === "candidate-panel")) {
+        if (window.OplotUI) {
+          window.OplotUI.showToast("Не удалось обновить данные Центра шаблонов.", "danger");
+        }
+      }
+    });
+    document.addEventListener("htmx:beforeSwap", function (event) {
+      var detail = event.detail || {};
+      var status = detail.xhr ? detail.xhr.status : 0;
+      if ((status === 503 && detail.target && detail.target.id === "template-catalog") ||
+          (status === 422 && detail.target && detail.target.id === "candidate-panel")) {
+        detail.shouldSwap = true;
+        detail.isError = false;
+      }
+    });
+    document.addEventListener("htmx:sendError", function () {
+      if (window.OplotUI) {
+        window.OplotUI.showToast("Сетевая ошибка при обновлении Центра шаблонов.", "danger");
+      }
+    });
   }
 
   window.OplotComponentInitializers = window.OplotComponentInitializers || [];

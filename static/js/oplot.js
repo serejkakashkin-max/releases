@@ -3,6 +3,8 @@
 
   window.OplotComponentInitializers = window.OplotComponentInitializers || [];
   var operationCount = 0;
+  var lastModalTrigger = null;
+  var htmxLifecycleInitialized = false;
 
   function updateOperationIndicator() {
     var indicator = document.getElementById("oplot-operation-indicator");
@@ -21,64 +23,110 @@
     updateOperationIndicator();
   }
 
-  function syncThemeButton(button) {
-    if (!button || !window.OplotTheme) {
-      return;
-    }
-    var dark = window.OplotTheme.current() === "dark";
-    button.setAttribute("aria-pressed", dark ? "true" : "false");
-    var label = button.querySelector(".theme-label");
-    if (label) {
-      label.textContent = dark ? "Светлая тема" : "Тёмная тема";
-    }
+  function syncThemeControls() {
+    var dark = window.OplotTheme && window.OplotTheme.current() === "dark";
+    document.querySelectorAll("[data-oplot-theme-toggle]").forEach(function (button) {
+      button.setAttribute("aria-pressed", dark ? "true" : "false");
+      var label = button.querySelector(".theme-label");
+      if (label) {
+        label.textContent = dark ? "Светлая тема" : "Тёмная тема";
+      }
+    });
   }
 
-  function initThemeToggle(container) {
-    var button = (container || document).querySelector("#oplot-theme-toggle");
-    if (!button) {
-      return;
-    }
-    syncThemeButton(button);
-    if (button.dataset.oplotInitialized === "true") {
-      return;
-    }
-    button.dataset.oplotInitialized = "true";
-    button.addEventListener("click", function () {
-      window.OplotTheme.toggle();
-      syncThemeButton(button);
+  function initThemeControls(container) {
+    (container || document).querySelectorAll("[data-oplot-theme-toggle]").forEach(function (button) {
+      if (button.dataset.oplotInitialized === "true") {
+        return;
+      }
+      button.dataset.oplotInitialized = "true";
+      button.addEventListener("click", function () {
+        if (window.OplotTheme) {
+          window.OplotTheme.toggle();
+          syncThemeControls();
+        }
+      });
     });
+    syncThemeControls();
   }
 
   function showToast(message, kind) {
     var region = document.getElementById("oplot-toast-region");
-    if (!region) {
-      return;
+    if (!region || !message) {
+      return null;
     }
     var toast = document.createElement("div");
-    toast.className = "toast show text-bg-" + (kind === "danger" ? "danger" : "secondary");
-    toast.setAttribute("role", "status");
-    var body = document.createElement("div");
-    body.className = "d-flex";
+    toast.className = "oplot-toast" + (kind === "danger" ? " is-danger" : "");
+    toast.setAttribute("role", kind === "danger" ? "alert" : "status");
     var text = document.createElement("div");
-    text.className = "toast-body";
-    text.textContent = message;
+    text.className = "oplot-toast__message";
+    text.textContent = String(message);
     var close = document.createElement("button");
     close.type = "button";
-    close.className = "btn-close btn-close-white me-2 m-auto";
-    close.setAttribute("aria-label", "Закрыть");
+    close.className = "oplot-toast__close";
+    close.setAttribute("aria-label", "Закрыть уведомление");
+    close.textContent = "×";
     close.addEventListener("click", function () { toast.remove(); });
-    body.appendChild(text);
-    body.appendChild(close);
-    toast.appendChild(body);
+    toast.appendChild(text);
+    toast.appendChild(close);
     region.appendChild(toast);
     window.setTimeout(function () { toast.remove(); }, 6000);
+    return toast;
+  }
+
+  function initModalFocus(container) {
+    (container || document).querySelectorAll(".modal").forEach(function (modal) {
+      if (modal.dataset.oplotFocusInitialized === "true") {
+        return;
+      }
+      modal.dataset.oplotFocusInitialized = "true";
+      modal.addEventListener("show.bs.modal", function (event) {
+        lastModalTrigger = event.relatedTarget || document.activeElement;
+      });
+      modal.addEventListener("hidden.bs.modal", function () {
+        if (lastModalTrigger && typeof lastModalTrigger.focus === "function" && document.contains(lastModalTrigger)) {
+          lastModalTrigger.focus();
+        }
+        lastModalTrigger = null;
+      });
+      var confirm = modal.querySelector("[data-oplot-confirm]");
+      if (confirm) {
+        confirm.addEventListener("click", function () {
+          modal.dispatchEvent(new CustomEvent("oplot:confirm", { bubbles: true }));
+          var Modal = window.tabler && (window.tabler.Modal || (window.tabler.bootstrap && window.tabler.bootstrap.Modal));
+          if (Modal) {
+            Modal.getOrCreateInstance(modal).hide();
+          }
+        });
+      }
+    });
   }
 
   function initOplotComponents(container) {
     var target = container || document;
-    initThemeToggle(document);
+    initThemeControls(target);
+    initModalFocus(target);
     window.OplotComponentInitializers.forEach(function (initializer) {
       initializer(target);
+    });
+  }
+
+  function initHtmxLifecycle() {
+    if (!window.htmx || htmxLifecycleInitialized) {
+      return;
+    }
+    htmxLifecycleInitialized = true;
+    document.addEventListener("htmx:beforeRequest", beginOperation);
+    document.addEventListener("htmx:configRequest", function (event) {
+      var meta = document.querySelector('meta[name="oplot-csrf-token"]');
+      if (meta && event.detail && event.detail.headers) {
+        event.detail.headers["X-CSRF-Token"] = meta.content;
+      }
+    });
+    document.addEventListener("htmx:afterRequest", endOperation);
+    document.addEventListener("htmx:sendError", endOperation);
+    document.addEventListener("htmx:afterSwap", function (event) {
+      initOplotComponents(event.detail && event.detail.target ? event.detail.target : document);
     });
   }
 
@@ -90,36 +138,8 @@
   };
 
   document.addEventListener("DOMContentLoaded", function () {
+    initHtmxLifecycle();
     initOplotComponents(document);
   });
-  document.addEventListener("htmx:beforeRequest", beginOperation);
-  document.addEventListener("htmx:configRequest", function (event) {
-    var meta = document.querySelector('meta[name="oplot-csrf-token"]');
-    if (meta && event.detail && event.detail.headers) {
-      event.detail.headers["X-CSRF-Token"] = meta.content;
-    }
-  });
-  document.addEventListener("htmx:afterRequest", function (event) {
-    endOperation();
-    var status = event.detail && event.detail.xhr ? event.detail.xhr.status : 0;
-    var target = event.detail && event.detail.target;
-    if (event.detail && event.detail.failed && !(status === 422 && target && target.id === "candidate-panel")) {
-      showToast("Не удалось обновить каталог.", "danger");
-    }
-  });
-  document.addEventListener("htmx:beforeSwap", function (event) {
-    var detail = event.detail || {};
-    var status = detail.xhr ? detail.xhr.status : 0;
-    if ((status === 503 && detail.target && detail.target.id === "template-catalog") ||
-        (status === 422 && detail.target && detail.target.id === "candidate-panel")) {
-      detail.shouldSwap = true;
-      detail.isError = false;
-    }
-  });
-  document.addEventListener("htmx:sendError", function () {
-    showToast("Сетевая ошибка при обновлении каталога.", "danger");
-  });
-  document.addEventListener("htmx:afterSwap", function (event) {
-    initOplotComponents(event.detail && event.detail.target ? event.detail.target : document);
-  });
+  document.addEventListener("oplot:themechange", syncThemeControls);
 })();

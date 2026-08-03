@@ -1,4 +1,10 @@
 {% extends 'layouts/oplot_base.html' %}
+{% set oplot_page_title = 'Центр шаблонов' %}
+{% set oplot_page_pretitle = 'Требуется настройка' %}
+{% set oplot_page_description = 'Защищённый редактор закрыт до завершения серверной конфигурации.' %}
+{% set oplot_context_label = 'Администрирование' %}
+{% set oplot_context_title = 'Документы Oplot' %}
+{% set oplot_breadcrumbs = [{'label':'Главная','endpoint':'main.index'},{'label':'Центр шаблонов'}] %}
 {% block title %}Центр шаблонов — требуется настройка{% endblock %}
 {% block styles %}<link rel="stylesheet" href="{{ public_url_for('static', filename='css/document_templates.css') }}">{% endblock %}
 {% block content %}

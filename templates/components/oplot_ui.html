@@ -1,18 +1,51 @@
+{% macro icon(name, class_name='') -%}
+<svg class="oplot-icon {{ class_name }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  {% if name == 'home' %}<path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v10h13V10"/><path d="M9.5 20v-6h5v6"/>
+  {% elif name == 'rocket' %}<path d="M7 14c-1.8.2-3 1.1-3.5 3.5 2.4-.5 3.3-1.7 3.5-3.5Z"/><path d="m9 15-3-3c2.6-5.4 6.7-8 12.5-8.5C18 9.3 15.4 13.4 10 16l-1-1Z"/><path d="m14 10 4 4"/><circle cx="14.5" cy="7.5" r="1.5"/>
+  {% elif name == 'dashboard' %}<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="4" rx="1"/><rect x="14" y="11" width="7" height="10" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>
+  {% elif name in ('document', 'template') %}<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/>
+  {% elif name == 'users' %}<circle cx="9" cy="8" r="3"/><path d="M3.5 20c.4-4 2.2-6 5.5-6s5.1 2 5.5 6"/><path d="M16 4.5a3 3 0 0 1 0 5.5M16 14c2.7.3 4.2 2.2 4.5 5"/>
+  {% elif name in ('calendar', 'schedule') %}<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/>
+  {% elif name == 'settings' %}<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/>
+  {% elif name == 'help' %}<circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.3 2.3 0 1 1 3.4 2c-.8.5-1.2 1-1.2 2M12 17h.01"/>
+  {% else %}<circle cx="12" cy="12" r="9"/>{% endif %}
+</svg>
+{%- endmacro %}
+
 {% macro badge(text, color='secondary') -%}
   {% if text %}<span class="badge bg-{{ color }}-lt">{{ text }}</span>{% endif %}
 {%- endmacro %}
 
-{% macro empty_state(title, message) -%}
-  <div class="empty py-6" role="status">
-    <div class="empty-icon">∅</div>
-    <p class="empty-title">{{ title }}</p>
-    <p class="empty-subtitle text-secondary">{{ message }}</p>
+{% macro alert(message, kind='info', title='') -%}
+  {% set mapped = {'error':'danger','message':'info','warning':'warning','success':'success','danger':'danger','info':'info'} %}
+  {% set color = mapped.get(kind, 'info') %}
+  <div class="alert alert-{{ color }} oplot-alert" role="{{ 'alert' if color in ('danger','warning') else 'status' }}">
+    {% if title %}<div class="oplot-alert__title">{{ title }}</div>{% endif %}<div>{{ message }}</div>
   </div>
 {%- endmacro %}
 
+{% macro empty_state(title, message) -%}
+  <div class="oplot-empty-state" role="status"><div class="oplot-state-icon">∅</div><h2>{{ title }}</h2><p>{{ message }}</p></div>
+{%- endmacro %}
+
 {% macro error_state(title, message) -%}
-  <div class="alert alert-danger" role="alert">
-    <div class="fw-semibold">{{ title }}</div>
-    <div>{{ message }}</div>
-  </div>
+  <div class="oplot-error-state" role="alert"><div class="oplot-state-icon">!</div><h2>{{ title }}</h2><p>{{ message }}</p></div>
+{%- endmacro %}
+
+{% macro loading_state(title='Загрузка', message='Пожалуйста, подождите…') -%}
+  <div class="oplot-loading-state" role="status" aria-live="polite"><span class="spinner-border" aria-hidden="true"></span><div><strong>{{ title }}</strong><span>{{ message }}</span></div></div>
+{%- endmacro %}
+
+{% macro modal_shell(id, title, size='modal-lg', description='') -%}
+  <div class="modal modal-blur fade" id="{{ id }}" tabindex="-1" aria-labelledby="{{ id }}-title" aria-hidden="true"><div class="modal-dialog {{ size }} modal-dialog-centered"><div class="modal-content">
+    <div class="modal-header"><div><h2 class="modal-title" id="{{ id }}-title">{{ title }}</h2>{% if description %}<p class="text-secondary mb-0">{{ description }}</p>{% endif %}</div><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Закрыть"></button></div>
+    <div class="modal-body">{{ caller() }}</div>
+  </div></div></div>
+{%- endmacro %}
+
+{% macro confirmation_dialog(id, title, confirm_label='Подтвердить', kind='primary') -%}
+  <div class="modal modal-blur fade" id="{{ id }}" tabindex="-1" aria-labelledby="{{ id }}-title" aria-hidden="true"><div class="modal-dialog modal-md modal-dialog-centered"><div class="modal-content">
+    <div class="modal-header"><h2 class="modal-title" id="{{ id }}-title">{{ title }}</h2><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Закрыть"></button></div>
+    <div class="modal-body">{{ caller() }}</div><div class="modal-footer"><button class="btn btn-ghost-secondary" type="button" data-bs-dismiss="modal">Отмена</button><button class="btn btn-{{ kind }}" type="button" data-oplot-confirm>{{ confirm_label }}</button></div>
+  </div></div></div>
 {%- endmacro %}

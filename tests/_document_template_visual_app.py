@@ -22,6 +22,7 @@ from routes.document_template_routes import document_template_bp
 from services.document_template_candidate_service import validate_staged_candidate
 from services.document_template_publish_service import publish_candidate
 from services.document_template_read_service import build_document_whitelist, resolve_document
+from services.oplot_ui_service import register_oplot_ui
 from services.document_template_storage_service import (
     create_history_version,
     sha256_bytes,
@@ -66,6 +67,7 @@ def create_visual_app(base: Path) -> tuple[Flask, dict]:
     app.add_url_rule("/release-monitor", endpoint="dashboard.release_monitor_page", view_func=lambda: "monitor")
     app.add_url_rule("/mpr", endpoint="mpr.mpr_page", view_func=lambda: "mpr")
     app.register_blueprint(document_template_bp)
+    register_oplot_ui(app)
     clear_template_catalog_cache()
     manifest = {"token": TOKEN, "documents": {}}
     with app.app_context():
