@@ -14,6 +14,7 @@ prepare_config_import()
 
 from routes.document_template_routes import document_template_bp
 from services.document_template_read_service import build_document_whitelist
+from services.oplot_ui_service import register_oplot_ui
 from services.release_template_catalog_service import clear_template_catalog_cache
 
 
@@ -49,6 +50,7 @@ def build_test_app(root: Path, *, enabled=True, static_folder=None) -> Flask:
     app.add_url_rule("/release-monitor", endpoint="dashboard.release_monitor_page", view_func=lambda: "monitor")
     app.add_url_rule("/mpr", endpoint="mpr.mpr_page", view_func=lambda: "mpr")
     app.register_blueprint(document_template_bp)
+    register_oplot_ui(app)
     return app
 
 

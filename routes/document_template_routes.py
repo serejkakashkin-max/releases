@@ -62,16 +62,6 @@ def _template_root() -> Path:
     return Path(current_app.config.get("DOCUMENT_TEMPLATE_CENTER_ROOT", DOC_TEMPLATES_ROOT))
 
 
-def _navigation_links():
-    return [
-        {"label": "Главная", "url": public_url_for("main.index")},
-        {"label": "Блок релизов", "url": public_url_for("dashboard.release_monitor_page")},
-        {"label": "Дашборд", "url": public_url_for("dashboard.dashboard")},
-        {"label": "МПР", "url": public_url_for("mpr.mpr_page")},
-        {"label": "Помощь", "url": public_url_for("main.help_page")},
-    ]
-
-
 def _safe_configuration_response():
     if _is_htmx_request():
         response = make_response("", 503)
@@ -79,7 +69,6 @@ def _safe_configuration_response():
         return response
     return make_response(render_template(
         "document_templates/configuration_error.html",
-        navigation_links=_navigation_links(), public_url_for=public_url_for,
     ), 503)
 
 
@@ -135,7 +124,6 @@ def login_page():
         return redirect(safe_next(request.args.get("next")), code=302)
     return render_template(
         "document_templates/login.html", error="", next_url=safe_next(request.args.get("next")),
-        navigation_links=_navigation_links(), public_url_for=public_url_for,
     )
 
 
@@ -148,9 +136,9 @@ def login_session():
     try:
         ok, code = login_editor(request.form.get("display_name", ""), request.form.get("token", ""))
     except ValueError as exc:
-        return render_template("document_templates/login.html", error=str(exc), next_url=destination, navigation_links=_navigation_links(), public_url_for=public_url_for), 400
+        return render_template("document_templates/login.html", error=str(exc), next_url=destination), 400
     except RateLimitStorageError:
-        return render_template("document_templates/login.html", error="Защита входа временно недоступна. Обратитесь к администратору.", next_url=destination, navigation_links=_navigation_links(), public_url_for=public_url_for), 503
+        return render_template("document_templates/login.html", error="Защита входа временно недоступна. Обратитесь к администратору.", next_url=destination), 503
     if not ok:
         if code in {"rate_limited", "rate_limit_capacity"}:
             status, message = 429, "Слишком много попыток. Подождите несколько минут."
@@ -158,7 +146,7 @@ def login_session():
             status, message = 503, "Вход редактора пока не настроен."
         else:
             status, message = 403, "Имя или общий токен не приняты."
-        response = make_response(render_template("document_templates/login.html", error=message, next_url=destination, navigation_links=_navigation_links(), public_url_for=public_url_for), status)
+        response = make_response(render_template("document_templates/login.html", error=message, next_url=destination), status)
         if status == 429:
             response.headers["Retry-After"] = str(BLOCK_SECONDS)
         return response
@@ -207,16 +195,16 @@ def index():
     vendor_status = verify_vendor_assets(Path(current_app.static_folder))
     if not vendor_status["ok"]:
         template = "document_templates/_catalog_error.html" if _is_htmx_request() else "document_templates/vendor_error.html"
-        response = make_response(render_template(template, catalog_error="Локальные компоненты интерфейса недоступны: " + ", ".join(vendor_status["problems"]), problems=vendor_status["problems"], navigation_links=_navigation_links(), public_url_for=public_url_for), 503)
+        response = make_response(render_template(template, catalog_error="Локальные компоненты интерфейса недоступны: " + ", ".join(vendor_status["problems"]), problems=vendor_status["problems"]), 503)
         response.headers.add("Vary", "HX-Request"); return response
     filters = {"query": request.args.get("q", "").strip(), "category": request.args.get("category", "").strip(), "ke": request.args.get("ke", "").strip(), "variant": request.args.get("variant", "").strip(), "page": _page_number()}
     try:
         catalog = build_catalog_page(_template_root(), **filters); _enrich_catalog(catalog)
         template = "document_templates/_catalog.html" if _is_htmx_request() else "document_templates/index.html"
-        response = make_response(render_template(template, catalog=catalog, actor=editor_session_actor(touch=False), csrf_token=csrf_token(), navigation_links=_navigation_links(), public_url_for=public_url_for))
+        response = make_response(render_template(template, catalog=catalog, actor=editor_session_actor(touch=False), csrf_token=csrf_token()))
     except DocumentTemplateRootUnavailable:
         template = "document_templates/_catalog_error.html" if _is_htmx_request() else "document_templates/index.html"
-        response = make_response(render_template(template, catalog=None, catalog_error="Каталог шаблонов временно недоступен.", actor=editor_session_actor(touch=False), csrf_token=csrf_token(), navigation_links=_navigation_links(), public_url_for=public_url_for), 503)
+        response = make_response(render_template(template, catalog=None, catalog_error="Каталог шаблонов временно недоступен.", actor=editor_session_actor(touch=False), csrf_token=csrf_token()), 503)
     response.headers.add("Vary", "HX-Request"); return response
 
 
@@ -302,7 +290,7 @@ def candidate_detail(document_id: str, candidate_uuid: str):
     if guard is not None: return guard
     document, candidate = _candidate_context(document_id, candidate_uuid)
     template = "document_templates/_candidate_panel.html" if _is_htmx_request() else "document_templates/candidate.html"
-    return render_template(template, document=document.as_view_model(), candidate=candidate, actor=editor_session_actor(touch=False), csrf_token=csrf_token(), navigation_links=_navigation_links(), public_url_for=public_url_for)
+    return render_template(template, document=document.as_view_model(), candidate=candidate, actor=editor_session_actor(touch=False), csrf_token=csrf_token())
 
 
 @document_template_bp.post("/documents/<document_id>/candidates/<candidate_uuid>/validate")
@@ -315,7 +303,7 @@ def validate_candidate_route(document_id: str, candidate_uuid: str):
     except CandidateNotFound: abort(404)
     except CandidateStateConflict: return make_response("Кандидат находится в несовместимом состоянии.", 409)
     status = 200 if candidate["state"] == "valid" else 422
-    return render_template("document_templates/_candidate_panel.html", document=document.as_view_model(), candidate=candidate, actor=editor_session_actor(touch=False), csrf_token=csrf_token(), navigation_links=_navigation_links(), public_url_for=public_url_for), status
+    return render_template("document_templates/_candidate_panel.html", document=document.as_view_model(), candidate=candidate, actor=editor_session_actor(touch=False), csrf_token=csrf_token()), status
 
 
 def _candidate_doc_response(document_id: str, candidate_uuid: str, name: str, attachment: bool):
@@ -383,7 +371,7 @@ def document_history(document_id):
     guard = _auth_guard();
     if guard is not None: return guard
     document = _resolved_or_404(document_id)
-    return render_template("document_templates/history.html", document=document.as_view_model(), versions=list_history(document_id), csrf_token=csrf_token(), actor=editor_session_actor(touch=False), navigation_links=_navigation_links(), public_url_for=public_url_for)
+    return render_template("document_templates/history.html", document=document.as_view_model(), versions=list_history(document_id), csrf_token=csrf_token(), actor=editor_session_actor(touch=False))
 
 
 def _history_response(document_id, version_uuid, attachment):

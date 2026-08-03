@@ -1,0 +1,21 @@
+{% extends 'layouts/oplot_base.html' %}
+{% import 'components/oplot_ui.html' as ui %}
+{% set oplot_page_title = 'Очень длинное русское название раздела для проверки устойчивости корпоративного application shell Oplot' %}
+{% set oplot_page_pretitle = 'Тестовая инфраструктура' %}
+{% set oplot_page_description = 'Изолированная fixture демонстрирует общие компоненты без подключения бизнес-модулей.' %}
+{% set oplot_context_label = 'Design system' %}
+{% set oplot_context_title = 'Shell fixture' %}
+{% set oplot_breadcrumbs = [{'label':'Главная','endpoint':'main.index'},{'label':'Отсутствующий раздел','endpoint':'missing.endpoint'},{'label':'Компоненты'}] %}
+{% block page_actions %}<button class="btn btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#fixture-confirm">Подтверждение</button><button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#fixture-modal">Открыть modal</button>{% endblock %}
+{% block content %}
+<div class="row g-4">
+  <div class="col-6"><div class="card h-100"><div class="card-body"><h2>Alerts</h2>{{ ui.alert('Информационное сообщение shell.', 'info', 'Готово к работе') }}{{ ui.alert('Предупреждение требует внимания.', 'warning') }}</div></div></div>
+  <div class="col-6"><div class="card h-100"><div class="card-body"><h2>Loading</h2>{{ ui.loading_state('Загружаем данные', 'Layout сохраняет стабильную высоту.') }}</div></div></div>
+  <div class="col-6">{{ ui.empty_state('Пока ничего нет', 'Добавленные записи появятся в этом блоке.') }}</div>
+  <div class="col-6">{{ ui.error_state('Данные недоступны', 'Повторите действие после восстановления соединения.') }}</div>
+</div>
+{% endblock %}
+{% block overlays %}
+  {% call ui.modal_shell('fixture-modal', 'Переиспользуемый modal', description='Фокус возвращается к кнопке открытия.') %}<p class="mb-0">Содержимое modal задаётся вызывающим шаблоном.</p>{% endcall %}
+  {% call ui.confirmation_dialog('fixture-confirm', 'Подтвердить действие?') %}<p class="mb-0">Confirmation dialog не содержит бизнес-логики.</p>{% endcall %}
+{% endblock %}

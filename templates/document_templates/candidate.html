@@ -1,6 +1,20 @@
 {% extends 'layouts/oplot_base.html' %}
+{% set oplot_page_title = candidate.source_filename %}
+{% set oplot_page_pretitle = 'Кандидат шаблона' %}
+{% set oplot_page_description = candidate.comment %}
+{% set oplot_context_label = 'Администрирование' %}
+{% set oplot_context_title = 'Документы Oplot' %}
+{% set oplot_actor = actor|default('') %}
+{% set oplot_logout_endpoint = 'document_templates.logout_session' if actor|default('') else '' %}
+{% set oplot_breadcrumbs = [{'label':'Главная','endpoint':'main.index'},{'label':'Центр шаблонов','endpoint':'document_templates.index'},{'label':'Кандидат'}] %}
 {% block title %}Кандидат — Центр шаблонов{% endblock %}
 {% block styles %}<link rel="stylesheet" href="{{ public_url_for('static', filename='css/document_templates.css') }}">{% endblock %}
-{% block content %}<div class="mb-3"><a href="{{ public_url_for('document_templates.index') }}" class="btn btn-ghost-secondary">← К каталогу</a></div><section id="candidate-panel">{% include 'document_templates/_candidate_panel.html' %}</section>{% endblock %}
+{% block page_actions %}<a href="{{ public_url_for('document_templates.index') }}" class="btn btn-ghost-secondary">К каталогу</a>{% endblock %}
+{% block content %}<section id="candidate-panel">{% include 'document_templates/_candidate_panel.html' %}</section>{% endblock %}
 {% block overlays %}{% include 'document_templates/_preview_modal.html' %}{% endblock %}
+{% block vendor_scripts %}
+  <script defer src="{{ public_url_for('static', filename='vendor/htmx/2.0.10/htmx.min.js') }}"></script>
+  <script defer src="{{ public_url_for('static', filename='vendor/jszip/3.10.1/jszip.min.js') }}"></script>
+  <script defer src="{{ public_url_for('static', filename='vendor/docx-preview/0.3.6/docx-preview.min.js') }}"></script>
+{% endblock %}
 {% block scripts %}<script defer src="{{ public_url_for('static', filename='js/document_templates.js') }}"></script>{% endblock %}

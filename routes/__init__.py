@@ -31,6 +31,10 @@ def register_routes(app):
     except Exception:
         app.logger.exception("VA Schedule Manager optional registration failed.")
 
+    from services.oplot_ui_service import register_oplot_ui
+
+    register_oplot_ui(app)
+
     try:
         from services.email_to_sbertrack_service import (
             ensure_email_to_sbertrack_worker_started,

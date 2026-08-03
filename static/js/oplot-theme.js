@@ -26,6 +26,11 @@
         // Storage can be unavailable in hardened or private browser contexts.
       }
     }
+    try {
+      document.dispatchEvent(new CustomEvent("oplot:themechange", { detail: { theme: value } }));
+    } catch (error) {
+      // CustomEvent can be unavailable in unusually restricted web views.
+    }
     return value;
   }
 

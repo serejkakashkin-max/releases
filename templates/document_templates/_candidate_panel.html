@@ -7,7 +7,7 @@
   'cancelled':'Отменён','expired':'Срок истёк'
 } %}
 <div class="oplot-candidate-header">
-  <div><div class="page-pretitle">Кандидат для {{ document.filename }}</div><h1>{{ candidate.source_filename }}</h1><p>{{ candidate.comment }}</p></div>
+  <div><div class="page-pretitle">Кандидат для {{ document.filename }}</div><strong>{{ candidate.source_filename }}</strong></div>
   <span class="oplot-state-badge is-{{ candidate.state }}">{{ state_labels.get(candidate.state, candidate.state) }}</span>
 </div>
 <div class="row g-4">

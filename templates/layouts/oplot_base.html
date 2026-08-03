@@ -4,90 +4,50 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  {% if csrf_token %}<meta name="oplot-csrf-token" content="{{ csrf_token }}">{% endif %}
+  {% if csrf_token|default('') %}<meta name="oplot-csrf-token" content="{{ csrf_token }}">{% endif %}
   <link rel="icon" type="image/svg+xml" href="{{ public_url_for('static', filename='img/oplot-favicon.svg') }}">
-  <title>{% block title %}Oplot{% endblock %}</title>
+  <title>{% block title %}{{ oplot_page_title|default('Oplot') }} — Oplot{% endblock %}</title>
   <script src="{{ public_url_for('static', filename='js/oplot-theme.js') }}"></script>
   <link rel="stylesheet" href="{{ public_url_for('static', filename='vendor/tabler/1.4.0/tabler.min.css') }}">
   <link rel="stylesheet" href="{{ public_url_for('static', filename='css/oplot.css') }}">
   {% block styles %}{% endblock %}
 </head>
-<body class="layout-fluid">
-  <div class="page">
-    <aside class="navbar navbar-vertical navbar-expand-lg oplot-sidebar" data-bs-theme="dark" aria-label="Основная навигация">
-      <div class="container-fluid">
-        <h1 class="navbar-brand navbar-brand-autodark">
-          <a href="{{ public_url_for('document_templates.index') }}" class="text-decoration-none text-reset">Oplot</a>
-        </h1>
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#oplot-sidebar-menu" aria-controls="oplot-sidebar-menu" aria-expanded="false" aria-label="Открыть меню">
-          <span class="navbar-toggler-icon"></span>
-        </button>
-        <div class="collapse navbar-collapse" id="oplot-sidebar-menu">
-          <ul class="navbar-nav pt-lg-3">
-            <li class="nav-item">
-              <a class="nav-link active" href="{{ public_url_for('document_templates.index') }}" aria-current="page">
-                <span class="nav-link-title">Центр шаблонов</span>
-              </a>
-            </li>
-            {% for item in navigation_links %}
-              <li class="nav-item"><a class="nav-link" href="{{ item.url }}"><span class="nav-link-title">{{ item.label }}</span></a></li>
-            {% endfor %}
-          </ul>
-        </div>
+{% set shell_mode = oplot_shell_mode|default('app') %}
+<body class="oplot-body oplot-shell-mode-{{ shell_mode }} {% block body_class %}{% endblock %}">
+  {% if shell_mode == 'app' %}
+    <div class="oplot-shell">
+      {% include 'layouts/_oplot_sidebar.html' %}
+      <div class="oplot-shell__main">
+        {% include 'layouts/_oplot_topbar.html' %}
+        <main class="oplot-page" id="main-content" tabindex="-1">
+          <div class="oplot-page__container">
+            {% include 'layouts/_oplot_breadcrumbs.html' %}
+            <header class="oplot-page-header">
+              {% include 'layouts/_oplot_page_header.html' %}
+              <div class="oplot-page-header__actions">{% block page_actions %}{% endblock %}</div>
+            </header>
+            {% import 'components/oplot_ui.html' as ui %}
+            {% with messages = get_flashed_messages(with_categories=true) %}
+              {% if messages %}<div class="oplot-flash-stack">{% for category, message in messages %}{{ ui.alert(message, category) }}{% endfor %}</div>{% endif %}
+            {% endwith %}
+            {% block content %}{% endblock %}
+          </div>
+        </main>
       </div>
-    </aside>
-
-    <div class="page-wrapper">
-      <header class="navbar navbar-expand-md d-print-none oplot-topbar">
-        <div class="container-xl">
-          <div class="navbar-nav flex-row order-md-last ms-auto">
-            {% if actor %}
-              <div class="nav-item d-flex align-items-center me-3">
-                <span class="avatar avatar-sm me-2">{{ actor[:1]|upper }}</span>
-                <div class="d-none d-xl-block"><div class="small text-secondary">Редактор</div><div class="fw-semibold">{{ actor }}</div></div>
-              </div>
-              <form method="post" action="{{ public_url_for('document_templates.logout_session') }}" class="me-2">
-                <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                <button class="btn btn-ghost-secondary" type="submit">Выйти</button>
-              </form>
-            {% endif %}
-            <button id="oplot-theme-toggle" class="btn btn-outline-secondary" type="button" aria-pressed="false">
-              <span class="theme-label">Тёмная тема</span>
-            </button>
-          </div>
-          <div>
-            <div class="text-secondary small">Администрирование</div>
-            <div class="fw-semibold">Документы Oplot</div>
-          </div>
-        </div>
-      </header>
-
-      <main class="page-body">
-        <div class="container-xl">
-          <nav aria-label="Хлебные крошки">
-            <ol class="breadcrumb breadcrumb-arrows mb-3">
-              <li class="breadcrumb-item"><a href="{{ public_url_for('main.index') }}">Главная</a></li>
-              <li class="breadcrumb-item active" aria-current="page">Центр шаблонов</li>
-            </ol>
-          </nav>
-          {% block content %}{% endblock %}
-        </div>
-      </main>
     </div>
-  </div>
+  {% else %}
+    {% block auth_content %}{% block content_auth %}{% endblock %}{% endblock %}
+  {% endif %}
 
   <div id="oplot-operation-indicator" class="oplot-operation-indicator" role="status" aria-live="polite" hidden>
     <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
     <span>Выполняется…</span>
   </div>
-  <div id="oplot-toast-region" class="toast-container position-fixed top-0 end-0 p-3" aria-live="polite" aria-atomic="true"></div>
+  <div id="oplot-toast-region" class="oplot-toast-region" aria-live="polite" aria-atomic="true"></div>
 
   {% block overlays %}{% endblock %}
-
   <script defer src="{{ public_url_for('static', filename='vendor/tabler/1.4.0/tabler.min.js') }}"></script>
-  <script defer src="{{ public_url_for('static', filename='vendor/htmx/2.0.10/htmx.min.js') }}"></script>
-  <script defer src="{{ public_url_for('static', filename='vendor/jszip/3.10.1/jszip.min.js') }}"></script>
-  <script defer src="{{ public_url_for('static', filename='vendor/docx-preview/0.3.6/docx-preview.min.js') }}"></script>
+  {% block vendor_scripts %}{% endblock %}
   <script defer src="{{ public_url_for('static', filename='js/oplot.js') }}"></script>
   {% block scripts %}{% endblock %}
 </body>

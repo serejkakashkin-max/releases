@@ -1,15 +1,25 @@
 {% extends 'layouts/oplot_base.html' %}
+{% set oplot_page_title = 'Центр шаблонов' %}
+{% set oplot_page_pretitle = 'Управление DOCX' %}
+{% set oplot_page_description = 'Проверяйте новые версии до публикации, сохраняйте историю и возвращайтесь к проверенным вариантам.' %}
+{% set oplot_context_label = 'Администрирование' %}
+{% set oplot_context_title = 'Документы Oplot' %}
+{% set oplot_actor = actor|default('') %}
+{% set oplot_logout_endpoint = 'document_templates.logout_session' if actor|default('') else '' %}
+{% set oplot_breadcrumbs = [{'label':'Главная','endpoint':'main.index'},{'label':'Центр шаблонов'}] %}
 {% block title %}Центр шаблонов документов — Oplot{% endblock %}
 {% block styles %}<link rel="stylesheet" href="{{ public_url_for('static', filename='css/document_templates.css') }}">{% endblock %}
+{% block page_actions %}<span class="status status-green"><span class="status-dot status-dot-animated"></span>Active root защищён</span>{% endblock %}
 {% block content %}
-  <div class="oplot-hero mb-4">
-    <div><div class="page-pretitle">Управление DOCX</div><h1>Центр шаблонов</h1><p>Проверяйте новые версии до публикации, сохраняйте историю и возвращайтесь к проверенным вариантам.</p></div>
-    <div class="oplot-hero-signal"><span class="status status-green"><span class="status-dot status-dot-animated"></span>Active root защищён</span></div>
-  </div>
   <section id="template-catalog" aria-live="polite">{% if catalog %}{% include 'document_templates/_catalog.html' %}{% else %}{% include 'document_templates/_catalog_error.html' %}{% endif %}</section>
 {% endblock %}
 {% block overlays %}
   <div class="modal modal-blur fade" id="document-preview-modal" tabindex="-1" aria-labelledby="document-preview-title" aria-hidden="true"><div class="modal-dialog modal-full-width modal-dialog-centered modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><div><div class="page-pretitle" id="document-preview-source">Документ</div><h3 class="modal-title" id="document-preview-title">Просмотр документа</h3><div class="text-secondary small">Отображение может отличаться от Microsoft Word.</div></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button></div><div class="modal-body"><div id="document-preview-loader" class="oplot-preview-loader" hidden><span class="spinner-border" aria-hidden="true"></span><div><strong>Готовим безопасный просмотр</strong><span>Внешние ресурсы документа отключены</span></div></div><div id="document-preview-error" class="alert alert-danger" role="alert" hidden></div><div id="document-preview-container" class="document-preview-container"></div></div></div></div></div>
   <div class="modal modal-blur fade" id="candidate-upload-modal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content"><form id="candidate-upload-form" method="post" enctype="multipart/form-data"><div class="modal-header"><div><div class="page-pretitle">Новая версия</div><h3 class="modal-title">Заменить шаблон</h3></div><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Закрыть"></button></div><div class="modal-body"><div class="oplot-active-document"><span>Действующий документ</span><strong id="upload-active-name"></strong><code id="upload-active-sha"></code></div><div class="alert alert-info">Рабочий документ не изменится, пока кандидат не пройдёт проверку и вы не подтвердите публикацию.</div><input type="hidden" name="_csrf_token" value="{{ csrf_token }}"><label class="oplot-file-drop" for="candidate-file"><input id="candidate-file" name="file" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required><span class="oplot-file-drop-title">Выберите DOCX до 10 МиБ</span><span id="candidate-file-caption">Файл ещё не выбран</span></label><label class="form-label mt-4" for="candidate-comment">Комментарий к версии</label><textarea class="form-control" id="candidate-comment" name="comment" minlength="3" maxlength="500" rows="3" required placeholder="Что изменено и зачем"></textarea></div><div class="modal-footer"><button class="btn btn-ghost-secondary" type="button" data-bs-dismiss="modal">Отмена</button><button class="btn btn-warning" id="candidate-upload-submit" type="submit">Загрузить кандидата</button></div></form></div></div></div>
+{% endblock %}
+{% block vendor_scripts %}
+  <script defer src="{{ public_url_for('static', filename='vendor/htmx/2.0.10/htmx.min.js') }}"></script>
+  <script defer src="{{ public_url_for('static', filename='vendor/jszip/3.10.1/jszip.min.js') }}"></script>
+  <script defer src="{{ public_url_for('static', filename='vendor/docx-preview/0.3.6/docx-preview.min.js') }}"></script>
 {% endblock %}
 {% block scripts %}<script defer src="{{ public_url_for('static', filename='js/document_templates.js') }}"></script>{% endblock %}

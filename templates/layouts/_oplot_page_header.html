@@ -1,0 +1,5 @@
+<div class="oplot-page-header__copy">
+  {% if oplot_page_pretitle|default('') %}<div class="oplot-page-header__pretitle">{{ oplot_page_pretitle }}</div>{% endif %}
+  <h1>{{ oplot_page_title|default('Oplot') }}</h1>
+  {% if oplot_page_description|default('') %}<p>{{ oplot_page_description }}</p>{% endif %}
+</div>

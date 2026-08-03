@@ -1,0 +1,28 @@
+<header class="oplot-topbar">
+  <div class="oplot-topbar__context">
+    <span>{{ oplot_context_label|default('Рабочее пространство') }}</span>
+    <strong>{{ oplot_context_title|default('Oplot') }}</strong>
+  </div>
+  <div class="oplot-topbar__actions">
+    {% if oplot_actor|default(actor|default('')) %}
+      {% set shell_actor = oplot_actor|default(actor) %}
+      <div class="oplot-actor" title="Текущий пользователь">
+        <span class="oplot-actor__avatar" aria-hidden="true">{{ shell_actor[:1]|upper }}</span>
+        <span><small>{{ oplot_actor_label|default('Редактор') }}</small><strong>{{ shell_actor }}</strong></span>
+      </div>
+    {% endif %}
+    {% if oplot_logout_endpoint|default('') %}
+      {% set logout_url = safe_public_url_for(oplot_logout_endpoint) %}
+      {% if logout_url %}
+        <form method="post" action="{{ logout_url }}" class="oplot-topbar__logout">
+          {% if csrf_token|default('') %}<input type="hidden" name="_csrf_token" value="{{ csrf_token }}">{% endif %}
+          <button class="btn btn-ghost-secondary" type="submit">Выйти</button>
+        </form>
+      {% endif %}
+    {% endif %}
+    <button class="btn btn-outline-secondary oplot-theme-toggle" type="button" data-oplot-theme-toggle aria-pressed="false">
+      <span class="oplot-theme-toggle__dot" aria-hidden="true"></span>
+      <span class="theme-label">Тёмная тема</span>
+    </button>
+  </div>
+</header>

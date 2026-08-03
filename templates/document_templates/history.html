@@ -1,11 +1,16 @@
 {% extends 'layouts/oplot_base.html' %}
+{% set oplot_page_title = document.filename %}
+{% set oplot_page_pretitle = 'История версий' %}
+{% set oplot_page_description = 'Текущая версия не пропадёт при восстановлении — она будет добавлена в историю.' %}
+{% set oplot_context_label = 'Администрирование' %}
+{% set oplot_context_title = 'Документы Oplot' %}
+{% set oplot_actor = actor|default('') %}
+{% set oplot_logout_endpoint = 'document_templates.logout_session' if actor|default('') else '' %}
+{% set oplot_breadcrumbs = [{'label':'Главная','endpoint':'main.index'},{'label':'Центр шаблонов','endpoint':'document_templates.index'},{'label':'История'}] %}
 {% block title %}История — Центр шаблонов{% endblock %}
 {% block styles %}<link rel="stylesheet" href="{{ public_url_for('static', filename='css/document_templates.css') }}">{% endblock %}
+{% block page_actions %}<a class="btn btn-ghost-secondary" href="{{ public_url_for('document_templates.index') }}">К каталогу</a>{% endblock %}
 {% block content %}
-<div class="d-flex align-items-start justify-content-between mb-4">
-  <div><div class="page-pretitle">История версий</div><h1>{{ document.filename }}</h1><p class="text-secondary">Текущая версия не пропадёт при восстановлении — она будет добавлена в историю.</p></div>
-  <a class="btn btn-ghost-secondary" href="{{ public_url_for('document_templates.index') }}">К каталогу</a>
-</div>
 <div class="oplot-history">
   <div class="oplot-history-item is-active"><span class="oplot-history-dot"></span><div class="card"><div class="card-body"><span class="badge bg-green-lt">Активная версия</span><h3 class="mt-2">Сейчас используется</h3><code>{{ document.sha256_short }}</code></div></div></div>
   {% for version in versions %}
@@ -30,5 +35,10 @@
     <div class="modal-body"><div class="oplot-publish-summary"><div><span>Сейчас активна</span><code>{{ document.sha256_short }}</code></div><div><span>Будет восстановлена</span><code id="rollback-version-sha"></code></div><div><span>Версию изменил</span><strong id="rollback-version-actor"></strong></div><div><span>Дата версии</span><strong id="rollback-version-date"></strong></div></div><div class="alert alert-warning">Текущая версия не исчезнет: она будет сохранена в истории как отдельная точка восстановления.</div><input type="hidden" name="_csrf_token" value="{{ csrf_token }}"><input type="hidden" name="expected_active_sha" value="{{ document.sha256 }}"><label class="form-label" for="rollback-reason">Причина восстановления</label><textarea class="form-control" id="rollback-reason" name="reason" minlength="3" maxlength="500" rows="3" required placeholder="Почему требуется вернуться к этой версии"></textarea></div>
     <div class="modal-footer"><button class="btn btn-ghost-secondary" type="button" data-bs-dismiss="modal">Отмена</button><button class="btn btn-warning btn-lg" type="submit">Восстановить с сохранением текущей</button></div>
   </form></div></div></div>
+{% endblock %}
+{% block vendor_scripts %}
+  <script defer src="{{ public_url_for('static', filename='vendor/htmx/2.0.10/htmx.min.js') }}"></script>
+  <script defer src="{{ public_url_for('static', filename='vendor/jszip/3.10.1/jszip.min.js') }}"></script>
+  <script defer src="{{ public_url_for('static', filename='vendor/docx-preview/0.3.6/docx-preview.min.js') }}"></script>
 {% endblock %}
 {% block scripts %}<script defer src="{{ public_url_for('static', filename='js/document_templates.js') }}"></script>{% endblock %}
