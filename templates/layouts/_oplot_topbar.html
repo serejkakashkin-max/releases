@@ -1,6 +1,7 @@
+{% macro render_oplot_topbar() %}
 {% set topbar_variant = oplot_topbar_variant|default('default') %}
-<header class="oplot-topbar{% if topbar_variant == 'compact' %} oplot-topbar--compact{% endif %}">
-  {% if topbar_variant == 'compact' %}
+<header class="oplot-topbar{% if topbar_variant == 'compact' %} oplot-topbar--compact{% elif topbar_variant == 'core' %} oplot-topbar--core{% endif %}">
+  {% if topbar_variant in ('compact', 'core') %}
     {% set topbar_home_url = safe_public_url_for('main.index') %}
     {% if topbar_home_url %}<a class="oplot-topbar__brand" href="{{ topbar_home_url }}">OPLOT</a>{% else %}<span class="oplot-topbar__brand">OPLOT</span>{% endif %}
   {% else %}
@@ -10,6 +11,7 @@
     </div>
   {% endif %}
   <div class="oplot-topbar__actions">
+    {% if topbar_variant == 'core' and caller is defined %}{{ caller() }}{% endif %}
     {% if oplot_actor|default(actor|default('')) %}
       {% set shell_actor = oplot_actor|default(actor) %}
       <div class="oplot-actor" title="Текущий пользователь">
@@ -26,9 +28,18 @@
         </form>
       {% endif %}
     {% endif %}
-    <button class="btn btn-outline-secondary oplot-theme-toggle" type="button" data-oplot-theme-toggle aria-pressed="false">
-      <span class="oplot-theme-toggle__dot" aria-hidden="true"></span>
-      <span class="theme-label">Тёмная тема</span>
-    </button>
+    {% if topbar_variant == 'core' %}
+      <button class="oplot-theme-toggle oplot-core-theme-toggle" type="button" data-oplot-theme-toggle aria-pressed="false" aria-label="Переключить тему">
+        <svg class="oplot-core-theme-toggle__icon oplot-core-theme-toggle__icon--dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.2 15.3A8.4 8.4 0 0 1 8.7 3.8 8.5 8.5 0 1 0 20.2 15.3Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <svg class="oplot-core-theme-toggle__icon oplot-core-theme-toggle__icon--light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        <span class="theme-label">Тёмная тема</span>
+      </button>
+    {% else %}
+      <button class="btn btn-outline-secondary oplot-theme-toggle" type="button" data-oplot-theme-toggle aria-pressed="false">
+        <span class="oplot-theme-toggle__dot" aria-hidden="true"></span>
+        <span class="theme-label">Тёмная тема</span>
+      </button>
+    {% endif %}
   </div>
 </header>
+{% endmacro %}

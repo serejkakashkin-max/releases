@@ -133,6 +133,21 @@ html[data-theme="dark"] {
 .oplot-topbar__context strong { overflow: hidden; font-size: .95rem; text-overflow: ellipsis; white-space: nowrap; }
 .oplot-topbar__actions { display: flex; align-items: center; gap: var(--oplot-space-3); }
 .oplot-topbar--compact { min-height: 56px; padding-block: 8px; }
+.oplot-topbar-variant-core { --oplot-topbar-height: 64px; }
+.oplot-topbar--core {
+  min-height: var(--oplot-topbar-height);
+  padding: 8px 32px;
+  border-bottom-color: rgba(74, 151, 226, .14);
+  background: linear-gradient(105deg, rgba(5, 21, 48, .56), rgba(12, 38, 75, .44) 54%, rgba(5, 21, 48, .52));
+  box-shadow: inset 0 -1px 0 rgba(76, 154, 231, .08), 0 6px 26px rgba(0, 14, 38, .12);
+  -webkit-backdrop-filter: blur(18px) saturate(116%);
+  backdrop-filter: blur(18px) saturate(116%);
+}
+html[data-theme="light"] .oplot-topbar--core {
+  border-bottom-color: rgba(70, 132, 198, .18);
+  background: linear-gradient(112deg, rgba(229, 240, 253, .68), rgba(249, 252, 255, .52) 50%, rgba(223, 237, 252, .62));
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, .62), 0 6px 24px rgba(44, 83, 126, .07);
+}
 .oplot-topbar__brand { display: inline-flex; align-items: center; min-height: 36px; padding: 6px 9px; border-radius: var(--oplot-radius-sm); color: var(--oplot-primary); font-size: 1rem; font-weight: 850; letter-spacing: .035em; text-decoration: none; }
 a.oplot-topbar__brand:hover { color: color-mix(in srgb, var(--oplot-primary) 76%, var(--oplot-text)); background: var(--oplot-primary-soft); }
 a.oplot-topbar__brand:focus-visible { outline: 3px solid var(--oplot-focus); outline-offset: 2px; }
@@ -143,6 +158,30 @@ a.oplot-topbar__brand:focus-visible { outline: 3px solid var(--oplot-focus); out
 .oplot-actor strong { max-width: 220px; overflow: hidden; font-size: .82rem; text-overflow: ellipsis; white-space: nowrap; }
 .oplot-theme-toggle { display: inline-flex; align-items: center; gap: var(--oplot-space-2); }
 .oplot-theme-toggle__dot { width: 10px; height: 10px; border: 2px solid currentColor; border-radius: 50%; background: linear-gradient(90deg, currentColor 50%, transparent 50%); }
+.oplot-core-theme-toggle {
+  min-width: 166px;
+  min-height: 40px;
+  justify-content: center;
+  padding: 8px 16px;
+  border: 1px solid color-mix(in srgb, var(--oplot-primary) 30%, var(--oplot-border));
+  border-radius: 14px;
+  color: color-mix(in srgb, var(--oplot-muted) 88%, var(--oplot-text));
+  background: linear-gradient(145deg, color-mix(in srgb, var(--oplot-primary-soft) 31%, transparent), color-mix(in srgb, var(--oplot-surface) 68%, transparent));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 7%, transparent), 0 7px 20px color-mix(in srgb, #03122d 12%, transparent);
+  font: inherit;
+  font-size: .82rem;
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
+  transition: color .16s ease, border-color .16s ease, background-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+.oplot-core-theme-toggle:hover { border-color: color-mix(in srgb, var(--oplot-primary) 60%, var(--oplot-border)); color: var(--oplot-text); background: color-mix(in srgb, var(--oplot-primary-soft) 72%, var(--oplot-surface)); box-shadow: 0 9px 24px color-mix(in srgb, var(--oplot-primary) 13%, transparent); transform: translateY(-1px); }
+.oplot-core-theme-toggle__icon { width: 17px; height: 17px; flex: 0 0 17px; }
+.oplot-core-theme-toggle__icon--light { display: none; }
+html[data-theme="dark"] .oplot-core-theme-toggle__icon--dark { display: none; }
+html[data-theme="dark"] .oplot-core-theme-toggle__icon--light { display: block; }
+html[data-theme="light"] .oplot-core-theme-toggle { border-color: rgba(103, 157, 214, .42); color: #36516d; background: linear-gradient(145deg, rgba(255, 255, 255, .82), rgba(225, 239, 255, .66)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .96), 0 7px 20px rgba(45, 83, 123, .12); }
+html[data-theme="light"] .oplot-core-theme-toggle:hover { border-color: rgba(40, 119, 207, .62); color: #153b63; background: linear-gradient(145deg, #fff, #dcecff); box-shadow: 0 9px 24px rgba(42, 105, 177, .17); }
 
 .oplot-page { min-width: 0; padding: var(--oplot-space-6) var(--oplot-space-8) 56px; outline: none; }
 .oplot-page__container { width: min(100%, var(--oplot-content-max)); margin: 0 auto; }
