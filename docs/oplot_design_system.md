@@ -38,3 +38,19 @@ Module initializers добавляются в `window.OplotComponentInitializers
 ## Accessibility и визуальная проверка
 
 Shell ориентирован на desktop 1536×864 и 1920×1080. Обязательны keyboard focus, `aria-current`, landmarks, возвращение focus после modal, перенос длинных русских названий, отсутствие horizontal overflow и поддержка `prefers-reduced-motion`. Новые assets не должны обращаться к внешним origins.
+
+## Core pages и landing actions
+
+Главная и справка используют общий layout contract и подключают собственные CSS/JS только через blocks `styles` и `scripts`. Module JavaScript является progressive enhancement: основные ссылки, содержание и native anchors работают без него.
+
+Карточки главной описываются immutable landing registry в `services.oplot_ui_service`. Landing metadata содержит только navigation ID, описание, секцию, визуальный приоритет и optional refresh endpoint. Label, icon, основной endpoint, feature flag и availability всегда разрешаются через центральную navigation model; дублировать эти поля в route или template запрещено.
+
+### Navigation invariant
+
+Миграция интерфейса сохраняет существующие названия, порядок и иерархию пользовательского меню. Новые глобальные пункты не создаются без отдельного требования. Document Template Center относится к разделу «Блок релизов» и не является самостоятельным home action; его встраивание во внутреннее меню раздела выполняется отдельным этапом.
+
+### Главная как визуальный эталон
+
+Принятая главная задаёт палитру, типографику, поверхности, скругления, тени и свечение, стиль кнопок и иконок, light/dark темы, hover/focus состояния и визуальную плотность Oplot. Остальные модули наследуют этот визуальный язык, но не копируют layout главной механически: сохраняются их структура, иерархия, порядок элементов, русские названия, бизнес-функциональность и route/API/POST/redirect contracts.
+
+Названия и порядок меню являются пользовательским контрактом; новые глобальные пункты добавляются только по отдельному требованию. Document Template Center относится к «Блоку релизов», не является пунктом главной и будет фактически встроен при миграции этого раздела.

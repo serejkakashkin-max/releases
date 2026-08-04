@@ -13,19 +13,24 @@
   {% block styles %}{% endblock %}
 </head>
 {% set shell_mode = oplot_shell_mode|default('app') %}
+{% set show_sidebar = oplot_show_sidebar|default(true) %}
+{% set show_page_header = oplot_show_page_header|default(true) %}
 <body class="oplot-body oplot-shell-mode-{{ shell_mode }} {% block body_class %}{% endblock %}">
   {% if shell_mode == 'app' %}
-    <div class="oplot-shell">
-      {% include 'layouts/_oplot_sidebar.html' %}
+    <div class="oplot-shell{% if not show_sidebar %} oplot-shell--no-sidebar{% endif %}">
+      {% if show_sidebar %}{% include 'layouts/_oplot_sidebar.html' %}{% endif %}
       <div class="oplot-shell__main">
         {% include 'layouts/_oplot_topbar.html' %}
+        {% block topbar_utilities %}{% endblock %}
         <main class="oplot-page" id="main-content" tabindex="-1">
           <div class="oplot-page__container">
             {% include 'layouts/_oplot_breadcrumbs.html' %}
-            <header class="oplot-page-header">
-              {% include 'layouts/_oplot_page_header.html' %}
-              <div class="oplot-page-header__actions">{% block page_actions %}{% endblock %}</div>
-            </header>
+            {% if show_page_header %}
+              <header class="oplot-page-header">
+                {% include 'layouts/_oplot_page_header.html' %}
+                <div class="oplot-page-header__actions">{% block page_actions %}{% endblock %}</div>
+              </header>
+            {% endif %}
             {% import 'components/oplot_ui.html' as ui %}
             {% with messages = get_flashed_messages(with_categories=true) %}
               {% if messages %}<div class="oplot-flash-stack">{% for category, message in messages %}{{ ui.alert(message, category) }}{% endfor %}</div>{% endif %}

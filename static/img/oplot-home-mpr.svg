@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Документ">
+  <defs>
+    <linearGradient id="mpr-icon-fill" x1="17" y1="8" x2="48" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#c8fffb"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#mpr-icon-fill)" d="M15 6h25l11 11v41H15V6Z"/>
+  <path fill="#119f9d" d="M39 8.8V19h10.2L39 8.8Z"/>
+  <path fill="#087c83" d="M22 27h22v4H22v-4Zm0 9h22v4H22v-4Zm0 9h15v4H22v-4Z"/>
+  <path fill="#ecffff" d="M22 17h10v4H22v-4Z" opacity=".95"/>
+</svg>

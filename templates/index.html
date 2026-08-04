@@ -1,837 +1,120 @@
-﻿<!doctype html>
-<html lang="ru">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>AI-агент команды OPLOT</title>
-    <link href="/static/css/bootstrap.min.css" rel="stylesheet">
-    <link href="/static/css/bootstrap-icons.css" rel="stylesheet">
-    <link href="/static/css/chatbot.css" rel="stylesheet">
-    {% include 'base_styles.html' %}
-    <style>
-        .container {
-            max-width: 100%;
-        }
-        /* Лоадер для дашборда - точно как в release.html */
-        #dashboard-loader {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(255, 255, 255, 0.95);
-            z-index: 9999;
-            justify-content: center;
-            align-items: center;
-            flex-direction: column;
-        }
-        
-        [data-theme="dark"] #dashboard-loader {
-            background-color: rgba(26, 26, 46, 0.95);
-        }
-        
-        .dashboard-spinner {
-            width: 50px;
-            height: 50px;
-            border: 5px solid var(--border-color);
-            border-top: 5px solid var(--primary);
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-        
-        .dashboard-loader-text {
-            margin-top: 20px;
-            color: var(--text-primary);
-            font-size: 18px;
-        }
-
-        .home-workspace {
-            width: min(92vw, 1120px);
-            margin: 0 auto;
-        }
-
-        .home-page-container {
-            margin-top: clamp(1.35rem, 3.6vh, 3rem) !important;
-        }
-
-        .agent-shell {
-            position: relative;
-            left: 50%;
-            width: min(88vw, 1500px);
-            margin-top: clamp(1rem, 2.8vh, 1.8rem);
-            transform: translateX(-50%);
-        }
-
-        .agent-title {
-            text-align: center;
-            font-size: 1.42rem;
-            font-weight: 800;
-            color: var(--text-primary);
-            margin: 0;
-        }
-
-        .agent-head {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            gap: 0.65rem;
-            margin-bottom: 0.35rem;
-        }
-
-        .help-pill {
-            border: 1px solid rgba(59, 130, 246, 0.24);
-            background: rgba(59, 130, 246, 0.10);
-            color: var(--primary);
-            border-radius: 999px;
-            padding: 0.45rem 0.7rem;
-            display: inline-flex;
-            align-items: center;
-            gap: 0.4rem;
-            text-decoration: none;
-            font-size: 0.82rem;
-            font-weight: 800;
-            line-height: 1;
-            transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
-        }
-
-        .help-pill:hover {
-            color: var(--primary);
-            transform: translateY(-1px);
-            border-color: rgba(59, 130, 246, 0.45);
-            background: rgba(59, 130, 246, 0.16);
-        }
-
-        .agent-subtitle {
-            text-align: center;
-            color: var(--text-secondary);
-            margin-bottom: 1rem;
-            font-size: 0.95rem;
-        }
-
-        .agent-chat-wrap {
-            background: transparent;
-        }
-
-        .card {
-            max-width: 680px;
-            margin-left: auto;
-            margin-right: auto;
-        }
-
-        .home-menu-card {
-            max-width: 760px;
-            padding: 1.2rem 1.25rem 1.25rem;
-            border: 1px solid rgba(148, 163, 184, 0.16);
-            border-radius: 20px;
-            background:
-                radial-gradient(circle at 50% 0%, rgba(59, 130, 246, 0.10), transparent 36%),
-                linear-gradient(180deg, rgba(59, 130, 246, 0.06), rgba(15, 23, 42, 0.02)),
-                var(--bg-card);
-            box-shadow: 0 22px 60px rgba(15, 23, 42, 0.22);
-        }
-
-        .home-menu-head {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.85rem;
-            padding: 0.35rem 2.7rem 1rem;
-        }
-
-        .home-menu-mark {
-            width: 42px;
-            height: 42px;
-            border-radius: 14px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            color: #fff;
-            background: linear-gradient(135deg, #3b82f6, #22c55e);
-            box-shadow: 0 12px 28px rgba(59, 130, 246, 0.28);
-            flex: 0 0 auto;
-        }
-
-        .home-menu-title {
-            margin: 0;
-            color: var(--text-primary);
-            font-size: clamp(1.65rem, 2.6vw, 2.15rem);
-            font-weight: 850;
-            letter-spacing: 0;
-            line-height: 1.1;
-        }
-
-        .home-menu-grid {
-            display: flex;
-            align-items: stretch;
-            gap: 0.35rem;
-            padding: 0.35rem;
-            border: 1px solid rgba(148, 163, 184, 0.14);
-            border-radius: 18px;
-            background: rgba(15, 23, 42, 0.12);
-        }
-
-        .home-menu-tile {
-            position: relative;
-            min-height: 56px;
-            padding: 0.75rem 0.8rem;
-            border-radius: 14px;
-            border: 0;
-            background: transparent;
-            color: var(--text-primary);
-            text-decoration: none;
-            text-align: left;
-            cursor: pointer;
-            font: inherit;
-            display: grid;
-            grid-template-columns: auto minmax(0, 1fr);
-            align-items: center;
-            gap: 0.65rem;
-            flex: 1 1 0;
-            overflow: hidden;
-            transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
-        }
-
-        .home-menu-tile:hover {
-            color: var(--text-primary);
-            background: rgba(59, 130, 246, 0.14);
-            box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.18);
-        }
-
-        .home-menu-tile:focus-visible {
-            outline: 3px solid rgba(59, 130, 246, 0.38);
-            outline-offset: 3px;
-        }
-
-        .home-menu-tile-top {
-            display: contents;
-        }
-
-        .home-menu-icon {
-            width: 32px;
-            height: 32px;
-            border-radius: 11px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            color: #fff;
-            background: rgba(59, 130, 246, 0.95);
-            box-shadow: none;
-        }
-
-        .home-menu-tile:nth-child(2) .home-menu-icon {
-            background: rgba(14, 165, 233, 0.95);
-        }
-
-        .home-menu-tile:nth-child(3) .home-menu-icon {
-            background: rgba(245, 158, 11, 0.95);
-        }
-
-        .home-menu-arrow {
-            display: none;
-        }
-
-        .home-menu-name {
-            display: block;
-            font-size: 0.95rem;
-            font-weight: 800;
-            line-height: 1.2;
-            white-space: normal;
-        }
-
-        .utility-stack {
-            position: fixed;
-            right: 1.25rem;
-            top: 5.25rem;
-            z-index: 980;
-            display: flex;
-            flex-direction: column;
-            align-items: flex-end;
-            gap: 0.65rem;
-        }
-
-        .usage-chip {
-            border: 1px solid var(--border-color);
-            background: var(--bg-card);
-            color: var(--text-secondary);
-            border-radius: 999px;
-            padding: 0.65rem 0.95rem;
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            font-weight: 700;
-            box-shadow: 0 14px 36px rgba(15, 23, 42, 0.16);
-            transition: transform 0.2s ease, border-color 0.2s ease, color 0.2s ease;
-        }
-
-        .usage-chip:hover {
-            transform: translateY(-1px);
-            color: var(--primary);
-            border-color: rgba(13, 110, 253, 0.45);
-        }
-
-        .sandbox-entry {
-            display: flex;
-            justify-content: flex-end;
-        }
-
-        .sandbox-pill {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.48rem;
-            padding: 0.48rem 0.78rem;
-            border: 1px solid rgba(96, 165, 250, 0.34);
-            border-radius: 999px;
-            background: rgba(15, 23, 42, 0.62);
-            color: #bfdbfe;
-            font-size: 0.86rem;
-            font-weight: 700;
-            text-decoration: none;
-            box-shadow: 0 14px 36px rgba(15, 23, 42, 0.16);
-            transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
-        }
-
-        .sandbox-pill:hover {
-            color: #ffffff;
-            border-color: rgba(96, 165, 250, 0.66);
-            background: rgba(37, 99, 235, 0.16);
-            transform: translateY(-1px);
-        }
-
-        .sandbox-pill-badge {
-            padding: 0.12rem 0.44rem;
-            border-radius: 999px;
-            background: rgba(20, 184, 166, 0.16);
-            color: #99f6e4;
-            font-size: 0.72rem;
-            text-transform: uppercase;
-        }
-
-        @media (max-width: 768px) {
-            .utility-stack {
-                position: static;
-                margin: 0.85rem auto 0;
-                align-items: center;
-                gap: 0.55rem;
-            }
-
-            .sandbox-entry {
-                justify-content: center;
-            }
-        }
-
-        .usage-panel {
-            position: fixed;
-            right: 1.25rem;
-            top: 8.75rem;
-            width: min(360px, calc(100vw - 2rem));
-            z-index: 981;
-            background: var(--bg-card);
-            border: 1px solid var(--border-color);
-            border-radius: 18px;
-            box-shadow: 0 22px 60px rgba(15, 23, 42, 0.22);
-            padding: 1rem;
-            opacity: 0;
-            visibility: hidden;
-            transform: translateY(-8px);
-            transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease;
-        }
-
-        .utility-stack + .usage-panel {
-            top: 11rem;
-        }
-
-        .usage-panel.open {
-            opacity: 1;
-            visibility: visible;
-            transform: translateY(0);
-        }
-
-        .usage-panel-head {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 0.75rem;
-            margin-bottom: 0.85rem;
-        }
-
-        .usage-panel-title {
-            font-weight: 800;
-            color: var(--text-primary);
-        }
-
-        .usage-close {
-            border: 0;
-            background: transparent;
-            color: var(--text-secondary);
-            font-size: 1.1rem;
-        }
-
-        .stats-section.compact {
-            margin-top: 0;
-            padding-top: 0;
-        }
-
-        .stats-section.compact .stat-row {
-            margin-bottom: 0.85rem;
-        }
-
-        @media (max-width: 768px) {
-            .container {
-                padding-left: 0.75rem;
-                padding-right: 0.75rem;
-            }
-
-            .home-workspace {
-                width: 100%;
-            }
-
-            .home-menu-card {
-                padding: 1rem;
-            }
-
-            .home-menu-head {
-                padding-left: 0.5rem;
-                padding-right: 0.5rem;
-                align-items: flex-start;
-            }
-
-            .home-menu-mark {
-                width: 40px;
-                height: 40px;
-            }
-
-            .home-menu-title {
-                font-size: clamp(1.45rem, 8vw, 1.9rem);
-            }
-
-            .home-menu-grid {
-                flex-direction: column;
-                gap: 0.45rem;
-                padding: 0.45rem;
-            }
-
-            .home-menu-tile {
-                width: 100%;
-                min-height: 54px;
-                padding: 0.75rem;
-                grid-template-columns: 34px minmax(0, 1fr);
-            }
-
-            .home-menu-name {
-                font-size: 0.95rem;
-                line-height: 1.15;
-            }
-
-            .agent-shell {
-                left: auto;
-                width: 100%;
-                transform: none;
-            }
-
-            .agent-head {
-                flex-direction: column;
-                gap: 0.55rem;
-            }
-
-            .utility-stack {
-                position: static;
-                margin: 0.85rem auto 0;
-                align-items: center;
-            }
-
-            .usage-panel {
-                right: 0.75rem;
-                top: 7.75rem;
-            }
-
-            .utility-stack + .usage-panel {
-                top: 7.75rem;
-            }
-        }
-
-        @media (max-height: 860px) and (min-width: 769px) {
-            .navbar.mb-4 {
-                margin-bottom: 0.65rem !important;
-            }
-
-            .home-page-container {
-                margin-top: 0.85rem !important;
-            }
-
-            .home-menu-card {
-                padding: 0.9rem 1rem 1rem;
-                border-radius: 19px;
-            }
-
-            .home-menu-head {
-                padding-top: 0.15rem;
-                padding-bottom: 0.7rem;
-            }
-
-            .home-menu-mark {
-                width: 38px;
-                height: 38px;
-                border-radius: 13px;
-            }
-
-            .home-menu-title {
-                font-size: clamp(1.5rem, 2.2vw, 1.95rem);
-            }
-
-            .home-menu-grid {
-                border-radius: 17px;
-            }
-
-            .home-menu-tile {
-                min-height: 50px;
-                padding-top: 0.62rem;
-                padding-bottom: 0.62rem;
-                border-radius: 13px;
-            }
-
-            .agent-shell {
-                margin-top: 0.85rem;
-            }
-
-            .agent-head {
-                margin-bottom: 0.18rem;
-            }
-
-            .agent-title {
-                font-size: 1.28rem;
-            }
-
-            .agent-subtitle {
-                margin-bottom: 0.45rem;
-                font-size: 0.88rem;
-            }
-        }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-    </style>
-    <script>
-        // Автоопределение пути для локальной разработки vs хоста
-        const BASE_PATH = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '' : '/releases';
-        
-        function goToDashboard() {
-            // Показываем лоадер
-            document.getElementById('dashboard-loader').style.display = 'flex';
-            
-            // Делаем запрос на обновление данных
-            fetch(`${BASE_PATH}/dashboard/refresh`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    // Переходим на дашборд без параметра refresh (данные уже в кэше)
-                    window.location.href = BASE_PATH + '/dashboard';
-                } else {
-                    alert('Ошибка обновления данных: ' + (data.error || 'Неизвестная ошибка'));
-                    document.getElementById('dashboard-loader').style.display = 'none';
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('Ошибка сети при обновлении данных');
-                document.getElementById('dashboard-loader').style.display = 'none';
-            });
-        }
-        
-        window.onload = function() {
-            // Устанавливаем правильные ссылки
-            document.getElementById('link-mpr').href = BASE_PATH + '/mpr';
-            document.getElementById('link-release-monitor').href = BASE_PATH + '/release-monitor';
-            document.getElementById('link-help').href = BASE_PATH + '/help';
-            // Дашборд теперь через onclick
-        };
-
-        function toggleUsagePanel(forceOpen) {
-            const panel = document.getElementById('usagePanel');
-            if (!panel) return;
-            const nextState = typeof forceOpen === 'boolean' ? forceOpen : !panel.classList.contains('open');
-            panel.classList.toggle('open', nextState);
-        }
-    </script>
-</head>
-<body>
-    {% include 'maintenance_gate.html' %}
-    <!-- Лоадер для дашборда -->
-    <div id="dashboard-loader">
-        <div class="dashboard-spinner"></div>
-        <div class="dashboard-loader-text">Загрузка данных из Jira, пожалуйста, подождите...</div>
-    </div>
-
-    <nav class="navbar navbar-expand-lg navbar-dark mb-4">
-        <div class="container-fluid">
-            <!-- ИСПРАВЛЕНО: кнопка домика теперь обновляет страницу -->
-            <a class="nav-home-btn" href="javascript:location.reload()">
-                <i class="bi bi-house-door-fill"></i>
+{% extends 'layouts/oplot_base.html' %}
+{% import 'components/oplot_ui.html' as ui %}
+{% set oplot_page_title = 'Oplot' %}
+{% set oplot_page_pretitle = 'Главная' %}
+{% set oplot_page_description = 'Быстрый доступ к релизам, документам, задачам смены и рабочему помощнику команды.' %}
+{% set oplot_context_label = 'Oplot' %}
+{% set oplot_context_title = 'Главная' %}
+{% set oplot_breadcrumbs = [] %}
+{% set oplot_show_sidebar = false %}
+{% set oplot_show_page_header = false %}
+
+{% block title %}Рабочее пространство Oplot — Oplot{% endblock %}
+{% block body_class %}oplot-home{% endblock %}
+{% block styles %}
+  <link rel="stylesheet" href="{{ public_url_for('static', filename='css/bootstrap-icons.css') }}">
+  <link rel="stylesheet" href="{{ public_url_for('static', filename='css/chatbot.css') }}">
+  <link rel="stylesheet" href="{{ public_url_for('static', filename='css/oplot_home.css') }}">
+{% endblock %}
+
+{% block topbar_utilities %}
+  <div class="oplot-home-utility-row" aria-label="Служебные сведения">
+    <button class="oplot-home-utility-chip" type="button" data-bs-toggle="modal" data-bs-target="#home-usage-modal">
+      <i class="bi bi-bar-chart-line" aria-hidden="true"></i>
+      <span>Статистика</span><span class="oplot-home-utility-count">{{ stats.total_combined }}</span>
+    </button>
+    <button class="oplot-home-utility-chip oplot-home-utility-chip--version" type="button" data-bs-toggle="modal" data-bs-target="#home-version-modal">v{{ version }}</button>
+    <a id="link-sandbox" class="oplot-home-utility-chip oplot-home-sandbox-link" href="{{ sandbox_url }}">
+      <i class="bi bi-grid-3x3-gap" aria-hidden="true"></i>
+      <span>Песочница</span>
+    </a>
+    <button class="oplot-home-utility-chip oplot-home-theme-toggle oplot-theme-toggle" type="button" data-oplot-theme-toggle aria-pressed="false" aria-label="Переключить тему">
+      <i class="bi bi-moon-stars oplot-home-theme-icon oplot-home-theme-icon--dark" aria-hidden="true"></i>
+      <i class="bi bi-sun oplot-home-theme-icon oplot-home-theme-icon--light" aria-hidden="true"></i>
+      <span class="theme-label">Тёмная тема</span>
+    </button>
+  </div>
+{% endblock %}
+
+{% block content %}
+<div class="oplot-home-workspace"
+     data-home-root-url="{{ public_url_for('main.index') }}"
+     data-chatbot-maintenance="{{ 'true' if chatbot_maintenance else 'false' }}"
+     data-maintenance-enabled="{{ 'true' if maintenance_enabled else 'false' }}"
+     data-maintenance-scope="{{ maintenance_scope }}">
+  <header class="oplot-home-title">
+    <h1>AI-агент команды OPLOT</h1>
+  </header>
+
+  <section class="oplot-home-actions" aria-label="Основное меню">
+    <div class="oplot-home-action-grid">
+      {% for group in oplot_home_actions %}
+          {% for action in group['items'] %}
+            <a id="home-action-{{ action.id }}"
+               class="oplot-home-action-card{% if action.priority == 'primary' %} oplot-home-action-card--primary{% endif %}"
+               data-home-action="{{ action.id }}"
+               href="{{ action.url }}"
+              {% if action.refresh_url %}data-home-dashboard-link data-refresh-url="{{ action.refresh_url }}"{% endif %}>
+              {% set home_icon_name = {'release-monitor': 'release', 'duty-dashboard': 'dashboard', 'mpr': 'mpr'}[action.id] %}
+              <span class="oplot-home-action-icon" aria-hidden="true">
+                <img class="oplot-home-action-svg"
+                     data-home-icon="{{ home_icon_name }}"
+                     src="{{ public_url_for('static', filename='img/oplot-home-' ~ home_icon_name ~ '.svg') }}"
+                     alt="">
+              </span>
+              <span class="oplot-home-action-label"><strong>{{ action.label }}</strong><span class="oplot-home-action-arrow" aria-hidden="true">→</span></span>
             </a>
-            <div class="d-flex align-items-center gap-2">
-                <!-- Переключатель темы -->
-                <button class="theme-toggle" onclick="toggleTheme()" title="Переключить тему">
-                    <i class="bi bi-sun"></i>
-                </button>
-            </div>
-        </div>
-    </nav>
-    <div class="container home-page-container">
-        <div class="home-workspace">
-        <div class="card home-menu-card">
-            <!-- Badge версии в отдельном wrapper -->
-            <div class="version-wrapper">
-                <span class="badge version-badge" 
-                      id="versionBadge">
-                    v{{ version }}
-                </span>
-                <!-- Кастомный tooltip -->
-                <div class="custom-tooltip" id="versionTooltip">
-                    <strong style="font-size: 1.1rem;">Версия {{ version }}</strong><br>
-                    <small style="opacity: 0.8;">{{ version_history[0].date }}</small>
-                    <hr>
-                    <div class="changes-list">
-                        {% for change in version_history[0].changes %}
-                            <div class="change-item">{{ change }}</div>
-                        {% endfor %}
-                    </div>
-                </div>
-            </div>
-            
-            <div class="home-menu-head">
-                <div class="home-menu-mark">
-                    <i class="bi bi-stars"></i>
-                </div>
-                <h1 class="home-menu-title">AI-агент команды OPLOT</h1>
-            </div>
-
-            <div class="home-menu-grid">
-                <a id="link-release-monitor" href="/release-monitor" class="home-menu-tile">
-                    <span class="home-menu-tile-top">
-                        <span class="home-menu-icon"><i class="bi bi-rocket-takeoff"></i></span>
-                        <i class="bi bi-arrow-right home-menu-arrow"></i>
-                    </span>
-                    <span>
-                        <span class="home-menu-name">Блок релизов</span>
-                    </span>
-                </a>
-                <button onclick="goToDashboard()" class="home-menu-tile" type="button">
-                    <span class="home-menu-tile-top">
-                        <span class="home-menu-icon"><i class="bi bi-speedometer2"></i></span>
-                        <i class="bi bi-arrow-right home-menu-arrow"></i>
-                    </span>
-                    <span>
-                        <span class="home-menu-name">Рабочий стол дежурного</span>
-                    </span>
-                </button>
-                <a id="link-mpr" href="/mpr" class="home-menu-tile">
-                    <span class="home-menu-tile-top">
-                        <span class="home-menu-icon"><i class="bi bi-file-earmark-word"></i></span>
-                        <i class="bi bi-arrow-right home-menu-arrow"></i>
-                    </span>
-                    <span>
-                        <span class="home-menu-name">МПР</span>
-                    </span>
-                </a>
-            </div>
-        </div>
-
-        <div class="agent-shell" id="chatbotAgentShell">
-            <div class="agent-head">
-                <div class="agent-title">AI-бот Oplot</div>
-                <a id="link-help" class="help-pill" href="/help" title="Открыть FAQ по Oplot">
-                    <i class="bi bi-question-circle"></i>
-                    Помощь по Oplot
-                </a>
-            </div>
-            <div class="agent-subtitle">Живой рабочий помощник по релизам, документам и сменным задачам.</div>
-            <div class="agent-chat-wrap">
-                <div id="embeddedChatBot"></div>
-            </div>
-        </div>
-        </div>
+          {% endfor %}
+      {% endfor %}
     </div>
+  </section>
 
-    <div class="utility-stack">
-        <div class="sandbox-entry">
-            <a id="link-sandbox" class="sandbox-pill" href="{{ sandbox_url }}">
-                <i class="bi bi-grid-3x3-gap"></i>
-                <span>Песочница</span>
-                <span class="sandbox-pill-badge">Эксперименты</span>
-            </a>
-        </div>
-        <button class="usage-chip" type="button" onclick="toggleUsagePanel()" title="Показать статистику использования">
-            <i class="bi bi-bar-chart-line"></i>
-            <span>Статистика</span>
-            <span class="badge bg-secondary">{{ stats.total_combined }}</span>
-        </button>
+  <section class="oplot-home-assistant" id="chatbotAgentShell" aria-labelledby="home-assistant-title">
+    <div class="oplot-home-assistant-heading">
+      <h2 id="home-assistant-title"><span class="oplot-home-assistant-icon" aria-hidden="true"><i class="bi bi-robot"></i></span>AI-бот Oplot</h2>
+      <p>Живой помощник по релизам, документам, Confluence и сменным задачам.</p>
+      <a class="oplot-home-help-link" href="{{ public_url_for('main.help_page') }}">Помощь по Oplot</a>
     </div>
+    <div class="oplot-home-chat-wrap"><div id="embeddedChatBot"></div></div>
+  </section>
+</div>
 
-    <aside class="usage-panel" id="usagePanel" aria-label="Статистика использования">
-        <div class="usage-panel-head">
-            <div>
-                <div class="usage-panel-title">Статистика использования</div>
-                <small class="text-muted">Короткая служебная сводка</small>
-            </div>
-            <button class="usage-close" type="button" onclick="toggleUsagePanel(false)" aria-label="Закрыть">
-                <i class="bi bi-x-lg"></i>
-            </button>
-        </div>
-        <div class="stats-section compact">
-            <div class="stat-row">
-                <div class="d-flex justify-content-between align-items-center mb-1">
-                    <span class="stat-label">Релиз генератор</span>
-                    <span class="stat-values">{{ stats.release.total }} (30д: {{ stats.release.last_30_days }})</span>
-                </div>
-                <div class="progress" style="height: 6px;">
-                    <div class="progress-bar bg-primary" role="progressbar" style="width: {{ stats.release.percentage }}%"></div>
-                </div>
-            </div>
-            <div class="stat-row">
-                <div class="d-flex justify-content-between align-items-center mb-1">
-                    <span class="stat-label">SMS из Блока релизов</span>
-                    <span class="stat-values">{{ stats.sms.total }} (30д: {{ stats.sms.last_30_days }})</span>
-                </div>
-                <div class="progress" style="height: 6px;">
-                    <div class="progress-bar bg-success" role="progressbar" style="width: {{ stats.sms.percentage }}%"></div>
-                </div>
-            </div>
-        </div>
-    </aside>
-    
-    <!-- Модальное окно истории версий -->
-    <div class="modal fade" id="versionHistoryModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-scrollable">
-            <div class="modal-content">
-                <div class="modal-header modal-header-version">
-                    <h5 class="modal-title">
-                        <i class="bi bi-clock-history me-2"></i>История версий
-                    </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    {% for item in version_history %}
-                    <div class="version-history-item">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <span class="version-history-version">Версия {{ item.version }}</span>
-                            <span class="version-history-date">{{ item.date }}</span>
-                        </div>
-                        <ul class="version-history-changes">
-                            {% for change in item.changes %}
-                            <li>{{ change }}</li>
-                            {% endfor %}
-                        </ul>
-                    </div>
-                    {% endfor %}
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
-                </div>
-            </div>
-        </div>
+<div class="oplot-home-refresh-overlay" data-home-dashboard-loader role="status" aria-live="polite" hidden>
+  <span class="spinner-border" aria-hidden="true"></span>
+  <div><strong>Обновляем рабочие данные</strong><span>Загрузка данных из Jira перед переходом на рабочий стол…</span></div>
+</div>
+{% endblock %}
+
+{% block overlays %}
+  {{ super() }}
+  {% with maintenance_external_assets=true %}{% include 'maintenance_gate.html' %}{% endwith %}
+
+  {% call ui.modal_shell('home-usage-modal', 'Статистика использования', 'modal-lg', 'Короткая служебная сводка по операциям Oplot.') %}
+    <div class="oplot-home-stats-grid">
+      <section class="oplot-home-stat" aria-labelledby="home-release-stat">
+        <div><strong id="home-release-stat">Релиз-генератор</strong><span>{{ stats.release.total }} всего · {{ stats.release.last_30_days }} за 30 дней</span></div>
+        <progress max="100" value="{{ stats.release.percentage }}">{{ stats.release.percentage }}%</progress>
+      </section>
+      <section class="oplot-home-stat" aria-labelledby="home-sms-stat">
+        <div><strong id="home-sms-stat">SMS из Блока релизов</strong><span>{{ stats.sms.total }} всего · {{ stats.sms.last_30_days }} за 30 дней</span></div>
+        <progress max="100" value="{{ stats.sms.percentage }}">{{ stats.sms.percentage }}%</progress>
+      </section>
     </div>
-    
-    <!-- Скрипты для tooltip -->
-    <script>
-        window.CHATBOT_BASE_PATH = BASE_PATH;
-        window.dashboardData = {
-            page_context: 'home'
-        };
+  {% endcall %}
 
-        const badge = document.getElementById('versionBadge');
-        const tooltip = document.getElementById('versionTooltip');
-        
-        let isPinned = false;
-        let isHoveringTooltip = false;
-        
-        function showTooltip() {
-            tooltip.classList.add('show');
-        }
-        
-        function hideTooltip() {
-            if (!isPinned && !isHoveringTooltip) {
-                tooltip.classList.remove('show');
-            }
-        }
-        
-        badge.addEventListener('mouseenter', function() {
-            showTooltip();
-        });
-        
-        badge.addEventListener('mouseleave', function() {
-            setTimeout(() => {
-                if (!isHoveringTooltip) {
-                    hideTooltip();
-                }
-            }, 10);
-        });
-        
-        badge.addEventListener('click', function(e) {
-            e.stopPropagation();
-            
-            if (isPinned) {
-                isPinned = false;
-                badge.classList.remove('active');
-                tooltip.classList.remove('show');
-            } else {
-                isPinned = true;
-                badge.classList.add('active');
-                showTooltip();
-            }
-        });
-        
-        tooltip.addEventListener('mouseenter', function() {
-            isHoveringTooltip = true;
-        });
-        
-        tooltip.addEventListener('mouseleave', function() {
-            isHoveringTooltip = false;
-            hideTooltip();
-        });
-        
-        document.addEventListener('click', function(e) {
-            if (!badge.contains(e.target) && !tooltip.contains(e.target)) {
-                isPinned = false;
-                badge.classList.remove('active');
-                tooltip.classList.remove('show');
-            }
-        });
-    </script>
-    <script>
-        (function applyChatbotMaintenance() {
-            const maintenanceEnabled = {{ chatbot_maintenance|default(false)|tojson }};
-            const storageKey = 'maintenanceBypass:chatbot';
-            const params = new URLSearchParams(window.location.search);
-            const bypassValue = params.get('chatbot_maintenance_bypass');
+  {% call ui.modal_shell('home-version-modal', 'История версий Oplot', 'modal-lg', 'Изменения, доступные в текущей сборке приложения.') %}
+    <div class="oplot-home-version-list">
+      {% for item in version_history %}
+        <article class="oplot-home-version-item">
+          <header><strong>Версия {{ item.version }}</strong><time>{{ item.date }}</time></header>
+          <ul>{% for change in item.changes %}<li>{{ change }}</li>{% endfor %}</ul>
+        </article>
+      {% endfor %}
+    </div>
+  {% endcall %}
+{% endblock %}
 
-            if (bypassValue === '1') {
-                localStorage.setItem(storageKey, '1');
-            } else if (bypassValue === '0') {
-                localStorage.removeItem(storageKey);
-            }
-            if (bypassValue !== null) {
-                params.delete('chatbot_maintenance_bypass');
-                const query = params.toString();
-                window.history.replaceState(
-                    null,
-                    document.title,
-                    window.location.pathname + (query ? `?${query}` : '') + window.location.hash
-                );
-            }
-
-            const hasBypass = localStorage.getItem(storageKey) === '1';
-            window.CHATBOT_DISABLED_BY_MAINTENANCE = maintenanceEnabled && !hasBypass;
-            document.cookie = `chatbotMaintenanceBypass=${hasBypass ? '1' : '0'}; path=/; SameSite=Lax`;
-            if (window.CHATBOT_DISABLED_BY_MAINTENANCE) {
-                document.getElementById('chatbotAgentShell')?.remove();
-            }
-        })();
-    </script>
-    <script src="/static/js/chatbot.js"></script>
-</body>
-</html>
+{% block scripts %}
+  <script defer src="{{ public_url_for('static', filename='js/oplot_home.js') }}"></script>
+  <script defer src="{{ public_url_for('static', filename='js/chatbot.js') }}"></script>
+{% endblock %}
