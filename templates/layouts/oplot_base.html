@@ -15,6 +15,7 @@
 {% set shell_mode = oplot_shell_mode|default('app') %}
 {% set show_sidebar = oplot_show_sidebar|default(true) %}
 {% set show_page_header = oplot_show_page_header|default(true) %}
+{% set show_breadcrumbs = oplot_show_breadcrumbs|default(true) %}
 <body class="oplot-body oplot-shell-mode-{{ shell_mode }} {% block body_class %}{% endblock %}">
   {% if shell_mode == 'app' %}
     <div class="oplot-shell{% if not show_sidebar %} oplot-shell--no-sidebar{% endif %}">
@@ -24,7 +25,7 @@
         {% block topbar_utilities %}{% endblock %}
         <main class="oplot-page" id="main-content" tabindex="-1">
           <div class="oplot-page__container">
-            {% include 'layouts/_oplot_breadcrumbs.html' %}
+            {% if show_breadcrumbs %}{% include 'layouts/_oplot_breadcrumbs.html' %}{% endif %}
             {% if show_page_header %}
               <header class="oplot-page-header">
                 {% include 'layouts/_oplot_page_header.html' %}

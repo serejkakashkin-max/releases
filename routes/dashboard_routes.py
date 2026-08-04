@@ -59,6 +59,7 @@ from services.duty_schedule_provider_registry import (
     get_duty_schedule_provider_status,
 )
 from services.release_monitor_view_revision import get_release_monitor_view_state
+from services.release_ui_service import build_release_navigation, build_release_ui_config
 
 BASE_PATH = os.getenv("BASE_PATH", "")
 
@@ -292,6 +293,8 @@ def release_monitor_page():
             reviewer_options=model["reviewer_options"],
             sms_profile_availability=model["sms_profile_availability"],
             release_operational_day_start_hour=RELEASE_OPERATIONAL_DAY_START_HOUR,
+            release_navigation=build_release_navigation(),
+            release_ui_config=build_release_ui_config(),
             last_update=datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
             maintenance_enabled=is_maintenance_enabled("release_monitor"),
             maintenance_scope="release_monitor",
@@ -309,6 +312,8 @@ def release_monitor_page():
             reviewer_options=get_release_monitor_reviewer_options(),
             sms_profile_availability=get_sms_profile_availability(),
             release_operational_day_start_hour=RELEASE_OPERATIONAL_DAY_START_HOUR,
+            release_navigation=build_release_navigation(),
+            release_ui_config=build_release_ui_config(),
             last_update=datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
             maintenance_enabled=is_maintenance_enabled("release_monitor"),
             maintenance_scope="release_monitor",
@@ -328,6 +333,8 @@ def release_monitor_page():
             reviewer_options=get_release_monitor_reviewer_options(),
             sms_profile_availability=get_sms_profile_availability(),
             release_operational_day_start_hour=RELEASE_OPERATIONAL_DAY_START_HOUR,
+            release_navigation=build_release_navigation(),
+            release_ui_config=build_release_ui_config(),
             last_update=datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
             maintenance_enabled=is_maintenance_enabled("release_monitor"),
             maintenance_scope="release_monitor",

@@ -66,7 +66,8 @@ class OplotNavigationTests(unittest.TestCase):
         with app.test_request_context("/admin/document-templates"):
             groups = build_oplot_navigation("document_templates.history")
         self.assertEqual(["main", "documents", "management", "support"], [group["id"] for group in groups])
-        self.assertTrue(_item(groups, "document-templates")["active"])
+        self.assertTrue(_item(groups, "release-monitor")["active"])
+        self.assertNotIn("document-templates", {item["id"] for group in groups for item in group["items"]})
         self.assertFalse(_item(groups, "home")["active"])
         self.assertEqual(1, sum(item["active"] for group in groups for item in group["items"]))
         self.assertEqual("schedule-manager", _item(groups, "schedule-manager")["id"])
@@ -113,6 +114,8 @@ class OplotLayoutTests(unittest.TestCase):
         for value in ("oplot-sidebar", "oplot-topbar", "oplot-breadcrumbs", "oplot-operation-indicator", "oplot-toast-region", "fixture-modal", "fixture-confirm"):
             self.assertIn(value, text)
         self.assertNotIn("oplot-shell--no-sidebar", text)
+        self.assertNotIn("oplot-topbar--compact", text)
+        self.assertIn('class="oplot-topbar__context"', text)
         self.assertIn("oplot-page-header", text)
         self.assertIn("Очень длинное русское название", text)
         self.assertIn("Отсутствующий раздел", text)

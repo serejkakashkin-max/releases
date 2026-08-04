@@ -1,0 +1,22 @@
+{% import 'components/oplot_ui.html' as ui %}
+<nav class="oplot-release-menu" aria-label="Разделы блока релизов">
+  {% for item in release_navigation %}
+    {% set dom_id = {
+      'duty-schedule': 'releaseMonitorDutyScheduleBtn',
+      'assignment-center': 'releaseMonitorAssignmentCenterBtn',
+      'current-week': 'releaseMonitorCurrentWeekReportBtn',
+      'document-templates': 'releaseMonitorDocumentTemplatesBtn'
+    }.get(item.id, 'releaseNavigation-' ~ item.id) %}
+    <a
+      id="{{ dom_id }}"
+      class="oplot-release-menu__item{% if item.active %} is-active{% endif %}"
+      href="{{ item.url }}"
+      {% if item.target == '_blank' %}target="_blank" rel="noopener"{% endif %}
+      {% if item.active %}aria-current="page"{% endif %}
+    >
+      <span class="oplot-release-menu__icon" aria-hidden="true">{{ ui.icon(item.icon) }}</span>
+      <span class="oplot-release-menu__label">{{ item.label }}</span>
+      <span class="oplot-release-menu__arrow" aria-hidden="true">→</span>
+    </a>
+  {% endfor %}
+</nav>

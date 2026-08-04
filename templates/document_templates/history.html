@@ -2,11 +2,11 @@
 {% set oplot_page_title = document.filename %}
 {% set oplot_page_pretitle = 'История версий' %}
 {% set oplot_page_description = 'Текущая версия не пропадёт при восстановлении — она будет добавлена в историю.' %}
-{% set oplot_context_label = 'Администрирование' %}
-{% set oplot_context_title = 'Документы Oplot' %}
+{% set oplot_context_label = 'Блок релизов' %}
+{% set oplot_context_title = 'Центр шаблонов' %}
 {% set oplot_actor = actor|default('') %}
 {% set oplot_logout_endpoint = 'document_templates.logout_session' if actor|default('') else '' %}
-{% set oplot_breadcrumbs = [{'label':'Главная','endpoint':'main.index'},{'label':'Центр шаблонов','endpoint':'document_templates.index'},{'label':'История'}] %}
+{% set oplot_breadcrumbs = [{'label':'Главная','endpoint':'main.index'},{'label':'Блок релизов','endpoint':'dashboard.release_monitor_page'},{'label':'Центр шаблонов','endpoint':'document_templates.index'},{'label':'История'}] %}
 {% block title %}История — Центр шаблонов{% endblock %}
 {% block styles %}<link rel="stylesheet" href="{{ public_url_for('static', filename='css/document_templates.css') }}">{% endblock %}
 {% block page_actions %}<a class="btn btn-ghost-secondary" href="{{ public_url_for('document_templates.index') }}">К каталогу</a>{% endblock %}

@@ -69,9 +69,13 @@ class LegacyGetSmokeTests(unittest.TestCase):
                     response = client.get(path)
                     self.assertEqual(200, response.status_code)
                     self.assertIn("oplot-shell", response.get_data(as_text=True))
+            release_response = client.get("/release-monitor")
+            self.assertEqual(200, release_response.status_code)
+            release_text = release_response.get_data(as_text=True)
+            self.assertIn("oplot-shell oplot-shell--no-sidebar", release_text)
+            self.assertIn("oplot-release-menu", release_text)
             for path in (
                 "/dashboard",
-                "/release-monitor",
                 "/mpr",
                 "/dashboard/release-monitor/assignment-center",
                 "/dashboard/release-monitor/duty-schedule",

@@ -2,14 +2,14 @@
 {% set oplot_page_title = 'Центр шаблонов' %}
 {% set oplot_page_pretitle = 'Управление DOCX' %}
 {% set oplot_page_description = 'Проверяйте новые версии до публикации, сохраняйте историю и возвращайтесь к проверенным вариантам.' %}
-{% set oplot_context_label = 'Администрирование' %}
-{% set oplot_context_title = 'Документы Oplot' %}
+{% set oplot_context_label = 'Блок релизов' %}
+{% set oplot_context_title = 'Центр шаблонов' %}
 {% set oplot_actor = actor|default('') %}
 {% set oplot_logout_endpoint = 'document_templates.logout_session' if actor|default('') else '' %}
-{% set oplot_breadcrumbs = [{'label':'Главная','endpoint':'main.index'},{'label':'Центр шаблонов'}] %}
+{% set oplot_breadcrumbs = [{'label':'Главная','endpoint':'main.index'},{'label':'Блок релизов','endpoint':'dashboard.release_monitor_page'},{'label':'Центр шаблонов'}] %}
 {% block title %}Центр шаблонов документов — Oplot{% endblock %}
 {% block styles %}<link rel="stylesheet" href="{{ public_url_for('static', filename='css/document_templates.css') }}">{% endblock %}
-{% block page_actions %}<span class="status status-green"><span class="status-dot status-dot-animated"></span>Active root защищён</span>{% endblock %}
+{% block page_actions %}{% set release_block_url = safe_public_url_for('dashboard.release_monitor_page') %}{% if release_block_url %}<a class="btn btn-ghost-secondary" href="{{ release_block_url }}">К блоку релизов</a>{% endif %}<span class="status status-green"><span class="status-dot status-dot-animated"></span>Active root защищён</span>{% endblock %}
 {% block content %}
   <section id="template-catalog" aria-live="polite">{% if catalog %}{% include 'document_templates/_catalog.html' %}{% else %}{% include 'document_templates/_catalog_error.html' %}{% endif %}</section>
 {% endblock %}
