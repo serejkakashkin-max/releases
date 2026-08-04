@@ -1,12 +1,19 @@
 {% import 'components/oplot_ui.html' as ui %}
 
-<div class="row row-deck row-cards mb-4">
+{% if catalog.replacement_success %}
+<div class="oplot-dtc-success" role="status">
+  <strong>Шаблон успешно заменён</strong>
+  <span>Новая версия прошла проверку, а предыдущая сохранена в истории.</span>
+</div>
+{% endif %}
+
+<div class="oplot-dtc-summary row row-deck row-cards mb-4">
   <div class="col-sm-4"><div class="card"><div class="card-body"><div class="subheader">Комплекты</div><div class="h1 mb-0">{{ catalog.summary.kits }}</div></div></div></div>
   <div class="col-sm-4"><div class="card"><div class="card-body"><div class="subheader">DOCX</div><div class="h1 mb-0">{{ catalog.summary.documents }}</div></div></div></div>
   <div class="col-sm-4"><div class="card"><div class="card-body"><div class="subheader">Категории</div><div class="h1 mb-0">{{ catalog.summary.categories }}</div></div></div></div>
 </div>
 
-<div class="card mb-4">
+<div class="oplot-dtc-filters card mb-4">
   <div class="card-body">
     <form id="template-filter-form" class="row g-3" method="get" action="{{ public_url_for('document_templates.index') }}"
           hx-get="{{ public_url_for('document_templates.index') }}"
@@ -30,9 +37,9 @@
           {% for value in catalog.filter_options.ke_values %}<option value="{{ value }}" {% if value == catalog.filters.ke %}selected{% endif %}>{{ value }}</option>{% endfor %}
         </select>
       </div>
-      {% if catalog.filter_options.variants %}
+      {% if catalog.filter_options.all_variants %}
       <div class="col-12 col-md-4 col-lg-2">
-        <label class="form-label" for="variant-filter">Variant</label>
+        <label class="form-label" for="variant-filter">Вариант</label>
         <select id="variant-filter" class="form-select" name="variant">
           <option value="">Все</option>
           {% for value in catalog.filter_options.variants %}<option value="{{ value }}" {% if value == catalog.filters.variant %}selected{% endif %}>{{ value }}</option>{% endfor %}
@@ -46,6 +53,7 @@
     </form>
   </div>
 </div>
+<script type="application/json" id="oplot-dtc-variants-map">{{ catalog.filter_options.variants_by_category|tojson }}</script>
 
 <div class="d-flex align-items-center justify-content-between mb-3">
   <div class="text-secondary">Найдено комплектов: <strong>{{ catalog.summary.filtered_kits }}</strong></div>
@@ -53,7 +61,7 @@
 </div>
 
 {% if catalog.kits %}
-  <div class="row row-cards">
+  <div class="oplot-dtc-kits row row-cards">
     {% for kit in catalog.kits %}
       <div class="col-12">{% include 'document_templates/_kit_card.html' %}</div>
     {% endfor %}

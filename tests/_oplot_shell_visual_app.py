@@ -18,7 +18,7 @@ from services.oplot_ui_service import register_oplot_ui
 
 def build_app() -> Flask:
     app = Flask("oplot-shell-visual", template_folder=str(PROJECT_ROOT / "templates"), static_folder=str(PROJECT_ROOT / "static"))
-    app.config.update(TESTING=False, SECRET_KEY="visual-shell-secret", DOCUMENT_TEMPLATE_CENTER_ENABLED=True)
+    app.config.update(TESTING=False, SECRET_KEY="visual-shell-secret")
     app.jinja_loader = ChoiceLoader([
         app.jinja_loader,
         FileSystemLoader(str(PROJECT_ROOT / "tests" / "fixtures" / "templates")),

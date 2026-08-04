@@ -403,13 +403,39 @@ def build_catalog_page(
 
     categories = sorted({str(item["category"]) for item in kits if item["category"]}, key=_sort_key)
     ke_values = sorted({str(item["ke"]) for item in kits if item["ke"]}, key=_sort_key)
-    variants = sorted({str(item["variant"]) for item in kits if item["variant"]}, key=_sort_key)
+    # The UI keeps the historical ``variant`` query key, but its choices are
+    # the actual template-kit directories.  Parsed variant metadata is empty
+    # for many supported categories (including AI_AGENTS), while release_full
+    # is the exact catalog folder name and therefore the reliable child value.
+    variants = sorted({str(item["release_full"]) for item in kits if item["release_full"]}, key=_sort_key)
+    variants_by_category = {
+        category_name: sorted(
+            {
+                str(item["release_full"])
+                for item in kits
+                if item["category"] == category_name and item["release_full"]
+            },
+            key=_sort_key,
+        )
+        for category_name in categories
+    }
+
+    # Category/variant is one catalog contract. Normalize untrusted query
+    # values against exact kit names so a hand-crafted URL cannot select a kit
+    # belonging to a different category.
+    selected_category = category if category in categories else ""
+    available_variants = (
+        variants_by_category.get(selected_category, [])
+        if selected_category
+        else variants
+    )
+    selected_variant = variant if variant in available_variants else ""
     normalized_query = _sort_key(query).strip()
     filtered = [
         item for item in kits
-        if (not category or item["category"] == category)
+        if (not selected_category or item["category"] == selected_category)
         and (not ke or item["ke"] == ke)
-        and (not variant or item["variant"] == variant)
+        and (not selected_variant or item["release_full"] == selected_variant)
         and _matches_query(item, normalized_query)
     ]
 
@@ -428,14 +454,16 @@ def build_catalog_page(
         },
         "filters": {
             "q": str(query or "").strip(),
-            "category": category,
+            "category": selected_category,
             "ke": ke,
-            "variant": variant,
+            "variant": selected_variant,
         },
         "filter_options": {
             "categories": categories,
             "ke_values": ke_values,
-            "variants": variants,
+            "variants": available_variants,
+            "all_variants": variants,
+            "variants_by_category": variants_by_category,
         },
         "kits": page_items,
         "pagination": {

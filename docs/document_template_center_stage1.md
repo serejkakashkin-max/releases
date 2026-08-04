@@ -2,16 +2,15 @@
 
 Этап добавляет изолированный read-only интерфейс на локальных Tabler, HTMX, JSZip и docx-preview. Upload, validation, publish, history и rollback отсутствуют. Рабочий `DOC_TEMPLATES_ROOT` и генератор документов не изменяются.
 
-## Локальное включение
+## Доступность после Этапа 5Б
 
-Feature flag по умолчанию выключен. В PowerShell включите его только для текущего процесса и запустите приложение без reloader:
+Исторический feature flag Этапа 1 удалён. Центр регистрируется вместе с приложением и открывается без отдельного DTC login/token:
 
 ```powershell
-$env:DOCUMENT_TEMPLATE_CENTER_ENABLED='1'
 \.venv\Scripts\python.exe -m flask --app app:app run --port 5001 --no-debugger --no-reload
 ```
 
-Откройте `/admin/document-templates`. За reverse proxy публичные static и application URL учитывают `X-Forwarded-Prefix`, `SCRIPT_NAME` и существующие настройки `BASE_PATH`.
+Откройте `/dashboard/release-monitor/document-templates`. За reverse proxy публичные static и application URL учитывают `X-Forwarded-Prefix`, `SCRIPT_NAME` и существующие настройки `BASE_PATH`.
 
 ## Vendor assets
 

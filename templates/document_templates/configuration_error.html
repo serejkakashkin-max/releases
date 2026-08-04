@@ -1,20 +1,25 @@
 {% extends 'layouts/oplot_base.html' %}
+{% set oplot_show_sidebar = false %}
+{% set oplot_topbar_variant = 'core' %}
+{% set oplot_show_breadcrumbs = false %}
 {% set oplot_page_title = 'Центр шаблонов' %}
 {% set oplot_page_pretitle = 'Требуется настройка' %}
-{% set oplot_page_description = 'Защищённый редактор закрыт до завершения серверной конфигурации.' %}
+{% set oplot_page_description = 'Каталог или служебное хранилище временно недоступны.' %}
 {% set oplot_context_label = 'Блок релизов' %}
 {% set oplot_context_title = 'Центр шаблонов' %}
 {% set oplot_breadcrumbs = [{'label':'Главная','endpoint':'main.index'},{'label':'Блок релизов','endpoint':'dashboard.release_monitor_page'},{'label':'Центр шаблонов'}] %}
 {% block title %}Центр шаблонов — требуется настройка{% endblock %}
+{% block body_class %}oplot-dtc oplot-dtc--configuration-error{% endblock %}
 {% block styles %}<link rel="stylesheet" href="{{ public_url_for('static', filename='css/document_templates.css') }}">{% endblock %}
+{% block topbar_utilities %}{% include 'document_templates/_topbar_back.html' %}{% endblock %}
 {% block content %}
 <div class="oplot-state-page">
   <div class="oplot-state-card">
     <div class="oplot-state-mark">!</div>
     <div class="page-pretitle">Центр шаблонов</div>
-    <h1>Редактор пока недоступен</h1>
-    <p>Для безопасной работы требуется завершить серверную настройку. Обратитесь к администратору Oplot.</p>
-    <a class="btn btn-outline-primary" href="{{ safe_public_url_for('dashboard.release_monitor_page') or public_url_for('main.index') }}">Вернуться в Блок релизов</a>
+    <h2>Центр временно недоступен</h2>
+    <p>Не удалось безопасно открыть каталог или служебное хранилище. Обратитесь к администратору Oplot.</p>
+    <a class="btn btn-outline-primary" href="{{ public_url_for('document_templates.index') }}">Повторить</a>
   </div>
 </div>
 {% endblock %}

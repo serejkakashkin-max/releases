@@ -1,5 +1,5 @@
 {% set state_labels = {
-  'uploaded':'Кандидат загружен','validating':'Проверяется','valid':'Проверка успешна',
+  'uploaded':'Новая версия загружена','validating':'Проверяется','valid':'Проверка успешна',
   'invalid_security':'Ошибка безопасности','invalid_contract':'Ошибка структуры',
   'invalid_generation':'Ошибка тестовой генерации','validation_interrupted':'Проверка прервана',
   'publishing':'Публикуется','published':'Опубликовано','conflict':'Конфликт',
@@ -7,7 +7,7 @@
   'cancelled':'Отменён','expired':'Срок истёк'
 } %}
 <div class="oplot-candidate-header">
-  <div><div class="page-pretitle">Кандидат для {{ document.filename }}</div><strong>{{ candidate.source_filename }}</strong></div>
+  <div><div class="page-pretitle">Новая версия для {{ document.filename }}</div><strong>{{ candidate.source_filename }}</strong></div>
   <span class="oplot-state-badge is-{{ candidate.state }}">{{ state_labels.get(candidate.state, candidate.state) }}</span>
 </div>
 <div class="row g-4">
@@ -18,24 +18,25 @@
         {% if candidate.state in ['uploaded','validation_interrupted'] %}
           <div class="oplot-validation-wait"><div class="oplot-state-mark">✓</div><h3>Файл сохранён отдельно от рабочего шаблона</h3><p>Проверка не изменит действующий документ.</p>
             <form method="post" action="{{ public_url_for('document_templates.validate_candidate_route', document_id=document.document_id, candidate_uuid=candidate.candidate_uuid) }}" hx-post="{{ public_url_for('document_templates.validate_candidate_route', document_id=document.document_id, candidate_uuid=candidate.candidate_uuid) }}" hx-target="#candidate-panel" hx-swap="innerHTML">
-              <input type="hidden" name="_csrf_token" value="{{ csrf_token }}"><button class="btn btn-primary" type="submit">Проверить кандидата</button>
+              <input type="hidden" name="_csrf_token" value="{{ csrf_token }}"><button class="btn btn-primary" type="submit">Проверить и заменить</button>
             </form>
           </div>
         {% elif candidate.state == 'validating' %}
           <div class="oplot-validation-progress"><span class="spinner-border"></span><h3>Проверяем документ</h3><p>Обычно это занимает несколько секунд. Не закрывайте страницу.</p></div>
         {% elif candidate.state == 'conflict' %}
-          <div class="oplot-validation-wait"><div class="oplot-state-mark">!</div><h3>Действующий шаблон уже изменился</h3><p>Этот кандидат основан на предыдущей версии. Скачайте его при необходимости и загрузите заново относительно актуального документа.</p></div>
+          <div class="oplot-validation-wait"><div class="oplot-state-mark">!</div><h3>Действующий шаблон уже изменился</h3><p>Новая версия основана на предыдущем состоянии документа. При необходимости скачайте её и начните замену заново.</p></div>
         {% elif candidate.state == 'publish_failed' %}
           <div class="alert alert-danger"><h3>Документ заблокирован безопасным восстановлением</h3><p class="mb-0">Автоматическая повторная публикация отключена. Требуется контролируемая сверка SHA администратором.</p></div>
         {% elif candidate.validation %}
           <div class="oplot-validation-summary">
-            <div class="oplot-result-hero {{ 'is-success' if candidate.validation.ok else 'is-error' }}"><strong>{{ 'Кандидат готов к публикации' if candidate.validation.ok else 'Требуются исправления' }}</strong><span>{{ candidate.validation.errors|length }} блокирующих ошибок · {{ candidate.validation.warnings|length }} предупреждений</span></div>
+            <div class="oplot-result-hero {{ 'is-success' if candidate.validation.ok else 'is-error' }}"><strong>{{ 'Проверка новой версии успешна' if candidate.validation.ok else 'Требуются исправления' }}</strong><span>{{ candidate.validation.errors|length }} блокирующих ошибок · {{ candidate.validation.warnings|length }} предупреждений</span></div>
             <div class="oplot-check-grid">
               {% for key,label in [('security','Безопасность файла'),('structure','Структура DOCX'),('placeholders','Служебные поля'),('jira','Jira-таблица'),('generation','Тестовая генерация')] %}
                 <div class="oplot-check-item {{ 'is-ok' if candidate.validation.checks.get(key) else 'is-fail' }}"><span>{{ '✓' if candidate.validation.checks.get(key) else '!' }}</span><strong>{{ label }}</strong></div>
               {% endfor %}
             </div>
-            {% if candidate.validation.errors %}<div class="oplot-validation-errors">{% for error in candidate.validation.errors %}<div><strong>{{ error.message }}</strong><code>{{ error.code }}</code></div>{% endfor %}</div>{% endif %}
+            {% if candidate.validation.errors %}<div class="oplot-validation-errors" role="alert"><h4>Блокирующие ошибки</h4>{% for error in candidate.validation.errors %}<div><strong>{{ error.message }}</strong><code>{{ error.code }}</code></div>{% endfor %}</div>{% endif %}
+            {% if candidate.validation.warnings %}<div class="oplot-validation-warnings"><h4>Предупреждения</h4>{% for warning in candidate.validation.warnings %}<div><strong>{{ warning.message }}</strong><code>{{ warning.code }}</code></div>{% endfor %}</div>{% endif %}
           </div>
         {% endif %}
       </div>
@@ -47,20 +48,12 @@
       <dl><dt>Загрузил</dt><dd>{{ candidate.uploaded_by }}</dd><dt>Размер</dt><dd>{{ '%.1f'|format(candidate.candidate_size / 1024) }} КиБ</dd><dt>Текущая SHA</dt><dd><code>{{ candidate.active_sha_at_upload[:12] }}</code></dd><dt>Новая SHA</dt><dd><code>{{ candidate.candidate_sha[:12] }}</code></dd></dl>
       <div class="d-grid gap-2">
         {% set basic_preview = candidate.validation and candidate.validation.checks.get('security') and candidate.validation.checks.get('structure') and candidate.state not in ['uploaded','validating','validation_interrupted','invalid_security','cancelled','expired'] %}
-        {% if basic_preview %}<button class="btn btn-outline-primary js-document-preview" type="button" data-preview-url="{{ public_url_for('document_templates.preview_candidate', document_id=document.document_id, candidate_uuid=candidate.candidate_uuid) }}" data-document-name="{{ candidate.source_filename }}" data-preview-source="Загруженный кандидат">Просмотреть кандидат</button>{% endif %}
+        {% if basic_preview %}<button class="btn btn-outline-primary js-document-preview" type="button" data-preview-url="{{ public_url_for('document_templates.preview_candidate', document_id=document.document_id, candidate_uuid=candidate.candidate_uuid) }}" data-document-name="{{ candidate.source_filename }}" data-preview-source="Новая версия">Просмотреть новую версию</button>{% endif %}
         {% if candidate.validation and candidate.validation.checks.get('generation') and candidate.test_sha %}
           <button class="btn btn-outline-secondary js-document-preview" type="button" data-preview-url="{{ public_url_for('document_templates.preview_test_document', document_id=document.document_id, candidate_uuid=candidate.candidate_uuid) }}" data-document-name="Тестовый документ" data-preview-source="Тестовый документ">Тестовый документ</button>
-          <button class="btn btn-success" type="button" data-bs-toggle="modal" data-bs-target="#publish-confirm-modal">Опубликовать версию</button>
         {% endif %}
-        {% if candidate.state not in ['published','cancelled','expired','publishing','publish_failed'] and not candidate.recovery_blocking %}<form method="post" action="{{ public_url_for('document_templates.cancel_candidate_route', document_id=document.document_id, candidate_uuid=candidate.candidate_uuid) }}"><input type="hidden" name="_csrf_token" value="{{ csrf_token }}"><button class="btn btn-ghost-danger w-100" type="submit">Отменить кандидат</button></form>{% endif %}
+        {% if candidate.state not in ['published','cancelled','expired','publishing','publish_failed'] and not candidate.recovery_blocking %}<form method="post" action="{{ public_url_for('document_templates.cancel_candidate_route', document_id=document.document_id, candidate_uuid=candidate.candidate_uuid) }}"><input type="hidden" name="_csrf_token" value="{{ csrf_token }}"><button class="btn btn-ghost-danger w-100" type="submit">Отменить новую версию</button></form>{% endif %}
       </div>
     </div></div>
   </aside>
 </div>
-{% if candidate.state == 'valid' %}
-<div class="modal modal-blur fade" id="publish-confirm-modal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content">
-  <div class="modal-header"><div><div class="page-pretitle">Контролируемая публикация</div><h3 class="modal-title">Сделать кандидата активным?</h3></div><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Закрыть"></button></div>
-  <div class="modal-body"><div class="oplot-publish-summary"><div><span>Заменяется</span><strong>{{ document.filename }}</strong></div><div><span>Загрузил</span><strong>{{ candidate.uploaded_by }}</strong></div><div><span>Текущая SHA</span><code>{{ candidate.active_sha_at_upload[:12] }}</code></div><div><span>Новая SHA</span><code>{{ candidate.candidate_sha[:12] }}</code></div></div><blockquote>{{ candidate.comment }}</blockquote><div class="alert alert-success mb-0">Проверка успешна. Предыдущая версия будет сохранена в истории и доступна для восстановления.</div></div>
-  <div class="modal-footer"><button class="btn btn-ghost-secondary" type="button" data-bs-dismiss="modal">Вернуться</button><form method="post" action="{{ public_url_for('document_templates.publish_candidate_route', document_id=document.document_id, candidate_uuid=candidate.candidate_uuid) }}"><input type="hidden" name="_csrf_token" value="{{ csrf_token }}"><button class="btn btn-success btn-lg" type="submit">Опубликовать проверенную версию</button></form></div>
-</div></div></div>
-{% endif %}

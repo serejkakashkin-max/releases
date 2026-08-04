@@ -30,7 +30,7 @@ class _AssetUrlParser(HTMLParser):
                 self.urls.append(values[name])
 
 
-def build_test_app(root: Path, *, enabled=True, static_folder=None) -> Flask:
+def build_test_app(root: Path, *, enabled=None, static_folder=None) -> Flask:
     app = Flask(
         __name__,
         template_folder=str(PROJECT_ROOT / "templates"),
@@ -38,12 +38,11 @@ def build_test_app(root: Path, *, enabled=True, static_folder=None) -> Flask:
     )
     app.config.update(
         TESTING=True,
-        SECRET_KEY="stage2-test-session-secret-0123456789abcdef",
-        DOCUMENT_TEMPLATE_CENTER_ENABLED=enabled,
         DOCUMENT_TEMPLATE_CENTER_ROOT=root,
         DOCUMENT_TEMPLATE_CENTER_RUNTIME_ROOT=root.parent / "runtime",
-        DOCUMENT_TEMPLATE_EDITOR_TOKEN="stage2-editor-token",
     )
+    if enabled is not None:
+        app.config["DOCUMENT_TEMPLATE_CENTER_ENABLED"] = enabled
     app.add_url_rule("/", endpoint="main.index", view_func=lambda: "home")
     app.add_url_rule("/help", endpoint="main.help_page", view_func=lambda: "help")
     app.add_url_rule("/dashboard", endpoint="dashboard.dashboard", view_func=lambda: "dashboard")
@@ -63,12 +62,6 @@ class DocumentTemplateRouteTests(unittest.TestCase):
         clear_template_catalog_cache()
         self.app = build_test_app(self.root)
         self.client = self.app.test_client()
-        login = self.client.post("/admin/document-templates/session/login", data={
-            "display_name": "Тестовый редактор",
-            "token": "stage2-editor-token",
-            "next": "/admin/document-templates",
-        })
-        self.assertEqual(303, login.status_code)
         self.document_id = next(
             item.document_id
             for item in build_document_whitelist(self.root).values()
@@ -80,8 +73,8 @@ class DocumentTemplateRouteTests(unittest.TestCase):
         self.temporary.cleanup()
 
     def test_full_page_and_htmx_partial(self):
-        full = self.client.get("/admin/document-templates")
-        partial = self.client.get("/admin/document-templates?q=Комплект", headers={"HX-Request": "true"})
+        full = self.client.get("/dashboard/release-monitor/document-templates")
+        partial = self.client.get("/dashboard/release-monitor/document-templates?q=Комплект", headers={"HX-Request": "true"})
         self.assertEqual(200, full.status_code)
         self.assertIn(b"<!doctype html>", full.data.lower())
         self.assertIn("HX-Request", full.headers.get("Vary", ""))
@@ -90,7 +83,7 @@ class DocumentTemplateRouteTests(unittest.TestCase):
         self.assertIn("template-filter-form", partial.get_data(as_text=True))
 
     def test_search_filters_and_pagination_query_are_rendered(self):
-        response = self.client.get("/admin/document-templates", query_string={
+        response = self.client.get("/dashboard/release-monitor/document-templates", query_string={
             "q": "Иной",
             "category": "OTHER",
             "ke": "54321",
@@ -104,8 +97,8 @@ class DocumentTemplateRouteTests(unittest.TestCase):
         self.assertIn('value="Иной"', text)
 
     def test_preview_and_download_headers_and_payload(self):
-        preview = self.client.get(f"/admin/document-templates/documents/{self.document_id}/preview")
-        download = self.client.get(f"/admin/document-templates/documents/{self.document_id}/download")
+        preview = self.client.get(f"/dashboard/release-monitor/document-templates/documents/{self.document_id}/preview")
+        download = self.client.get(f"/dashboard/release-monitor/document-templates/documents/{self.document_id}/download")
         self.assertEqual(self.payload, preview.data)
         self.assertEqual(self.payload, download.data)
         self.assertEqual("application/vnd.openxmlformats-officedocument.wordprocessingml.document", preview.mimetype)
@@ -120,41 +113,44 @@ class DocumentTemplateRouteTests(unittest.TestCase):
         values = ("dt1_" + "0" * 64, "..%2Fsecret.docx", "C:%5Csecret.docx", "%5C%5Cserver%5Cshare%5Cfile.docx")
         for value in values:
             with self.subTest(value=value):
-                response = self.client.get(f"/admin/document-templates/documents/{value}/preview")
+                response = self.client.get(f"/dashboard/release-monitor/document-templates/documents/{value}/preview")
                 self.assertEqual(404, response.status_code)
                 self.assertNotIn(str(self.root), response.get_data(as_text=True))
 
     def test_document_removed_after_catalog_returns_404(self):
         document = build_document_whitelist(self.root)[self.document_id]
         document.path.unlink()
-        response = self.client.get(f"/admin/document-templates/documents/{self.document_id}/download")
+        response = self.client.get(f"/dashboard/release-monitor/document-templates/documents/{self.document_id}/download")
         self.assertEqual(404, response.status_code)
 
-    def test_disabled_feature_flag_returns_404_for_all_routes(self):
+    def test_feature_flag_no_longer_blocks_routes_and_old_auth_routes_are_gone(self):
         app = build_test_app(self.root, enabled=False)
         client = app.test_client()
         for path in (
-            "/admin/document-templates",
-            "/admin/document-templates/login",
-            f"/admin/document-templates/documents/{self.document_id}/preview",
-            f"/admin/document-templates/documents/{self.document_id}/download",
-            f"/admin/document-templates/documents/{self.document_id}/history",
+            "/dashboard/release-monitor/document-templates",
+            f"/dashboard/release-monitor/document-templates/documents/{self.document_id}/preview",
+            f"/dashboard/release-monitor/document-templates/documents/{self.document_id}/download",
+            f"/dashboard/release-monitor/document-templates/documents/{self.document_id}/history",
         ):
             with self.subTest(path=path):
-                self.assertEqual(404, client.get(path).status_code)
+                self.assertEqual(200, client.get(path).status_code)
+        self.assertEqual(404, client.get("/dashboard/release-monitor/document-templates/login").status_code)
+        self.assertEqual(404, client.post("/dashboard/release-monitor/document-templates/session/login").status_code)
+        self.assertEqual(404, client.post("/dashboard/release-monitor/document-templates/session/logout").status_code)
+        self.assertEqual(404, client.get("/admin/document-templates/").status_code)
 
     def test_public_urls_honor_forwarded_prefix_and_have_no_external_origins(self):
-        response = self.client.get("/admin/document-templates", headers={"X-Forwarded-Prefix": "/oplot"})
+        response = self.client.get("/dashboard/release-monitor/document-templates", headers={"X-Forwarded-Prefix": "/oplot"})
         text = response.get_data(as_text=True)
         self.assertIn('/oplot/static/vendor/tabler/1.4.0/tabler.min.css', text)
-        self.assertIn('/oplot/admin/document-templates', text)
+        self.assertIn('/oplot/dashboard/release-monitor/document-templates', text)
         parser = _AssetUrlParser()
         parser.feed(text)
         self.assertTrue(parser.urls)
         self.assertFalse([value for value in parser.urls if re.match(r"^(?:https?:)?//", value)])
 
     def test_script_name_is_used_for_public_urls(self):
-        response = self.client.get("/admin/document-templates", environ_overrides={"SCRIPT_NAME": "/base"})
+        response = self.client.get("/dashboard/release-monitor/document-templates", environ_overrides={"SCRIPT_NAME": "/base"})
         self.assertIn('/base/static/js/document_templates.js', response.get_data(as_text=True))
 
     def test_missing_vendor_assets_return_diagnostic_503(self):
@@ -162,12 +158,11 @@ class DocumentTemplateRouteTests(unittest.TestCase):
         missing_static.mkdir()
         app = build_test_app(self.root, static_folder=missing_static)
         client = app.test_client()
-        client.post("/admin/document-templates/session/login", data={"display_name": "Редактор", "token": "stage2-editor-token"})
-        response = client.get("/admin/document-templates")
+        response = client.get("/dashboard/release-monitor/document-templates")
         self.assertEqual(503, response.status_code)
         self.assertIn("vendor manifest", response.get_data(as_text=True))
         self.assertNotIn(str(missing_static), response.get_data(as_text=True))
-        partial = client.get("/admin/document-templates", headers={"HX-Request": "true"})
+        partial = client.get("/dashboard/release-monitor/document-templates", headers={"HX-Request": "true"})
         self.assertEqual(503, partial.status_code)
         self.assertNotIn("<html", partial.get_data(as_text=True).lower())
         self.assertIn("vendor manifest", partial.get_data(as_text=True))

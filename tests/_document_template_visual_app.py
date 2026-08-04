@@ -34,10 +34,6 @@ from services.document_template_validation_service import build_contract
 from services.release_template_catalog_service import clear_template_catalog_cache
 
 
-TOKEN = "visual-stage2-token"
-SECRET = "visual-stage2-session-secret-0123456789abcdef0123456789"
-
-
 def _docx(path: Path, heading: str, *, complete: bool = True, jira: bool = True) -> bytes:
     path.parent.mkdir(parents=True, exist_ok=True)
     document = Document(); document.add_heading(heading, level=1)
@@ -59,8 +55,7 @@ def create_visual_app(base: Path) -> tuple[Flask, dict]:
     _docx(root / "AI" / "AI-помощник PL (10003)" / "Описание агента.docx", "Описание AI-агента")
     _docx(root / "PLATFORM" / "Сервис без Jira PL (10004)" / "Регламент без Jira.docx", "Регламент без Jira", jira=False)
     app = Flask("document-template-visual", template_folder=str(PROJECT_ROOT / "templates"), static_folder=str(PROJECT_ROOT / "static"))
-    visual_secret = "super_secret_key" if os.environ.get("OPLOT_VISUAL_WEAK_SECRET") == "1" else SECRET
-    app.config.update(TESTING=False, SECRET_KEY=visual_secret, DOCUMENT_TEMPLATE_CENTER_ENABLED=True, DOCUMENT_TEMPLATE_CENTER_ROOT=root, DOCUMENT_TEMPLATE_CENTER_RUNTIME_ROOT=runtime, DOCUMENT_TEMPLATE_EDITOR_TOKEN=TOKEN)
+    app.config.update(TESTING=False, DOCUMENT_TEMPLATE_CENTER_ROOT=root, DOCUMENT_TEMPLATE_CENTER_RUNTIME_ROOT=runtime)
     app.add_url_rule("/", endpoint="main.index", view_func=lambda: "Oplot visual fixture")
     app.add_url_rule("/help", endpoint="main.help_page", view_func=lambda: "help")
     app.add_url_rule("/dashboard", endpoint="dashboard.dashboard", view_func=lambda: "dashboard")
@@ -69,7 +64,7 @@ def create_visual_app(base: Path) -> tuple[Flask, dict]:
     app.register_blueprint(document_template_bp)
     register_oplot_ui(app)
     clear_template_catalog_cache()
-    manifest = {"token": TOKEN, "documents": {}}
+    manifest = {"documents": {}}
     with app.app_context():
         documents = sorted(build_document_whitelist(root).values(), key=lambda item: item.filename)
         by_name = {item.filename: item for item in documents}
@@ -123,7 +118,7 @@ def main() -> int:
     base = Path(base_value).resolve(); base.mkdir(parents=True, exist_ok=True)
     app, manifest = create_visual_app(base)
     port = int(os.environ.get("OPLOT_VISUAL_FIXTURE_PORT", "5127"))
-    print(json.dumps({"url": f"http://127.0.0.1:{port}/admin/document-templates", **manifest}, ensure_ascii=False), flush=True)
+    print(json.dumps({"url": f"http://127.0.0.1:{port}/dashboard/release-monitor/document-templates", **manifest}, ensure_ascii=False), flush=True)
     app.run(host="127.0.0.1", port=port, debug=False, use_reloader=False, threaded=True)
     return 0
 

@@ -9,9 +9,6 @@ from version import VERSION, VERSION_HISTORY
 # --- Базовые пути ---
 SCRIPT_DIR = Path(__file__).resolve().parent
 DOC_TEMPLATES_ROOT = SCRIPT_DIR / "doc_templates"
-DOCUMENT_TEMPLATE_CENTER_ENABLED = os.environ.get(
-    "DOCUMENT_TEMPLATE_CENTER_ENABLED", ""
-).strip().lower() in {"1", "true", "yes", "on"}
 MPR_TEMPLATES_ROOT = SCRIPT_DIR / "doc_templates_MPR"
 SMS_TEMPLATES_ROOT = SCRIPT_DIR / "sms_templates"
 LOG_FILE = SCRIPT_DIR / "logs" / "release_generator.log"

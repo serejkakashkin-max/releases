@@ -12,10 +12,8 @@ from flask import (
 
 from config import DOC_TEMPLATES_ROOT
 from services.cross_process_file_lock import FileLockTimeoutError
-from services.document_template_auth_service import (
-    BLOCK_SECONDS, RateLimitStorageError, UnsafeSessionConfiguration, clear_editor_session,
-    csrf_is_valid, csrf_token, editor_session_actor, login_editor, login_url,
-    safe_next, strong_session_secret,
+from services.document_template_csrf_service import (
+    DOCUMENT_TEMPLATE_ACTOR, apply_csrf_cookie, csrf_is_valid, csrf_token,
 )
 from services.document_template_audit_service import append_audit_event
 from services.document_template_candidate_service import (
@@ -39,23 +37,21 @@ from services.public_url_service import public_url_for
 
 
 DOCX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-MUTATION_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 CSP = (
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
     "connect-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; "
     "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
 )
 
-document_template_bp = Blueprint("document_templates", __name__, url_prefix="/admin/document-templates")
+document_template_bp = Blueprint(
+    "document_templates",
+    __name__,
+    url_prefix="/dashboard/release-monitor/document-templates",
+)
 
 
 def _is_htmx_request() -> bool:
     return request.headers.get("HX-Request", "").lower() == "true"
-
-
-def _require_enabled() -> None:
-    if not current_app.config.get("DOCUMENT_TEMPLATE_CENTER_ENABLED", False):
-        abort(404)
 
 
 def _template_root() -> Path:
@@ -64,46 +60,29 @@ def _template_root() -> Path:
 
 def _safe_configuration_response():
     if _is_htmx_request():
-        response = make_response("", 503)
-        response.headers["HX-Redirect"] = public_url_for("document_templates.login_page")
-        return response
+        return make_response(
+            render_template(
+                "document_templates/_catalog_error.html",
+                catalog_error="Центр шаблонов временно недоступен.",
+            ),
+            503,
+        )
     return make_response(render_template(
         "document_templates/configuration_error.html",
     ), 503)
 
 
-def _current_internal_get() -> str:
-    value = request.path
-    if request.query_string:
-        value += "?" + request.query_string.decode("utf-8", "ignore")
-    return safe_next(value)
-
-
-def _auth_guard(*, login_allowed: bool = False):
-    _require_enabled()
-    try:
-        strong_session_secret()
-    except UnsafeSessionConfiguration:
-        return _safe_configuration_response()
-    if login_allowed:
+def _csrf_guard():
+    if csrf_is_valid():
         return None
-    actor = editor_session_actor()
-    if actor:
-        if request.method in MUTATION_METHODS and not csrf_is_valid():
-            return make_response("Действие отклонено: обновите страницу и повторите попытку.", 403)
-        return None
-    target = login_url(_current_internal_get() if request.method == "GET" else None)
-    if _is_htmx_request():
-        response = make_response("", 403)
-        response.headers["HX-Redirect"] = target
-        return response
-    if request.method == "GET":
-        return redirect(target, code=302)
-    return make_response("Требуется вход в Центр шаблонов.", 403)
+    return make_response(
+        "Действие отклонено: обновите страницу и повторите попытку.", 403
+    )
 
 
 @document_template_bp.after_request
 def _security_headers(response):
+    apply_csrf_cookie(response)
     response.headers["Cache-Control"] = "no-store"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Content-Security-Policy"] = CSP
@@ -112,56 +91,9 @@ def _security_headers(response):
 
 @document_template_bp.errorhandler(RuntimeStateError)
 def _runtime_state_error(_error):
+    if request.method == "GET":
+        return _safe_configuration_response()
     return make_response("Служебные данные Центра шаблонов временно недоступны.", 503)
-
-
-@document_template_bp.get("/login")
-def login_page():
-    guard = _auth_guard(login_allowed=True)
-    if guard is not None:
-        return guard
-    if editor_session_actor(touch=False):
-        return redirect(safe_next(request.args.get("next")), code=302)
-    return render_template(
-        "document_templates/login.html", error="", next_url=safe_next(request.args.get("next")),
-    )
-
-
-@document_template_bp.post("/session/login")
-def login_session():
-    guard = _auth_guard(login_allowed=True)
-    if guard is not None:
-        return guard
-    destination = safe_next(request.form.get("next"))
-    try:
-        ok, code = login_editor(request.form.get("display_name", ""), request.form.get("token", ""))
-    except ValueError as exc:
-        return render_template("document_templates/login.html", error=str(exc), next_url=destination), 400
-    except RateLimitStorageError:
-        return render_template("document_templates/login.html", error="Защита входа временно недоступна. Обратитесь к администратору.", next_url=destination), 503
-    if not ok:
-        if code in {"rate_limited", "rate_limit_capacity"}:
-            status, message = 429, "Слишком много попыток. Подождите несколько минут."
-        elif code == "editor_token_missing":
-            status, message = 503, "Вход редактора пока не настроен."
-        else:
-            status, message = 403, "Имя или общий токен не приняты."
-        response = make_response(render_template("document_templates/login.html", error=message, next_url=destination), status)
-        if status == 429:
-            response.headers["Retry-After"] = str(BLOCK_SECONDS)
-        return response
-    if _is_htmx_request():
-        response = make_response("", 204); response.headers["HX-Redirect"] = destination; return response
-    return redirect(destination, code=303)
-
-
-@document_template_bp.post("/session/logout")
-def logout_session():
-    guard = _auth_guard()
-    if guard is not None:
-        return guard
-    clear_editor_session()
-    return redirect(public_url_for("document_templates.login_page"), code=303)
 
 
 def _page_number() -> int:
@@ -180,12 +112,38 @@ def _enrich_catalog(catalog: dict) -> None:
             document["status"] = candidates[0]["state"] if candidates else "active"
 
 
+def _navigation_response(target: str, *, htmx_status: int = 200):
+    if _is_htmx_request():
+        response = make_response("", htmx_status)
+        response.headers["HX-Redirect"] = target
+        return response
+    return redirect(target, code=303)
+
+
+def _candidate_result_url(document_id: str, candidate_uuid: str) -> str:
+    return public_url_for(
+        "document_templates.candidate_detail",
+        document_id=document_id,
+        candidate_uuid=candidate_uuid,
+    )
+
+
+def _complete_replacement(document, candidate_uuid: str):
+    """Run the existing validation and atomic publish pipeline as one action."""
+    candidate = validate_staged_candidate(
+        document.document_id,
+        candidate_uuid,
+        document.path,
+    )
+    if candidate.get("state") != "valid":
+        return candidate, False
+    publish_candidate(document, candidate_uuid, DOCUMENT_TEMPLATE_ACTOR)
+    return get_candidate(candidate_uuid, document_id=document.document_id), True
+
+
 @document_template_bp.get("")
 @document_template_bp.get("/")
 def index():
-    guard = _auth_guard()
-    if guard is not None:
-        return guard
     try:
         if claim_maintenance_window():
             cleanup_candidates()
@@ -200,11 +158,17 @@ def index():
     filters = {"query": request.args.get("q", "").strip(), "category": request.args.get("category", "").strip(), "ke": request.args.get("ke", "").strip(), "variant": request.args.get("variant", "").strip(), "page": _page_number()}
     try:
         catalog = build_catalog_page(_template_root(), **filters); _enrich_catalog(catalog)
+        catalog["replacement_success"] = request.args.get("replacement") == "success"
         template = "document_templates/_catalog.html" if _is_htmx_request() else "document_templates/index.html"
-        response = make_response(render_template(template, catalog=catalog, actor=editor_session_actor(touch=False), csrf_token=csrf_token()))
+        response = make_response(render_template(template, catalog=catalog, csrf_token=csrf_token()))
     except DocumentTemplateRootUnavailable:
-        template = "document_templates/_catalog_error.html" if _is_htmx_request() else "document_templates/index.html"
-        response = make_response(render_template(template, catalog=None, catalog_error="Каталог шаблонов временно недоступен.", actor=editor_session_actor(touch=False), csrf_token=csrf_token()), 503)
+        if _is_htmx_request():
+            response = make_response(render_template(
+                "document_templates/_catalog_error.html",
+                catalog_error="Каталог шаблонов временно недоступен.",
+            ), 503)
+        else:
+            response = _safe_configuration_response()
     response.headers.add("Vary", "HX-Request"); return response
 
 
@@ -233,21 +197,17 @@ def _active_docx_response(document_id: str, *, attachment: bool):
 
 @document_template_bp.get("/documents/<document_id>/preview")
 def preview_document(document_id: str):
-    guard = _auth_guard()
-    if guard is not None: return guard
     return _active_docx_response(document_id, attachment=False)
 
 
 @document_template_bp.get("/documents/<document_id>/download")
 def download_document(document_id: str):
-    guard = _auth_guard()
-    if guard is not None: return guard
     return _active_docx_response(document_id, attachment=True)
 
 
 @document_template_bp.post("/documents/<document_id>/candidates")
 def upload_candidate(document_id: str):
-    guard = _auth_guard()
+    guard = _csrf_guard()
     if guard is not None: return guard
     document = _resolved_or_404(document_id)
     if request.content_length is not None and request.content_length > MAX_UPLOAD_BYTES + UPLOAD_REQUEST_OVERHEAD:
@@ -260,7 +220,7 @@ def upload_candidate(document_id: str):
     if upload.content_length is not None and upload.content_length > MAX_UPLOAD_BYTES:
         return make_response("Файл превышает допустимый размер 10 МиБ.", 413)
     try:
-        metadata = write_uploaded_candidate(upload.stream, document_id=document_id, source_filename=upload_name, active_filename=document.filename, active_sha=document.sha256, uploaded_by=editor_session_actor(touch=False) or "", comment=comment)
+        metadata = write_uploaded_candidate(upload.stream, document_id=document_id, source_filename=upload_name, active_filename=document.filename, active_sha=document.sha256, uploaded_by=DOCUMENT_TEMPLATE_ACTOR, comment=comment)
     except CandidateUploadTooLarge:
         return make_response("Файл превышает допустимый размер 10 МиБ.", 413)
     except ValueError as exc:
@@ -270,10 +230,26 @@ def upload_candidate(document_id: str):
     except Exception:
         shutil.rmtree(candidate_directory(metadata["candidate_uuid"]), ignore_errors=True)
         return make_response("Журнал операций временно недоступен. Загрузка не сохранена.", 503)
-    target = public_url_for("document_templates.candidate_detail", document_id=document_id, candidate_uuid=metadata["candidate_uuid"])
-    if _is_htmx_request():
-        response = make_response("", 201); response.headers["HX-Redirect"] = target; return response
-    return redirect(target, code=303)
+    candidate_uuid = metadata["candidate_uuid"]
+    try:
+        _candidate, published = _complete_replacement(document, candidate_uuid)
+    except ValueError:
+        abort(400)
+    except CandidateNotFound:
+        abort(404)
+    except (DocumentConflict, CandidateStateConflict):
+        published = False
+    except (DocumentMutationBlocked, FileLockTimeoutError, OSError):
+        return make_response(
+            "Безопасная замена временно заблокирована. Новая версия сохранена для диагностики.",
+            423,
+        )
+    target = (
+        public_url_for("document_templates.index", replacement="success")
+        if published
+        else _candidate_result_url(document_id, candidate_uuid)
+    )
+    return _navigation_response(target, htmx_status=201)
 
 
 def _candidate_context(document_id: str, candidate_uuid: str):
@@ -286,24 +262,30 @@ def _candidate_context(document_id: str, candidate_uuid: str):
 
 @document_template_bp.get("/documents/<document_id>/candidates/<candidate_uuid>")
 def candidate_detail(document_id: str, candidate_uuid: str):
-    guard = _auth_guard()
-    if guard is not None: return guard
     document, candidate = _candidate_context(document_id, candidate_uuid)
     template = "document_templates/_candidate_panel.html" if _is_htmx_request() else "document_templates/candidate.html"
-    return render_template(template, document=document.as_view_model(), candidate=candidate, actor=editor_session_actor(touch=False), csrf_token=csrf_token())
+    return render_template(template, document=document.as_view_model(), candidate=candidate, csrf_token=csrf_token())
 
 
 @document_template_bp.post("/documents/<document_id>/candidates/<candidate_uuid>/validate")
 def validate_candidate_route(document_id: str, candidate_uuid: str):
-    guard = _auth_guard()
+    guard = _csrf_guard()
     if guard is not None: return guard
     document, _ = _candidate_context(document_id, candidate_uuid)
-    try: candidate = validate_staged_candidate(document_id, candidate_uuid, document.path)
+    try: candidate, published = _complete_replacement(document, candidate_uuid)
     except ValueError: abort(400)
     except CandidateNotFound: abort(404)
-    except CandidateStateConflict: return make_response("Кандидат находится в несовместимом состоянии.", 409)
+    except DocumentConflict:
+        return _navigation_response(_candidate_result_url(document_id, candidate_uuid))
+    except CandidateStateConflict: return make_response("Новая версия находится в несовместимом состоянии.", 409)
+    except (DocumentMutationBlocked, FileLockTimeoutError, OSError):
+        return make_response("Безопасная замена временно заблокирована.", 423)
+    if published:
+        return _navigation_response(
+            public_url_for("document_templates.index", replacement="success")
+        )
     status = 200 if candidate["state"] == "valid" else 422
-    return render_template("document_templates/_candidate_panel.html", document=document.as_view_model(), candidate=candidate, actor=editor_session_actor(touch=False), csrf_token=csrf_token()), status
+    return render_template("document_templates/_candidate_panel.html", document=document.as_view_model(), candidate=candidate, csrf_token=csrf_token()), status
 
 
 def _candidate_doc_response(document_id: str, candidate_uuid: str, name: str, attachment: bool):
@@ -318,31 +300,25 @@ def _candidate_doc_response(document_id: str, candidate_uuid: str, name: str, at
 
 @document_template_bp.get("/documents/<document_id>/candidates/<candidate_uuid>/preview")
 def preview_candidate(document_id, candidate_uuid):
-    guard = _auth_guard();
-    if guard is not None: return guard
     return _candidate_doc_response(document_id, candidate_uuid, "candidate.docx", False)
 
 
 @document_template_bp.get("/documents/<document_id>/candidates/<candidate_uuid>/test-document/preview")
 def preview_test_document(document_id, candidate_uuid):
-    guard = _auth_guard();
-    if guard is not None: return guard
     return _candidate_doc_response(document_id, candidate_uuid, "test.docx", False)
 
 
 @document_template_bp.get("/documents/<document_id>/candidates/<candidate_uuid>/test-document/download")
 def download_test_document(document_id, candidate_uuid):
-    guard = _auth_guard();
-    if guard is not None: return guard
     return _candidate_doc_response(document_id, candidate_uuid, "test.docx", True)
 
 
 @document_template_bp.post("/documents/<document_id>/candidates/<candidate_uuid>/publish")
 def publish_candidate_route(document_id, candidate_uuid):
-    guard = _auth_guard();
+    guard = _csrf_guard()
     if guard is not None: return guard
     document, _ = _candidate_context(document_id, candidate_uuid)
-    try: publish_candidate(document, candidate_uuid, editor_session_actor(touch=False) or "")
+    try: publish_candidate(document, candidate_uuid, DOCUMENT_TEMPLATE_ACTOR)
     except DocumentConflict: return make_response("Действующий шаблон изменился. Проверьте конфликт и загрузите новую версию.", 409)
     except CandidateStateConflict: return make_response("Кандидат не готов к публикации.", 422)
     except (DocumentMutationBlocked, FileLockTimeoutError, OSError): return make_response("Документ временно заблокирован безопасным восстановлением.", 423)
@@ -351,14 +327,14 @@ def publish_candidate_route(document_id, candidate_uuid):
 
 @document_template_bp.post("/documents/<document_id>/candidates/<candidate_uuid>/cancel")
 def cancel_candidate_route(document_id, candidate_uuid):
-    guard = _auth_guard();
+    guard = _csrf_guard()
     if guard is not None: return guard
     document, candidate = _candidate_context(document_id, candidate_uuid)
     try: cancel_candidate(candidate_uuid, document_id)
     except ValueError: abort(400)
     except CandidateNotFound: abort(404)
     except CandidateStateConflict: return make_response("Кандидат уже нельзя отменить.", 409)
-    event = dict(actor=editor_session_actor(touch=False) or "", action="cancel", document_id=document_id, relative_target=document.relative_path, candidate_uuid=candidate_uuid, comment=candidate.get("comment"), old_sha=candidate.get("active_sha_at_upload"), new_sha=candidate.get("candidate_sha"), result="cancelled")
+    event = dict(actor=DOCUMENT_TEMPLATE_ACTOR, action="cancel", document_id=document_id, relative_target=document.relative_path, candidate_uuid=candidate_uuid, comment=candidate.get("comment"), old_sha=candidate.get("active_sha_at_upload"), new_sha=candidate.get("candidate_sha"), result="cancelled")
     try:
         append_audit_event(**event)
     except Exception:
@@ -368,10 +344,8 @@ def cancel_candidate_route(document_id, candidate_uuid):
 
 @document_template_bp.get("/documents/<document_id>/history")
 def document_history(document_id):
-    guard = _auth_guard();
-    if guard is not None: return guard
     document = _resolved_or_404(document_id)
-    return render_template("document_templates/history.html", document=document.as_view_model(), versions=list_history(document_id), csrf_token=csrf_token(), actor=editor_session_actor(touch=False))
+    return render_template("document_templates/history.html", document=document.as_view_model(), versions=list_history(document_id), csrf_token=csrf_token())
 
 
 def _history_response(document_id, version_uuid, attachment):
@@ -385,26 +359,22 @@ def _history_response(document_id, version_uuid, attachment):
 
 @document_template_bp.get("/documents/<document_id>/history/<version_uuid>/preview")
 def preview_history(document_id, version_uuid):
-    guard = _auth_guard();
-    if guard is not None: return guard
     return _history_response(document_id, version_uuid, False)
 
 
 @document_template_bp.get("/documents/<document_id>/history/<version_uuid>/download")
 def download_history(document_id, version_uuid):
-    guard = _auth_guard();
-    if guard is not None: return guard
     return _history_response(document_id, version_uuid, True)
 
 
 @document_template_bp.post("/documents/<document_id>/history/<version_uuid>/rollback")
 def rollback_history(document_id, version_uuid):
-    guard = _auth_guard();
+    guard = _csrf_guard()
     if guard is not None: return guard
     document = _resolved_or_404(document_id)
     reason = str(request.form.get("reason") or "").strip(); expected = str(request.form.get("expected_active_sha") or "")
     if not 3 <= len(reason) <= 500 or re.fullmatch(r"[0-9a-f]{64}", expected) is None: return make_response("Укажите причину отката и актуальную SHA.", 400)
-    try: rollback_version(document, version_uuid, actor=editor_session_actor(touch=False) or "", reason=reason, expected_active_sha=expected)
+    try: rollback_version(document, version_uuid, actor=DOCUMENT_TEMPLATE_ACTOR, reason=reason, expected_active_sha=expected)
     except ValueError: abort(400)
     except CandidateNotFound: abort(404)
     except DocumentConflict: return make_response("Действующий шаблон изменился. Обновите историю.", 409)

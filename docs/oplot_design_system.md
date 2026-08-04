@@ -57,7 +57,11 @@ Shell ориентирован на desktop 1536×864 и 1920×1080. Обяза�
 
 ### Контракт Блока релизов
 
-Release Monitor использует общие визуальные primitives Oplot, а `oplot_release.css` отвечает только за page-specific layout и адаптацию существующего интерфейса. Presentation migration сохраняет структуру, точные русские названия и порядок внутреннего меню, а также route/API/POST, polling, optimistic-update и integration contracts. Центр шаблонов является условным четвёртым пунктом внутреннего меню «Блока релизов», а не самостоятельным пунктом глобальной навигации.
+Release Monitor использует общие визуальные primitives Oplot, а `oplot_release.css` отвечает только за page-specific layout и адаптацию существующего интерфейса. Presentation migration сохраняет структуру, точные русские названия и порядок внутреннего меню, а также route/API/POST, polling, optimistic-update и integration contracts. Центр шаблонов является постоянным четвёртым пунктом внутреннего меню «Блока релизов», а не самостоятельным пунктом глобальной навигации.
+
+### Контракт Центра шаблонов
+
+Основные DTC-страницы используют no-sidebar core shell: общий бренд OPLOT, theme toggle, контекстную кнопку «К блоку релизов» и page header; отдельная видимая строка breadcrumbs скрыта. Публичное дерево Центра начинается с `/dashboard/release-monitor/document-templates/` и строится только prefix-safe helpers. Доступ не зависит от отдельного DTC login, editor token или feature flag. Изменяющие формы используют cookie-backed CSRF. Загрузка новой версии запускает существующие validation и atomic publish единым действием: блокирующие ошибки и SHA-конфликт не меняют active DOCX, а успешная проверка не требует отдельного approve. Файловая безопасность, history, recovery и audit остаются независимыми обязательными слоями. Визуальные selectors изолированы namespace `.oplot-dtc` и используют общие Oplot tokens.
 # Этап 5А.2: core topbar и JavaScript Блока релизов
 
 Главная и Блок релизов используют opt-in вариант `core`: одинаковую рабочую высоту верхней полосы, бренд OPLOT и единый переключатель темы. Состав действий остаётся контекстным: статистика, версия и песочница принадлежат только главной. Default shell, sidebar, auth и Центр шаблонов не наследуют этот вариант автоматически.

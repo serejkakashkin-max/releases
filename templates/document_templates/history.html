@@ -1,27 +1,33 @@
 {% extends 'layouts/oplot_base.html' %}
+{% set oplot_show_sidebar = false %}
+{% set oplot_topbar_variant = 'core' %}
+{% set oplot_show_breadcrumbs = false %}
 {% set oplot_page_title = document.filename %}
 {% set oplot_page_pretitle = 'История версий' %}
 {% set oplot_page_description = 'Текущая версия не пропадёт при восстановлении — она будет добавлена в историю.' %}
 {% set oplot_context_label = 'Блок релизов' %}
 {% set oplot_context_title = 'Центр шаблонов' %}
-{% set oplot_actor = actor|default('') %}
-{% set oplot_logout_endpoint = 'document_templates.logout_session' if actor|default('') else '' %}
 {% set oplot_breadcrumbs = [{'label':'Главная','endpoint':'main.index'},{'label':'Блок релизов','endpoint':'dashboard.release_monitor_page'},{'label':'Центр шаблонов','endpoint':'document_templates.index'},{'label':'История'}] %}
 {% block title %}История — Центр шаблонов{% endblock %}
+{% block body_class %}oplot-dtc oplot-dtc--history{% endblock %}
 {% block styles %}<link rel="stylesheet" href="{{ public_url_for('static', filename='css/document_templates.css') }}">{% endblock %}
+{% block topbar_utilities %}{% include 'document_templates/_topbar_back.html' %}{% endblock %}
 {% block page_actions %}<a class="btn btn-ghost-secondary" href="{{ public_url_for('document_templates.index') }}">К каталогу</a>{% endblock %}
 {% block content %}
 <div class="oplot-history">
   <div class="oplot-history-item is-active"><span class="oplot-history-dot"></span><div class="card"><div class="card-body"><span class="badge bg-green-lt">Активная версия</span><h3 class="mt-2">Сейчас используется</h3><code>{{ document.sha256_short }}</code></div></div></div>
   {% for version in versions %}
+  {% set version_available = version.state == 'committed' and not version.recovery_blocking and not version.audit_pending %}
   <div class="oplot-history-item">
     <span class="oplot-history-dot"></span>
     <div class="card"><div class="card-body"><div class="d-flex justify-content-between gap-4">
-      <div><div class="page-pretitle">{{ version.created_at_display }}</div><h3>{{ version.action }} · {{ version.actor }}</h3><p>{{ version.comment }}</p><code>{{ version.sha256[:12] }}</code></div>
+      <div><div class="page-pretitle">{{ version.created_at_display }}</div><h3>{{ version.action }} · {{ version.actor }}</h3><p>{{ version.comment }}</p><code>{{ version.sha256[:12] }}</code><div class="mt-2"><span class="oplot-state-badge is-{{ version.state }}">{{ {'committed':'Сохранена','prepared':'Подготавливается','publishing':'Публикуется','recovered':'Восстановлена безопасно','publish_failed':'Заблокирована'}.get(version.state, version.state) }}</span>{% if not version_available %}<span class="text-secondary small ms-2">Действия станут доступны только для согласованной сохранённой версии.</span>{% endif %}</div></div>
       <div class="oplot-history-actions">
+        {% if version_available %}
         <button class="btn btn-outline-primary btn-sm js-document-preview" data-preview-url="{{ public_url_for('document_templates.preview_history', document_id=document.document_id, version_uuid=version.version_uuid) }}" data-document-name="{{ document.filename }}" data-preview-source="Историческая версия">Просмотреть</button>
         <a class="btn btn-outline-secondary btn-sm" href="{{ public_url_for('document_templates.download_history', document_id=document.document_id, version_uuid=version.version_uuid) }}">Скачать</a>
         <button class="btn btn-warning btn-sm js-rollback-open" type="button" data-bs-toggle="modal" data-bs-target="#rollback-confirm-modal" data-rollback-url="{{ public_url_for('document_templates.rollback_history', document_id=document.document_id, version_uuid=version.version_uuid) }}" data-version-sha="{{ version.sha256[:12] }}" data-version-actor="{{ version.actor }}" data-version-date="{{ version.created_at_display }}">Восстановить</button>
+        {% else %}<span class="oplot-history-unavailable">Просмотр и восстановление этой версии заблокированы безопасной проверкой.</span>{% endif %}
       </div>
     </div></div></div>
   </div>
