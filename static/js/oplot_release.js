@@ -72,6 +72,32 @@ function getReleaseModalApi() {
     }
     return ModalApi;
 }
+const releaseModalInstances = new WeakMap();
+function prepareReleaseModalElement(modalElement) {
+    if (!(modalElement instanceof HTMLElement)) {
+        throw new Error('Release Monitor modal element is unavailable');
+    }
+    if (modalElement.parentElement !== document.body) {
+        document.body.appendChild(modalElement);
+    }
+    return modalElement;
+}
+function getOrCreateReleaseModal(modalElement, options) {
+    const element = prepareReleaseModalElement(modalElement);
+    const ModalApi = getReleaseModalApi();
+    if (typeof ModalApi.getOrCreateInstance === 'function') {
+        const instance = ModalApi.getOrCreateInstance(element, options);
+        releaseModalInstances.set(element, instance);
+        return instance;
+    }
+    const existing = typeof ModalApi.getInstance === 'function'
+        ? ModalApi.getInstance(element)
+        : releaseModalInstances.get(element);
+    if (existing) return existing;
+    const instance = new ModalApi(element, options);
+    releaseModalInstances.set(element, instance);
+    return instance;
+}
 function showReleaseConfigError() {
     const error = document.getElementById('releaseMonitorConfigError');
     const root = document.getElementById('oplotReleaseRoot');
@@ -1660,7 +1686,7 @@ function inputValueToDisplayDate(value) {
 
 function ensureReleaseDateOverrideModal() {
     if (!releaseDateOverrideModalInstance) {
-        releaseDateOverrideModalInstance = new (getReleaseModalApi())(document.getElementById('releaseDateOverrideModal'));
+        releaseDateOverrideModalInstance = getOrCreateReleaseModal(document.getElementById('releaseDateOverrideModal'));
     }
     return releaseDateOverrideModalInstance;
 }
@@ -1731,7 +1757,7 @@ function resetReleaseDateOverride() {
 
 function ensureReleaseManualCreateModal() {
     if (!releaseManualCreateModalInstance) {
-        releaseManualCreateModalInstance = new (getReleaseModalApi())(document.getElementById('releaseManualCreateModal'));
+        releaseManualCreateModalInstance = getOrCreateReleaseModal(document.getElementById('releaseManualCreateModal'));
     }
     return releaseManualCreateModalInstance;
 }
@@ -2014,7 +2040,7 @@ async function saveReleaseManualCreate() {
 
 function ensureReleaseManualOverrideModal() {
     if (!releaseManualOverrideModalInstance) {
-        releaseManualOverrideModalInstance = new (getReleaseModalApi())(document.getElementById('releaseManualOverrideModal'));
+        releaseManualOverrideModalInstance = getOrCreateReleaseModal(document.getElementById('releaseManualOverrideModal'));
     }
     return releaseManualOverrideModalInstance;
 }
@@ -2639,7 +2665,7 @@ function applyReleaseDocumentInitData(state, data) {
 function ensureReleaseDocumentModal() {
     if (!releaseDocumentModalInstance) {
         const modalElement = document.getElementById('releaseDocumentModal');
-        releaseDocumentModalInstance = new (getReleaseModalApi())(modalElement);
+        releaseDocumentModalInstance = getOrCreateReleaseModal(modalElement);
         modalElement.addEventListener('hide.bs.modal', () => {
             if (releaseDocumentWizardState) {
                 releaseDocumentWizardState.cancelled = true;
@@ -4148,7 +4174,7 @@ function openReleaseSmsModal() {
     showReleaseSmsMessage('');
     renderReleaseSmsModal();
     const modalElement = document.getElementById('releaseSmsModal');
-    releaseSmsModalInstance = releaseSmsModalInstance || getReleaseModalApi().getOrCreateInstance(modalElement);
+    releaseSmsModalInstance = releaseSmsModalInstance || getOrCreateReleaseModal(modalElement);
     releaseSmsModalInstance.show();
 }
 
@@ -4578,7 +4604,7 @@ function openSmsTemplateEditor(event) {
     if (!modalElement) {
         return;
     }
-    smsTemplateEditorModalInstance = smsTemplateEditorModalInstance || getReleaseModalApi().getOrCreateInstance(modalElement);
+    smsTemplateEditorModalInstance = smsTemplateEditorModalInstance || getOrCreateReleaseModal(modalElement);
     smsTemplateEditorModalInstance.show();
     loadSmsTemplateEditor();
 }

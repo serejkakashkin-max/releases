@@ -456,9 +456,32 @@ class ReleaseBlockMigrationTests(unittest.TestCase):
         self.assertIn("Release Monitor modal API is unavailable", helper_source)
         self.assertNotRegex(business, r"window\.bootstrap\s*=")
         self.assertNotIn("bootstrap.Modal", business)
-        self.assertEqual(6, business.count("getReleaseModalApi()") - 1)
-        self.assertEqual(4, business.count("new (getReleaseModalApi())"))
-        self.assertEqual(2, business.count("getReleaseModalApi().getOrCreateInstance"))
+        self.assertEqual(1, business.count("getReleaseModalApi()") - 1)
+
+        prepare = re.search(
+            r"function prepareReleaseModalElement\(modalElement\) \{([\s\S]*?)\n\}",
+            business,
+        )
+        self.assertIsNotNone(prepare)
+        self.assertIn("modalElement.parentElement !== document.body", prepare.group(1))
+        self.assertIn("document.body.appendChild(modalElement)", prepare.group(1))
+
+        instance_helper = re.search(
+            r"function getOrCreateReleaseModal\(modalElement, options\) \{([\s\S]*?)\n\}",
+            business,
+        )
+        self.assertIsNotNone(instance_helper)
+        instance_source = instance_helper.group(1)
+        self.assertIn("prepareReleaseModalElement(modalElement)", instance_source)
+        self.assertIn("ModalApi.getOrCreateInstance(element, options)", instance_source)
+        self.assertIn("ModalApi.getInstance(element)", instance_source)
+        self.assertIn("releaseModalInstances.get(element)", instance_source)
+        self.assertIn("new ModalApi(element, options)", instance_source)
+        self.assertIn("const releaseModalInstances = new WeakMap()", business)
+        without_instance_helper = business.replace(instance_helper.group(0), "")
+        self.assertNotIn("new ModalApi", without_instance_helper)
+        self.assertEqual(6, business.count("getOrCreateReleaseModal(") - 1)
+        self.assertNotIn("querySelectorAll('.modal-backdrop')", business)
         for modal_id in (
             "releaseDocumentModal", "releaseDateOverrideModal", "releaseManualCreateModal",
             "releaseManualOverrideModal", "releaseSmsModal", "smsTemplateEditorModal",
