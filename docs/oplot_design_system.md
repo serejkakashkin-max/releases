@@ -58,3 +58,8 @@ Shell ориентирован на desktop 1536×864 и 1920×1080. Обяза�
 ### Контракт Блока релизов
 
 Release Monitor использует общие визуальные primitives Oplot, а `oplot_release.css` отвечает только за page-specific layout и адаптацию существующего интерфейса. Presentation migration сохраняет структуру, точные русские названия и порядок внутреннего меню, а также route/API/POST, polling, optimistic-update и integration contracts. Центр шаблонов является условным четвёртым пунктом внутреннего меню «Блока релизов», а не самостоятельным пунктом глобальной навигации.
+# Этап 5А.2: core topbar и JavaScript Блока релизов
+
+Главная и Блок релизов используют opt-in вариант `core`: одинаковую рабочую высоту верхней полосы, бренд OPLOT и единый переключатель темы. Состав действий остаётся контекстным: статистика, версия и песочница принадлежат только главной. Default shell, sidebar, auth и Центр шаблонов не наследуют этот вариант автоматически.
+
+Business JavaScript Блока релизов подключается локальным classic deferred-файлом. Server data и application URL передаются через один JSON config; статические URL строятся из Flask endpoints, динамические сегменты — из server-rendered templates с точным placeholder. Inline handlers считаются совместимым публичным контрактом и экспортируются явно, а ошибочная конфигурация блокирует polling и mutation requests.

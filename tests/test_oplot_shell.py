@@ -115,6 +115,7 @@ class OplotLayoutTests(unittest.TestCase):
             self.assertIn(value, text)
         self.assertNotIn("oplot-shell--no-sidebar", text)
         self.assertNotIn("oplot-topbar--compact", text)
+        self.assertNotIn("oplot-topbar--core", text)
         self.assertIn('class="oplot-topbar__context"', text)
         self.assertIn("oplot-page-header", text)
         self.assertIn("Очень длинное русское название", text)

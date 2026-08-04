@@ -8,6 +8,7 @@
 {% set oplot_breadcrumbs = [] %}
 {% set oplot_show_sidebar = false %}
 {% set oplot_show_page_header = false %}
+{% set oplot_topbar_variant = 'core' %}
 
 {% block title %}Рабочее пространство Oplot — Oplot{% endblock %}
 {% block body_class %}oplot-home{% endblock %}
@@ -28,11 +29,6 @@
       <i class="bi bi-grid-3x3-gap" aria-hidden="true"></i>
       <span>Песочница</span>
     </a>
-    <button class="oplot-home-utility-chip oplot-home-theme-toggle oplot-theme-toggle" type="button" data-oplot-theme-toggle aria-pressed="false" aria-label="Переключить тему">
-      <i class="bi bi-moon-stars oplot-home-theme-icon oplot-home-theme-icon--dark" aria-hidden="true"></i>
-      <i class="bi bi-sun oplot-home-theme-icon oplot-home-theme-icon--light" aria-hidden="true"></i>
-      <span class="theme-label">Тёмная тема</span>
-    </button>
   </div>
 {% endblock %}
 

@@ -16,13 +16,13 @@
 {% set show_sidebar = oplot_show_sidebar|default(true) %}
 {% set show_page_header = oplot_show_page_header|default(true) %}
 {% set show_breadcrumbs = oplot_show_breadcrumbs|default(true) %}
-<body class="oplot-body oplot-shell-mode-{{ shell_mode }} {% block body_class %}{% endblock %}">
+<body class="oplot-body oplot-shell-mode-{{ shell_mode }} oplot-topbar-variant-{{ oplot_topbar_variant|default('default') }} {% block body_class %}{% endblock %}">
   {% if shell_mode == 'app' %}
     <div class="oplot-shell{% if not show_sidebar %} oplot-shell--no-sidebar{% endif %}">
       {% if show_sidebar %}{% include 'layouts/_oplot_sidebar.html' %}{% endif %}
       <div class="oplot-shell__main">
-        {% include 'layouts/_oplot_topbar.html' %}
-        {% block topbar_utilities %}{% endblock %}
+        {% from 'layouts/_oplot_topbar.html' import render_oplot_topbar with context %}
+        {% call render_oplot_topbar() %}{% block topbar_utilities %}{% endblock %}{% endcall %}
         <main class="oplot-page" id="main-content" tabindex="-1">
           <div class="oplot-page__container">
             {% if show_breadcrumbs %}{% include 'layouts/_oplot_breadcrumbs.html' %}{% endif %}

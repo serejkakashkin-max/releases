@@ -1,0 +1,6851 @@
+(function () {
+'use strict';
+
+const REQUIRED_RELEASE_URL_KEYS = Object.freeze([
+    'status', 'reviewer', 'zni', 'date_override', 'manual_release_lookup',
+    'manual_release', 'manual_override_fields', 'manual_override_reset',
+    'manual_distribution', 'monitor_init', 'monitor_generate', 'work_mark',
+    'rollout_notes', 'order', 'confluence_sync', 'sms_generate',
+    'sms_templates', 'current_week', 'assignment_center'
+]);
+const SMS_TEMPLATE_PROFILE_PLACEHOLDER = '__OPLOT_PROFILE__';
+const EMPTY_RELEASE_CONFIG = Object.freeze({
+    urls: Object.freeze({}), url_templates: Object.freeze({}),
+    data: Object.freeze({
+        release_monitor: Object.freeze([]), release_monitor_summary: Object.freeze({}),
+        release_monitor_meta: Object.freeze({}), reviewer_options: Object.freeze([]),
+        sms_profile_availability: Object.freeze({}), template_hints: Object.freeze({}),
+        document_playbooks: Object.freeze([])
+    }),
+    settings: Object.freeze({ operational_day_start_hour: 7, maintenance_enabled: false, maintenance_scope: 'release_monitor' })
+});
+let releasePageInitializationState = 'not_started';
+let releaseLifecycleListenersRegistered = false;
+let releaseConfigValid = false;
+let releaseConfig = EMPTY_RELEASE_CONFIG;
+
+function isSafeReleaseUrl(value) {
+    if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//')) return false;
+    try { return new URL(value, window.location.origin).origin === window.location.origin; }
+    catch (_error) { return false; }
+}
+
+function parseReleaseConfig() {
+    const node = document.getElementById('oplot-release-config');
+    if (!node) return null;
+    try {
+        const parsed = JSON.parse(node.textContent || '{}');
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+        const { urls, url_templates: templates, data, settings } = parsed;
+        if (!urls || typeof urls !== 'object' || !templates || typeof templates !== 'object' || !data || typeof data !== 'object' || !settings || typeof settings !== 'object') return null;
+        if (!REQUIRED_RELEASE_URL_KEYS.every(key => isSafeReleaseUrl(urls[key]))) return null;
+        const profileTemplate = templates.sms_template_profile;
+        if (!isSafeReleaseUrl(profileTemplate) || profileTemplate.split(SMS_TEMPLATE_PROFILE_PLACEHOLDER).length !== 2) return null;
+        return parsed;
+    } catch (_error) { return null; }
+}
+
+const parsedReleaseConfig = parseReleaseConfig();
+if (parsedReleaseConfig) { releaseConfig = parsedReleaseConfig; releaseConfigValid = true; }
+const releaseConfigData = releaseConfig.data || EMPTY_RELEASE_CONFIG.data;
+const releaseConfigSettings = releaseConfig.settings || EMPTY_RELEASE_CONFIG.settings;
+
+function getReleaseUrl(key) {
+    const value = releaseConfigValid ? releaseConfig.urls[key] : '';
+    if (!isSafeReleaseUrl(value)) throw new Error('release_monitor_configuration_error');
+    return value;
+}
+function getReleaseUrlWithQuery(key, parameters) {
+    const url = new URL(getReleaseUrl(key), window.location.origin);
+    Object.entries(parameters || {}).forEach(([name, value]) => url.searchParams.set(name, String(value)));
+    return `${url.pathname}${url.search}${url.hash}`;
+}
+function buildReleaseUrlFromTemplate(key, value) {
+    const template = releaseConfigValid ? releaseConfig.url_templates[key] : '';
+    if (!isSafeReleaseUrl(template) || template.split(SMS_TEMPLATE_PROFILE_PLACEHOLDER).length !== 2) throw new Error('release_monitor_configuration_error');
+    return template.replace(SMS_TEMPLATE_PROFILE_PLACEHOLDER, encodeURIComponent(String(value || '')));
+}
+function getReleaseModalApi() {
+    const ModalApi = window.bootstrap?.Modal || window.tabler?.Modal;
+    if (typeof ModalApi !== 'function') {
+        throw new Error('Release Monitor modal API is unavailable');
+    }
+    return ModalApi;
+}
+const releaseModalInstances = new WeakMap();
+function prepareReleaseModalElement(modalElement) {
+    if (!(modalElement instanceof HTMLElement)) {
+        throw new Error('Release Monitor modal element is unavailable');
+    }
+    if (modalElement.parentElement !== document.body) {
+        document.body.appendChild(modalElement);
+    }
+    return modalElement;
+}
+function getOrCreateReleaseModal(modalElement, options) {
+    const element = prepareReleaseModalElement(modalElement);
+    const ModalApi = getReleaseModalApi();
+    if (typeof ModalApi.getOrCreateInstance === 'function') {
+        const instance = ModalApi.getOrCreateInstance(element, options);
+        releaseModalInstances.set(element, instance);
+        return instance;
+    }
+    const existing = typeof ModalApi.getInstance === 'function'
+        ? ModalApi.getInstance(element)
+        : releaseModalInstances.get(element);
+    if (existing) return existing;
+    const instance = new ModalApi(element, options);
+    releaseModalInstances.set(element, instance);
+    return instance;
+}
+function showReleaseConfigError() {
+    const error = document.getElementById('releaseMonitorConfigError');
+    const root = document.getElementById('oplotReleaseRoot');
+    if (error) error.hidden = false;
+    if (root) root.inert = true;
+}
+
+let currentReleaseYearFilter = String(new Date().getFullYear());
+let currentReleaseViewFilter = 'all';
+let currentReleaseResponsibleFilter = 'all';
+let showReleaseRowsWithoutRov = false;
+let showFarFutureReleases = false;
+let isReleaseMonitorExpanded = true;
+let isReleaseOrderMode = false;
+let releaseOrderDraft = null;
+let releaseOrderDirty = false;
+let activeReleaseSettingsRowKey = '';
+let releaseRowNumberingSavingKey = '';
+let releaseRowOrderSavingKey = '';
+let releaseRowOrderSaveSeq = 0;
+let releaseRowOrderMoveSaveInFlight = false;
+let releaseRowOrderMoveQueuedDraft = null;
+let releaseRowOrderMoveRollbackDraft = null;
+let releaseManualOverrideDraft = {};
+let releaseMonitorItems = [];
+const releaseColorSaveSeqByKey = new Map();
+const releaseAssignmentSaveSeqByKey = new Map();
+const releaseWorkMarkSaveSeqByKey = new Map();
+let releaseMonitorMeta = {};
+let releaseMonitorPollingController = null;
+let releaseMonitorFullStatusRequest = null;
+let releaseMonitorFullStatusRevision = '';
+let releaseMonitorPendingFullStatusRevision = '';
+let releaseMonitorLastAppliedViewRevision = '';
+let releaseMonitorLastRequestedFullRevision = '';
+const releaseMonitorPollingDebugState = {
+    activeLoops: 0,
+    compactRequests: 0,
+    compactRequestsInFlight: 0,
+    maxCompactRequestsInFlight: 0,
+    fullRequests: 0,
+    fullRequestsInFlight: 0,
+    maxFullRequestsInFlight: 0,
+};
+let releaseMonitorKnownRevision = '';
+let releaseMonitorDismissedRevision = '';
+let releaseMonitorGlobalRefreshing = false;
+let releaseUpdateBannerMeta = null;
+let releaseUpdateBannerTimer = null;
+const RELEASE_SCROLL_RESTORE_KEY = 'releaseMonitorScrollRestore';
+const RELEASE_SMS_DRAFT_KEY = 'releaseMonitorSmsDraft';
+const RELEASE_SMS_SCOPE_KEY = 'releaseMonitorSmsScope';
+const RELEASE_SMS_DRAFT_TTL_MS = 12 * 60 * 60 * 1000;
+const RELEASE_OPERATIONAL_DAY_START_HOUR = (Number.isInteger(releaseConfigSettings.operational_day_start_hour) ? releaseConfigSettings.operational_day_start_hour : 7);
+const RELEASE_SMS_PROFILES = ['CLM', 'EMRM', 'AIST', 'AI'];
+const RELEASE_SMS_PROFILE_AVAILABILITY = releaseConfigData.sms_profile_availability;
+const RELEASE_WORK_MARK_PARTICIPANTS_KEY = 'releaseMonitorWorkMarkParticipants';
+const RELEASE_WORK_MARK_ACTIVE_KEY = 'releaseMonitorWorkMarkActive';
+const RELEASE_WORK_MARK_AUTO_PARTICIPANTS_KEY = 'releaseMonitorWorkMarkAutoParticipants';
+const RELEASE_WORK_MARK_WEEK_KEY = 'releaseMonitorWorkMarkWeek';
+const RELEASE_WORK_MARK_AUTO_COLLAPSE_MS = 30000;
+let releaseScrollRestoreAttempted = false;
+let RELEASE_REVIEWER_OPTIONS = releaseConfigData.reviewer_options;
+let releaseResponsibleDirectoryOptions = [];
+let releaseEmployeeSelectionAvailable = Boolean(releaseConfigData.release_monitor_meta.employee_selection_available);
+let releaseWorkMarkParticipants = [];
+let activeReleaseWorkMark = '';
+let isReleaseWorkMarkingMode = false;
+let releaseWorkMarkPanelCollapsed = false;
+let releaseWorkMarkAutoCollapseTimer = null;
+let releaseWorkMarkCounts = { __none__: 0 };
+let releaseSmsVisibleItems = [];
+let releaseSmsCurrentFilteredItems = [];
+let currentReleaseSmsScope = (() => {
+    try {
+        const savedScope = localStorage.getItem(RELEASE_SMS_SCOPE_KEY);
+        return ['today', 'week', 'visible'].includes(savedScope) ? savedScope : 'today';
+    } catch (error) {
+        return 'today';
+    }
+})();
+let releaseSmsDraftItems = [];
+let releaseSmsModalInstance = null;
+const SMS_TEMPLATE_PROFILES = ['CLM', 'EMRM', 'AIST', 'AI'];
+let smsTemplateEditorModalInstance = null;
+let smsTemplateEditorState = {
+    activeProfile: 'CLM',
+    profiles: {},
+    loading: false,
+    dirty: false,
+};
+const RELEASE_TEMPLATE_HINTS = releaseConfigData.template_hints;
+const RELEASE_DOCUMENT_PLAYBOOKS = releaseConfigData.document_playbooks;
+let releaseDocumentModalInstance = null;
+let releaseDocumentWizardState = null;
+let releaseDocumentInitSequence = 0;
+let releaseDateOverrideModalInstance = null;
+let releaseManualCreateModalInstance = null;
+let releaseDateOverrideState = null;
+let releaseManualOverrideModalInstance = null;
+let releaseManualOverrideState = null;
+let pendingManualDutyFocusReleaseKey = '';
+const RELEASE_MANUAL_OVERRIDE_FIELDS = [
+    { name: 'release_type', label: 'Тип релиза', type: 'select' },
+    { name: 'release_summary', label: 'Название релиза', type: 'textarea', id: 'releaseManualSummaryInput' },
+    { name: 'release_key', label: 'ID релиза' },
+    { name: 'rov_key', label: 'ID РОВ' },
+    { name: 'release_url', label: 'Ссылка на релиз' },
+    { name: 'rov_url', label: 'Ссылка на РОВ' },
+    { name: 'release_status', label: 'Статус релиза' },
+    { name: 'rov_status', label: 'Статус РОВ' },
+    { name: 'ke_id', label: 'КЭ релиза' },
+    { name: 'release_version', label: 'Сборка', id: 'releaseManualVersionInput' },
+    { name: 'ke', label: 'КЭ дистрибутива', id: 'releaseManualKeInput' },
+    { name: 'release_dist_url', label: 'Ссылка на дистрибутив', id: 'releaseManualUrlInput' },
+    { name: 'system_name', label: 'Система' },
+    { name: 'zni_key', label: 'ЗНИ', id: 'releaseManualZniInput' },
+];
+const RELEASE_MANUAL_TYPE_OPTIONS = [
+    ['', 'Использовать Jira'],
+    ['release', 'Релиз'],
+    ['hotfix', 'Хотфикс'],
+    ['reroll', 'Перераскатка'],
+    ['technical', 'Технический'],
+];
+
+const RELEASE_MANUAL_CREATE_TYPE_OPTIONS = RELEASE_MANUAL_TYPE_OPTIONS.filter(([value]) => value);
+const RELEASE_MANUAL_CREATE_FIELDS = [
+    { name: 'release_key', label: 'ID релиза', required: true, placeholder: 'EMRM-12345' },
+    { name: 'release_type', label: 'Тип релиза', type: 'select', defaultValue: 'release' },
+    { name: 'release_summary', label: 'Название релиза', type: 'textarea', placeholder: 'Можно оставить пустым' },
+    { name: 'deployment_start', label: 'Дата начала внедрения', type: 'date' },
+    { name: 'deployment_end', label: 'Дата окончания внедрения', type: 'date' },
+    { name: 'rov_key', label: 'ID РОВ', placeholder: 'EMRM-12346' },
+    { name: 'release_status', label: 'Статус релиза', placeholder: 'Создан' },
+    { name: 'rov_status', label: 'Статус РОВ', placeholder: 'Утвержден' },
+    { name: 'system_name', label: 'АС / система' },
+    { name: 'ke_id', label: 'КЭ релиза' },
+    { name: 'release_version', label: 'Сборка' },
+    { name: 'ke', label: 'КЭ дистрибутива' },
+    { name: 'release_dist_url', label: 'Ссылка на дистрибутив' },
+    { name: 'zni_key', label: 'ЗНИ' },
+];
+
+function escapeHtml(value) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function escapeCssValue(value) {
+    const text = String(value || '');
+    if (window.CSS && typeof window.CSS.escape === 'function') {
+        return window.CSS.escape(text);
+    }
+    return text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function getReleaseMonitorRevision(meta = releaseMonitorMeta) {
+    return String(meta?.view_revision || meta?.data_revision || meta?.last_updated || '').trim();
+}
+
+function normalizeReleaseResponsibleIdentity(value) {
+    return String(value || '').trim().toLocaleLowerCase('ru-RU');
+}
+
+function syncReleaseEmployeeDirectoryProjection(meta = releaseMonitorMeta) {
+    const rawOptions = Array.isArray(meta?.employee_filter_options)
+        ? meta.employee_filter_options
+        : [];
+    releaseResponsibleDirectoryOptions = rawOptions
+        .map(option => {
+            const employeeId = String(option?.employee_id || '').trim();
+            const releaseName = String(option?.release_name || '').trim();
+            const identities = Array.from(new Set([
+                releaseName,
+                ...(Array.isArray(option?.release_aliases) ? option.release_aliases : []),
+            ]
+                .map(value => String(value || '').trim())
+                .filter(Boolean)));
+            return {
+                employeeId,
+                releaseName,
+                identities,
+                normalizedIdentities: new Set(identities.map(normalizeReleaseResponsibleIdentity)),
+            };
+        })
+        .filter(option => option.employeeId && option.releaseName);
+    RELEASE_REVIEWER_OPTIONS = releaseResponsibleDirectoryOptions.map(option => option.releaseName);
+}
+
+function isCustomDutyText(value) {
+    const text = String(value || '').trim();
+    return Boolean(text) && !RELEASE_REVIEWER_OPTIONS.includes(text);
+}
+
+function normalizeReleaseWorkMark(value) {
+    return String(value || '').trim();
+}
+
+function getReleaseWorkMarkRowKey(itemOrKey) {
+    if (typeof itemOrKey === 'string') {
+        return itemOrKey.trim();
+    }
+    return String(itemOrKey?.row_key || itemOrKey?.release_key || '').trim();
+}
+
+function getReleaseWorkMarkDirectory() {
+    return Array.from(new Set((RELEASE_REVIEWER_OPTIONS || []).map(normalizeReleaseWorkMark).filter(Boolean)));
+}
+
+function getReleaseWorkMarkMeta() {
+    if (releaseMonitorMeta && Object.keys(releaseMonitorMeta).length) {
+        return releaseMonitorMeta;
+    }
+    return window.dashboardData?.release_monitor_meta || {};
+}
+
+function getReleaseWorkMarkSuggestedParticipants() {
+    const meta = getReleaseWorkMarkMeta();
+    return Array.from(new Set(
+        (meta.work_mark_suggested_participants || [])
+            .map(normalizeReleaseWorkMark)
+            .filter(Boolean)
+            .filter(name => getReleaseWorkMarkDirectory().includes(name))
+    ));
+}
+
+function syncReleaseWorkMarkSuggestedParticipants() {
+    const suggested = getReleaseWorkMarkSuggestedParticipants();
+    const suggestedWeek = String(getReleaseWorkMarkMeta().work_mark_suggested_week || '').trim();
+    if (!suggested.length || !suggestedWeek) {
+        return false;
+    }
+
+    let previousSuggested = [];
+    let previousWeek = '';
+    try {
+        const rawSuggested = localStorage.getItem(RELEASE_WORK_MARK_AUTO_PARTICIPANTS_KEY);
+        const parsedSuggested = rawSuggested ? JSON.parse(rawSuggested) : [];
+        previousSuggested = Array.isArray(parsedSuggested)
+            ? parsedSuggested.map(normalizeReleaseWorkMark).filter(Boolean)
+            : [];
+        previousWeek = String(localStorage.getItem(RELEASE_WORK_MARK_WEEK_KEY) || '').trim();
+    } catch (error) {
+        previousSuggested = [];
+        previousWeek = '';
+    }
+
+    let nextParticipants = releaseWorkMarkParticipants.slice();
+    const suggestedChanged = JSON.stringify(previousSuggested) !== JSON.stringify(suggested);
+    if (previousWeek && (previousWeek !== suggestedWeek || suggestedChanged)) {
+        const previousSet = new Set(previousSuggested);
+        nextParticipants = nextParticipants.filter(name => !previousSet.has(name));
+    }
+    nextParticipants = Array.from(new Set([...suggested, ...nextParticipants]));
+    const changed = JSON.stringify(nextParticipants) !== JSON.stringify(releaseWorkMarkParticipants);
+    releaseWorkMarkParticipants = nextParticipants;
+
+    try {
+        localStorage.setItem(RELEASE_WORK_MARK_PARTICIPANTS_KEY, JSON.stringify(releaseWorkMarkParticipants));
+        localStorage.setItem(RELEASE_WORK_MARK_AUTO_PARTICIPANTS_KEY, JSON.stringify(suggested));
+        localStorage.setItem(RELEASE_WORK_MARK_WEEK_KEY, suggestedWeek);
+    } catch (error) {
+        // localStorage can be unavailable in restricted browser modes.
+    }
+    return changed;
+}
+
+function loadReleaseWorkMarkPreferences() {
+    try {
+        const rawParticipants = localStorage.getItem(RELEASE_WORK_MARK_PARTICIPANTS_KEY);
+        const parsed = rawParticipants ? JSON.parse(rawParticipants) : [];
+        releaseWorkMarkParticipants = Array.isArray(parsed)
+            ? Array.from(new Set(parsed.map(normalizeReleaseWorkMark).filter(Boolean)))
+            : [];
+    } catch (error) {
+        releaseWorkMarkParticipants = [];
+    }
+
+    syncReleaseWorkMarkSuggestedParticipants();
+
+    try {
+        activeReleaseWorkMark = normalizeReleaseWorkMark(localStorage.getItem(RELEASE_WORK_MARK_ACTIVE_KEY));
+    } catch (error) {
+        activeReleaseWorkMark = '';
+    }
+
+    const available = getReleaseWorkMarkAvailableParticipants();
+    if (activeReleaseWorkMark && !available.includes(activeReleaseWorkMark)) {
+        activeReleaseWorkMark = available[0] || '';
+        saveReleaseWorkMarkActive();
+    }
+}
+
+function saveReleaseWorkMarkParticipants() {
+    try {
+        localStorage.setItem(RELEASE_WORK_MARK_PARTICIPANTS_KEY, JSON.stringify(releaseWorkMarkParticipants));
+    } catch (error) {
+        // localStorage can be unavailable in restricted browser modes.
+    }
+}
+
+function saveReleaseWorkMarkActive() {
+    try {
+        localStorage.setItem(RELEASE_WORK_MARK_ACTIVE_KEY, activeReleaseWorkMark || '');
+    } catch (error) {
+        // localStorage can be unavailable in restricted browser modes.
+    }
+}
+
+function getReleaseWorkMarkAvailableParticipants() {
+    const directory = getReleaseWorkMarkDirectory();
+    const selected = releaseWorkMarkParticipants.filter(name => directory.includes(name));
+    const suggested = getReleaseWorkMarkSuggestedParticipants();
+    return Array.from(new Set([...suggested, ...selected]));
+}
+
+function ensureExplicitReleaseWorkMarkParticipants() {
+    if (!releaseWorkMarkParticipants.length) {
+        releaseWorkMarkParticipants = getReleaseWorkMarkAvailableParticipants();
+    }
+}
+
+function setActiveReleaseWorkMark(mark) {
+    const normalized = normalizeReleaseWorkMark(mark);
+    const available = getReleaseWorkMarkAvailableParticipants();
+    if (normalized === '__none__' || !normalized) {
+        activeReleaseWorkMark = '';
+    } else if (!available.includes(normalized)) {
+        activeReleaseWorkMark = available[0] || '';
+    } else {
+        activeReleaseWorkMark = normalized;
+    }
+    saveReleaseWorkMarkActive();
+    resetReleaseWorkMarkAutoCollapseTimer();
+    renderReleaseWorkMarkChips(releaseWorkMarkCounts);
+    refreshReleaseWorkMarkUi();
+}
+
+function addReleaseWorkMarkParticipantFromPicker() {
+    const picker = document.getElementById('releaseWorkMarkParticipantPicker');
+    const mark = normalizeReleaseWorkMark(picker?.value);
+    if (!mark) {
+        return;
+    }
+    ensureExplicitReleaseWorkMarkParticipants();
+    if (!releaseWorkMarkParticipants.includes(mark)) {
+        releaseWorkMarkParticipants.push(mark);
+        saveReleaseWorkMarkParticipants();
+    }
+    activeReleaseWorkMark = mark;
+    saveReleaseWorkMarkActive();
+    resetReleaseWorkMarkAutoCollapseTimer();
+    if (picker) {
+        picker.value = '';
+    }
+    refreshReleaseWorkMarkUi();
+}
+
+function removeReleaseWorkMarkParticipant(mark, event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    const normalized = normalizeReleaseWorkMark(mark);
+    ensureExplicitReleaseWorkMarkParticipants();
+    releaseWorkMarkParticipants = releaseWorkMarkParticipants.filter(name => name !== normalized);
+    saveReleaseWorkMarkParticipants();
+    const available = getReleaseWorkMarkAvailableParticipants();
+    if (activeReleaseWorkMark && !available.includes(activeReleaseWorkMark)) {
+        activeReleaseWorkMark = available[0] || '';
+        saveReleaseWorkMarkActive();
+    }
+    resetReleaseWorkMarkAutoCollapseTimer();
+    refreshReleaseWorkMarkUi();
+    applyReleaseFilters();
+}
+
+function updateReleaseWorkMarkParticipantPicker() {
+    const picker = document.getElementById('releaseWorkMarkParticipantPicker');
+    if (!picker) {
+        return;
+    }
+    const selected = new Set(getReleaseWorkMarkAvailableParticipants());
+    const options = getReleaseWorkMarkDirectory()
+        .filter(name => !selected.has(name))
+        .map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
+        .join('');
+    picker.innerHTML = `<option value="">Участник окна</option>${options}`;
+}
+
+function renderReleaseWorkMarkChips(counts = {}) {
+    const container = document.getElementById('releaseWorkMarkChips');
+    if (!container) {
+        return;
+    }
+    const participants = getReleaseWorkMarkAvailableParticipants();
+    const suggested = new Set(getReleaseWorkMarkSuggestedParticipants());
+    if (!participants.length) {
+        container.innerHTML = '<span class="release-work-mark-chip empty">Выберите участников окна</span>';
+        return;
+    }
+    const chips = participants.map(mark => {
+        const count = Number(counts[mark] || 0);
+        const isActive = mark === activeReleaseWorkMark;
+        const removeButton = participants.length > 1 && !suggested.has(mark)
+            ? `<button type="button" class="release-work-mark-chip-remove" onclick="removeReleaseWorkMarkParticipant('${escapeHtml(mark)}', event)" title="Убрать участника из окна"><i class="bi bi-x"></i></button>`
+            : '';
+        return `
+            <span role="button" tabindex="0" class="release-work-mark-chip ${isActive ? 'active' : ''}" onclick="setActiveReleaseWorkMark('${escapeHtml(mark)}')" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setActiveReleaseWorkMark('${escapeHtml(mark)}'); }">
+                <span>${escapeHtml(mark)}</span>
+                <strong>${count}</strong>
+                ${removeButton}
+            </span>
+        `;
+    });
+    chips.push(`
+        <span role="button" tabindex="0" class="release-work-mark-chip clear-mark ${activeReleaseWorkMark ? '' : 'active'}" onclick="setActiveReleaseWorkMark('__none__')" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setActiveReleaseWorkMark('__none__'); }" title="Клик по строке удалит метку">
+            <i class="bi bi-eraser"></i>
+            <span>Удалить метку</span>
+        </span>
+    `);
+    container.innerHTML = chips.join('');
+}
+
+function updateReleaseWorkMarkFilterOptions(items = releaseMonitorItems) {
+    const select = document.getElementById('releaseWorkMarkFilter');
+    if (!select) {
+        return;
+    }
+    const previousValue = select.value || 'all';
+    const participants = getReleaseWorkMarkAvailableParticipants();
+    const marksFromItems = Array.from(new Set((items || []).map(item => normalizeReleaseWorkMark(item.work_mark)).filter(Boolean)));
+    const allMarks = Array.from(new Set([...participants, ...marksFromItems]));
+    select.innerHTML = [
+        '<option value="all">Все релизы</option>',
+        ...allMarks.map(mark => `<option value="${escapeHtml(mark)}">${escapeHtml(mark)}</option>`),
+    ].join('');
+    select.value = Array.from(select.options).some(option => option.value === previousValue) ? previousValue : 'all';
+}
+
+function handleReleaseWorkMarkFilter() {
+    applyReleaseFilters();
+}
+
+function getCurrentVisibleReleaseItems() {
+    const rows = Array.from(document.querySelectorAll('tr.release-row[data-row-key]'));
+    if (!rows.length) {
+        return [];
+    }
+    return rows
+        .map(row => getReleaseMonitorItem(row.dataset.rowKey || ''))
+        .filter(Boolean);
+}
+
+function recomputeReleaseWorkMarkChips(visibleItems = null) {
+    const sourceItems = Array.isArray(visibleItems) ? visibleItems : getCurrentVisibleReleaseItems();
+    const counts = { __none__: 0 };
+    getReleaseWorkMarkAvailableParticipants().forEach(mark => {
+        counts[mark] = 0;
+    });
+    (sourceItems || []).forEach(item => {
+        const mark = normalizeReleaseWorkMark(item.work_mark);
+        if (mark) {
+            counts[mark] = Number(counts[mark] || 0) + 1;
+        } else {
+            counts.__none__ += 1;
+        }
+    });
+    releaseWorkMarkCounts = counts;
+    renderReleaseWorkMarkChips(counts);
+    refreshReleaseWorkMarkUi();
+}
+
+function getReleaseWorkMarkActiveLabel() {
+    return activeReleaseWorkMark || 'Без метки';
+}
+
+function getReleaseWorkMarkActiveCount() {
+    return Number(activeReleaseWorkMark ? releaseWorkMarkCounts[activeReleaseWorkMark] || 0 : releaseWorkMarkCounts.__none__ || 0);
+}
+
+function renderReleaseWorkMarkCollapsedBalance() {
+    const target = document.getElementById('releaseWorkMarkCollapsedBalance');
+    if (!target) {
+        return;
+    }
+    const participants = getReleaseWorkMarkAvailableParticipants();
+    const preferred = [];
+    if (activeReleaseWorkMark && participants.includes(activeReleaseWorkMark)) {
+        preferred.push(activeReleaseWorkMark);
+    }
+    participants.forEach(name => {
+        if (!preferred.includes(name) && preferred.length < 3) {
+            preferred.push(name);
+        }
+    });
+    const hidden = Math.max(0, participants.length - preferred.length);
+    const parts = preferred.map(name => `${escapeHtml(name)} ${Number(releaseWorkMarkCounts[name] || 0)}`);
+    if (hidden) {
+        parts.push(`+${hidden}`);
+    }
+    target.innerHTML = parts.join(' · ');
+}
+
+function clearReleaseWorkMarkAutoCollapseTimer() {
+    if (releaseWorkMarkAutoCollapseTimer) {
+        window.clearTimeout(releaseWorkMarkAutoCollapseTimer);
+        releaseWorkMarkAutoCollapseTimer = null;
+    }
+}
+
+function resetReleaseWorkMarkAutoCollapseTimer() {
+    clearReleaseWorkMarkAutoCollapseTimer();
+    if (!isReleaseWorkMarkingMode || releaseWorkMarkPanelCollapsed) {
+        return;
+    }
+    releaseWorkMarkAutoCollapseTimer = window.setTimeout(() => {
+        setReleaseWorkMarkPanelCollapsed(true);
+    }, RELEASE_WORK_MARK_AUTO_COLLAPSE_MS);
+}
+
+function setReleaseWorkMarkPanelCollapsed(collapsed) {
+    releaseWorkMarkPanelCollapsed = Boolean(collapsed);
+    refreshReleaseWorkMarkUi();
+    resetReleaseWorkMarkAutoCollapseTimer();
+}
+
+function getReleaseWorkMarkSnapshot(item) {
+    return {
+        work_mark: normalizeReleaseWorkMark(item?.work_mark),
+        work_mark_updated_at: String(item?.work_mark_updated_at || ''),
+    };
+}
+
+function applyReleaseWorkMarkToItem(item, mark) {
+    if (!item) {
+        return;
+    }
+    const normalized = normalizeReleaseWorkMark(mark);
+    item.work_mark = normalized;
+    item.work_mark_updated_at = normalized ? item.work_mark_updated_at || '' : '';
+}
+
+function patchReleaseWorkMarkDom(rowKey, mark, pending = false) {
+    const normalizedRowKey = getReleaseWorkMarkRowKey(rowKey);
+    const row = normalizedRowKey ? document.querySelector(`tr.release-row[data-row-key="${escapeCssValue(normalizedRowKey)}"]`) : null;
+    if (!row) {
+        return;
+    }
+    const item = getReleaseMonitorItem(normalizedRowKey);
+    if (item && row.children[1]) {
+        row.children[1].innerHTML = getReleaseNameHtml(item);
+    }
+    row.classList.toggle('work-mark-pending', Boolean(pending));
+    const panel = document.querySelector(`tr.release-row-settings-panel[data-settings-for="${escapeCssValue(normalizedRowKey)}"]`);
+    const select = panel?.querySelector('.release-row-work-mark-select');
+    if (select) {
+        select.value = normalizeReleaseWorkMark(mark);
+    }
+}
+
+function setReleaseWorkMarkPending(rowKey, pending) {
+    const normalizedRowKey = getReleaseWorkMarkRowKey(rowKey);
+    const row = normalizedRowKey ? document.querySelector(`tr.release-row[data-row-key="${escapeCssValue(normalizedRowKey)}"]`) : null;
+    if (row) {
+        row.classList.toggle('work-mark-pending', Boolean(pending));
+    }
+}
+
+function releaseWorkMarkChangeNeedsFullFilter() {
+    const workMarkFilterValue = document.getElementById('releaseWorkMarkFilter')?.value || 'all';
+    const searchValue = (document.getElementById('releaseSearchInput')?.value || '').trim();
+    return workMarkFilterValue !== 'all' || Boolean(searchValue);
+}
+
+function refreshReleaseWorkMarkAfterLocalChange(rowKey, mark, pending = false) {
+    if (releaseWorkMarkChangeNeedsFullFilter()) {
+        applyReleaseFilters();
+        setReleaseWorkMarkPending(rowKey, pending);
+        return;
+    }
+    patchReleaseWorkMarkDom(rowKey, mark, pending);
+    recomputeReleaseWorkMarkChips();
+}
+
+function refreshReleaseWorkMarkUi() {
+    updateReleaseWorkMarkParticipantPicker();
+    updateReleaseWorkMarkFilterOptions(getYearFilteredReleaseItems(releaseMonitorItems));
+    const modeButton = document.getElementById('releaseWorkMarkModeBtn');
+    if (modeButton) {
+        modeButton.classList.toggle('active', isReleaseWorkMarkingMode);
+        modeButton.innerHTML = isReleaseWorkMarkingMode
+            ? '<i class="bi bi-tags-fill"></i> Разметка активна'
+            : '<i class="bi bi-tags"></i> Разметка';
+    }
+    const panel = document.getElementById('releaseWorkMarkActiveBanner');
+    const activeName = document.getElementById('releaseWorkMarkActiveName');
+    const collapsedName = document.getElementById('releaseWorkMarkCollapsedName');
+    const collapsedCount = document.getElementById('releaseWorkMarkCollapsedCount');
+    const activeLabel = getReleaseWorkMarkActiveLabel();
+    if (panel) {
+        panel.classList.toggle('show', Boolean(isReleaseWorkMarkingMode));
+        panel.classList.toggle('is-collapsed', Boolean(releaseWorkMarkPanelCollapsed));
+    }
+    if (activeName) {
+        activeName.textContent = activeLabel;
+    }
+    if (collapsedName) {
+        collapsedName.textContent = activeLabel;
+    }
+    if (collapsedCount) {
+        collapsedCount.textContent = getReleaseWorkMarkActiveCount();
+    }
+    renderReleaseWorkMarkCollapsedBalance();
+    const table = document.querySelector('.release-monitor-table');
+    if (table) {
+        table.classList.toggle('work-marking-active', Boolean(isReleaseWorkMarkingMode));
+    }
+}
+
+function setReleaseWorkMarkMode(enabled) {
+    isReleaseWorkMarkingMode = Boolean(enabled);
+    if (isReleaseWorkMarkingMode && !activeReleaseWorkMark) {
+        const available = getReleaseWorkMarkAvailableParticipants();
+        activeReleaseWorkMark = available[0] || '';
+        saveReleaseWorkMarkActive();
+    }
+    if (isReleaseWorkMarkingMode) {
+        releaseWorkMarkPanelCollapsed = false;
+        resetReleaseWorkMarkAutoCollapseTimer();
+    } else {
+        releaseWorkMarkPanelCollapsed = false;
+        clearReleaseWorkMarkAutoCollapseTimer();
+    }
+    refreshReleaseWorkMarkUi();
+}
+
+function toggleReleaseWorkMarkMode() {
+    setReleaseWorkMarkMode(!isReleaseWorkMarkingMode);
+}
+
+async function saveReleaseWorkMarkOptimistic(rowKey, mark) {
+    const normalizedRowKey = getReleaseWorkMarkRowKey(rowKey);
+    const normalizedMark = normalizeReleaseWorkMark(mark);
+    if (!normalizedRowKey) {
+        return;
+    }
+    const item = getReleaseMonitorItem(normalizedRowKey);
+    if (!item) {
+        return;
+    }
+    const snapshot = getReleaseWorkMarkSnapshot(item);
+    if (snapshot.work_mark === normalizedMark) {
+        return;
+    }
+
+    const seq = (releaseWorkMarkSaveSeqByKey.get(normalizedRowKey) || 0) + 1;
+    releaseWorkMarkSaveSeqByKey.set(normalizedRowKey, seq);
+    applyReleaseWorkMarkToItem(item, normalizedMark);
+    refreshReleaseWorkMarkAfterLocalChange(normalizedRowKey, normalizedMark, true);
+
+    try {
+        const response = await fetch(getReleaseUrl('work_mark'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ row_key: normalizedRowKey, mark: normalizedMark, compact: true }),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Не удалось сохранить метку смены');
+        }
+        if (releaseWorkMarkSaveSeqByKey.get(normalizedRowKey) !== seq) {
+            return;
+        }
+        setReleaseWorkMarkPending(normalizedRowKey, false);
+        if (data.release_monitor_meta) {
+            releaseMonitorMeta = { ...releaseMonitorMeta, ...(data.release_monitor_meta || {}) };
+            releaseMonitorKnownRevision = getReleaseMonitorRevision(releaseMonitorMeta) || releaseMonitorKnownRevision;
+            updateReleaseAutoRefreshBadge(releaseMonitorMeta);
+            window.dashboardData.release_monitor_meta = releaseMonitorMeta;
+        }
+    } catch (error) {
+        if (releaseWorkMarkSaveSeqByKey.get(normalizedRowKey) === seq) {
+            applyReleaseWorkMarkToItem(item, snapshot.work_mark);
+            refreshReleaseWorkMarkAfterLocalChange(normalizedRowKey, snapshot.work_mark, false);
+            alert(error.message || 'Не удалось сохранить метку смены');
+        }
+    }
+}
+
+function handleReleaseWorkMarkRowClick(event, rowKey) {
+    if (!isReleaseWorkMarkingMode) {
+        return;
+    }
+    const target = event?.target;
+    if (target?.closest('button, a, input, select, textarea, .release-row-settings-panel, .release-color-swatch')) {
+        return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    resetReleaseWorkMarkAutoCollapseTimer();
+    saveReleaseWorkMarkOptimistic(rowKey, activeReleaseWorkMark);
+}
+
+function captureReleaseWorkMarkScrollState() {
+    return {
+        scrollY: window.scrollY || 0,
+    };
+}
+
+function restoreReleaseWorkMarkScrollState(state) {
+    if (!state || !Number.isFinite(Number(state.scrollY))) {
+        return;
+    }
+    requestAnimationFrame(() => {
+        window.scrollTo({ top: Number(state.scrollY), behavior: 'auto' });
+    });
+}
+
+function isManualNumberingOverride(item) {
+    return Boolean(
+        item?.has_manual_date_override &&
+        item?.is_non_final &&
+        !item?.has_rov
+    );
+}
+
+function parseReleaseMonitorRevisionDate(meta = releaseMonitorMeta) {
+    const revision = String(meta?.data_revision || '').trim();
+    if (!/^\d+$/.test(revision)) {
+        return null;
+    }
+    const timestamp = Number(revision);
+    if (!Number.isFinite(timestamp) || timestamp <= 0) {
+        return null;
+    }
+    const dateValue = new Date(timestamp);
+    return Number.isNaN(dateValue.getTime()) ? null : dateValue;
+}
+
+function parseReleaseMonitorUpdatedAt(meta = releaseMonitorMeta) {
+    const revisionDate = parseReleaseMonitorRevisionDate(meta);
+    if (revisionDate) {
+        return revisionDate;
+    }
+    const value = String(meta?.view_updated_at || meta?.last_updated || '').trim();
+    if (/^\d{4}-\d{2}-\d{2}T/.test(value)) {
+        const isoDate = new Date(value);
+        if (!Number.isNaN(isoDate.getTime())) {
+            return isoDate;
+        }
+    }
+    const match = value.match(/^(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})(?::(\d{2}))?$/);
+    if (!match) {
+        return null;
+    }
+    return new Date(
+        Number(match[3]),
+        Number(match[2]) - 1,
+        Number(match[1]),
+        Number(match[4]),
+        Number(match[5]),
+        Number(match[6] || 0)
+    );
+}
+
+function getReleaseMonitorUpdateTime(meta = releaseMonitorMeta) {
+    const updatedAt = parseReleaseMonitorUpdatedAt(meta);
+    if (updatedAt) {
+        return `${String(updatedAt.getHours()).padStart(2, '0')}:${String(updatedAt.getMinutes()).padStart(2, '0')}`;
+    }
+    const value = String(meta?.view_updated_at || meta?.last_updated || '').trim();
+    const match = value.match(/(?:^|\s)(\d{2}:\d{2})(?::\d{2})?$/);
+    return match ? match[1] : '';
+}
+
+function formatReleaseUpdateAge(updatedAt) {
+    if (!updatedAt) {
+        return '';
+    }
+    const diffMs = Date.now() - updatedAt.getTime();
+    if (!Number.isFinite(diffMs) || diffMs < 0) {
+        return '';
+    }
+    const diffMinutes = Math.floor(diffMs / 60000);
+    if (diffMinutes < 1) {
+        return 'только что';
+    }
+    if (diffMinutes < 60) {
+        return `${diffMinutes} мин назад`;
+    }
+    const hours = Math.floor(diffMinutes / 60);
+    const minutes = diffMinutes % 60;
+    return minutes ? `${hours} ч ${minutes} мин назад` : `${hours} ч назад`;
+}
+
+function getReleaseMonitorShortTime(value) {
+    const text = String(value || '').trim();
+    const match = text.match(/\b(\d{2}):(\d{2})(?::(\d{2}))?\b/);
+    if (!match) {
+        return '';
+    }
+    return match[3] ? `${match[1]}:${match[2]}:${match[3]}` : `${match[1]}:${match[2]}`;
+}
+
+function updateReleaseAutoRefreshBadge(meta = releaseMonitorMeta) {
+    const badge = document.getElementById('releaseAutoRefreshBadge');
+    const text = document.getElementById('releaseAutoRefreshText');
+    if (!badge || !text) {
+        return;
+    }
+
+    const status = meta?.auto_incremental_status || {};
+    const enabled = meta?.auto_incremental_refresh_enabled !== false && status.enabled !== false;
+    const state = String(status.state || '').trim();
+    const timeText = getReleaseMonitorShortTime(
+        status.last_finished_at || meta?.last_auto_incremental_sync || ''
+    );
+
+    badge.classList.remove('is-ok', 'is-running', 'is-error', 'is-paused', 'is-partial');
+    if (!enabled) {
+        badge.classList.add('is-paused');
+        text.textContent = 'Авто: выкл';
+        badge.title = 'Тихое автообновление выключено';
+        return;
+    }
+
+    if (status.running || state === 'running') {
+        badge.classList.add('is-running');
+        text.textContent = 'Авто: идет';
+        badge.title = status.last_started_at
+            ? `Тихое автообновление выполняется с ${status.last_started_at}`
+            : 'Тихое автообновление выполняется';
+        return;
+    }
+
+    if (state === 'failed') {
+        badge.classList.add('is-error');
+        text.textContent = timeText ? `Авто: ошибка ${timeText}` : 'Авто: ошибка';
+        badge.title = status.last_error
+            ? `Последнее тихое автообновление завершилось ошибкой: ${status.last_error}`
+            : 'Последнее тихое автообновление завершилось ошибкой';
+        return;
+    }
+
+    if (state === 'partial') {
+        badge.classList.add('is-partial');
+        text.textContent = timeText ? `Авто: частично ${timeText}` : 'Авто: частично';
+        badge.title = status.last_error
+            ? `Часть Jira-запросов тихого обновления завершилась ошибкой: ${status.last_error}`
+            : 'Часть Jira-запросов тихого обновления завершилась ошибкой';
+        return;
+    }
+
+    if (state === 'completed') {
+        badge.classList.add('is-ok');
+        text.textContent = timeText ? `Авто: ок ${timeText}` : 'Авто: ок';
+        badge.title = status.last_changed
+            ? 'Тихое автообновление успешно завершилось, найдены изменения'
+            : 'Тихое автообновление успешно завершилось, изменений нет';
+        return;
+    }
+
+    if (state === 'skipped') {
+        badge.classList.add('is-paused');
+        text.textContent = timeText ? `Авто: пауза ${timeText}` : 'Авто: пауза';
+        badge.title = 'Тихое автообновление пропущено, потому что выполнялось ручное обновление';
+        return;
+    }
+
+    if (state === 'waiting') {
+        badge.classList.add('is-paused');
+        text.textContent = 'Авто: ждет данные';
+        badge.title = 'Тихое автообновление начнется после появления снимка данных';
+        return;
+    }
+
+    badge.classList.add('is-paused');
+    text.textContent = 'Авто: ожидает';
+    badge.title = 'Тихое автообновление пока не выполнялось';
+}
+
+function updateReleaseUpdateBannerText() {
+    if (!releaseUpdateBannerMeta) {
+        return;
+    }
+    const timeText = getReleaseMonitorUpdateTime(releaseUpdateBannerMeta);
+    const ageText = formatReleaseUpdateAge(parseReleaseMonitorUpdatedAt(releaseUpdateBannerMeta));
+    const message = timeText && ageText
+        ? `Данные релизов обновились в ${timeText} (${ageText}). Обновите страницу.`
+        : (timeText
+            ? `Данные релизов обновились в ${timeText}. Обновите страницу.`
+            : 'Данные релизов обновились. Обновите страницу.');
+    ['releaseUpdateBannerText', 'releaseUpdateToastText'].forEach(id => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.textContent = message;
+        }
+    });
+}
+
+function showReleaseUpdateToast(meta = releaseUpdateBannerMeta) {
+    const toast = document.getElementById('releaseUpdateToast');
+    if (!toast) {
+        return;
+    }
+    releaseUpdateBannerMeta = meta || {};
+    updateReleaseUpdateBannerText();
+    toast.classList.add('show');
+}
+
+function hideReleaseUpdateToast() {
+    const toast = document.getElementById('releaseUpdateToast');
+    if (toast) {
+        toast.classList.remove('show');
+    }
+}
+
+function getNearestVisibleReleaseRow() {
+    const rows = Array.from(document.querySelectorAll('#releaseMonitorBody tr.release-row[data-row-key]'));
+    const visibleRows = rows
+        .map(row => ({ row, rect: row.getBoundingClientRect() }))
+        .filter(entry => entry.rect.height > 0 && entry.rect.bottom > 0 && entry.rect.top < window.innerHeight);
+    if (!visibleRows.length) {
+        return null;
+    }
+    const anchor = Math.min(Math.max(window.innerHeight * 0.28, 130), window.innerHeight - 90);
+    return visibleRows.reduce((best, entry) => {
+        const distance = Math.abs(entry.rect.top - anchor);
+        if (!best || distance < best.distance) {
+            return { row: entry.row, rect: entry.rect, distance };
+        }
+        return best;
+    }, null);
+}
+
+function saveReleaseScrollRestoreState() {
+    try {
+        const nearest = getNearestVisibleReleaseRow();
+        const payload = {
+            pathname: window.location.pathname,
+            scrollY: Math.max(0, Math.round(window.scrollY || 0)),
+            rowKey: nearest?.row?.dataset?.rowKey || '',
+            rowTop: nearest ? Math.round(nearest.rect.top) : null,
+            timestamp: Date.now()
+        };
+        sessionStorage.setItem(RELEASE_SCROLL_RESTORE_KEY, JSON.stringify(payload));
+    } catch (error) {
+        console.warn('Release monitor scroll restore save failed:', error);
+    }
+}
+
+function restoreReleaseScrollPosition() {
+    if (releaseScrollRestoreAttempted) {
+        return;
+    }
+    releaseScrollRestoreAttempted = true;
+    let payload = null;
+    try {
+        const raw = sessionStorage.getItem(RELEASE_SCROLL_RESTORE_KEY);
+        if (!raw) {
+            return;
+        }
+        payload = JSON.parse(raw);
+        sessionStorage.removeItem(RELEASE_SCROLL_RESTORE_KEY);
+    } catch (error) {
+        console.warn('Release monitor scroll restore read failed:', error);
+        try {
+            sessionStorage.removeItem(RELEASE_SCROLL_RESTORE_KEY);
+        } catch (_) {}
+        return;
+    }
+    if (!payload || payload.pathname !== window.location.pathname) {
+        return;
+    }
+    if (Date.now() - Number(payload.timestamp || 0) > 10 * 60 * 1000) {
+        return;
+    }
+    const rowKey = String(payload.rowKey || '').trim();
+    if (rowKey) {
+        const targetRow = Array.from(document.querySelectorAll('#releaseMonitorBody tr.release-row[data-row-key]')).find(
+            row => row.dataset.rowKey === rowKey
+        );
+        if (targetRow) {
+            const rowRect = targetRow.getBoundingClientRect();
+            const preferredTop = Number.isFinite(Number(payload.rowTop)) ? Number(payload.rowTop) : 160;
+            const targetTop = rowRect.top + window.scrollY - Math.max(80, preferredTop);
+            window.scrollTo({ top: Math.max(0, Math.round(targetTop)), behavior: 'auto' });
+            return;
+        }
+    }
+    window.scrollTo({ top: Math.max(0, Number(payload.scrollY || 0)), behavior: 'auto' });
+}
+
+function reloadReleaseMonitorWithScrollRestore() {
+    saveReleaseScrollRestoreState();
+    location.reload();
+}
+
+function showReleaseUpdateBanner(meta = releaseMonitorMeta) {
+    const banner = document.getElementById('releaseUpdateBanner');
+    releaseUpdateBannerMeta = meta || {};
+    updateReleaseUpdateBannerText();
+    if (banner) {
+        banner.classList.add('show');
+    }
+    showReleaseUpdateToast(releaseUpdateBannerMeta);
+    if (!releaseUpdateBannerTimer) {
+        releaseUpdateBannerTimer = setInterval(updateReleaseUpdateBannerText, 60000);
+    }
+}
+
+function hideReleaseUpdateBanner() {
+    const banner = document.getElementById('releaseUpdateBanner');
+    if (banner) {
+        banner.classList.remove('show');
+    }
+    hideReleaseUpdateToast();
+    releaseUpdateBannerMeta = null;
+    if (releaseUpdateBannerTimer) {
+        clearInterval(releaseUpdateBannerTimer);
+        releaseUpdateBannerTimer = null;
+    }
+}
+
+function dismissReleaseUpdateBanner() {
+    releaseMonitorDismissedRevision = releaseMonitorKnownRevision;
+    hideReleaseUpdateBanner();
+}
+
+function setReleaseMonitorGlobalRefreshing(isRefreshing) {
+    releaseMonitorGlobalRefreshing = Boolean(isRefreshing);
+    setReleaseRefreshButtonsLoading(releaseMonitorGlobalRefreshing);
+    document.querySelectorAll('.reviewer-select, .responsible-icon-btn, .release-doc-btn, .release-row-edit-btn, .release-row-manual-btn, .release-order-step-btn').forEach(element => {
+        const directoryBlocked = (
+            element.hasAttribute('data-directory-employee-control')
+            && !releaseEmployeeSelectionAvailable
+        );
+        element.disabled = releaseMonitorGlobalRefreshing || directoryBlocked;
+    });
+    if (!releaseMonitorGlobalRefreshing && typeof refreshReleaseOrderModeUi === 'function') {
+        refreshReleaseOrderModeUi();
+    }
+}
+
+function getReleaseNameHtml(item) {
+    const lines = Array.isArray(item.release_name_lines) ? item.release_name_lines : [];
+    const buildLink = item.release_version
+        ? item.release_dist_url
+            ? `<div class="release-name-line">сборка: <a href="${escapeHtml(item.release_dist_url)}" target="_blank" class="release-key-link">${escapeHtml(item.release_version)}</a></div>`
+            : `<div class="release-name-line">сборка: ${escapeHtml(item.release_version)}</div>`
+        : '';
+    const weekBucket = ['next', 'future'].includes(item.week_bucket) ? item.week_bucket : '';
+    const weekBadge = weekBucket && item.week_bucket_label
+        ? `<span class="release-badge week-${escapeHtml(weekBucket)}">${escapeHtml(item.week_bucket_label)}</span>`
+        : '';
+    const releaseStatusBadge = item.release_status
+        ? `<span class="release-badge ${item.is_final ? 'state-planned' : item.is_cancelled ? 'state-overdue' : item.is_overdue ? 'state-overdue' : 'state-planned'}">${escapeHtml(item.release_status)}</span>`
+        : '';
+    const manualReleaseBadge = item.manual_release
+        ? '<span class="release-badge manual-release">Ручной релиз</span>'
+        : '';
+    const workMark = normalizeReleaseWorkMark(item.work_mark);
+    const workMarkBadge = workMark
+        ? `<span class="release-badge work-mark"><i class="bi bi-tag"></i>${escapeHtml(workMark)}</span>`
+        : '';
+    const statusBadge = (releaseStatusBadge || item.is_pre_final || weekBadge || manualReleaseBadge || workMarkBadge)
+        ? `<div class="release-micro-meta">${releaseStatusBadge}${item.is_pre_final ? '<span class="release-badge pre-final">\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0430 \u043d\u0430 \u041f\u0420\u041e\u041c</span>' : ''}${weekBadge}${manualReleaseBadge}${workMarkBadge}</div>`
+        : '';
+
+    if (!lines.length) {
+        return (buildLink + statusBadge) || '<span style="color: var(--text-muted);">\u041d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d\u043e</span>';
+    }
+
+    return `
+        <div class="release-name-cell">
+            ${lines.map(line => `<div class="release-name-line">${escapeHtml(line)}</div>`).join('')}
+            ${buildLink}
+            ${statusBadge}
+        </div>
+    `;
+}
+
+function buildReleaseLinkCell(url, key) {
+    if (!key) {
+        return '<span style="color: var(--text-muted);">-</span>';
+    }
+    if (!url) {
+        return escapeHtml(key);
+    }
+    return `<a href="${escapeHtml(url)}" target="_blank" class="release-key-link">${escapeHtml(key)}</a>`;
+}
+
+function buildReleaseZniCell(item) {
+    if (item.zni_key) {
+        return buildReleaseLinkCell(item.zni_url, item.zni_key);
+    }
+    return `
+        <button class="release-doc-btn" onclick="createReleaseZni('${escapeHtml(item.row_key || item.release_key)}')">
+            <i class="bi bi-plus-circle"></i>
+            Создать
+        </button>
+    `;
+}
+
+function buildInitialReleaseReviewerOptions(currentValue) {
+    const current = String(currentValue || '').trim();
+    return [
+        '<option value="">Не назначен</option>',
+        current
+            ? `<option value="${escapeHtml(current)}" selected>${escapeHtml(current)}</option>`
+            : '',
+    ].join('');
+}
+
+function ensureReleaseReviewerOptions(select) {
+    if (!select || !releaseEmployeeSelectionAvailable || select.dataset.optionsReady === 'true') {
+        return;
+    }
+    const current = String(select.value || '').trim();
+    const values = current && !RELEASE_REVIEWER_OPTIONS.includes(current)
+        ? [current, ...RELEASE_REVIEWER_OPTIONS]
+        : RELEASE_REVIEWER_OPTIONS;
+    select.innerHTML = [
+        '<option value="">Не назначен</option>',
+        ...values.map(option => (
+            `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`
+        )),
+    ].join('');
+    select.value = current;
+    select.dataset.optionsReady = 'true';
+}
+
+function buildReviewerCell(item) {
+    const rowKey = item.row_key || item.release_key;
+    const currentReviewer = item.psi_owner || '';
+    const currentReviewerSource = item.psi_owner_source || '';
+    const isManualTextReviewer = currentReviewerSource === 'manual_text' || (currentReviewer && isCustomDutyText(currentReviewer));
+    const currentChecker = item.psi_checker || '';
+    const missingWeekResponsible = Boolean(item.is_missing_week_responsible);
+    const responsibles = (Array.isArray(item.psi_responsibles) && item.psi_responsibles.length)
+        ? item.psi_responsibles
+        : [''];
+    const reviewerLabel = isManualTextReviewer ? 'УСТАНАВЛИВАЕТ:' : 'ДЕЖУРНЫЙ';
+    const reviewerControl = isManualTextReviewer
+        ? `
+            <div class="reviewer-duty-control">
+                <input
+                    type="text"
+                    class="reviewer-select duty-manual-input"
+                    data-release-key="${escapeHtml(rowKey)}"
+                    value="${escapeHtml(currentReviewer)}"
+                    placeholder="Введите ФИО"
+                    onchange="updateReleaseAssignment('${escapeHtml(rowKey)}', this)"
+                >
+            </div>
+        `
+        : `
+            <select class="reviewer-select duty-select" data-directory-employee-control onfocus="ensureReleaseReviewerOptions(this)" onpointerdown="ensureReleaseReviewerOptions(this)" onchange="updateReleaseAssignment('${escapeHtml(rowKey)}', this)" ${releaseEmployeeSelectionAvailable ? '' : 'disabled'}>
+                ${buildInitialReleaseReviewerOptions(currentReviewer)}
+            </select>
+        `;
+    return `
+        <div class="reviewer-cell ${missingWeekResponsible ? 'missing-week-responsible' : ''}">
+            <div class="reviewer-edit-row responsibles">
+                <div class="reviewer-edit-label">Ответственный</div>
+                <div class="reviewer-edit-control">
+                <div class="responsibles-stack">
+                    ${responsibles.map((responsible, index) => `
+                        <div class="responsible-row">
+                            <select class="reviewer-select responsible-select" data-directory-employee-control onfocus="ensureReleaseReviewerOptions(this)" onpointerdown="ensureReleaseReviewerOptions(this)" onchange="updateResponsibleAssignment('${escapeHtml(rowKey)}', ${index}, this.value)" ${releaseEmployeeSelectionAvailable ? '' : 'disabled'}>
+                                ${buildInitialReleaseReviewerOptions(responsible)}
+                            </select>
+                            <button
+                                type="button"
+                                class="responsible-icon-btn ${index > 0 ? 'remove' : ''}"
+                                data-directory-employee-control
+                                ${releaseEmployeeSelectionAvailable ? '' : 'disabled'}
+                                onclick="${index > 0 ? `removeResponsibleAssignment('${escapeHtml(rowKey)}', ${index})` : `addResponsibleAssignment('${escapeHtml(rowKey)}')`}"
+                                title="${index > 0 ? 'Убрать ответственного' : 'Добавить ответственного'}"
+                            >
+                                <i class="bi ${index > 0 ? 'bi-dash' : 'bi-plus-lg'}"></i>
+                            </button>
+                        </div>
+                    `).join('')}
+                </div>
+                </div>
+            </div>
+            ${missingWeekResponsible ? '<div class="responsible-missing-badge"><i class="bi bi-exclamation-triangle"></i>Не назначен на текущую неделю</div>' : ''}
+            <div class="reviewer-edit-row">
+                <div class="reviewer-edit-label" ondblclick="toggleReleaseDutyMode('${escapeHtml(rowKey)}')" title="Дважды щелкните, чтобы переключить режим">${reviewerLabel}</div>
+                <div class="reviewer-edit-control reviewer-duty-wrap">
+                    ${reviewerControl}
+                </div>
+            </div>
+            <div class="reviewer-edit-row">
+                <div class="reviewer-edit-label">Проверяет</div>
+                <div class="reviewer-edit-control">
+                <input
+                    type="text"
+                    class="checker-input"
+                    value="${escapeHtml(currentChecker)}"
+                    placeholder="Введите ФИО проверяющего"
+                    onchange="updateReleaseAssignment('${escapeHtml(rowKey)}', this)"
+                >
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function buildGeneratorActionCell(item) {
+    const rolloutLevel = item.rollout_notes_level || (item.has_rollout_notes ? 'warning' : '');
+    const buildColorSwatch = (level, title) => `
+        <button
+            type="button"
+            class="release-color-swatch ${level} ${rolloutLevel === level ? 'active' : ''}"
+            data-color-level="${escapeHtml(level)}"
+            onclick="setReleaseManualColor('${escapeHtml(item.row_key || item.release_key)}', '${level}')"
+            title="${escapeHtml(title)}"
+            aria-label="${escapeHtml(title)}"
+        ></button>
+    `;
+    return `
+        <div>
+            <button class="release-doc-btn" onclick="openReleaseDocumentWizard('${escapeHtml(item.row_key || item.release_key)}')">
+                <i class="bi bi-file-earmark-zip"></i>
+                Сформировать документы
+            </button>
+            <button class="release-row-edit-btn" onclick="openReleaseDateOverrideModal('${escapeHtml(item.row_key || item.release_key)}')">
+                <i class="bi bi-calendar2-range"></i>
+                Скорректировать дату
+            </button>
+            <div class="release-color-palette" title="Ручная подсветка строки">
+                ${buildColorSwatch('success', 'Ручная зеленая подсветка')}
+                ${buildColorSwatch('warning', 'Ручная желтая подсветка')}
+                ${buildColorSwatch('danger', 'Ручная красная подсветка')}
+            </div>
+        </div>
+    `;
+}
+
+function buildReleaseDateCell(item, kind) {
+    const value = kind === 'start' ? item.deployment_start : item.deployment_end;
+    const manualValue = kind === 'start' ? item.manual_deployment_start : item.manual_deployment_end;
+    const isManual = Boolean(manualValue && value === manualValue);
+    const mainValue = value
+        ? escapeHtml(value)
+        : '<span style="color: var(--text-muted);">-</span>';
+
+    if (!isManual) {
+        return mainValue;
+    }
+
+    return `${mainValue}<div class="release-date-badge">ручная дата</div>`;
+}
+
+async function toggleReleaseDutyMode(releaseKey) {
+    if (!releaseKey) {
+        return;
+    }
+
+    const item = getReleaseMonitorItem(releaseKey);
+    if (!item) {
+        return;
+    }
+
+    const currentReviewer = item.psi_owner || '';
+    const currentChecker = item.psi_checker || '';
+    const currentSource = item.psi_owner_source || '';
+    const nextSource = currentSource === 'manual_text' ? 'manual' : 'manual_text';
+    const reviewer = nextSource === 'manual'
+        ? (RELEASE_REVIEWER_OPTIONS.includes(currentReviewer) ? currentReviewer : '')
+        : currentReviewer;
+
+    pendingManualDutyFocusReleaseKey = nextSource === 'manual_text' ? releaseKey : '';
+    const zniReviewer = nextSource === 'manual_text' && RELEASE_REVIEWER_OPTIONS.includes(currentReviewer)
+        ? currentReviewer
+        : '';
+    await saveReleaseAssignmentOptimistic(releaseKey, {
+        psi_owner: reviewer,
+        psi_checker: currentChecker,
+        psi_owner_source: nextSource,
+        psi_zni_reviewer: zniReviewer
+    }, 'duty');
+}
+
+function buildReleaseOrderControls(item) {
+    if (!isReleaseOrderMode) {
+        return '';
+    }
+
+    const rowKey = item.row_key || item.release_key;
+    const groupName = item.is_unnumbered ? 'waiting' : 'numbered';
+    const draft = releaseOrderDraft && String(releaseOrderDraft.year) === String(getSelectedReleaseYear())
+        ? releaseOrderDraft
+        : null;
+    const bucket = getReleaseOrderBucket(item);
+    const groupItems = Array.isArray(draft?.[groupName]?.[bucket]) ? draft[groupName][bucket] : [];
+    const rowIndex = groupItems.indexOf(rowKey);
+    if (rowIndex === -1) {
+        return '';
+    }
+    const boundaryTitle = 'Порядок меняется только внутри одной даты';
+
+    return `
+        <div class="release-order-controls">
+            <button
+                type="button"
+                class="release-order-step-btn"
+                title="${rowIndex === 0 ? boundaryTitle : 'Поднять выше внутри даты'}"
+                onclick="moveReleaseRow('${escapeHtml(rowKey)}', 'up')"
+                ${rowIndex === 0 ? 'disabled' : ''}
+            >
+                <i class="bi bi-chevron-up"></i>
+            </button>
+            <button
+                type="button"
+                class="release-order-step-btn"
+                title="${rowIndex === groupItems.length - 1 ? boundaryTitle : 'Опустить ниже внутри даты'}"
+                onclick="moveReleaseRow('${escapeHtml(rowKey)}', 'down')"
+                ${rowIndex === groupItems.length - 1 ? 'disabled' : ''}
+            >
+                <i class="bi bi-chevron-down"></i>
+            </button>
+        </div>
+    `;
+}
+
+function buildReleaseRowSettingsPanel(item) {
+    const rowKey = item.row_key || item.release_key || '';
+    const releaseLabel = item.release_key || item.row_key || '';
+    const numberingAction = getReleaseRowNumberingAction(item);
+    const numberingSaving = releaseRowNumberingSavingKey === rowKey;
+    const moveState = getReleaseRowMoveState(item);
+    const orderSaving = releaseRowOrderSavingKey === rowKey;
+    const workMark = normalizeReleaseWorkMark(item.work_mark);
+    const workMarkOptions = Array.from(new Set([workMark, ...getReleaseWorkMarkDirectory()].filter(Boolean)))
+        .map(name => `<option value="${escapeHtml(name)}" ${name === workMark ? 'selected' : ''}>${escapeHtml(name)}</option>`)
+        .join('');
+    return `
+        <tr class="release-row-settings-panel" data-settings-for="${escapeHtml(rowKey)}">
+            <td colspan="10">
+                <div class="release-row-settings-shell">
+                    <div>
+                        <div class="release-row-settings-title">
+                            <i class="bi bi-gear"></i>
+                            <span>Настройки строки${releaseLabel ? `: ${escapeHtml(releaseLabel)}` : ''}</span>
+                        </div>
+                    </div>
+                    <div class="release-row-settings-actions" aria-label="Действия строки">
+                        <div class="release-row-settings-work-mark">
+                            <select
+                                class="release-filter-select release-row-work-mark-select"
+                                onchange="saveReleaseWorkMarkOptimistic('${escapeHtml(rowKey)}', this.value)"
+                                title="Метка смены"
+                            >
+                                <option value="">Без метки</option>
+                                ${workMarkOptions}
+                            </select>
+                        </div>
+                        <button
+                            type="button"
+                            class="release-row-settings-action-btn ${item.has_manual_release_override ? 'active-warning' : ''}"
+                            onclick="openReleaseManualOverrideModal('${escapeHtml(rowKey)}', { standalone: true })"
+                            title="Ручная правка полей строки"
+                        >
+                            <i class="bi bi-pencil-square"></i>
+                            Ручная правка
+                        </button>
+                        <button
+                            type="button"
+                            class="release-row-settings-action-btn"
+                            onclick="moveReleaseRowFromSettings('${escapeHtml(rowKey)}', 'up')"
+                            title="${escapeHtml(moveState.boundaryTitle)}"
+                            ${!moveState.canMoveUp ? 'disabled' : ''}
+                        >
+                            <i class="bi bi-chevron-up"></i>
+                            Выше
+                        </button>
+                        <button
+                            type="button"
+                            class="release-row-settings-action-btn"
+                            onclick="moveReleaseRowFromSettings('${escapeHtml(rowKey)}', 'down')"
+                            title="${escapeHtml(moveState.boundaryTitle)}"
+                            ${!moveState.canMoveDown ? 'disabled' : ''}
+                        >
+                            <i class="bi bi-chevron-down"></i>
+                            Ниже
+                        </button>
+                        ${numberingAction ? `
+                            <button
+                                type="button"
+                                class="release-row-settings-action-btn ${numberingAction.active ? 'active-muted' : ''}"
+                                onclick="toggleReleaseRowNumbering('${escapeHtml(rowKey)}', '${escapeHtml(numberingAction.action)}')"
+                                title="${escapeHtml(numberingAction.title)}"
+                                ${numberingSaving ? 'disabled' : ''}
+                            >
+                                <i class="bi ${escapeHtml(numberingAction.icon)}"></i>
+                                ${numberingSaving ? 'Сохраняю...' : escapeHtml(numberingAction.text)}
+                            </button>
+                        ` : '<span class="release-row-settings-tag muted">Нумерация недоступна</span>'}
+                    </div>
+                </div>
+            </td>
+        </tr>
+    `;
+}
+
+function getReleaseRowNumberingAction(item) {
+    if (!item) {
+        return null;
+    }
+    if (item.is_force_numbered || item.is_cancelled_reroll_rov) {
+        return {
+            action: 'force_numbered',
+            active: Boolean(item.is_force_numbered),
+            icon: 'bi-hash',
+            text: item.is_force_numbered ? 'Снять возврат' : 'Вернуть номер',
+            title: item.is_force_numbered
+                ? 'Снять ручной возврат строки в нумерацию'
+                : 'Вернуть отмененный РОВ перераскатки в нумерацию',
+        };
+    }
+    if (!item.is_force_numbered && (!item.is_natural_unnumbered || item.is_force_unnumbered)) {
+        return {
+            action: 'force_unnumbered',
+            active: Boolean(item.is_force_unnumbered),
+            icon: 'bi-eye-slash',
+            text: item.is_force_unnumbered ? 'Вернуть номер' : 'Не нумеровать',
+            title: item.is_force_unnumbered
+                ? 'Вернуть релиз в нумерацию'
+                : 'Отправить релиз в ненумерованный список',
+        };
+    }
+    return null;
+}
+
+function getReleaseRowMoveState(item) {
+    const rowKey = item?.row_key || item?.release_key || '';
+    const boundaryTitle = 'Порядок меняется только внутри одной даты';
+    if (!rowKey || !item) {
+        return {
+            canMoveUp: false,
+            canMoveDown: false,
+            boundaryTitle,
+        };
+    }
+
+    const draft = releaseOrderDraft && String(releaseOrderDraft.year) === String(getSelectedReleaseYear())
+        ? releaseOrderDraft
+        : buildReleaseOrderDraft(getYearFilteredReleaseItems(releaseMonitorItems));
+    const groupName = item.is_unnumbered ? 'waiting' : 'numbered';
+    const bucket = getReleaseOrderBucket(item);
+    const groupItems = Array.isArray(draft?.[groupName]?.[bucket]) ? draft[groupName][bucket] : [];
+    const rowIndex = groupItems.indexOf(rowKey);
+    return {
+        canMoveUp: rowIndex > 0,
+        canMoveDown: rowIndex !== -1 && rowIndex < groupItems.length - 1,
+        boundaryTitle,
+    };
+}
+
+function buildReleaseRow(item) {
+    const rowKey = item.row_key || item.release_key || '';
+    const isSettingsOpen = rowKey && activeReleaseSettingsRowKey === rowKey;
+    const rolloutLevel = item.rollout_notes_level || (item.has_rollout_notes ? 'warning' : '');
+    const rolloutClass = rolloutLevel === 'success'
+        ? 'rollout-notes-success'
+        : rolloutLevel === 'danger'
+        ? 'rollout-notes-danger'
+        : rolloutLevel === 'warning'
+            ? 'rollout-notes-warning'
+            : rolloutLevel === 'none'
+                ? 'rollout-notes-none'
+                : '';
+    const weekClass = ['next', 'future'].includes(item.week_bucket) ? `week-${item.week_bucket}` : '';
+    return `
+        <tr
+            class="release-row state-${escapeHtml(item.row_state || 'planned')} ${rolloutClass} ${weekClass} ${isSettingsOpen ? 'settings-open' : ''}"
+            onclick="handleReleaseWorkMarkRowClick(event, '${escapeHtml(rowKey)}')"
+            data-row-key="${escapeHtml(rowKey)}"
+            data-year="${escapeHtml(item.year)}"
+            data-status="${escapeHtml(item.release_status || '')}"
+            data-final-installed="${item.is_final && !item.is_cancelled ? 'true' : 'false'}"
+        >
+            <td>
+                <div class="release-number-cell">
+                    ${buildReleaseOrderControls(item)}
+                    <div class="release-number-stack">
+                        <strong>${escapeHtml(item.release_number || '')}</strong>
+                        <button
+                            type="button"
+                            class="release-row-settings-toggle ${isSettingsOpen ? 'active' : ''}"
+                            onclick="toggleReleaseRowSettings('${escapeHtml(rowKey)}', event)"
+                            title="Настройки строки"
+                            aria-label="Настройки строки"
+                            aria-expanded="${isSettingsOpen ? 'true' : 'false'}"
+                        >
+                            <i class="bi bi-gear"></i>
+                        </button>
+                    </div>
+                </div>
+            </td>
+            <td>${getReleaseNameHtml(item)}</td>
+            <td>${buildReleaseZniCell(item)}</td>
+            <td>${item.ke ? escapeHtml(item.ke) : '<span style="color: var(--text-muted);">-</span>'}</td>
+            <td>${buildReleaseLinkCell(item.release_url, item.release_key)}</td>
+            <td>${buildReleaseLinkCell(item.rov_url, item.rov_key)}</td>
+            <td class="release-date-cell">${buildReleaseDateCell(item, 'start')}</td>
+            <td class="release-date-cell">${buildReleaseDateCell(item, 'end')}</td>
+            <td>${buildReviewerCell(item)}</td>
+            <td>${buildGeneratorActionCell(item)}</td>
+        </tr>
+        ${isSettingsOpen ? buildReleaseRowSettingsPanel(item) : ''}
+    `;
+}
+
+function getReleaseMonitorItem(releaseKey) {
+    return (releaseMonitorItems || []).find(item => (item.row_key || item.release_key) === releaseKey) || null;
+}
+
+function toggleReleaseRowSettings(rowKey, event = null) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    if (isReleaseWorkMarkingMode) {
+        return;
+    }
+    const normalizedRowKey = String(rowKey || '').trim();
+    if (!normalizedRowKey) {
+        return;
+    }
+    activeReleaseSettingsRowKey = activeReleaseSettingsRowKey === normalizedRowKey ? '' : normalizedRowKey;
+    applyReleaseFilters();
+}
+
+function isAiAgentsTemplateCategory(category) {
+    const normalizedCategory = String(category || '').toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    return ['AI_AGENTS', 'AI_AGENT', 'AI_AGENTS_TEMPLATES'].includes(normalizedCategory);
+}
+
+function releaseUsesPlaybooks(releaseName, category = '') {
+    if (isAiAgentsTemplateCategory(category)) {
+        return false;
+    }
+    const normalizedReleaseName = String(releaseName || '').toUpperCase();
+    const blockedMarkers = ['SOWA', 'ЕФС.AUTHENTICATION_USER', 'AUTH', 'RESSTORE(2889318)'];
+    return !blockedMarkers.some(marker => normalizedReleaseName.includes(marker));
+}
+
+function dateToInputValue(dateValue) {
+    if (!dateValue) {
+        const today = new Date();
+        return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    }
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
+        return dateValue;
+    }
+
+    const match = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(dateValue);
+    if (match) {
+        return `${match[3]}-${match[2]}-${match[1]}`;
+    }
+
+    return dateValue.slice(0, 10);
+}
+
+function inputValueToDisplayDate(value) {
+    if (!value) {
+        return '';
+    }
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (!match) {
+        return value;
+    }
+    return `${match[3]}.${match[2]}.${match[1]}`;
+}
+
+function ensureReleaseDateOverrideModal() {
+    if (!releaseDateOverrideModalInstance) {
+        releaseDateOverrideModalInstance = getOrCreateReleaseModal(document.getElementById('releaseDateOverrideModal'));
+    }
+    return releaseDateOverrideModalInstance;
+}
+
+function openReleaseDateOverrideModal(releaseKey) {
+    const item = getReleaseMonitorItem(releaseKey);
+    if (!item) {
+        alert('Не удалось найти релиз в текущей таблице.');
+        return;
+    }
+
+    releaseDateOverrideState = { item };
+    document.getElementById('releaseDateOverrideSubtitle').textContent = item.release_key || '';
+    document.getElementById('releaseDateOverrideBaseStart').textContent = item.source_deployment_start || '-';
+    document.getElementById('releaseDateOverrideBaseEnd').textContent = item.source_deployment_end || '-';
+    document.getElementById('releaseDateOverrideStartInput').value = item.manual_deployment_start ? dateToInputValue(item.manual_deployment_start) : '';
+    document.getElementById('releaseDateOverrideEndInput').value = item.manual_deployment_end ? dateToInputValue(item.manual_deployment_end) : '';
+    ensureReleaseDateOverrideModal().show();
+}
+
+async function saveReleaseDateOverride(reset = false) {
+    if (!releaseDateOverrideState?.item) {
+        return;
+    }
+
+    const saveBtn = document.getElementById('releaseDateOverrideSaveBtn');
+    const startInput = document.getElementById('releaseDateOverrideStartInput');
+    const endInput = document.getElementById('releaseDateOverrideEndInput');
+
+    if (saveBtn) {
+        saveBtn.disabled = true;
+    }
+
+    try {
+        const response = await fetch(getReleaseUrl('date_override'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                release_key: releaseDateOverrideState.item.row_key || releaseDateOverrideState.item.release_key,
+                start: reset ? '' : inputValueToDisplayDate(startInput?.value || ''),
+                end: reset ? '' : inputValueToDisplayDate(endInput?.value || ''),
+                reset
+            })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Не удалось сохранить корректировку даты');
+        }
+
+        isReleaseOrderMode = false;
+        releaseOrderDraft = null;
+        releaseOrderDirty = false;
+        renderReleaseMonitor(data.release_monitor || [], data.release_monitor_meta || {});
+        ensureReleaseDateOverrideModal().hide();
+    } catch (error) {
+        console.error('Release date override error:', error);
+        alert('Ошибка сохранения корректировки даты: ' + error.message);
+    } finally {
+        if (saveBtn) {
+            saveBtn.disabled = false;
+        }
+    }
+}
+
+function resetReleaseDateOverride() {
+    saveReleaseDateOverride(true);
+}
+
+function ensureReleaseManualCreateModal() {
+    if (!releaseManualCreateModalInstance) {
+        releaseManualCreateModalInstance = getOrCreateReleaseModal(document.getElementById('releaseManualCreateModal'));
+    }
+    return releaseManualCreateModalInstance;
+}
+
+function getReleaseManualCreateInputId(fieldName) {
+    return `releaseManualCreate_${fieldName}`;
+}
+
+function renderReleaseManualCreateForm() {
+    const container = document.getElementById('releaseManualCreateFields');
+    if (!container) {
+        return;
+    }
+
+    const renderField = (field) => {
+        const inputId = getReleaseManualCreateInputId(field.name);
+        const requiredMark = field.required ? '<span class="text-danger">*</span>' : '';
+        let inputHtml = '';
+        const defaultValue = field.defaultValue || '';
+
+        if (field.type === 'select') {
+            inputHtml = `<select class="form-select" id="${escapeHtml(inputId)}">
+                ${RELEASE_MANUAL_CREATE_TYPE_OPTIONS.map(([value, label]) => `
+                    <option value="${escapeHtml(value)}" ${value === defaultValue ? 'selected' : ''}>${escapeHtml(label)}</option>
+                `).join('')}
+            </select>`;
+        } else if (field.type === 'textarea') {
+            inputHtml = `<textarea class="form-control" id="${escapeHtml(inputId)}" rows="2" placeholder="${escapeHtml(field.placeholder || '')}"></textarea>`;
+        } else if (field.name === 'release_key') {
+            inputHtml = `
+                <div class="release-manual-lookup-row">
+                    <input type="text" class="form-control" id="${escapeHtml(inputId)}" value="${escapeHtml(defaultValue)}" placeholder="${escapeHtml(field.placeholder || '')}">
+                    <button type="button" id="releaseManualLookupBtn" class="release-manual-lookup-btn" onclick="lookupReleaseManualCreateJira()">
+                        <i class="bi bi-search"></i>
+                        Найти в Jira
+                    </button>
+                </div>
+            `;
+        } else {
+            inputHtml = `<input type="${field.type === 'date' ? 'date' : 'text'}" class="form-control" id="${escapeHtml(inputId)}" value="${escapeHtml(defaultValue)}" placeholder="${escapeHtml(field.placeholder || '')}">`;
+        }
+
+        return `
+            <div class="release-manual-field">
+                <label class="release-manual-label" for="${escapeHtml(inputId)}">
+                    <span>${escapeHtml(field.label)} ${requiredMark}</span>
+                </label>
+                ${inputHtml}
+            </div>
+        `;
+    };
+
+    const primaryField = RELEASE_MANUAL_CREATE_FIELDS.find(field => field.name === 'release_key');
+    const additionalFields = RELEASE_MANUAL_CREATE_FIELDS.filter(field => field.name !== 'release_key');
+    container.innerHTML = `
+        <div class="release-manual-primary">
+            ${primaryField ? renderField(primaryField) : ''}
+        </div>
+        <details class="release-manual-details">
+            <summary>Дополнительно</summary>
+            <div class="release-manual-details-body">
+                <div class="release-manual-grid">
+                    ${additionalFields.map(renderField).join('')}
+                </div>
+            </div>
+        </details>
+    `;
+}
+
+function openReleaseManualCreateModal() {
+    if (isReleaseOrderMode) {
+        alert('Сначала сохраните или отмените режим порядка строк, затем добавьте ручной релиз.');
+        return;
+    }
+    const warning = document.getElementById('releaseManualCreateWarning');
+    if (warning) {
+        warning.style.display = 'none';
+        warning.textContent = '';
+    }
+    renderReleaseManualCreateForm();
+    ensureReleaseManualCreateModal().show();
+}
+
+function setReleaseManualCreateFieldValue(fieldName, value, { overwrite = false } = {}) {
+    const input = document.getElementById(getReleaseManualCreateInputId(fieldName));
+    if (!input) {
+        return false;
+    }
+    if (!overwrite && String(input.value || '').trim()) {
+        return false;
+    }
+    const field = RELEASE_MANUAL_CREATE_FIELDS.find(item => item.name === fieldName) || {};
+    if (field.type === 'date') {
+        input.value = value ? dateToInputValue(String(value)) : '';
+    } else {
+        input.value = String(value || '');
+    }
+    return true;
+}
+
+function applyReleaseManualLookupFields(fields) {
+    if (!fields || typeof fields !== 'object') {
+        return 0;
+    }
+    let applied = 0;
+    RELEASE_MANUAL_CREATE_FIELDS.forEach(field => {
+        if (field.name === 'release_key' || !(field.name in fields)) {
+            return;
+        }
+        if (setReleaseManualCreateFieldValue(field.name, fields[field.name])) {
+            applied += 1;
+        }
+    });
+    return applied;
+}
+
+async function lookupReleaseManualCreateJira() {
+    const releaseKeyInput = document.getElementById(getReleaseManualCreateInputId('release_key'));
+    const lookupBtn = document.getElementById('releaseManualLookupBtn');
+    const warning = document.getElementById('releaseManualCreateWarning');
+    const releaseKey = String(releaseKeyInput?.value || '').trim();
+
+    if (!releaseKey) {
+        if (warning) {
+            warning.style.display = '';
+            warning.textContent = 'Укажите ID релиза для поиска в Jira.';
+        }
+        return;
+    }
+
+    if (warning) {
+        warning.style.display = 'none';
+        warning.textContent = '';
+    }
+    if (lookupBtn) {
+        lookupBtn.disabled = true;
+        lookupBtn.innerHTML = '<i class="bi bi-arrow-repeat spinning"></i> Ищу...';
+    }
+
+    try {
+        const response = await fetch(getReleaseUrl('manual_release_lookup'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ release_key: releaseKey }),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Не удалось найти релиз в Jira');
+        }
+
+        if (releaseKeyInput && data.release_key) {
+            releaseKeyInput.value = data.release_key;
+        }
+        const applied = applyReleaseManualLookupFields(data.fields || {});
+        const warningsText = formatReleaseManualCreateWarnings(data.warnings || []);
+        const messages = [];
+        if (data.found) {
+            messages.push(applied
+                ? `Данные из Jira найдены и добавлены в пустые поля: ${applied}.`
+                : 'Данные из Jira найдены. Поля уже были заполнены вручную, я их не затирал.');
+            if ((data.records || []).length > 1) {
+                messages.push(`У релиза найдено несколько РОВ: ${data.records.length}. Проверьте ID РОВ в дополнительных полях.`);
+            }
+        } else {
+            messages.push('В Jira релиз не найден. Можно сохранить строку по ID и заполнить остальные поля вручную.');
+        }
+        if (warningsText) {
+            messages.push(warningsText);
+        }
+        if (warning) {
+            warning.style.display = '';
+            warning.textContent = messages.join('\n');
+        }
+    } catch (error) {
+        console.error('Manual release lookup error:', error);
+        if (warning) {
+            warning.style.display = '';
+            warning.textContent = 'Ошибка поиска в Jira: ' + error.message;
+        }
+    } finally {
+        if (lookupBtn) {
+            lookupBtn.disabled = false;
+            lookupBtn.innerHTML = '<i class="bi bi-search"></i> Найти в Jira';
+        }
+    }
+}
+
+function buildReleaseManualCreatePayload() {
+    const payload = {};
+    RELEASE_MANUAL_CREATE_FIELDS.forEach(field => {
+        const input = document.getElementById(getReleaseManualCreateInputId(field.name));
+        if (!input) {
+            return;
+        }
+        if (field.type === 'date') {
+            payload[field.name] = inputValueToDisplayDate(input.value || '');
+            return;
+        }
+        payload[field.name] = String(input.value || '').trim();
+    });
+    if (!payload.deployment_end) {
+        payload.deployment_end = payload.deployment_start;
+    }
+    return payload;
+}
+
+function validateReleaseManualCreatePayload(payload) {
+    if (!payload.release_key) {
+        return 'Укажите ID релиза.';
+    }
+    return '';
+}
+
+function formatReleaseManualCreateWarnings(warnings) {
+    if (!Array.isArray(warnings) || !warnings.length) {
+        return '';
+    }
+    return warnings.map(warning => {
+        const keyText = warning.type === 'rov_key' ? 'РОВ' : 'релиз';
+        const target = warning.row_key ? ` (${warning.row_key})` : '';
+        return `Возможный дубль: ${keyText}${target}`;
+    }).join('\n');
+}
+
+async function saveReleaseManualCreate() {
+    const saveBtn = document.getElementById('releaseManualCreateSaveBtn');
+    const warning = document.getElementById('releaseManualCreateWarning');
+    const payload = buildReleaseManualCreatePayload();
+    const validationError = validateReleaseManualCreatePayload(payload);
+    if (validationError) {
+        if (warning) {
+            warning.style.display = '';
+            warning.textContent = validationError;
+        } else {
+            alert(validationError);
+        }
+        return;
+    }
+
+    if (saveBtn) {
+        saveBtn.disabled = true;
+    }
+
+    try {
+        const response = await fetch(getReleaseUrl('manual_release'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Не удалось добавить ручной релиз');
+        }
+
+        const createdYear = (payload.deployment_start.match(/(\d{4})$/) || [])[1];
+        if (createdYear) {
+            currentReleaseYearFilter = createdYear;
+        }
+        renderReleaseMonitor(data.release_monitor || [], data.release_monitor_meta || {});
+        ensureReleaseManualCreateModal().hide();
+
+        const warningsText = formatReleaseManualCreateWarnings(data.warnings || []);
+        if (warningsText) {
+            alert(`Ручной релиз добавлен.\n\n${warningsText}`);
+        }
+    } catch (error) {
+        console.error('Manual release create error:', error);
+        if (warning) {
+            warning.style.display = '';
+            warning.textContent = 'Ошибка добавления ручного релиза: ' + error.message;
+        } else {
+            alert('Ошибка добавления ручного релиза: ' + error.message);
+        }
+    } finally {
+        if (saveBtn) {
+            saveBtn.disabled = false;
+        }
+    }
+}
+
+function ensureReleaseManualOverrideModal() {
+    if (!releaseManualOverrideModalInstance) {
+        releaseManualOverrideModalInstance = getOrCreateReleaseModal(document.getElementById('releaseManualOverrideModal'));
+    }
+    return releaseManualOverrideModalInstance;
+}
+
+function openReleaseManualOverrideModal(releaseKey, options = {}) {
+    const standalone = Boolean(options?.standalone);
+    if (!isReleaseOrderMode && !standalone) {
+        return;
+    }
+
+    const item = getReleaseMonitorItem(releaseKey);
+    if (!item) {
+        alert('Не удалось найти релиз в текущей таблице.');
+        return;
+    }
+
+    releaseManualOverrideState = {
+        item,
+        initialZniKey: item.zni_key || '',
+        initialClearZni: Boolean(item.manual_clear_zni),
+        mode: standalone ? 'standalone' : 'draft',
+    };
+
+    document.getElementById('releaseManualOverrideSubtitle').textContent = item.release_key || item.row_key || '';
+    renderReleaseManualOverrideForm(item);
+    ensureReleaseManualOverrideModal().show();
+}
+
+function getReleaseManualOverrideRowKey(item) {
+    return String(item?.row_key || item?.release_key || '').trim();
+}
+
+function getReleaseManualOverrideInputId(fieldName) {
+    const field = RELEASE_MANUAL_OVERRIDE_FIELDS.find(item => item.name === fieldName);
+    return field?.id || `releaseManualOverride_${fieldName}`;
+}
+
+function getReleaseManualOverrideBaseValue(item, fieldName) {
+    const baseName = `base_${fieldName}`;
+    const baseValue = item?.[baseName];
+    if (baseValue !== undefined && baseValue !== null) {
+        return String(baseValue || '');
+    }
+    return String(item?.[fieldName] || '');
+}
+
+function normalizeReleaseManualOverrideValue(value) {
+    return String(value || '').trim();
+}
+
+function getReleaseManualOverrideCurrentValue(item, fieldName) {
+    const rowKey = getReleaseManualOverrideRowKey(item);
+    const draft = releaseManualOverrideDraft[rowKey];
+    if (draft?.reset) {
+        return getReleaseManualOverrideBaseValue(item, fieldName);
+    }
+    if (draft?.fields && Object.prototype.hasOwnProperty.call(draft.fields, fieldName)) {
+        return String(draft.fields[fieldName] || '') || getReleaseManualOverrideBaseValue(item, fieldName);
+    }
+    const manualName = `manual_${fieldName}`;
+    const manualValue = item?.[manualName];
+    if (manualValue !== undefined && manualValue !== null && String(manualValue || '').trim()) {
+        return String(manualValue || '');
+    }
+    const currentValue = item?.[fieldName];
+    if (currentValue !== undefined && currentValue !== null && String(currentValue || '').trim()) {
+        return String(currentValue || '');
+    }
+    return getReleaseManualOverrideBaseValue(item, fieldName);
+}
+
+function isReleaseManualOverrideFieldChanged(item, fieldName, currentValue) {
+    const rowKey = getReleaseManualOverrideRowKey(item);
+    const draft = releaseManualOverrideDraft[rowKey];
+    if (draft?.fields && Object.prototype.hasOwnProperty.call(draft.fields, fieldName)) {
+        return normalizeReleaseManualOverrideValue(draft.fields[fieldName]) !== normalizeReleaseManualOverrideValue(getReleaseManualOverrideBaseValue(item, fieldName));
+    }
+    const manualName = `manual_${fieldName}`;
+    return Boolean(String(item?.[manualName] || '').trim()) &&
+        normalizeReleaseManualOverrideValue(currentValue) !== normalizeReleaseManualOverrideValue(getReleaseManualOverrideBaseValue(item, fieldName));
+}
+
+function renderReleaseManualOverrideForm(item) {
+    const container = document.getElementById('releaseManualOverrideFields');
+    if (!container) {
+        return;
+    }
+
+    const html = RELEASE_MANUAL_OVERRIDE_FIELDS.map(field => {
+        const baseValue = getReleaseManualOverrideBaseValue(item, field.name);
+        const manualValue = getReleaseManualOverrideCurrentValue(item, field.name);
+        const inputId = getReleaseManualOverrideInputId(field.name);
+        const changed = isReleaseManualOverrideFieldChanged(item, field.name, manualValue);
+        const inputHtml = field.type === 'select'
+            ? `<select class="form-select" id="${escapeHtml(inputId)}">
+                    ${RELEASE_MANUAL_TYPE_OPTIONS.map(([value, label]) => `
+                        <option value="${escapeHtml(value)}" ${manualValue === value ? 'selected' : ''}>${escapeHtml(label)}</option>
+                    `).join('')}
+                </select>`
+            : field.type === 'textarea'
+                ? `<textarea class="form-control" id="${escapeHtml(inputId)}" rows="2" placeholder="${escapeHtml(baseValue || 'ручное значение')}">${escapeHtml(manualValue)}</textarea>`
+                : `<input type="text" class="form-control" id="${escapeHtml(inputId)}" value="${escapeHtml(manualValue)}" placeholder="${escapeHtml(baseValue || 'ручное значение')}">`;
+
+        return `
+            <div class="release-manual-field ${changed ? 'is-changed' : ''}">
+                <label class="release-manual-label" for="${escapeHtml(inputId)}">
+                    <span>${escapeHtml(field.label)}</span>
+                    ${changed ? '<span class="release-manual-changed-pill">ручное</span>' : ''}
+                </label>
+                ${inputHtml}
+                <div class="release-manual-base">Jira: <code>${escapeHtml(baseValue || 'не указано')}</code></div>
+            </div>
+        `;
+    }).join('');
+
+    const rowKey = getReleaseManualOverrideRowKey(item);
+    const draft = releaseManualOverrideDraft[rowKey];
+    const clearZniChecked = draft?.fields?.clear_zni !== undefined
+        ? Boolean(draft.fields.clear_zni)
+        : Boolean(item.manual_clear_zni);
+
+    container.innerHTML = `
+        ${html}
+        <label class="release-manual-clear-zni">
+            <input class="form-check-input m-0" type="checkbox" id="releaseManualClearZniInput" ${clearZniChecked ? 'checked' : ''}>
+            <span>&#1059;&#1076;&#1072;&#1083;&#1080;&#1090;&#1100; &#1089;&#1086;&#1093;&#1088;&#1072;&#1085;&#1077;&#1085;&#1085;&#1091;&#1102; &#1047;&#1053;&#1048; &#1080;&#1079; &#1089;&#1090;&#1088;&#1086;&#1082;&#1080; &#1080; &#1082;&#1101;&#1096;&#1072;. &#1055;&#1086;&#1089;&#1083;&#1077; &#1089;&#1086;&#1093;&#1088;&#1072;&#1085;&#1077;&#1085;&#1080;&#1103; &#1089;&#1085;&#1086;&#1074;&#1072; &#1087;&#1086;&#1103;&#1074;&#1080;&#1090;&#1089;&#1103; &#1082;&#1085;&#1086;&#1087;&#1082;&#1072; &laquo;&#1057;&#1086;&#1079;&#1076;&#1072;&#1090;&#1100;&raquo;.</span>
+        </label>
+    `;
+}
+
+function buildReleaseManualOverridePayload(reset = false) {
+    if (!releaseManualOverrideState?.item) {
+        return null;
+    }
+
+    const item = releaseManualOverrideState.item;
+    const rowKey = getReleaseManualOverrideRowKey(item);
+    const fields = {};
+    if (!reset) {
+        RELEASE_MANUAL_OVERRIDE_FIELDS.forEach(field => {
+            const input = document.getElementById(getReleaseManualOverrideInputId(field.name));
+            if (!input) {
+                return;
+            }
+            const inputValue = String(input.value || '').trim();
+            const baseValue = getReleaseManualOverrideBaseValue(item, field.name);
+            const manualName = `manual_${field.name}`;
+            const hadManualValue = Boolean(String(item?.[manualName] || '').trim());
+            if (normalizeReleaseManualOverrideValue(inputValue) !== normalizeReleaseManualOverrideValue(baseValue)) {
+                fields[field.name] = inputValue;
+            } else if (hadManualValue) {
+                fields[field.name] = '';
+            }
+        });
+        const clearZni = Boolean(document.getElementById('releaseManualClearZniInput')?.checked);
+        if (clearZni || Boolean(item.manual_clear_zni)) {
+            fields.clear_zni = clearZni;
+        }
+    }
+
+    return {
+        row_key: rowKey,
+        release_key: rowKey,
+        fields,
+        reset,
+    };
+}
+
+function applyReleaseManualOverrideDraft(payload) {
+    if (!payload?.row_key) {
+        return;
+    }
+
+    const item = getReleaseMonitorItem(payload.row_key);
+    if (!item) {
+        return;
+    }
+
+    if (payload.reset) {
+        RELEASE_MANUAL_OVERRIDE_FIELDS.forEach(field => {
+            const baseValue = getReleaseManualOverrideBaseValue(item, field.name);
+            item[field.name] = baseValue;
+            item[`manual_${field.name}`] = '';
+        });
+        if (Array.isArray(item.base_release_name_lines)) {
+            item.release_name_lines = [...item.base_release_name_lines];
+        }
+        item.has_manual_release_override = false;
+        item.manual_overridden_fields = [];
+        item.manual_clear_zni = false;
+        return;
+    }
+
+    const changedFields = [];
+    const fields = payload.fields || {};
+    RELEASE_MANUAL_OVERRIDE_FIELDS.forEach(field => {
+        if (!Object.prototype.hasOwnProperty.call(fields, field.name)) {
+            return;
+        }
+        const manualValue = String(fields[field.name] || '').trim();
+        const baseValue = getReleaseManualOverrideBaseValue(item, field.name);
+        item[`manual_${field.name}`] = manualValue;
+        item[field.name] = manualValue || baseValue;
+        if (manualValue) {
+            changedFields.push(field.name);
+        }
+    });
+    if (fields.clear_zni) {
+        item.zni_key = '';
+        item.zni_url = '';
+        item.manual_clear_zni = true;
+        changedFields.push('clear_zni');
+    } else {
+        item.manual_clear_zni = false;
+    }
+    if (fields.release_summary) {
+        const baseLines = Array.isArray(item.base_release_name_lines)
+            ? [...item.base_release_name_lines]
+            : (Array.isArray(item.release_name_lines) ? [...item.release_name_lines] : []);
+        if (baseLines.length) {
+            baseLines[0] = fields.release_summary;
+            item.release_name_lines = baseLines;
+        }
+    } else if (Array.isArray(item.base_release_name_lines)) {
+        item.release_name_lines = [...item.base_release_name_lines];
+    }
+    item.manual_overridden_fields = [...new Set(changedFields)];
+    item.has_manual_release_override = item.manual_overridden_fields.length > 0;
+}
+
+async function persistReleaseManualOverride(payload) {
+    const manualUrl = payload.reset
+        ? getReleaseUrl('manual_override_reset')
+        : getReleaseUrl('manual_override_fields');
+    const manualBody = payload.reset
+        ? { row_key: payload.row_key }
+        : { row_key: payload.row_key, fields: payload.fields || {} };
+    const response = await fetch(manualUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(manualBody),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Не удалось сохранить ручные правки');
+    }
+    return data;
+}
+
+async function saveReleaseManualOverride(reset = false) {
+    if (!releaseManualOverrideState?.item) {
+        return;
+    }
+
+    const saveBtn = document.getElementById('releaseManualOverrideSaveBtn');
+
+    if (saveBtn) {
+        saveBtn.disabled = true;
+    }
+
+    try {
+        const payload = buildReleaseManualOverridePayload(reset);
+        if (!payload?.row_key) {
+            return;
+        }
+        if (!payload.reset && !Object.keys(payload.fields || {}).length) {
+            delete releaseManualOverrideDraft[payload.row_key];
+            ensureReleaseManualOverrideModal().hide();
+            return;
+        }
+        if (releaseManualOverrideState.mode === 'standalone') {
+            const data = await persistReleaseManualOverride(payload);
+            delete releaseManualOverrideDraft[payload.row_key];
+            renderReleaseMonitor(data.release_monitor || [], data.release_monitor_meta || {});
+            ensureReleaseManualOverrideModal().hide();
+            return;
+        }
+        releaseManualOverrideDraft[payload.row_key] = payload;
+        applyReleaseManualOverrideDraft(payload);
+        releaseOrderDirty = true;
+        refreshReleaseOrderModeUi();
+        applyReleaseFilters();
+        ensureReleaseManualOverrideModal().hide();
+    } catch (error) {
+        console.error('Release manual override error:', error);
+        alert('Ошибка подготовки ручных правок: ' + error.message);
+    } finally {
+        if (saveBtn) {
+            saveBtn.disabled = false;
+        }
+    }
+}
+
+function resetReleaseManualOverride() {
+    if (!releaseManualOverrideState?.item) {
+        return;
+    }
+    saveReleaseManualOverride(true);
+}
+
+function getReleaseDocumentTemplateHint(item) {
+    if (!item) {
+        return { found: false, candidates: [] };
+    }
+    const rowKey = item.row_key || item.release_key || '';
+    return RELEASE_TEMPLATE_HINTS[rowKey] || RELEASE_TEMPLATE_HINTS[item.release_key] || { found: false, candidates: [] };
+}
+
+function isReleaseDocumentTemplateMissingByTable(item, detection) {
+    const releaseKe = String(item?.ke_id || '').trim();
+    const candidates = Array.isArray(detection?.candidates) ? detection.candidates : [];
+    return Boolean(releaseKe && !detection?.found && !candidates.length);
+}
+
+function getReleaseDocumentTemplateNotFoundMessage(item) {
+    const releaseKey = item?.release_key ? ` по ${item.release_key}` : '';
+    return `К сожалению, для данного типа релиза${releaseKey} шаблоны документов сейчас не найдены. Проверьте данные и тип релиза в строке, затем повторите формирование документов.`;
+}
+
+function buildReleaseDocumentInitialData(item) {
+    const detection = getReleaseDocumentTemplateHint(item);
+    const templateSource = detection?.found ? detection : null;
+    return {
+        success: true,
+        detection,
+        distribution_missing: false,
+        missing_distribution_fields: [],
+        playbooks_required: typeof templateSource?.requires_playbooks === 'boolean'
+            ? templateSource.requires_playbooks
+            : templateSource?.release_full
+                ? releaseUsesPlaybooks(templateSource.release_full, templateSource.category)
+                : null,
+        playbooks: RELEASE_DOCUMENT_PLAYBOOKS,
+        prev_version: detection?.prev_version || '',
+        sync_patch: {},
+    };
+}
+
+function getReleaseDocumentTemplateChoice(state) {
+    const detection = state?.initData?.detection || {};
+    return state?.templateChoice || (detection.found ? detection : null);
+}
+
+function getReleaseDocumentTemplateSignature(template) {
+    if (!template) {
+        return '';
+    }
+    return [
+        template.category || '',
+        template.release_full || '',
+        template.release_clean || '',
+    ].join('::');
+}
+
+function getReleaseDocumentJiraStatusHtml(state) {
+    const status = state?.initStatus || 'loading';
+    if (status === 'ready') {
+        const timeText = state.initCompletedAt ? ` ${state.initCompletedAt}` : '';
+        return `<span class="release-doc-jira-status ready"><i class="bi bi-check2-circle"></i> Jira: проверено${escapeHtml(timeText)}</span>`;
+    }
+    if (status === 'error') {
+        return `<span class="release-doc-jira-status error"><i class="bi bi-exclamation-triangle"></i> Jira: ошибка проверки</span>`;
+    }
+    return `
+        <span class="release-doc-jira-status checking">
+            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+            Jira: проверяю
+        </span>
+    `;
+}
+
+function getReleaseDocumentSummaryCards(state) {
+    const item = state.item;
+    const detection = state.initData?.detection || {};
+    const templateChoice = getReleaseDocumentTemplateChoice(state);
+    const templateTitle = templateChoice
+        ? `${templateChoice.category} / ${templateChoice.release_clean}`
+        : Array.isArray(detection.candidates) && detection.candidates.length
+            ? 'Нужно выбрать шаблон'
+            : 'Будет уточнен по шагам';
+
+    return `
+        <div class="release-doc-summary">
+            <div class="release-doc-summary-card">
+                <span class="release-doc-summary-label">Релиз</span>
+                <div class="release-doc-summary-value">${escapeHtml(item.release_key || '')}</div>
+            </div>
+            <div class="release-doc-summary-card">
+                <span class="release-doc-summary-label">Шаблон</span>
+                <div class="release-doc-summary-value">${escapeHtml(templateTitle)}</div>
+            </div>
+            <div class="release-doc-summary-card">
+                <span class="release-doc-summary-label">Дежурный ОПЛОТ</span>
+                <div class="release-doc-summary-value">${escapeHtml(state.form.oplot || 'Не назначен')}</div>
+            </div>
+            <div class="release-doc-summary-card">
+                <span class="release-doc-summary-label">Проверяющий</span>
+                <div class="release-doc-summary-value">${escapeHtml(state.form.checker || 'Не указан')}</div>
+            </div>
+        </div>
+    `;
+}
+
+function buildReleaseDocumentSteps(state) {
+    const steps = [];
+    const detection = state.initData?.detection || {};
+
+    if (!state.templateChoice && !detection.found && Array.isArray(detection.candidates) && detection.candidates.length > 0) {
+        steps.push({ type: 'template' });
+    }
+
+    if (state.initData?.distribution_missing) {
+        steps.push({ type: 'distribution' });
+    }
+
+    steps.push({ type: 'prev_version' });
+    steps.push({ type: 'instruction_link' });
+    steps.push({ type: 'date' });
+
+    const templateSource = state.templateChoice || (detection.found ? detection : null);
+    const templateRequiresPlaybooks = typeof templateSource?.requires_playbooks === 'boolean'
+        ? templateSource.requires_playbooks
+        : (templateSource?.release_full ? releaseUsesPlaybooks(templateSource.release_full, templateSource.category) : state.initData?.playbooks_required === true);
+    if (templateRequiresPlaybooks) {
+        steps.push({ type: 'playbooks' });
+    }
+
+    return steps;
+}
+
+function normalizeReleaseDocumentPlaybooks(values) {
+    const result = [];
+    const seen = new Set();
+    (Array.isArray(values) ? values : []).forEach(value => {
+        const normalized = String(value || '').trim();
+        if (!normalized || seen.has(normalized)) {
+            return;
+        }
+        seen.add(normalized);
+        result.push(normalized);
+    });
+    return result;
+}
+
+function parseReleaseDocumentPlaybooksText(text) {
+    return normalizeReleaseDocumentPlaybooks(String(text || '').split(/[\s,;]+/));
+}
+
+function formatReleaseDocumentPlaybooksText(playbooks) {
+    return normalizeReleaseDocumentPlaybooks(playbooks).join('\n');
+}
+
+function renderReleaseDocumentPlaybookPreview(playbooks) {
+    const normalized = normalizeReleaseDocumentPlaybooks(playbooks);
+    if (!normalized.length) {
+        return '<span class="release-doc-playbook-empty">&#1055;&#1083;&#1077;&#1081;&#1073;&#1091;&#1082;&#1080; &#1085;&#1077; &#1074;&#1099;&#1073;&#1088;&#1072;&#1085;&#1099;</span>';
+    }
+    return normalized
+        .map(playbook => `<span class="release-doc-playbook-chip">${escapeHtml(playbook)}</span>`)
+        .join('');
+}
+
+function updateReleaseDocumentPlaybookPastePreview() {
+    const textarea = document.getElementById('releaseDocumentPlaybooksText');
+    const preview = document.getElementById('releaseDocumentPlaybooksPreview');
+    if (!textarea || !preview) {
+        return;
+    }
+    preview.innerHTML = renderReleaseDocumentPlaybookPreview(parseReleaseDocumentPlaybooksText(textarea.value));
+}
+
+function syncReleaseDocumentPlaybooksForm(state) {
+    if (!state?.form) {
+        return [];
+    }
+
+    const textarea = document.getElementById('releaseDocumentPlaybooksText');
+    const playbookInputs = Array.from(document.querySelectorAll('input[name="releaseDocumentPlaybooks"]'));
+    let selected = null;
+
+    if (textarea) {
+        selected = parseReleaseDocumentPlaybooksText(textarea.value);
+    } else if (playbookInputs.length) {
+        selected = playbookInputs.filter(input => input.checked).map(input => input.value);
+    }
+
+    if (!selected) {
+        return state.form.playbooks || [];
+    }
+
+    selected = normalizeReleaseDocumentPlaybooks(selected);
+    if (selected.join('\n') !== (state.form.playbooks || []).join('\n')) {
+        state.dirty = state.dirty || {};
+        state.dirty.playbooks = true;
+        state.form.playbooks = selected;
+    }
+    return selected;
+}
+
+function setReleaseDocumentPlaybookMode(mode) {
+    const state = releaseDocumentWizardState;
+    if (!state) {
+        return;
+    }
+    syncReleaseDocumentPlaybooksForm(state);
+    state.form.playbook_mode = mode === 'manual' ? 'manual' : 'paste';
+    renderReleaseDocumentWizardStep();
+}
+
+function syncReleaseDocumentVisibleForm(state) {
+    if (!state?.form) {
+        return;
+    }
+    state.dirty = state.dirty || {};
+
+    const updateField = (field, value) => {
+        if (value !== state.form[field]) {
+            state.dirty[field] = true;
+            state.form[field] = value;
+        }
+    };
+
+    const versionInput = document.getElementById('releaseDocumentReleaseVersion');
+    if (versionInput) updateField('release_version', (versionInput.value || '').trim());
+
+    const keInput = document.getElementById('releaseDocumentKe');
+    if (keInput) updateField('ke', (keInput.value || '').trim());
+
+    const prevInput = document.getElementById('releaseDocumentPrevVersion');
+    if (prevInput) updateField('prev_version', (prevInput.value || '').trim());
+
+    const instructionInput = document.getElementById('releaseDocumentInstructionLink');
+    if (instructionInput) updateField('instruction_link', (instructionInput.value || '').trim());
+
+    const dateInput = document.getElementById('releaseDocumentDate');
+    if (dateInput) updateField('date', dateInput.value || '');
+
+    syncReleaseDocumentPlaybooksForm(state);
+
+    const createZniInput = document.getElementById('releaseDocumentCreateZni');
+    if (createZniInput && createZniInput.checked !== state.form.create_zni) {
+        state.dirty.create_zni = true;
+        state.form.create_zni = createZniInput.checked;
+    }
+
+    const reporterSelect = document.getElementById('releaseDocumentZniReporter');
+    if (reporterSelect) updateField('zni_reporter', reporterSelect.value || '');
+}
+
+function markReleaseDocumentStepCompleted(state, stepType) {
+    state.completedStepTypes = state.completedStepTypes || {};
+    if (stepType) {
+        state.completedStepTypes[stepType] = true;
+    }
+}
+
+function rebuildReleaseDocumentStepsKeepingProgress(state, previousStepType) {
+    const nextSteps = buildReleaseDocumentSteps(state);
+    const completed = state.completedStepTypes || {};
+    let nextIndex = previousStepType
+        ? nextSteps.findIndex(step => step.type === previousStepType)
+        : state.stepIndex;
+    if (nextIndex < 0) {
+        nextIndex = Math.min(state.stepIndex || 0, Math.max(nextSteps.length - 1, 0));
+    }
+
+    const firstIncompleteBefore = nextSteps.findIndex((step, index) => (
+        index <= nextIndex && !completed[step.type]
+    ));
+
+    state.steps = nextSteps;
+    state.stepIndex = firstIncompleteBefore >= 0 ? firstIncompleteBefore : nextIndex;
+}
+
+function applyReleaseDocumentInitData(state, data) {
+    if (!state || !data) {
+        return;
+    }
+
+    syncReleaseDocumentVisibleForm(state);
+    const previousStepType = state.steps[state.stepIndex]?.type || '';
+    const previousTemplate = getReleaseDocumentTemplateChoice(state);
+    const previousSignature = getReleaseDocumentTemplateSignature(previousTemplate);
+    const jiraDetection = data.detection || {};
+    const jiraTemplate = jiraDetection.found ? jiraDetection : null;
+    const jiraSignature = getReleaseDocumentTemplateSignature(jiraTemplate);
+
+    state.initData = {
+        ...data,
+        playbooks: Array.isArray(data.playbooks) ? data.playbooks : RELEASE_DOCUMENT_PLAYBOOKS,
+    };
+
+    const hasTemplate = jiraDetection.found || (Array.isArray(jiraDetection.candidates) && jiraDetection.candidates.length);
+    state.initStatus = hasTemplate ? 'ready' : 'error';
+    state.initCompletedAt = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+    state.initError = hasTemplate
+        ? ''
+        : 'К сожалению, для данного типа релиза шаблоны документов сейчас не найдены. Проверьте данные и тип релиза в строке, затем повторите формирование документов.';
+
+    applyReleaseMonitorJiraSyncPatch(data.sync_patch || {});
+
+    if (!state.dirty.release_version) {
+        state.form.release_version = data.release_version || state.form.release_version;
+    }
+    if (!state.dirty.ke) {
+        state.form.ke = data.ke || state.form.ke;
+    }
+    if (!state.dirty.prev_version) {
+        state.form.prev_version = data.prev_version || state.form.prev_version;
+    }
+
+    state.jiraNotice = '';
+    if (state.userSelectedTemplate && jiraSignature && previousSignature && jiraSignature !== previousSignature) {
+        state.jiraNotice = 'Jira предлагает другой шаблон. Я оставил выбранный вами вариант, чтобы не сбивать заполнение.';
+    } else if (!state.userSelectedTemplate && previousSignature && jiraSignature && previousSignature !== jiraSignature) {
+        state.jiraNotice = `Jira уточнила шаблон: ${jiraTemplate.category} / ${jiraTemplate.release_clean}.`;
+    }
+
+    rebuildReleaseDocumentStepsKeepingProgress(state, previousStepType);
+}
+
+function ensureReleaseDocumentModal() {
+    if (!releaseDocumentModalInstance) {
+        const modalElement = document.getElementById('releaseDocumentModal');
+        releaseDocumentModalInstance = getOrCreateReleaseModal(modalElement);
+        modalElement.addEventListener('hide.bs.modal', () => {
+            if (releaseDocumentWizardState) {
+                releaseDocumentWizardState.cancelled = true;
+            }
+            releaseDocumentInitSequence += 1;
+        });
+    }
+    return releaseDocumentModalInstance;
+}
+
+function setReleaseDocumentModalLoading(message) {
+    const body = document.getElementById('releaseDocumentModalBody');
+    const prevBtn = document.getElementById('releaseDocumentPrevBtn');
+    const nextBtn = document.getElementById('releaseDocumentNextBtn');
+    if (body) {
+        body.innerHTML = `
+            <div class="release-doc-loader">
+                <div class="spinner-border text-primary" role="status" aria-hidden="true"></div>
+                <div>${escapeHtml(message || 'Подготавливаем форму...')}</div>
+            </div>
+        `;
+    }
+    if (prevBtn) prevBtn.style.display = 'none';
+    if (nextBtn) {
+        nextBtn.disabled = true;
+        nextBtn.textContent = 'Загрузка...';
+    }
+}
+
+function setReleaseDocumentModalError(message) {
+    const body = document.getElementById('releaseDocumentModalBody');
+    const prevBtn = document.getElementById('releaseDocumentPrevBtn');
+    const nextBtn = document.getElementById('releaseDocumentNextBtn');
+    if (body) {
+        body.innerHTML = `<div class="release-doc-error">${escapeHtml(message)}</div>`;
+    }
+    if (prevBtn) prevBtn.style.display = 'none';
+    if (nextBtn) {
+        nextBtn.disabled = false;
+        nextBtn.textContent = 'Закрыть';
+        nextBtn.onclick = closeReleaseDocumentWizard;
+    }
+}
+
+function closeReleaseDocumentWizard() {
+    if (releaseDocumentModalInstance) {
+        releaseDocumentModalInstance.hide();
+    }
+}
+
+function isReleaseDocumentStateCurrent(state) {
+    return Boolean(
+        state &&
+        releaseDocumentWizardState === state &&
+        state.initRequestId === releaseDocumentInitSequence &&
+        !state.cancelled
+    );
+}
+
+async function loadReleaseDocumentInit(state) {
+    if (!state?.item) {
+        return;
+    }
+
+    const item = state.item;
+    try {
+        const response = await fetch(getReleaseUrl('monitor_init'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                row_key: item.row_key || '',
+                release_id: item.release_key,
+                ke: item.ke || '',
+                oplot: item.psi_owner || '',
+                checker: item.psi_checker || '',
+                date: item.deployment_start || ''
+            })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Не удалось подготовить генератор документов');
+        }
+
+        if (!isReleaseDocumentStateCurrent(state)) {
+            return;
+        }
+
+        applyReleaseDocumentInitData(state, data);
+        renderReleaseDocumentWizardStep();
+    } catch (error) {
+        console.error('Release document init error:', error);
+        if (!isReleaseDocumentStateCurrent(state)) {
+            return;
+        }
+        state.initStatus = 'error';
+        state.initError = error.message || 'Не удалось подготовить форму генерации';
+        state.jiraNotice = state.initError;
+        renderReleaseDocumentWizardStep();
+    }
+}
+
+async function waitReleaseDocumentInitReady(state) {
+    if (!state) {
+        return false;
+    }
+    if (state.initStatus === 'ready') {
+        return true;
+    }
+    if (state.initStatus === 'error') {
+        alert(state.initError || 'Не удалось подготовить форму генерации.');
+        return false;
+    }
+    if (state.initPromise) {
+        const nextBtn = document.getElementById('releaseDocumentNextBtn');
+        const prevBtn = document.getElementById('releaseDocumentPrevBtn');
+        if (nextBtn) {
+            nextBtn.disabled = true;
+            nextBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Дожидаюсь Jira...';
+        }
+        if (prevBtn) {
+            prevBtn.disabled = true;
+        }
+        await state.initPromise;
+    }
+    return isReleaseDocumentStateCurrent(state) && state.initStatus === 'ready';
+}
+
+function applyReleaseMonitorJiraSyncPatch(syncPatch) {
+    if (!syncPatch || (!syncPatch.row_key && !syncPatch.release_key)) {
+        return;
+    }
+
+    const syncedItem = syncPatch.item || {};
+    const syncedFields = syncPatch.fields || {};
+    const rowKey = syncPatch.row_key || '';
+    const releaseKey = syncPatch.release_key || '';
+    const allowedFields = [
+        'release_version',
+        'base_release_version',
+        'ke',
+        'base_ke'
+    ];
+    const patch = {};
+    allowedFields.forEach(field => {
+        if (Object.prototype.hasOwnProperty.call(syncedItem, field)) {
+            patch[field] = syncedItem[field] || '';
+        } else if (Object.prototype.hasOwnProperty.call(syncedFields, field)) {
+            patch[field] = syncedFields[field] || '';
+        }
+    });
+
+    if (!Object.keys(patch).length) {
+        return;
+    }
+
+    let patched = false;
+    releaseMonitorItems = releaseMonitorItems.map(item => {
+        const itemKey = item.row_key || item.release_key || '';
+        const matches = (rowKey && itemKey === rowKey) || (!rowKey && releaseKey && item.release_key === releaseKey);
+        if (!matches) {
+            return item;
+        }
+        patched = true;
+        return { ...item, ...patch };
+    });
+
+    if (patched && releaseDocumentWizardState?.item) {
+        const itemKey = releaseDocumentWizardState.item.row_key || releaseDocumentWizardState.item.release_key || '';
+        const matchesStateItem = (rowKey && itemKey === rowKey) || (!rowKey && releaseKey && releaseDocumentWizardState.item.release_key === releaseKey);
+        if (matchesStateItem) {
+            releaseDocumentWizardState.item = { ...releaseDocumentWizardState.item, ...patch };
+        }
+    }
+
+    if (syncPatch.data_revision) {
+        releaseMonitorKnownRevision = String(syncPatch.data_revision);
+        releaseMonitorDismissedRevision = '';
+    }
+
+    if (patched) {
+        applyReleaseFilters();
+    }
+}
+
+function openReleaseDocumentWizard(releaseKey) {
+    const item = getReleaseMonitorItem(releaseKey);
+    if (!item) {
+        alert('Не удалось найти релиз в текущей таблице.');
+        return;
+    }
+
+    if (!item.psi_owner) {
+        alert('Сначала назначьте дежурного ОПЛОТ в таблице релизов.');
+        return;
+    }
+
+    if (!item.psi_checker) {
+        alert('Сначала заполните поле "Проверяет" в таблице релизов.');
+        return;
+    }
+
+    const initRequestId = releaseDocumentInitSequence + 1;
+    releaseDocumentInitSequence = initRequestId;
+    const initialData = buildReleaseDocumentInitialData(item);
+
+    if (isReleaseDocumentTemplateMissingByTable(item, initialData.detection || {})) {
+        releaseDocumentWizardState = null;
+        const modal = ensureReleaseDocumentModal();
+        document.getElementById('releaseDocumentModalSubtitle').textContent = `Релиз ${item.release_key}`;
+        setReleaseDocumentModalError(getReleaseDocumentTemplateNotFoundMessage(item));
+        modal.show();
+        return;
+    }
+
+    releaseDocumentWizardState = {
+        item: { ...item },
+        initData: initialData,
+        initStatus: 'loading',
+        initError: '',
+        initRequestId,
+        initPromise: null,
+        cancelled: false,
+        dirty: {},
+        completedStepTypes: {},
+        userSelectedTemplate: false,
+        jiraNotice: '',
+        templateChoice: null,
+        steps: [],
+        stepIndex: 0,
+        form: {
+            release_id: item.release_key || '',
+            release_version: item.release_version || '',
+            prev_version: initialData.prev_version || '',
+            oplot: item.psi_owner || '',
+            checker: item.psi_checker || '',
+            instruction_link: '',
+            date: dateToInputValue(item.deployment_start || ''),
+            ke: item.ke || '',
+            playbooks: [],
+            playbook_mode: 'paste',
+            create_zni: false,
+            zni_reporter: ''
+        }
+    };
+    releaseDocumentWizardState.steps = buildReleaseDocumentSteps(releaseDocumentWizardState);
+
+    const modal = ensureReleaseDocumentModal();
+    document.getElementById('releaseDocumentModalSubtitle').textContent = `Релиз ${item.release_key}`;
+    renderReleaseDocumentWizardStep();
+    modal.show();
+    releaseDocumentWizardState.initPromise = loadReleaseDocumentInit(releaseDocumentWizardState);
+}
+
+function syncReleaseDocumentZniForm(state) {
+    const createZniInput = document.getElementById('releaseDocumentCreateZni');
+    if (!createZniInput || !state) {
+        return true;
+    }
+    state.dirty = state.dirty || {};
+    if (state.form.create_zni !== createZniInput.checked) {
+        state.dirty.create_zni = true;
+    }
+    state.form.create_zni = createZniInput.checked;
+    const reporterSelect = document.getElementById('releaseDocumentZniReporter');
+    if (reporterSelect && state.form.zni_reporter !== (reporterSelect.value || '')) {
+        state.dirty.zni_reporter = true;
+    }
+    state.form.zni_reporter = reporterSelect?.value || '';
+    if (!state.form.create_zni) {
+        return true;
+    }
+
+    const responsibles = (Array.isArray(state.item?.psi_responsibles) ? state.item.psi_responsibles : [])
+        .map(value => String(value || '').trim())
+        .filter(Boolean);
+    if (!state.item?.psi_owner) {
+        alert('Перед созданием ЗНИ заполните дежурного ОПЛОТ.');
+        return false;
+    }
+    if (!responsibles.length) {
+        alert('Перед созданием ЗНИ заполните ответственного.');
+        return false;
+    }
+    if (responsibles.length > 1 && !state.form.zni_reporter) {
+        alert('Выберите автора ЗНИ.');
+        return false;
+    }
+    return true;
+}
+
+function buildReleaseDocumentPlaybooksStepContent(state, playbooks) {
+    const availablePlaybooks = Array.isArray(playbooks) ? playbooks : [];
+    const playbookMode = state.form.playbook_mode || 'paste';
+    const playbookText = formatReleaseDocumentPlaybooksText(state.form.playbooks || []);
+    const modeSwitch = `
+        <div class="release-doc-playbook-mode" role="group" aria-label="Playbook input mode">
+            <button type="button" class="release-doc-playbook-mode-btn ${playbookMode !== 'manual' ? 'active' : ''}" onclick="setReleaseDocumentPlaybookMode('paste')">
+                <i class="bi bi-input-cursor-text me-1"></i>&#1042;&#1089;&#1090;&#1072;&#1074;&#1080;&#1090;&#1100; &#1089;&#1087;&#1080;&#1089;&#1082;&#1086;&#1084;
+            </button>
+            <button type="button" class="release-doc-playbook-mode-btn ${playbookMode === 'manual' ? 'active' : ''}" onclick="setReleaseDocumentPlaybookMode('manual')">
+                <i class="bi bi-ui-checks-grid me-1"></i>&#1042;&#1099;&#1073;&#1088;&#1072;&#1090;&#1100; &#1074;&#1088;&#1091;&#1095;&#1085;&#1091;&#1102;
+            </button>
+        </div>
+    `;
+
+    return `
+        <div class="release-doc-step-title">&#1055;&#1083;&#1077;&#1081;&#1073;&#1091;&#1082;&#1080;</div>
+        <div class="release-doc-step-description">
+            &#1042;&#1089;&#1090;&#1072;&#1074;&#1100;&#1090;&#1077; &#1085;&#1091;&#1078;&#1085;&#1099;&#1077; &#1087;&#1083;&#1077;&#1081;&#1073;&#1091;&#1082;&#1080; &#1089;&#1090;&#1086;&#1083;&#1073;&#1080;&#1082;&#1086;&#1084; &#1080;&#1083;&#1080; &#1074; &#1086;&#1076;&#1085;&#1091; &#1089;&#1090;&#1088;&#1086;&#1082;&#1091;. &#1045;&#1089;&#1083;&#1080; &#1091;&#1076;&#1086;&#1073;&#1085;&#1077;&#1077;, &#1084;&#1086;&#1078;&#1085;&#1086; &#1087;&#1077;&#1088;&#1077;&#1082;&#1083;&#1102;&#1095;&#1080;&#1090;&#1100;&#1089;&#1103; &#1085;&#1072; &#1088;&#1091;&#1095;&#1085;&#1086;&#1081; &#1074;&#1099;&#1073;&#1086;&#1088;.
+        </div>
+        ${modeSwitch}
+        <div class="release-doc-playbooks">
+            ${playbookMode === 'manual' ? `
+                <div class="release-doc-playbook-list">
+                    ${availablePlaybooks.map((playbook, index) => `
+                        <div class="form-check">
+                            <input
+                                class="form-check-input"
+                                type="checkbox"
+                                name="releaseDocumentPlaybooks"
+                                id="releaseDocumentPlaybook${index}"
+                                value="${escapeHtml(playbook)}"
+                                ${state.form.playbooks.includes(playbook) ? 'checked' : ''}
+                            >
+                            <label class="form-check-label" for="releaseDocumentPlaybook${index}">${escapeHtml(playbook)}</label>
+                        </div>
+                    `).join('')}
+                </div>
+            ` : `
+                <label class="release-doc-field-label" for="releaseDocumentPlaybooksText">&#1057;&#1087;&#1080;&#1089;&#1086;&#1082; &#1087;&#1083;&#1077;&#1081;&#1073;&#1091;&#1082;&#1086;&#1074;</label>
+                <textarea
+                    id="releaseDocumentPlaybooksText"
+                    class="form-control release-doc-playbook-textarea"
+                    placeholder="DB_UPDATE&#10;OPENSHIFT_DEPLOY&#10;DRY_RUN"
+                    oninput="updateReleaseDocumentPlaybookPastePreview()"
+                >${escapeHtml(playbookText)}</textarea>
+                <div class="release-doc-field-help">&#1056;&#1072;&#1079;&#1076;&#1077;&#1083;&#1103;&#1081;&#1090;&#1077; &#1087;&#1083;&#1077;&#1081;&#1073;&#1091;&#1082;&#1080; &#1087;&#1077;&#1088;&#1077;&#1085;&#1086;&#1089;&#1086;&#1084; &#1089;&#1090;&#1088;&#1086;&#1082;&#1080;, &#1087;&#1088;&#1086;&#1073;&#1077;&#1083;&#1086;&#1084;, &#1079;&#1072;&#1087;&#1103;&#1090;&#1086;&#1081; &#1080;&#1083;&#1080; &#1090;&#1086;&#1095;&#1082;&#1086;&#1081; &#1089; &#1079;&#1072;&#1087;&#1103;&#1090;&#1086;&#1081;.</div>
+                <div id="releaseDocumentPlaybooksPreview" class="release-doc-playbook-preview">
+                    ${renderReleaseDocumentPlaybookPreview(state.form.playbooks || [])}
+                </div>
+            `}
+        </div>
+    `;
+}
+
+async function saveReleaseDocumentManualDistribution(state) {
+    if (!state?.item) {
+        return false;
+    }
+
+    const response = await fetch(getReleaseUrl('manual_distribution'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            release_key: state.item.row_key || state.item.release_key,
+            release_version: state.form.release_version,
+            ke: state.form.ke,
+        })
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Не удалось сохранить ручные данные дистрибутива');
+    }
+
+    renderReleaseMonitor(data.release_monitor || [], data.release_monitor_meta || {});
+    const updatedItem = getReleaseMonitorItem(state.item.row_key || state.item.release_key);
+    if (updatedItem) {
+        state.item = updatedItem;
+    }
+    return true;
+}
+
+async function validateReleaseDocumentCurrentStep() {
+    const state = releaseDocumentWizardState;
+    if (!state) {
+        return false;
+    }
+    const step = state.steps[state.stepIndex];
+    if (!step) {
+        return false;
+    }
+
+    if (step.type === 'template') {
+        const selected = document.querySelector('input[name="releaseTemplateCandidate"]:checked');
+        if (!selected) {
+            alert('Выберите шаблон для формирования документов.');
+            return false;
+        }
+        const candidateIndex = Number(selected.value);
+        const candidate = state.initData?.detection?.candidates?.[candidateIndex];
+        if (!candidate) {
+            alert('Не удалось определить выбранный шаблон.');
+            return false;
+        }
+        state.templateChoice = candidate;
+        state.userSelectedTemplate = true;
+        state.dirty.template = true;
+        state.steps = buildReleaseDocumentSteps(state);
+        state.stepIndex = -1;
+        markReleaseDocumentStepCompleted(state, step.type);
+        return syncReleaseDocumentZniForm(state);
+    }
+
+    if (step.type === 'distribution') {
+        const versionInput = document.getElementById('releaseDocumentReleaseVersion');
+        const keInput = document.getElementById('releaseDocumentKe');
+        const version = (versionInput?.value || '').trim();
+        const ke = (keInput?.value || '').trim();
+        if (!version) {
+            alert('Укажите версию сборки.');
+            return false;
+        }
+        if (!ke) {
+            alert('Укажите КЭ дистрибутива.');
+            return false;
+        }
+        state.form.release_version = version;
+        state.form.ke = ke;
+        state.dirty.release_version = true;
+        state.dirty.ke = true;
+        try {
+            await saveReleaseDocumentManualDistribution(state);
+        } catch (error) {
+            console.error('Release document manual distribution save error:', error);
+            alert('Ошибка сохранения ручных данных дистрибутива: ' + error.message);
+            return false;
+        }
+        markReleaseDocumentStepCompleted(state, step.type);
+        return syncReleaseDocumentZniForm(state);
+    }
+
+    if (step.type === 'prev_version') {
+        const input = document.getElementById('releaseDocumentPrevVersion');
+        const value = (input?.value || '').trim();
+        if (!value) {
+            alert('Укажите предыдущую версию.');
+            return false;
+        }
+        state.form.prev_version = value;
+        state.dirty.prev_version = true;
+        markReleaseDocumentStepCompleted(state, step.type);
+        return syncReleaseDocumentZniForm(state);
+    }
+
+    if (step.type === 'instruction_link') {
+        const input = document.getElementById('releaseDocumentInstructionLink');
+        state.form.instruction_link = (input?.value || '').trim();
+        state.dirty.instruction_link = true;
+        markReleaseDocumentStepCompleted(state, step.type);
+        return syncReleaseDocumentZniForm(state);
+    }
+
+    if (step.type === 'date') {
+        const input = document.getElementById('releaseDocumentDate');
+        const value = input?.value || '';
+        if (!value) {
+            alert('Подтвердите или выберите дату релиза.');
+            return false;
+        }
+        state.form.date = value;
+        state.dirty.date = true;
+        markReleaseDocumentStepCompleted(state, step.type);
+        return syncReleaseDocumentZniForm(state);
+    }
+
+    if (step.type === 'playbooks') {
+        syncReleaseDocumentPlaybooksForm(state);
+        markReleaseDocumentStepCompleted(state, step.type);
+    }
+    return syncReleaseDocumentZniForm(state);
+}
+
+function getReleaseDocumentStepContent(state, step, stepNumber, totalSteps) {
+    const item = state.item;
+    const detection = state.initData?.detection || {};
+    const templateChoice = getReleaseDocumentTemplateChoice(state);
+    const templateText = templateChoice
+        ? `${templateChoice.category} / ${templateChoice.release_clean}`
+        : Array.isArray(detection.candidates) && detection.candidates.length
+            ? 'Нужно выбрать шаблон'
+            : 'Автоопределение не удалось';
+
+    let content = `
+        <div class="release-doc-step-meta">
+            <div class="release-doc-step-badge"><i class="bi bi-magic"></i> Шаг ${stepNumber} из ${totalSteps}</div>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <div class="release-doc-template">Шаблон: ${escapeHtml(templateText)}</div>
+                ${getReleaseDocumentJiraStatusHtml(state)}
+            </div>
+        </div>
+        ${state.jiraNotice ? `<div class="release-doc-inline-alert">${escapeHtml(state.jiraNotice)}</div>` : ''}
+        ${getReleaseDocumentSummaryCards(state)}
+    `;
+
+    if (step.type === 'template') {
+        const candidates = Array.isArray(detection.candidates) ? detection.candidates : [];
+        content += `
+            <div class="release-doc-step-title">Выберите пакет шаблонов</div>
+            <div class="release-doc-step-description">
+                По релизу найдено несколько вариантов. Выберите нужный шаблон, после чего мастер продолжит заполнение только недостающих данных.
+            </div>
+            <div class="release-doc-playbooks">
+                ${candidates.map((candidate, index) => `
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="releaseTemplateCandidate" id="releaseTemplateCandidate${index}" value="${index}" ${state.templateChoice && state.templateChoice.release_full === candidate.release_full ? 'checked' : ''}>
+                        <label class="form-check-label" for="releaseTemplateCandidate${index}">
+                            <strong>${escapeHtml(candidate.category)}</strong> / ${escapeHtml(candidate.release_clean)}
+                        </label>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    } else if (step.type === 'distribution') {
+        const missingFields = Array.isArray(state.initData?.missing_distribution_fields)
+            ? state.initData.missing_distribution_fields
+            : [];
+        const missingText = missingFields.length
+            ? missingFields.map(field => field === 'ke' ? 'КЭ дистрибутива' : 'версия сборки').join(', ')
+            : 'данные дистрибутива';
+        content += `
+            <div class="release-doc-step-title">Данные дистрибутива</div>
+            <div class="alert alert-warning">
+                В Jira по этому релизу не найден зарегистрированный дистрибутив: ${escapeHtml(missingText)}.
+                Рекомендуем сначала зарегистрировать дистрибутив в релизе. Если документы нужно сформировать сейчас,
+                заполните недостающие данные вручную - они будут сохранены как ручная корректировка этой строки.
+            </div>
+            <label class="release-doc-field-label" for="releaseDocumentReleaseVersion">Версия сборки</label>
+            <input id="releaseDocumentReleaseVersion" type="text" class="form-control" value="${escapeHtml(state.form.release_version || '')}" placeholder="Например: D-01.001.00-201">
+            <label class="release-doc-field-label mt-3" for="releaseDocumentKe">КЭ дистрибутива</label>
+            <input id="releaseDocumentKe" type="text" class="form-control" value="${escapeHtml(state.form.ke || '')}" placeholder="Например: CI15184160">
+            <div class="release-doc-field-help">
+                КЭ в названии релиза не меняется. Здесь указывается только КЭ дистрибутива из отдельной колонки таблицы.
+            </div>
+        `;
+    } else if (step.type === 'prev_version') {
+        content += `
+            <div class="release-doc-step-title">Предыдущая версия</div>
+            <div class="release-doc-step-description">
+                Укажите версию дистрибутива отката.
+            </div>
+            <label class="release-doc-field-label" for="releaseDocumentPrevVersion">Предыдущая версия</label>
+            <input id="releaseDocumentPrevVersion" type="text" class="form-control" value="${escapeHtml(state.form.prev_version)}" placeholder="Например: D-01.00.00-285">
+        `;
+    } else if (step.type === 'instruction_link') {
+        content += `
+            <div class="release-doc-step-title">Ссылка на инструкцию</div>
+            <div class="release-doc-step-description">
+                Ссылку можно оставить пустой, если инструкции пока нет.
+            </div>
+            <label class="release-doc-field-label" for="releaseDocumentInstructionLink">Ссылка на инструкцию</label>
+            <input id="releaseDocumentInstructionLink" type="text" class="form-control" value="${escapeHtml(state.form.instruction_link)}" placeholder="https://...">
+            <div class="release-doc-field-help">Если оставить поле пустым, в документе будет подставлен блок об отсутствии инструкции.</div>
+        `;
+    } else if (step.type === 'date') {
+        content += `
+            <div class="release-doc-step-title">Дата релиза</div>
+            <div class="release-doc-step-description">
+                По умолчанию используется дата начала внедрения из таблицы релизов.
+            </div>
+            <label class="release-doc-field-label" for="releaseDocumentDate">Дата релиза</label>
+            <input id="releaseDocumentDate" type="date" class="form-control" value="${escapeHtml(state.form.date)}">
+            <div class="release-doc-field-help">Текущая дата из таблицы: ${escapeHtml(item.deployment_start || 'не указана, можно выбрать вручную')}</div>
+        `;
+    } else if (step.type === 'playbooks') {
+        const playbooks = Array.isArray(state.initData?.playbooks) ? state.initData.playbooks : RELEASE_DOCUMENT_PLAYBOOKS;
+        const playbookContentBefore = content;
+        content += `
+            <div class="release-doc-step-title">Выбор плейбуков</div>
+            <div class="release-doc-step-description">
+                Для этого типа релиза плейбуки используются. Отметьте только те, которые должны попасть в сформированные документы.
+            </div>
+            <div class="release-doc-playbooks">
+                ${playbooks.map((playbook, index) => `
+                    <div class="form-check">
+                        <input
+                            class="form-check-input"
+                            type="checkbox"
+                            name="releaseDocumentPlaybooks"
+                            id="releaseDocumentPlaybook${index}"
+                            value="${escapeHtml(playbook)}"
+                            ${state.form.playbooks.includes(playbook) ? 'checked' : ''}
+                        >
+                        <label class="form-check-label" for="releaseDocumentPlaybook${index}">${escapeHtml(playbook)}</label>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+        content = playbookContentBefore + buildReleaseDocumentPlaybooksStepContent(state, playbooks);
+    }
+
+    if (stepNumber === totalSteps) {
+        const responsibles = (Array.isArray(item.psi_responsibles) ? item.psi_responsibles : [])
+            .map(value => String(value || '').trim())
+            .filter(Boolean);
+        const zniBlock = item.zni_key
+            ? `<div class="release-doc-field-help">ЗНИ уже создана: ${buildReleaseLinkCell(item.zni_url, item.zni_key)}</div>`
+            : `
+                <div class="form-check mt-3">
+                    <input class="form-check-input" type="checkbox" id="releaseDocumentCreateZni" ${state.form.create_zni ? 'checked' : ''}>
+                    <label class="form-check-label" for="releaseDocumentCreateZni">Создать ЗНИ в Jira OPLOT после формирования документов</label>
+                </div>
+                ${responsibles.length > 1 ? `
+                    <label class="release-doc-field-label" for="releaseDocumentZniReporter">Автор ЗНИ</label>
+                    <select id="releaseDocumentZniReporter" class="form-control">
+                        ${responsibles.map(name => `<option value="${escapeHtml(name)}" ${state.form.zni_reporter === name ? 'selected' : ''}>${escapeHtml(name)}</option>`).join('')}
+                    </select>
+                ` : ''}
+                <div class="release-doc-field-help">Для создания ЗНИ должны быть заполнены дежурный ОПЛОТ и ответственный.</div>
+            `;
+        content += zniBlock;
+    }
+
+    return content;
+}
+
+function renderReleaseDocumentWizardStep() {
+    const state = releaseDocumentWizardState;
+    const body = document.getElementById('releaseDocumentModalBody');
+    const prevBtn = document.getElementById('releaseDocumentPrevBtn');
+    const nextBtn = document.getElementById('releaseDocumentNextBtn');
+    if (!state || !body) {
+        return;
+    }
+
+    const step = state.steps[state.stepIndex];
+    if (!step) {
+        setReleaseDocumentModalError('Не удалось определить шаги мастера формирования.');
+        return;
+    }
+
+    document.getElementById('releaseDocumentModalSubtitle').textContent = `Релиз ${state.item.release_key}`;
+    body.innerHTML = getReleaseDocumentStepContent(state, step, state.stepIndex + 1, state.steps.length);
+
+    if (prevBtn) {
+        prevBtn.style.display = state.stepIndex > 0 ? '' : 'none';
+        prevBtn.disabled = false;
+        prevBtn.onclick = () => goReleaseDocumentStep(-1);
+    }
+
+    if (nextBtn) {
+        nextBtn.disabled = false;
+        nextBtn.onclick = () => goReleaseDocumentStep(1);
+        nextBtn.textContent = state.stepIndex === state.steps.length - 1 ? 'Сформировать документы' : 'Далее';
+    }
+}
+
+async function goReleaseDocumentStep(direction) {
+    const state = releaseDocumentWizardState;
+    if (!state) {
+        return;
+    }
+
+    if (direction < 0) {
+        state.stepIndex = Math.max(0, state.stepIndex - 1);
+        renderReleaseDocumentWizardStep();
+        return;
+    }
+
+    if (!(await validateReleaseDocumentCurrentStep())) {
+        return;
+    }
+
+    if (state.stepIndex >= state.steps.length - 1) {
+        await submitReleaseDocumentWizard();
+        return;
+    }
+
+    state.stepIndex += 1;
+    renderReleaseDocumentWizardStep();
+}
+
+async function submitReleaseDocumentWizard() {
+    const state = releaseDocumentWizardState;
+    const nextBtn = document.getElementById('releaseDocumentNextBtn');
+    const prevBtn = document.getElementById('releaseDocumentPrevBtn');
+    if (!state || !nextBtn) {
+        return;
+    }
+
+    if (!(await waitReleaseDocumentInitReady(state))) {
+        return;
+    }
+
+    if (state.stepIndex < state.steps.length - 1) {
+        renderReleaseDocumentWizardStep();
+        return;
+    }
+
+    const detection = state.initData?.detection || {};
+    const templateChoice = state.templateChoice || (detection.found ? detection : null);
+    if (!templateChoice?.category || !templateChoice?.release_full) {
+        alert('Не удалось определить шаблон релиза для формирования документов.');
+        return;
+    }
+
+    nextBtn.disabled = true;
+    nextBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Формирование...';
+    if (prevBtn) prevBtn.disabled = true;
+
+    try {
+        const response = await fetch(getReleaseUrl('monitor_generate'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                release_id: state.form.release_id,
+                release_version: state.form.release_version || state.item?.release_version || '',
+                prev_version: state.form.prev_version,
+                oplot: state.form.oplot,
+                checker: state.form.checker,
+                instruction_link: state.form.instruction_link,
+                date: inputValueToDisplayDate(state.form.date),
+                ke: state.form.ke,
+                playbooks: state.form.playbooks,
+                category: templateChoice.category,
+                release_full: templateChoice.release_full
+            })
+        });
+
+        if (!response.ok) {
+            let errorMessage = 'Не удалось сформировать документы';
+            try {
+                const data = await response.json();
+                errorMessage = data.error || errorMessage;
+            } catch (jsonError) {
+                console.error('Release document error response parse:', jsonError);
+            }
+            throw new Error(errorMessage);
+        }
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${state.form.release_id}.zip`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+        if (state.form.create_zni && !state.item.zni_key) {
+            nextBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Создание ЗНИ...';
+            await createReleaseZni(
+                state.item.row_key || state.item.release_key,
+                state.form.zni_reporter || undefined,
+                { skipConfirm: true, silent: true }
+            );
+        }
+        closeReleaseDocumentWizard();
+    } catch (error) {
+        console.error('Release document generation error:', error);
+        alert('Ошибка формирования документов: ' + error.message);
+    } finally {
+        nextBtn.disabled = false;
+        nextBtn.textContent = 'Сформировать документы';
+        if (prevBtn) prevBtn.disabled = false;
+    }
+}
+
+function getSelectedReleaseYear() {
+    const select = document.getElementById('releaseYearFilter');
+    return String(select?.value || currentReleaseYearFilter || releaseMonitorMeta?.current_year || new Date().getFullYear());
+}
+
+function getYearFilteredReleaseItems(items) {
+    const selectedYear = getSelectedReleaseYear();
+    return (items || []).filter(item => String(item.year) === selectedYear);
+}
+
+function buildReleaseYearSummary(items) {
+    const summary = {
+        total: items.length,
+        non_final: 0,
+        overdue: 0,
+        today: 0,
+        pre_final: 0,
+        final: 0,
+        cancelled: 0,
+        by_status: {}
+    };
+
+    items.forEach(item => {
+        const statusName = item.release_status || 'Не указан';
+        summary.by_status[statusName] = (summary.by_status[statusName] || 0) + 1;
+        if (item.is_non_final) summary.non_final += 1;
+        if (item.is_overdue) summary.overdue += 1;
+        if (item.is_today) summary.today += 1;
+        if (item.is_pre_final) summary.pre_final += 1;
+        if (item.is_final) summary.final += 1;
+        if (item.is_cancelled) summary.cancelled += 1;
+    });
+
+    summary.by_status = Object.fromEntries(
+        Object.entries(summary.by_status).sort((a, b) => {
+            if (b[1] !== a[1]) return b[1] - a[1];
+            return a[0].localeCompare(b[0], 'ru');
+        })
+    );
+    return summary;
+}
+
+function getCurrentWeekDateBounds() {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const mondayOffset = (start.getDay() + 6) % 7;
+    start.setDate(start.getDate() - mondayOffset);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    end.setHours(23, 59, 59, 999);
+    return { start, end };
+}
+
+function isReleaseInCurrentWeek(item) {
+    const deploymentDate = getReleaseEffectiveStartDate(item);
+    if (!deploymentDate) {
+        return false;
+    }
+    deploymentDate.setHours(0, 0, 0, 0);
+    const { start, end } = getCurrentWeekDateBounds();
+    return deploymentDate >= start && deploymentDate <= end;
+}
+
+function isReleaseAssignmentScopeForCurrentWeek(item) {
+    const deploymentDate = getReleaseEffectiveStartDate(item);
+    if (!deploymentDate) {
+        return false;
+    }
+    deploymentDate.setHours(0, 0, 0, 0);
+    const { start, end } = getCurrentWeekDateBounds();
+    const nextMonday = new Date(end);
+    nextMonday.setDate(end.getDate() + 1);
+    nextMonday.setHours(0, 0, 0, 0);
+    return Boolean(
+        (
+            (deploymentDate >= start && deploymentDate <= end) ||
+            deploymentDate.getTime() === nextMonday.getTime()
+        ) &&
+        !item?.is_cancelled
+    );
+}
+
+function hasReleaseResponsibles(item) {
+    return Array.isArray(item?.psi_responsibles) && item.psi_responsibles.some(value => String(value || '').trim());
+}
+
+function withUpdatedWeekAssignmentFlags(item) {
+    const isWeekScope = isReleaseAssignmentScopeForCurrentWeek(item);
+    return {
+        ...item,
+        is_current_week_assignment_scope: isWeekScope,
+        is_missing_week_responsible: Boolean(isWeekScope && !hasReleaseResponsibles(item))
+    };
+}
+
+function updateReleaseStatusFilterOptions(items) {
+    const statusSelect = document.getElementById('releaseStatusFilter');
+    if (!statusSelect) {
+        return;
+    }
+
+    const currentValue = statusSelect.value || 'all';
+    const summary = buildReleaseYearSummary(items || []);
+    const statusEntries = Object.entries(summary.by_status || {});
+    statusSelect.innerHTML = '<option value="all">Все статусы</option>' +
+        statusEntries.map(([statusName, statusCount]) => `<option value="${escapeHtml(statusName)}">${escapeHtml(statusName)} (${escapeHtml(statusCount)})</option>`).join('');
+    statusSelect.value = statusEntries.some(([statusName]) => statusName === currentValue) ? currentValue : 'all';
+}
+
+function updateReleaseEmptyState(state) {
+    const emptyState = document.getElementById('releaseMonitorEmptyState');
+    if (!emptyState) {
+        return;
+    }
+
+    if (state === 'initial') {
+        emptyState.innerHTML = `<i class="bi bi-cloud-arrow-down"></i><div>Данные по релизам загружаются отдельно. Нажмите "Обновить релизы", чтобы получить актуальную таблицу из Jira.</div>`;
+        return;
+    }
+    if (state === 'empty-year') {
+        emptyState.innerHTML = `<i class="bi bi-calendar-x"></i><div>За выбранный год релизы не найдены.</div>`;
+        return;
+    }
+    if (state === 'empty-filter') {
+        emptyState.innerHTML = `<i class="bi bi-funnel"></i><div>По выбранным фильтрам релизы не найдены.</div>`;
+        return;
+    }
+
+    emptyState.innerHTML = `<i class="bi bi-check-circle-fill text-success"></i><div>Таблица релизов загружена, но строки для отображения отсутствуют.</div>`;
+}
+
+function getReleaseSmsScopeConfig(scope = currentReleaseSmsScope) {
+    if (scope === 'week') {
+        return {
+            buttonLabel: 'SMS за неделю',
+            modalTitle: 'SMS по релизам текущей недели',
+            emptyHint: 'Нет релизов текущей недели для SMS',
+            readyHint: count => `Подготовить SMS по ${count} релизам текущей недели`,
+        };
+    }
+    if (scope === 'visible') {
+        return {
+            buttonLabel: 'SMS по фильтру',
+            modalTitle: 'SMS по текущему видимому набору',
+            emptyHint: 'Нет видимых релизов для SMS',
+            readyHint: count => `Подготовить SMS по ${count} видимым релизам`,
+        };
+    }
+    return {
+        buttonLabel: 'SMS на сегодня',
+        modalTitle: 'SMS по релизам на сегодня',
+        emptyHint: 'Нет релизов на сегодня для SMS',
+        readyHint: count => `Подготовить SMS по ${count} релизам на сегодня`,
+    };
+}
+
+function isReleaseSmsEligible(item) {
+    return Boolean(item) && !item.is_cancelled && !item.is_unnumbered;
+}
+
+function getReleaseSmsScopeItems(scope = currentReleaseSmsScope) {
+    if (scope === 'visible') {
+        return releaseSmsCurrentFilteredItems.slice();
+    }
+    if (scope === 'week') {
+        return releaseMonitorItems.filter(
+            item => isReleaseSmsEligible(item) && isReleaseInCurrentWeek(item)
+        );
+    }
+    return releaseMonitorItems.filter(
+        item => isReleaseSmsEligible(item) && isReleaseStartingToday(item)
+    );
+}
+
+function updateReleaseSmsScopeMenu() {
+    document.querySelectorAll('[data-sms-scope]').forEach(element => {
+        element.classList.toggle('active', element.dataset.smsScope === currentReleaseSmsScope);
+    });
+}
+
+function setReleaseSmsScope(scope) {
+    if (!['today', 'week', 'visible'].includes(scope)) {
+        return;
+    }
+    currentReleaseSmsScope = scope;
+    try {
+        localStorage.setItem(RELEASE_SMS_SCOPE_KEY, scope);
+    } catch (error) {
+        // The selected scope still works for the current page session.
+    }
+    updateReleaseSmsVisibleButton(releaseSmsCurrentFilteredItems);
+}
+
+function updateReleaseSmsVisibleButton(items) {
+    releaseSmsCurrentFilteredItems = Array.isArray(items) ? items.slice() : [];
+    releaseSmsVisibleItems = getReleaseSmsScopeItems();
+    const button = document.getElementById('releaseSmsVisibleBtn');
+    const label = document.getElementById('releaseSmsVisibleBtnLabel');
+    const config = getReleaseSmsScopeConfig();
+    const count = releaseSmsVisibleItems.length;
+    if (label) {
+        label.textContent = `${config.buttonLabel} (${count})`;
+    }
+    if (button) {
+        button.disabled = count === 0;
+        button.title = count
+            ? config.readyHint(count)
+            : config.emptyHint;
+    }
+    updateReleaseSmsScopeMenu();
+}
+
+function getReleaseSmsRowKey(item) {
+    return String(item?.row_key || '').trim();
+}
+
+function getReleaseSmsApplication(item) {
+    const keName = String(item?.ke_name || '').trim();
+    const keId = String(item?.ke_id || '').trim();
+    if (keName) {
+        return keId && !keName.includes(keId) ? `${keName} (${keId})` : keName;
+    }
+    const lines = Array.isArray(item?.release_name_lines) ? item.release_name_lines : [];
+    return String(lines[1] || item?.system_name || item?.release_summary || '').trim();
+}
+
+function getReleaseSmsSourcePrefix(item) {
+    const explicit = String(item?.source_prefix || '').trim().toUpperCase();
+    if (explicit) {
+        return explicit;
+    }
+    return String(item?.release_key || '').split('-')[0].trim().toUpperCase();
+}
+
+function detectReleaseSmsProfile(item) {
+    const prefix = getReleaseSmsSourcePrefix(item);
+    const systemName = String(item?.system_name || '').trim().toUpperCase();
+    const templateCategory = String(item?.template_category || '')
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+    const searchable = [
+        item?.release_key,
+        item?.release_summary,
+        item?.ke_name,
+        item?.system_name,
+        ...(Array.isArray(item?.release_name_lines) ? item.release_name_lines : []),
+    ].join(' ').toUpperCase();
+
+    if (
+        Boolean(item?.is_ai_agent_template) ||
+        ['AI_AGENTS', 'AI_AGENT', 'AI_AGENTS_TEMPLATES'].includes(templateCategory) ||
+        systemName === 'AI-АГЕНТЫ' ||
+        ['AIGAS', 'HELPERAI', 'DRMMMB'].includes(prefix) ||
+        /\bAI[- ]?AGENT|\bAI[- ]?АГЕНТ|\bAIGAS\b|\bHELPERAI\b/.test(searchable)
+    ) {
+        return 'AI';
+    }
+    if (prefix === 'SMECSC' || systemName === 'AIST' || systemName === 'АИСТ') {
+        return 'AIST';
+    }
+    if (prefix === 'EMRM' || systemName === 'ФОКУС') {
+        return 'EMRM';
+    }
+    if (prefix === 'SMECLM' || systemName === 'CLM') {
+        return 'CLM';
+    }
+    return '';
+}
+
+function parseReleaseSmsDate(value) {
+    const text = String(value || '').trim();
+    if (!text) {
+        return null;
+    }
+    let match = text.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+    if (match) {
+        return new Date(Number(match[3]), Number(match[2]) - 1, Number(match[1]));
+    }
+    match = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+        return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+    }
+    return null;
+}
+
+function formatReleaseSmsDateInput(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+        return '';
+    }
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function formatReleaseSmsDateDisplay(value) {
+    const date = parseReleaseSmsDate(value);
+    if (!date) {
+        return '';
+    }
+    return [
+        String(date.getDate()).padStart(2, '0'),
+        String(date.getMonth() + 1).padStart(2, '0'),
+        date.getFullYear(),
+    ].join('.');
+}
+
+function getDefaultReleaseSmsDate(item) {
+    return formatReleaseSmsDateInput(new Date());
+}
+
+function getReleaseSmsRollbackGroup(item) {
+    if (String(item?.ke_id || '').trim() !== '3894421') {
+        return '';
+    }
+    const searchable = [
+        item?.release_summary,
+        item?.ke_name,
+        item?.release_version,
+        ...(Array.isArray(item?.release_name_lines) ? item.release_name_lines : []),
+    ].join(' ').toLowerCase().replace(/[^0-9a-zа-яё]+/gi, ' ');
+    const hasBh = /(^|\s)bh(\s|$)/.test(searchable);
+    const hasPl = /(^|\s)pl(\s|$)/.test(searchable);
+    if (hasBh && !hasPl) {
+        return 'bh';
+    }
+    if (hasPl && !hasBh) {
+        return 'pl';
+    }
+    return '';
+}
+
+function getReleaseSmsPreviousVersion(currentItem) {
+    const currentNumber = Number.parseInt(String(currentItem?.release_number || ''), 10);
+    const currentKeId = String(currentItem?.ke_id || '').trim();
+    const currentReleaseKey = String(currentItem?.release_key || '').trim();
+    const currentYear = Number.parseInt(String(currentItem?.year || ''), 10);
+    const rollbackGroup = getReleaseSmsRollbackGroup(currentItem);
+    if (!Number.isFinite(currentNumber) || !currentKeId) {
+        return '';
+    }
+
+    const candidates = releaseMonitorItems.filter(item => {
+        const number = Number.parseInt(String(item?.release_number || ''), 10);
+        if (!Number.isFinite(number) || number >= currentNumber) {
+            return false;
+        }
+        if (String(item?.ke_id || '').trim() !== currentKeId) {
+            return false;
+        }
+        if (String(item?.release_key || '').trim() === currentReleaseKey) {
+            return false;
+        }
+        if (!String(item?.release_version || '').trim()) {
+            return false;
+        }
+        return !rollbackGroup || getReleaseSmsRollbackGroup(item) === rollbackGroup;
+    });
+
+    const currentYearCandidates = candidates.filter(
+        item => Number.parseInt(String(item?.year || ''), 10) === currentYear
+    );
+    const previousYearCandidates = candidates.filter(
+        item => Number.parseInt(String(item?.year || ''), 10) === currentYear - 1
+    );
+    const pool = currentYearCandidates.length ? currentYearCandidates : previousYearCandidates;
+    if (!pool.length) {
+        return '';
+    }
+    pool.sort((left, right) => (
+        Number.parseInt(String(right.release_number || ''), 10) -
+        Number.parseInt(String(left.release_number || ''), 10)
+    ));
+    return String(pool[0]?.release_version || '').trim();
+}
+
+function buildReleaseSmsSourceFingerprint(item) {
+    return JSON.stringify({
+        row_key: getReleaseSmsRowKey(item),
+        release_key: String(item?.release_key || '').trim(),
+        rov_key: String(item?.rov_key || '').trim(),
+        application: getReleaseSmsApplication(item),
+        release_version: String(item?.release_version || '').trim(),
+        deployment_start: String(item?.deployment_start_iso || item?.deployment_start || '').trim(),
+        psi_owner: String(item?.psi_owner || '').trim(),
+        source_prefix: getReleaseSmsSourcePrefix(item),
+    });
+}
+
+function buildReleaseSmsText(item) {
+    const application = item.application || 'АС не указана';
+    const date = formatReleaseSmsDateDisplay(item.date) || 'дата не указана';
+    const releaseVersion = item.release_version || 'версия не указана';
+    const releaseKey = item.release_key || 'релиз не указан';
+    const rovKey = item.rov_key || 'РОВ не указан';
+    const sender = item.sender || 'отправитель не указан';
+    if (item.result === 'failure') {
+        const previousVersion = item.prev_version || 'версия отката не указана';
+        return `Произошла ошибка при установке в ПРОМ АС ${application}. Дата: ${date}. Версия: ${releaseVersion}. ПО возвращено на версию ${previousVersion}. Релиз: ${releaseKey}, РОВ: ${rovKey}. Подсистема функционирует в штатном режиме. Отправитель: ${sender}`;
+    }
+    return `Успешное внедрение релиза АС ${application}. Дата: ${date}. Версия: ${releaseVersion}. Релиз: ${releaseKey}, РОВ: ${rovKey}. Подсистема функционирует в штатном режиме. Отправитель: ${sender}`;
+}
+
+function loadReleaseSmsDraft() {
+    try {
+        const raw = localStorage.getItem(RELEASE_SMS_DRAFT_KEY);
+        if (!raw) {
+            return {};
+        }
+        const draft = JSON.parse(raw);
+        if (!draft || Date.now() - Number(draft.saved_at || 0) > RELEASE_SMS_DRAFT_TTL_MS) {
+            localStorage.removeItem(RELEASE_SMS_DRAFT_KEY);
+            return {};
+        }
+        return draft.items && typeof draft.items === 'object' ? draft.items : {};
+    } catch (error) {
+        localStorage.removeItem(RELEASE_SMS_DRAFT_KEY);
+        return {};
+    }
+}
+
+function saveReleaseSmsDraft() {
+    const items = {};
+    releaseSmsDraftItems.forEach(item => {
+        if (item.row_key) {
+            items[item.row_key] = item;
+        }
+    });
+    localStorage.setItem(RELEASE_SMS_DRAFT_KEY, JSON.stringify({
+        saved_at: Date.now(),
+        items,
+    }));
+}
+
+function createReleaseSmsDraftItem(sourceItem, savedItem = null) {
+    const rowKey = getReleaseSmsRowKey(sourceItem);
+    const previousVersion = getReleaseSmsPreviousVersion(sourceItem);
+    const detectedProfile = detectReleaseSmsProfile(sourceItem);
+    const sourceFingerprint = buildReleaseSmsSourceFingerprint(sourceItem);
+    const base = {
+        row_key: rowKey,
+        source_fingerprint: sourceFingerprint,
+        release_key: String(sourceItem?.release_key || '').trim(),
+        rov_key: String(sourceItem?.rov_key || '').trim(),
+        title: String(
+            (Array.isArray(sourceItem?.release_name_lines) && sourceItem.release_name_lines[0]) ||
+            sourceItem?.release_summary ||
+            sourceItem?.release_key ||
+            ''
+        ).trim(),
+        application: getReleaseSmsApplication(sourceItem),
+        release_version: String(sourceItem?.release_version || '').trim(),
+        sender: String(sourceItem?.psi_owner || '').trim(),
+        included: true,
+        result: 'success',
+        date: getDefaultReleaseSmsDate(sourceItem),
+        date_source: 'auto',
+        prev_version: previousVersion,
+        prev_version_source: previousVersion ? 'auto' : 'missing',
+        profile: detectedProfile,
+        profile_manual: false,
+        text: '',
+        text_dirty: false,
+        needs_review: false,
+    };
+    base.text = buildReleaseSmsText(base);
+
+    if (!savedItem || savedItem.row_key !== rowKey) {
+        return base;
+    }
+
+    const sourceChanged = savedItem.source_fingerprint !== sourceFingerprint;
+    const restored = {
+        ...base,
+        included: savedItem.included !== false,
+        result: ['success', 'failure'].includes(savedItem.result) ? savedItem.result : base.result,
+    };
+
+    if (!sourceChanged) {
+        restored.date = savedItem.date_source === 'manual'
+            ? String(savedItem.date || base.date)
+            : base.date;
+        restored.date_source = savedItem.date_source === 'manual' ? 'manual' : 'auto';
+        restored.prev_version = String(savedItem.prev_version || '');
+        restored.prev_version_source = String(savedItem.prev_version_source || (restored.prev_version ? 'manual' : 'missing'));
+        restored.profile = String(savedItem.profile || base.profile);
+        restored.profile_manual = Boolean(savedItem.profile_manual);
+        restored.text = String(savedItem.text || buildReleaseSmsText(restored));
+        restored.text_dirty = Boolean(savedItem.text_dirty);
+        restored.needs_review = Boolean(savedItem.needs_review);
+        return restored;
+    }
+
+    if (savedItem.profile_manual && RELEASE_SMS_PROFILES.includes(savedItem.profile)) {
+        restored.profile = savedItem.profile;
+        restored.profile_manual = true;
+    }
+    if (savedItem.prev_version_source === 'manual') {
+        restored.prev_version = String(savedItem.prev_version || '');
+        restored.prev_version_source = restored.prev_version ? 'manual' : 'missing';
+    }
+    if (savedItem.date_source === 'manual') {
+        restored.date = String(savedItem.date || base.date);
+        restored.date_source = 'manual';
+    }
+    if (savedItem.text_dirty && savedItem.text) {
+        restored.text = String(savedItem.text);
+        restored.text_dirty = true;
+    } else {
+        restored.text = buildReleaseSmsText(restored);
+    }
+    restored.needs_review = true;
+    return restored;
+}
+
+function getReleaseSmsItem(rowKey) {
+    return releaseSmsDraftItems.find(item => item.row_key === rowKey) || null;
+}
+
+function isReleaseSmsProfileAvailable(profile) {
+    return RELEASE_SMS_PROFILES.includes(profile) && RELEASE_SMS_PROFILE_AVAILABILITY[profile] === true;
+}
+
+function getReleaseSmsIssues(item) {
+    const issues = [];
+    if (item.needs_review) {
+        issues.push('Исходные данные строки изменились после сохранения черновика.');
+    }
+    if (!item.release_key) {
+        issues.push('Не указан ключ релиза.');
+    }
+    if (!item.rov_key) {
+        issues.push('Не указан ключ РОВ.');
+    }
+    if (!item.application) {
+        issues.push('Не определена АС / КЭ.');
+    }
+    if (!item.release_version) {
+        issues.push('Не указана версия релиза.');
+    }
+    if (!item.sender) {
+        issues.push('Не указан отправитель.');
+    }
+    if (!parseReleaseSmsDate(item.date)) {
+        issues.push('Не указана корректная дата SMS.');
+    }
+    if (!item.profile) {
+        issues.push('Не определен профиль получателей.');
+    } else if (!isReleaseSmsProfileAvailable(item.profile)) {
+        issues.push(`CSV-шаблон профиля ${item.profile} недоступен.`);
+    }
+    if (item.result === 'failure' && !String(item.prev_version || '').trim()) {
+        issues.push('Для failure обязательна версия отката.');
+    }
+    if (!String(item.text || '').trim()) {
+        issues.push('Текст SMS пуст.');
+    }
+    return issues;
+}
+
+function getReleaseSmsSummary() {
+    const total = releaseSmsDraftItems.length;
+    const includedItems = releaseSmsDraftItems.filter(item => item.included);
+    const excluded = total - includedItems.length;
+    const ready = includedItems.filter(item => getReleaseSmsIssues(item).length === 0).length;
+    const needsFill = includedItems.length - ready;
+    const unknownProfile = includedItems.filter(item => !isReleaseSmsProfileAvailable(item.profile)).length;
+    const missingRollback = includedItems.filter(
+        item => item.result === 'failure' && !String(item.prev_version || '').trim()
+    ).length;
+    return {
+        total,
+        included: includedItems.length,
+        ready,
+        needsFill,
+        excluded,
+        unknownProfile,
+        missingRollback,
+    };
+}
+
+function renderReleaseSmsSummary() {
+    const summary = getReleaseSmsSummary();
+    const container = document.getElementById('releaseSmsSummary');
+    const downloadButton = document.getElementById('releaseSmsDownloadBtn');
+    if (container) {
+        container.innerHTML = `
+            <span class="release-sms-summary-pill">Всего: <strong>${summary.total}</strong></span>
+            <span class="release-sms-summary-pill">Включено: <strong>${summary.included}</strong></span>
+            <span class="release-sms-summary-pill">Готово: <strong>${summary.ready}</strong></span>
+            <span class="release-sms-summary-pill ${summary.needsFill ? 'warning' : ''}">Требует заполнения: <strong>${summary.needsFill}</strong></span>
+            <span class="release-sms-summary-pill">Исключено: <strong>${summary.excluded}</strong></span>
+            <span class="release-sms-summary-pill ${summary.unknownProfile ? 'danger' : ''}">Неизвестный профиль: <strong>${summary.unknownProfile}</strong></span>
+            <span class="release-sms-summary-pill ${summary.missingRollback ? 'danger' : ''}">Нет версии отката: <strong>${summary.missingRollback}</strong></span>
+        `;
+    }
+    if (downloadButton) {
+        downloadButton.disabled = summary.included === 0 || summary.needsFill > 0;
+        downloadButton.title = summary.included === 0
+            ? 'Нет включенных SMS для выгрузки'
+            : summary.needsFill
+                ? 'Заполните обязательные поля включенных SMS'
+                : `Скачать ZIP: ${summary.included} SMS`;
+    }
+}
+
+function renderReleaseSmsItem(item, index) {
+    const issues = item.included ? getReleaseSmsIssues(item) : [];
+    const profileOptions = [
+        '<option value="">Выберите профиль</option>',
+        ...RELEASE_SMS_PROFILES.map(profile => {
+            const available = isReleaseSmsProfileAvailable(profile);
+            const selected = item.profile === profile ? 'selected' : '';
+            return `<option value="${profile}" ${selected} ${available ? '' : 'disabled'}>${profile}${available ? '' : ' (нет CSV)'}</option>`;
+        }),
+    ].join('');
+    const prevSourceClass = item.prev_version_source === 'auto'
+        ? 'auto'
+        : item.prev_version ? '' : 'missing';
+    const prevSourceText = item.prev_version_source === 'auto'
+        ? 'Определено автоматически, значение можно изменить'
+        : item.prev_version
+            ? 'Указано вручную'
+            : 'Версия отката не определена';
+    const resultLabel = item.result === 'failure' ? 'Ошибка' : 'Успешно';
+    const cardClasses = [
+        'release-sms-item',
+        item.result === 'failure' ? 'result-failure' : 'result-success',
+        item.included ? '' : 'excluded',
+        item.included && issues.length ? 'needs-fill' : '',
+    ].filter(Boolean).join(' ');
+
+    return `
+        <article class="${cardClasses}" data-row-key="${escapeHtml(item.row_key)}">
+            <div class="release-sms-item-head">
+                <input class="form-check-input mt-0" type="checkbox" ${item.included ? 'checked' : ''}
+                       data-row-key="${escapeHtml(item.row_key)}" onchange="toggleReleaseSmsIncluded(this.dataset.rowKey, this.checked)">
+                <div class="release-sms-item-title">
+                    <strong>${escapeHtml(item.release_key || `Строка ${index + 1}`)} · ${escapeHtml(item.rov_key || 'без РОВ')}</strong>
+                    <span title="${escapeHtml(item.title)}">${escapeHtml(item.title || item.application || '')}</span>
+                </div>
+                <span class="badge ${item.result === 'failure' ? 'text-bg-danger' : 'text-bg-success'}">${resultLabel}</span>
+            </div>
+            <div class="release-sms-item-grid">
+                <div class="release-sms-field">
+                    <label>Результат</label>
+                    <select class="form-select" data-row-key="${escapeHtml(item.row_key)}"
+                            onchange="changeReleaseSmsResult(this.dataset.rowKey, this.value, this)">
+                        <option value="success" ${item.result === 'success' ? 'selected' : ''}>Успешно</option>
+                        <option value="failure" ${item.result === 'failure' ? 'selected' : ''}>Ошибка</option>
+                    </select>
+                </div>
+                <div class="release-sms-field">
+                    <label>Дата SMS</label>
+                    <input type="date" class="form-control" value="${escapeHtml(item.date)}"
+                           data-row-key="${escapeHtml(item.row_key)}"
+                           onchange="changeReleaseSmsDate(this.dataset.rowKey, this.value)">
+                </div>
+                <div class="release-sms-field">
+                    <label>Профиль получателей</label>
+                    <select class="form-select" data-row-key="${escapeHtml(item.row_key)}"
+                            onchange="changeReleaseSmsProfile(this.dataset.rowKey, this.value)">
+                        ${profileOptions}
+                    </select>
+                </div>
+                <div class="release-sms-field text">
+                    <div class="release-sms-text-head">
+                        <label>Текст SMS</label>
+                        <div class="release-sms-text-actions">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" data-row-key="${escapeHtml(item.row_key)}"
+                                    onclick="copyReleaseSmsText(this.dataset.rowKey)">
+                                <i class="bi bi-copy"></i> Копировать
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" data-row-key="${escapeHtml(item.row_key)}"
+                                    onclick="resetReleaseSmsText(this.dataset.rowKey)">Вернуть стандартный текст</button>
+                        </div>
+                    </div>
+                    <textarea class="form-control" data-row-key="${escapeHtml(item.row_key)}"
+                              oninput="changeReleaseSmsText(this.dataset.rowKey, this.value)">${escapeHtml(item.text)}</textarea>
+                </div>
+                ${item.result === 'failure' ? `
+                    <div class="release-sms-field release-sms-rollback-field">
+                        <label>Версия отката</label>
+                        <div class="release-sms-prev-wrap">
+                            <input type="text" class="form-control" value="${escapeHtml(item.prev_version)}"
+                                   placeholder="Введите версию отката" data-row-key="${escapeHtml(item.row_key)}"
+                                   oninput="changeReleaseSmsPreviousVersion(this.dataset.rowKey, this.value)">
+                            <span class="release-sms-source-note ${prevSourceClass}">${escapeHtml(prevSourceText)}</span>
+                        </div>
+                    </div>
+                ` : ''}
+                ${item.needs_review && item.included ? `
+                    <div class="release-sms-review-warning release-sms-grid-feedback">
+                        Исходные данные релиза изменились после сохранения черновика.
+                        <button type="button" class="btn btn-sm btn-outline-warning ms-2" data-row-key="${escapeHtml(item.row_key)}"
+                                onclick="confirmReleaseSmsReview(this.dataset.rowKey)">Данные проверены</button>
+                    </div>
+                ` : ''}
+                ${issues.length ? `<div class="release-sms-issues release-sms-grid-feedback">${issues.map(issue => `<div>• ${escapeHtml(issue)}</div>`).join('')}</div>` : ''}
+            </div>
+        </article>
+    `;
+}
+
+function renderReleaseSmsModal() {
+    const container = document.getElementById('releaseSmsItems');
+    if (container) {
+        container.innerHTML = releaseSmsDraftItems.map(renderReleaseSmsItem).join('');
+    }
+    renderReleaseSmsSummary();
+    saveReleaseSmsDraft();
+}
+
+function patchReleaseSmsItem(rowKey) {
+    const index = releaseSmsDraftItems.findIndex(item => item.row_key === rowKey);
+    if (index < 0) {
+        return;
+    }
+    const card = document.querySelector(`.release-sms-item[data-row-key="${escapeCssValue(rowKey)}"]`);
+    if (card) {
+        card.outerHTML = renderReleaseSmsItem(releaseSmsDraftItems[index], index);
+    }
+}
+
+function showReleaseSmsMessage(message, type = 'error') {
+    const element = document.getElementById('releaseSmsMessage');
+    if (!element) {
+        return;
+    }
+    element.textContent = message || '';
+    element.className = `release-sms-message ${message ? 'show' : ''} ${type}`;
+}
+
+function openReleaseSmsModal() {
+    if (!releaseSmsVisibleItems.length) {
+        return;
+    }
+    const scopeConfig = getReleaseSmsScopeConfig();
+    const modalTitle = document.getElementById('releaseSmsModalTitle');
+    if (modalTitle) {
+        modalTitle.textContent = `${scopeConfig.modalTitle} (${releaseSmsVisibleItems.length})`;
+    }
+    const savedDraft = loadReleaseSmsDraft();
+    releaseSmsDraftItems = releaseSmsVisibleItems
+        .filter(item => getReleaseSmsRowKey(item))
+        .map(item => createReleaseSmsDraftItem(item, savedDraft[getReleaseSmsRowKey(item)] || null));
+    showReleaseSmsMessage('');
+    renderReleaseSmsModal();
+    const modalElement = document.getElementById('releaseSmsModal');
+    releaseSmsModalInstance = releaseSmsModalInstance || getOrCreateReleaseModal(modalElement);
+    releaseSmsModalInstance.show();
+}
+
+function toggleReleaseSmsIncluded(rowKey, included) {
+    const item = getReleaseSmsItem(rowKey);
+    if (!item) {
+        return;
+    }
+    item.included = Boolean(included);
+    patchReleaseSmsItem(rowKey);
+    saveReleaseSmsDraft();
+    renderReleaseSmsSummary();
+}
+
+function changeReleaseSmsResult(rowKey, result, selectElement = null) {
+    const item = getReleaseSmsItem(rowKey);
+    if (!item || !['success', 'failure'].includes(result)) {
+        return;
+    }
+    if (item.text_dirty && item.result !== result) {
+        const replaceText = window.confirm('Текст SMS изменен вручную. Заменить его стандартным текстом для нового результата?');
+        if (!replaceText) {
+            if (selectElement) {
+                selectElement.value = item.result;
+            }
+            return;
+        }
+    }
+    item.result = result;
+    item.text_dirty = false;
+    item.text = buildReleaseSmsText(item);
+    renderReleaseSmsModal();
+}
+
+function patchReleaseSmsTextarea(rowKey) {
+    const item = getReleaseSmsItem(rowKey);
+    const textarea = document.querySelector(`.release-sms-item[data-row-key="${escapeCssValue(rowKey)}"] textarea`);
+    if (item && textarea && !item.text_dirty) {
+        textarea.value = item.text;
+    }
+}
+
+function changeReleaseSmsDate(rowKey, value) {
+    const item = getReleaseSmsItem(rowKey);
+    if (!item) {
+        return;
+    }
+    item.date = String(value || '');
+    item.date_source = 'manual';
+    if (!item.text_dirty) {
+        item.text = buildReleaseSmsText(item);
+        patchReleaseSmsTextarea(rowKey);
+    }
+    saveReleaseSmsDraft();
+    renderReleaseSmsSummary();
+}
+
+function changeReleaseSmsProfile(rowKey, value) {
+    const item = getReleaseSmsItem(rowKey);
+    if (!item) {
+        return;
+    }
+    item.profile = RELEASE_SMS_PROFILES.includes(value) ? value : '';
+    item.profile_manual = Boolean(item.profile);
+    saveReleaseSmsDraft();
+    renderReleaseSmsModal();
+}
+
+function changeReleaseSmsPreviousVersion(rowKey, value) {
+    const item = getReleaseSmsItem(rowKey);
+    if (!item) {
+        return;
+    }
+    item.prev_version = String(value || '').trim();
+    item.prev_version_source = item.prev_version ? 'manual' : 'missing';
+    if (!item.text_dirty) {
+        item.text = buildReleaseSmsText(item);
+        patchReleaseSmsTextarea(rowKey);
+    }
+    saveReleaseSmsDraft();
+    renderReleaseSmsSummary();
+}
+
+function changeReleaseSmsText(rowKey, value) {
+    const item = getReleaseSmsItem(rowKey);
+    if (!item) {
+        return;
+    }
+    item.text = String(value || '');
+    item.text_dirty = true;
+    saveReleaseSmsDraft();
+    renderReleaseSmsSummary();
+}
+
+function resetReleaseSmsText(rowKey) {
+    const item = getReleaseSmsItem(rowKey);
+    if (!item) {
+        return;
+    }
+    item.text_dirty = false;
+    item.text = buildReleaseSmsText(item);
+    renderReleaseSmsModal();
+}
+
+function confirmReleaseSmsReview(rowKey) {
+    const item = getReleaseSmsItem(rowKey);
+    if (!item) {
+        return;
+    }
+    item.needs_review = false;
+    renderReleaseSmsModal();
+}
+
+async function copyReleaseSmsText(rowKey) {
+    const item = getReleaseSmsItem(rowKey);
+    if (!item) {
+        return;
+    }
+    try {
+        await navigator.clipboard.writeText(item.text || '');
+        showReleaseSmsMessage(`Текст ${item.release_key || rowKey} скопирован.`, 'success');
+    } catch (error) {
+        showReleaseSmsMessage('Не удалось скопировать текст в буфер обмена.');
+    }
+}
+
+function setAllReleaseSmsIncluded(included) {
+    releaseSmsDraftItems.forEach(item => {
+        item.included = Boolean(included);
+    });
+    renderReleaseSmsModal();
+}
+
+function setAllReleaseSmsResults(result) {
+    const hasManualText = releaseSmsDraftItems.some(item => item.included && item.text_dirty && item.result !== result);
+    if (hasManualText && !window.confirm('У части SMS текст изменен вручную. Заменить его стандартным текстом?')) {
+        return;
+    }
+    releaseSmsDraftItems.forEach(item => {
+        if (!item.included) {
+            return;
+        }
+        item.result = result;
+        item.text_dirty = false;
+        item.text = buildReleaseSmsText(item);
+    });
+    renderReleaseSmsModal();
+}
+
+function clearReleaseSmsDraft() {
+    localStorage.removeItem(RELEASE_SMS_DRAFT_KEY);
+    releaseSmsDraftItems = releaseSmsVisibleItems
+        .filter(item => getReleaseSmsRowKey(item))
+        .map(item => createReleaseSmsDraftItem(item));
+    showReleaseSmsMessage('Черновик очищен.', 'success');
+    renderReleaseSmsModal();
+}
+
+async function generateReleaseSmsZip() {
+    const summary = getReleaseSmsSummary();
+    if (!summary.included) {
+        showReleaseSmsMessage('Нет включенных SMS для выгрузки.');
+        return;
+    }
+    if (summary.needsFill) {
+        showReleaseSmsMessage('Заполните обязательные поля включенных SMS или исключите проблемные строки.');
+        return;
+    }
+
+    const button = document.getElementById('releaseSmsDownloadBtn');
+    const originalHtml = button?.innerHTML || '';
+    if (button) {
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Формирование...';
+    }
+    showReleaseSmsMessage('');
+
+    const items = releaseSmsDraftItems
+        .filter(item => item.included)
+        .map(item => ({
+            row_key: item.row_key,
+            release_key: item.release_key,
+            rov_key: item.rov_key,
+            result: item.result,
+            profile: item.profile,
+            text: item.text,
+        }));
+
+    try {
+        const response = await fetch(getReleaseUrl('sms_generate'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items }),
+        });
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            const details = Array.isArray(data.errors) ? ` ${data.errors.join(' ')}` : '';
+            throw new Error((data.error || 'Не удалось сформировать ZIP.') + details);
+        }
+
+        const blob = await response.blob();
+        const disposition = response.headers.get('Content-Disposition') || '';
+        const filenameMatch = disposition.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i);
+        const filename = filenameMatch
+            ? decodeURIComponent(filenameMatch[1].replace(/"/g, ''))
+            : `sms_release_monitor_${Date.now()}.zip`;
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+        showReleaseSmsMessage(`ZIP сформирован: ${summary.included} SMS.`, 'success');
+    } catch (error) {
+        showReleaseSmsMessage(error.message || 'Не удалось сформировать ZIP.');
+    } finally {
+        if (button) {
+            button.innerHTML = originalHtml;
+        }
+        renderReleaseSmsSummary();
+    }
+}
+
+function getSmsTemplateProfile(profile = smsTemplateEditorState.activeProfile) {
+    const key = String(profile || '').trim().toUpperCase();
+    if (!smsTemplateEditorState.profiles[key]) {
+        smsTemplateEditorState.profiles[key] = {
+            profile: key,
+            available: false,
+            numbers: [],
+            originalNumbers: [],
+            count: 0,
+            error: '',
+        };
+    }
+    return smsTemplateEditorState.profiles[key];
+}
+
+function normalizeSmsTemplatePhone(value) {
+    const normalized = String(value || '').trim().replace(/[\s()\-\u00A0]+/g, '');
+    if (!normalized) {
+        return '';
+    }
+    if (!/^\+?\d{5,20}$/.test(normalized)) {
+        throw new Error(`Некорректный номер: ${value}`);
+    }
+    return normalized;
+}
+
+function isSmsTemplatePhoneValid(value) {
+    try {
+        normalizeSmsTemplatePhone(value);
+        return true;
+    } catch (error) {
+        return false;
+    }
+}
+
+function setSmsTemplateEditorMessage(message = '', type = 'danger') {
+    const element = document.getElementById('smsTemplateEditorMessage');
+    if (!element) {
+        return;
+    }
+    element.textContent = message || '';
+    element.classList.toggle('success', type === 'success');
+}
+
+function setSmsTemplateDirty(dirty) {
+    smsTemplateEditorState.dirty = Boolean(dirty);
+    const indicator = document.getElementById('smsTemplateDirtyIndicator');
+    const saveButton = document.getElementById('smsTemplateSaveBtn');
+    const profile = getSmsTemplateProfile();
+    if (indicator) {
+        indicator.textContent = smsTemplateEditorState.dirty ? 'Есть несохраненные изменения' : '';
+    }
+    if (saveButton) {
+        saveButton.disabled = !smsTemplateEditorState.dirty || smsTemplateEditorState.loading || !profile.available;
+    }
+}
+
+function hydrateSmsTemplateProfiles(rawProfiles) {
+    const nextProfiles = {};
+    SMS_TEMPLATE_PROFILES.forEach(profile => {
+        const data = rawProfiles?.[profile] || {};
+        const numbers = Array.isArray(data.numbers) ? data.numbers.map(value => String(value || '')) : [];
+        nextProfiles[profile] = {
+            profile,
+            available: data.available !== false,
+            filename: data.filename || '',
+            numbers: numbers.slice(),
+            originalNumbers: numbers.slice(),
+            count: Number(data.count ?? numbers.length) || numbers.length,
+            error: data.error || '',
+        };
+    });
+    smsTemplateEditorState.profiles = nextProfiles;
+    if (!SMS_TEMPLATE_PROFILES.includes(smsTemplateEditorState.activeProfile)) {
+        smsTemplateEditorState.activeProfile = 'CLM';
+    }
+    setSmsTemplateDirty(false);
+}
+
+function renderSmsTemplateTabs() {
+    const container = document.getElementById('smsTemplateProfileTabs');
+    if (!container) {
+        return;
+    }
+    container.innerHTML = SMS_TEMPLATE_PROFILES.map(profile => {
+        const data = getSmsTemplateProfile(profile);
+        const count = Array.isArray(data.numbers) ? data.numbers.length : 0;
+        const active = profile === smsTemplateEditorState.activeProfile;
+        const unavailableClass = data.available ? '' : ' unavailable';
+        return `
+            <button type="button" class="sms-template-tab${active ? ' active' : ''}${unavailableClass}" onclick="setSmsTemplateProfile('${profile}')">
+                <span class="sms-template-tab-name">${escapeHtml(profile)}</span>
+                <span class="sms-template-tab-count">${data.available ? `${count} ном.` : 'CSV недоступен'}</span>
+            </button>
+        `;
+    }).join('');
+}
+
+function renderSmsTemplatePhones() {
+    const profile = getSmsTemplateProfile();
+    const title = document.getElementById('smsTemplateProfileTitle');
+    const meta = document.getElementById('smsTemplateProfileMeta');
+    const rows = document.getElementById('smsTemplatePhoneRows');
+    const addInput = document.getElementById('smsTemplateNewPhoneInput');
+    const addButton = document.querySelector('.sms-template-add-row .btn');
+
+    if (title) {
+        title.textContent = profile.profile || smsTemplateEditorState.activeProfile;
+    }
+    if (meta) {
+        meta.textContent = profile.available
+            ? `${profile.numbers.length} номеров${profile.filename ? ` · ${profile.filename}` : ''}`
+            : (profile.error || 'CSV-шаблон профиля недоступен.');
+    }
+    if (addInput) {
+        addInput.disabled = !profile.available;
+    }
+    if (addButton) {
+        addButton.disabled = !profile.available;
+    }
+    if (!rows) {
+        return;
+    }
+    if (!profile.available) {
+        rows.innerHTML = `<div class="sms-template-empty">${escapeHtml(profile.error || 'CSV-шаблон профиля недоступен.')}</div>`;
+        setSmsTemplateDirty(false);
+        return;
+    }
+    if (!profile.numbers.length) {
+        rows.innerHTML = '<div class="sms-template-empty">В профиле пока нет номеров.</div>';
+        return;
+    }
+    rows.innerHTML = profile.numbers.map((phone, index) => {
+        const invalid = phone && !isSmsTemplatePhoneValid(phone);
+        return `
+            <div class="sms-template-phone-row${invalid ? ' invalid' : ''}">
+                <div class="sms-template-phone-index">${index + 1}</div>
+                <input type="text" class="form-control" value="${escapeHtml(phone)}" oninput="updateSmsTemplatePhone(${index}, this.value)">
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeSmsTemplatePhone(${index})" title="Удалить номер">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </div>
+        `;
+    }).join('');
+}
+
+function renderSmsTemplateEditor() {
+    renderSmsTemplateTabs();
+    renderSmsTemplatePhones();
+    setSmsTemplateDirty(smsTemplateEditorState.dirty);
+}
+
+function resetActiveSmsTemplateProfile() {
+    const profile = getSmsTemplateProfile();
+    profile.numbers = Array.isArray(profile.originalNumbers) ? profile.originalNumbers.slice() : [];
+    profile.count = profile.numbers.length;
+    setSmsTemplateDirty(false);
+}
+
+function setSmsTemplateProfile(profile) {
+    const normalized = String(profile || '').trim().toUpperCase();
+    if (!SMS_TEMPLATE_PROFILES.includes(normalized) || normalized === smsTemplateEditorState.activeProfile) {
+        return;
+    }
+    if (smsTemplateEditorState.dirty && !window.confirm('Есть несохраненные изменения. Переключиться без сохранения?')) {
+        return;
+    }
+    if (smsTemplateEditorState.dirty) {
+        resetActiveSmsTemplateProfile();
+    }
+    smsTemplateEditorState.activeProfile = normalized;
+    setSmsTemplateEditorMessage('');
+    renderSmsTemplateEditor();
+}
+
+async function loadSmsTemplateEditor() {
+    smsTemplateEditorState.loading = true;
+    setSmsTemplateDirty(false);
+    setSmsTemplateEditorMessage('Загрузка шаблонов...', 'success');
+    try {
+        const response = await fetch(getReleaseUrl('sms_templates'));
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || data.success === false) {
+            throw new Error(data.error || 'Не удалось загрузить SMS-шаблоны.');
+        }
+        hydrateSmsTemplateProfiles(data.profiles || {});
+        setSmsTemplateEditorMessage('');
+    } catch (error) {
+        setSmsTemplateEditorMessage(error.message || 'Не удалось загрузить SMS-шаблоны.');
+    } finally {
+        smsTemplateEditorState.loading = false;
+        renderSmsTemplateEditor();
+    }
+}
+
+function openSmsTemplateEditor(event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    const modalElement = document.getElementById('smsTemplateEditorModal');
+    if (!modalElement) {
+        return;
+    }
+    smsTemplateEditorModalInstance = smsTemplateEditorModalInstance || getOrCreateReleaseModal(modalElement);
+    smsTemplateEditorModalInstance.show();
+    loadSmsTemplateEditor();
+}
+
+function closeSmsTemplateEditor() {
+    if (smsTemplateEditorState.dirty && !window.confirm('Закрыть редактор без сохранения?')) {
+        return;
+    }
+    if (smsTemplateEditorState.dirty) {
+        resetActiveSmsTemplateProfile();
+    }
+    smsTemplateEditorModalInstance?.hide();
+}
+
+function reloadSmsTemplateEditor() {
+    if (smsTemplateEditorState.dirty && !window.confirm('Обновить данные без сохранения изменений?')) {
+        return;
+    }
+    loadSmsTemplateEditor();
+}
+
+function updateSmsTemplatePhone(index, value) {
+    const profile = getSmsTemplateProfile();
+    if (!profile.available || !Array.isArray(profile.numbers) || index < 0 || index >= profile.numbers.length) {
+        return;
+    }
+    profile.numbers[index] = value;
+    setSmsTemplateEditorMessage('');
+    setSmsTemplateDirty(true);
+}
+
+function removeSmsTemplatePhone(index) {
+    const profile = getSmsTemplateProfile();
+    if (!profile.available || !Array.isArray(profile.numbers) || index < 0 || index >= profile.numbers.length) {
+        return;
+    }
+    profile.numbers.splice(index, 1);
+    setSmsTemplateEditorMessage('');
+    setSmsTemplateDirty(true);
+    renderSmsTemplateEditor();
+}
+
+function addSmsTemplatePhone() {
+    const input = document.getElementById('smsTemplateNewPhoneInput');
+    const profile = getSmsTemplateProfile();
+    if (!input || !profile.available) {
+        return;
+    }
+    try {
+        const phone = normalizeSmsTemplatePhone(input.value);
+        if (!phone) {
+            throw new Error('Введите номер телефона.');
+        }
+        const existing = new Set(profile.numbers.map(value => {
+            try {
+                return normalizeSmsTemplatePhone(value).toLowerCase();
+            } catch (error) {
+                return String(value || '').toLowerCase();
+            }
+        }));
+        if (existing.has(phone.toLowerCase())) {
+            throw new Error('Такой номер уже есть в списке.');
+        }
+        profile.numbers.push(phone);
+        input.value = '';
+        setSmsTemplateEditorMessage('');
+        setSmsTemplateDirty(true);
+        renderSmsTemplateEditor();
+    } catch (error) {
+        setSmsTemplateEditorMessage(error.message || 'Некорректный номер телефона.');
+    }
+}
+
+function collectSmsTemplateNumbers() {
+    const profile = getSmsTemplateProfile();
+    const result = [];
+    const seen = new Set();
+    for (const value of profile.numbers || []) {
+        const phone = normalizeSmsTemplatePhone(value);
+        if (!phone) {
+            continue;
+        }
+        const key = phone.toLowerCase();
+        if (seen.has(key)) {
+            continue;
+        }
+        seen.add(key);
+        result.push(phone);
+    }
+    if (!result.length) {
+        throw new Error('Список получателей не может быть пустым.');
+    }
+    return result;
+}
+
+async function saveSmsTemplateProfile() {
+    const profile = getSmsTemplateProfile();
+    if (!profile.available) {
+        setSmsTemplateEditorMessage(profile.error || 'CSV-шаблон профиля недоступен.');
+        return;
+    }
+    let numbers = [];
+    try {
+        numbers = collectSmsTemplateNumbers();
+    } catch (error) {
+        setSmsTemplateEditorMessage(error.message || 'Проверьте номера телефонов.');
+        renderSmsTemplatePhones();
+        return;
+    }
+
+    const button = document.getElementById('smsTemplateSaveBtn');
+    const originalHtml = button?.innerHTML || '';
+    if (button) {
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Сохранение...';
+    }
+    smsTemplateEditorState.loading = true;
+    setSmsTemplateEditorMessage('');
+    try {
+        const response = await fetch(buildReleaseUrlFromTemplate('sms_template_profile', profile.profile), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ numbers }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || data.success === false) {
+            throw new Error(data.error || 'Не удалось сохранить SMS-шаблон.');
+        }
+        const saved = data.profile || {};
+        const savedNumbers = Array.isArray(saved.numbers) ? saved.numbers.map(value => String(value || '')) : numbers;
+        smsTemplateEditorState.profiles[profile.profile] = {
+            ...profile,
+            ...saved,
+            available: true,
+            numbers: savedNumbers.slice(),
+            originalNumbers: savedNumbers.slice(),
+            count: savedNumbers.length,
+            error: '',
+        };
+        setSmsTemplateDirty(false);
+        setSmsTemplateEditorMessage(`Профиль ${profile.profile} сохранен: ${savedNumbers.length} номеров.`, 'success');
+        renderSmsTemplateEditor();
+    } catch (error) {
+        setSmsTemplateEditorMessage(error.message || 'Не удалось сохранить SMS-шаблон.');
+    } finally {
+        smsTemplateEditorState.loading = false;
+        if (button) {
+            button.innerHTML = originalHtml;
+        }
+        setSmsTemplateDirty(smsTemplateEditorState.dirty);
+    }
+}
+
+function renderReleaseMonitor(items, meta) {
+    const workMarkScrollState = isReleaseWorkMarkingMode ? captureReleaseWorkMarkScrollState() : null;
+    const tableWrap = document.getElementById('releaseTableWrap');
+    const emptyState = document.getElementById('releaseMonitorEmptyState');
+    const lastUpdated = document.getElementById('releaseMonitorLastUpdated');
+    const lastConfluenceSync = document.getElementById('releaseMonitorLastConfluenceSync');
+    const yearSelect = document.getElementById('releaseYearFilter');
+
+    releaseMonitorItems = Array.isArray(items) ? items : [];
+    releaseMonitorMeta = meta || {};
+    releaseEmployeeSelectionAvailable = Boolean(
+        releaseMonitorMeta.employee_selection_available
+    );
+    syncReleaseEmployeeDirectoryProjection(releaseMonitorMeta);
+    const directoryWarning = document.getElementById('releaseEmployeeDirectoryWarning');
+    if (directoryWarning) {
+        directoryWarning.hidden = releaseEmployeeSelectionAvailable;
+    }
+    syncReleaseWorkMarkSuggestedParticipants();
+    const renderedRevision = getReleaseMonitorRevision(releaseMonitorMeta);
+    releaseMonitorKnownRevision = renderedRevision || releaseMonitorKnownRevision;
+    releaseMonitorLastAppliedViewRevision = renderedRevision || releaseMonitorLastAppliedViewRevision;
+    hideReleaseUpdateBanner();
+    updateReleaseAutoRefreshBadge(releaseMonitorMeta);
+    ensureResponsibleHeaderFilter();
+
+    window.dashboardData = window.dashboardData || {};
+    window.dashboardData.release_monitor = releaseMonitorItems;
+    window.dashboardData.release_monitor_meta = releaseMonitorMeta;
+    window.dashboardData.release_monitor_summary = buildReleaseYearSummary(getYearFilteredReleaseItems(releaseMonitorItems));
+
+      if (yearSelect) {
+        const years = Array.isArray(meta?.years) && meta.years.length ? meta.years : [meta?.current_year || new Date().getFullYear()];
+        const previousValue = currentReleaseYearFilter || String(meta?.current_year || years[0]);
+        yearSelect.innerHTML = years.map(year => `<option value="${escapeHtml(year)}">${escapeHtml(year)}</option>`).join('');
+        currentReleaseYearFilter = years.map(String).includes(String(previousValue)) ? String(previousValue) : String(meta?.current_year || years[0]);
+        yearSelect.value = currentReleaseYearFilter;
+      }
+
+      populateResponsibleFilterOptions();
+      refreshReleaseWorkMarkUi();
+
+    if (lastUpdated) {
+        lastUpdated.textContent = meta?.last_updated || 'еще не загружалось';
+    }
+    if (lastConfluenceSync) {
+        lastConfluenceSync.textContent = meta?.last_confluence_sync || 'еще не выполнялось';
+    }
+
+    const noRovToggle = document.getElementById('releaseNoRovToggle');
+    if (noRovToggle) {
+        noRovToggle.checked = showReleaseRowsWithoutRov;
+    }
+    const farFutureToggle = document.getElementById('releaseFarFutureToggle');
+    if (farFutureToggle) {
+        farFutureToggle.checked = showFarFutureReleases;
+    }
+
+    if (emptyState && !releaseMonitorItems.length) {
+        emptyState.style.display = '';
+        updateReleaseEmptyState('initial');
+    }
+
+    const viewSelect = document.getElementById('releaseViewFilter');
+    if (viewSelect) {
+        currentReleaseViewFilter = viewSelect.value || 'all';
+    }
+
+    applyReleaseFilters();
+    if (workMarkScrollState) {
+        restoreReleaseWorkMarkScrollState(workMarkScrollState);
+    }
+}
+
+function handleReleaseYearFilter() {
+    currentReleaseYearFilter = getSelectedReleaseYear();
+    populateResponsibleFilterOptions();
+    updateReleaseStatusFilterOptions(getYearFilteredReleaseItems(releaseMonitorItems));
+    applyReleaseFilters();
+}
+
+function handleReleaseViewFilter() {
+    const select = document.getElementById('releaseViewFilter');
+    currentReleaseViewFilter = select?.value || 'all';
+    applyReleaseFilters();
+}
+
+function handleReleaseSearch() {
+    applyReleaseFilters();
+}
+
+function handleReleaseNoRovToggle() {
+    showReleaseRowsWithoutRov = Boolean(document.getElementById('releaseNoRovToggle')?.checked);
+    applyReleaseFilters();
+}
+
+function handleReleaseFarFutureToggle() {
+    showFarFutureReleases = Boolean(document.getElementById('releaseFarFutureToggle')?.checked);
+    applyReleaseFilters();
+}
+
+function buildReleaseOrderDraft(yearItems) {
+    const splitItems = {
+        waiting: yearItems.filter(item => item.is_unnumbered),
+        numbered: yearItems.filter(item => !item.is_unnumbered),
+    };
+    const buildBuckets = (items) => items.reduce((acc, item) => {
+        const bucket = getReleaseOrderBucket(item);
+        if (!acc[bucket]) {
+            acc[bucket] = [];
+        }
+        acc[bucket].push(item.row_key || item.release_key);
+        return acc;
+    }, {});
+
+    return {
+        year: getSelectedReleaseYear(),
+        waiting: buildBuckets(splitItems.waiting),
+        numbered: buildBuckets(splitItems.numbered),
+        force_unnumbered: yearItems.filter(item => item.is_force_unnumbered).map(item => item.row_key || item.release_key),
+        force_numbered: yearItems.filter(item => item.is_force_numbered).map(item => item.row_key || item.release_key),
+    };
+}
+
+function cloneReleaseOrderDraft(draft) {
+    if (!draft) {
+        return null;
+    }
+    try {
+        return JSON.parse(JSON.stringify(draft));
+    } catch (error) {
+        console.warn('Release order draft clone failed:', error);
+        return null;
+    }
+}
+
+function getActiveReleaseOrderDraft() {
+    return releaseOrderDraft && String(releaseOrderDraft.year) === String(getSelectedReleaseYear())
+        ? cloneReleaseOrderDraft(releaseOrderDraft)
+        : buildReleaseOrderDraft(getYearFilteredReleaseItems(releaseMonitorItems));
+}
+
+function updateReleaseMonitorMetaFromStatusData(statusData) {
+    if (!statusData || !statusData.release_monitor_meta) {
+        return;
+    }
+    releaseMonitorMeta = statusData.release_monitor_meta || releaseMonitorMeta;
+    releaseEmployeeSelectionAvailable = Boolean(
+        releaseMonitorMeta.employee_selection_available
+    );
+    syncReleaseEmployeeDirectoryProjection(releaseMonitorMeta);
+    populateResponsibleFilterOptions();
+    const participantsChanged = syncReleaseWorkMarkSuggestedParticipants();
+    releaseMonitorKnownRevision = getReleaseMonitorRevision(releaseMonitorMeta) || releaseMonitorKnownRevision;
+    updateReleaseAutoRefreshBadge(releaseMonitorMeta);
+    window.dashboardData = window.dashboardData || {};
+    window.dashboardData.release_monitor_meta = releaseMonitorMeta;
+    if (participantsChanged) {
+        refreshReleaseWorkMarkUi();
+    }
+}
+
+function queueReleaseRowOrderDraftSave(draft, rollbackDraft = null) {
+    const draftSnapshot = cloneReleaseOrderDraft(draft);
+    if (!draftSnapshot) {
+        return;
+    }
+    if (!releaseRowOrderMoveSaveInFlight && !releaseRowOrderMoveQueuedDraft) {
+        releaseRowOrderMoveRollbackDraft = cloneReleaseOrderDraft(rollbackDraft);
+    }
+    releaseRowOrderMoveQueuedDraft = draftSnapshot;
+    void flushReleaseRowOrderDraftSave();
+}
+
+async function flushReleaseRowOrderDraftSave() {
+    if (releaseRowOrderMoveSaveInFlight || !releaseRowOrderMoveQueuedDraft) {
+        return;
+    }
+    const draftToSave = releaseRowOrderMoveQueuedDraft;
+    releaseRowOrderMoveQueuedDraft = null;
+    releaseRowOrderMoveSaveInFlight = true;
+    try {
+        const statusData = await persistReleaseOrderDraft(draftToSave);
+        updateReleaseMonitorMetaFromStatusData(statusData);
+        releaseRowOrderMoveRollbackDraft = cloneReleaseOrderDraft(draftToSave);
+        if (!releaseRowOrderMoveQueuedDraft) {
+            releaseRowOrderMoveRollbackDraft = null;
+        }
+    } catch (error) {
+        console.error('Release row order background save error:', error);
+        if (!releaseRowOrderMoveQueuedDraft) {
+            releaseOrderDraft = releaseRowOrderMoveRollbackDraft;
+            releaseRowOrderMoveRollbackDraft = null;
+            applyReleaseFilters();
+            alert('Ошибка сохранения порядка строки: ' + error.message);
+        }
+    } finally {
+        releaseRowOrderMoveSaveInFlight = false;
+        if (releaseRowOrderMoveQueuedDraft) {
+            void flushReleaseRowOrderDraftSave();
+        }
+    }
+}
+
+function getReleaseOrderBucket(item) {
+    const rawValue = String(
+        item?.deployment_start_iso ||
+        item?.deployment_start ||
+        item?.sort_date ||
+        'no-date'
+    ).trim();
+    const parsedDate = parseReleaseDateValue(rawValue);
+    if (parsedDate) {
+        const year = parsedDate.getFullYear();
+        const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
+        const day = String(parsedDate.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+    return rawValue ? rawValue.slice(0, 10) : 'no-date';
+}
+
+function normalizeReleaseOrderBuckets(value) {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function removeReleaseRowFromOrderBuckets(buckets, rowKey) {
+    Object.keys(buckets || {}).forEach(bucket => {
+        const values = Array.isArray(buckets[bucket]) ? buckets[bucket] : [];
+        const filteredValues = values.filter(value => value !== rowKey);
+        if (filteredValues.length) {
+            buckets[bucket] = filteredValues;
+        } else {
+            delete buckets[bucket];
+        }
+    });
+}
+
+function addReleaseRowToOrderBucket(buckets, item, rowKey, placement = 'end') {
+    const bucket = getReleaseOrderBucket(item);
+    if (!buckets[bucket]) {
+        buckets[bucket] = [];
+    }
+    if (buckets[bucket].includes(rowKey)) {
+        return;
+    }
+    if (placement === 'start') {
+        buckets[bucket].unshift(rowKey);
+    } else {
+        buckets[bucket].push(rowKey);
+    }
+}
+
+function applyReleaseNumberingActionToDraft(draft, item, rowKey, action) {
+    if (!draft || !item || !rowKey) {
+        return false;
+    }
+
+    draft.force_unnumbered = Array.isArray(draft.force_unnumbered) ? draft.force_unnumbered : [];
+    draft.force_numbered = Array.isArray(draft.force_numbered) ? draft.force_numbered : [];
+    draft.waiting = normalizeReleaseOrderBuckets(draft.waiting);
+    draft.numbered = normalizeReleaseOrderBuckets(draft.numbered);
+    removeReleaseRowFromOrderBuckets(draft.waiting, rowKey);
+    removeReleaseRowFromOrderBuckets(draft.numbered, rowKey);
+
+    if (action === 'force_numbered') {
+        const forceNumberedIndex = draft.force_numbered.indexOf(rowKey);
+        const enabled = forceNumberedIndex === -1;
+        if (enabled) {
+            const forceUnnumberedIndex = draft.force_unnumbered.indexOf(rowKey);
+            if (forceUnnumberedIndex !== -1) {
+                draft.force_unnumbered.splice(forceUnnumberedIndex, 1);
+            }
+            draft.force_numbered.push(rowKey);
+            addReleaseRowToOrderBucket(draft.numbered, item, rowKey, 'start');
+        } else {
+            draft.force_numbered.splice(forceNumberedIndex, 1);
+        }
+        return true;
+    }
+
+    if (action === 'force_unnumbered') {
+        const forceIndex = draft.force_unnumbered.indexOf(rowKey);
+        const enabled = forceIndex === -1;
+        if (enabled) {
+            const forceNumberedIndex = draft.force_numbered.indexOf(rowKey);
+            if (forceNumberedIndex !== -1) {
+                draft.force_numbered.splice(forceNumberedIndex, 1);
+            }
+            draft.force_unnumbered.push(rowKey);
+            addReleaseRowToOrderBucket(draft.waiting, item, rowKey, 'start');
+        } else {
+            draft.force_unnumbered.splice(forceIndex, 1);
+        }
+        return true;
+    }
+
+    return false;
+}
+
+async function persistReleaseOrderDraft(draft) {
+    const response = await fetch(getReleaseUrl('order'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            year: draft.year || getSelectedReleaseYear(),
+            waiting_row_keys: draft.waiting || [],
+            numbered_row_keys: draft.numbered || [],
+            force_unnumbered_row_keys: draft.force_unnumbered || [],
+            force_numbered_row_keys: draft.force_numbered || [],
+        })
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Не удалось сохранить порядок релизов');
+    }
+
+    return data;
+}
+
+function ensureResponsibleHeaderFilter() {
+    const tableHead = document.querySelector('.release-monitor-table thead tr');
+    if (!tableHead) {
+        return;
+    }
+    const targetTh = tableHead.children[8];
+    if (!targetTh || targetTh.querySelector('#releaseResponsibleFilter')) {
+        return;
+    }
+
+    targetTh.innerHTML = `
+        <div class="release-th-filter">
+            <span>Ответственный<br>за ПСИ/Проверки</span>
+            <select id="releaseResponsibleFilter" onchange="handleReleaseResponsibleFilter()">
+                <option value="all">Все ФИО</option>
+            </select>
+        </div>
+    `;
+}
+
+function populateResponsibleFilterOptions() {
+    ensureResponsibleHeaderFilter();
+    const select = document.getElementById('releaseResponsibleFilter');
+    if (!select) {
+        return;
+    }
+
+    const selectedYear = String(getSelectedReleaseYear());
+    const assignedIdentities = new Set(
+        releaseMonitorItems
+            .filter(item => String(item?.year ?? '') === selectedYear)
+            .flatMap(item => Array.isArray(item?.psi_responsibles) ? item.psi_responsibles : [])
+            .map(normalizeReleaseResponsibleIdentity)
+            .filter(Boolean)
+    );
+    const options = releaseEmployeeSelectionAvailable
+        ? releaseResponsibleDirectoryOptions
+            .filter(option => option.identities.some(
+                identity => assignedIdentities.has(normalizeReleaseResponsibleIdentity(identity))
+            ))
+            .sort((left, right) => left.releaseName.localeCompare(right.releaseName, 'ru'))
+        : [];
+
+    const currentValue = options.some(option => option.employeeId === currentReleaseResponsibleFilter)
+        ? currentReleaseResponsibleFilter
+        : 'all';
+    select.innerHTML = `
+        <option value="all">Все ФИО</option>
+        ${options.map(option => `<option value="${escapeHtml(option.employeeId)}">${escapeHtml(option.releaseName)}</option>`).join('')}
+    `;
+    select.value = currentValue;
+    currentReleaseResponsibleFilter = currentValue;
+}
+
+function handleReleaseResponsibleFilter() {
+    currentReleaseResponsibleFilter = document.getElementById('releaseResponsibleFilter')?.value || 'all';
+    const viewSelect = document.getElementById('releaseViewFilter');
+    const statusSelect = document.getElementById('releaseStatusFilter');
+    if (viewSelect) {
+        viewSelect.value = 'all';
+        currentReleaseViewFilter = 'all';
+    }
+    if (statusSelect) {
+        statusSelect.value = 'all';
+    }
+    applyReleaseFilters();
+}
+
+function withReleaseDisplayNumbers(orderedItems) {
+    const numberedItems = (orderedItems || []).filter(item => !item.is_unnumbered);
+    const totalNumbered = numberedItems.length;
+    const numberByKey = new Map(numberedItems.map((item, index) => [
+        item.row_key || item.release_key,
+        totalNumbered - index
+    ]));
+    return (orderedItems || []).map(item => {
+        const rowKey = item.row_key || item.release_key;
+        return {
+            ...item,
+            release_number: item.is_unnumbered ? '' : (numberByKey.get(rowKey) || '')
+        };
+    });
+}
+
+function applyReleaseOrderDraft(yearItems) {
+    if (!releaseOrderDraft || String(releaseOrderDraft.year) !== String(getSelectedReleaseYear())) {
+        return yearItems;
+    }
+
+    const forcedKeys = new Set(releaseOrderDraft.force_unnumbered || []);
+    const forceNumberedKeys = new Set(releaseOrderDraft.force_numbered || []);
+    const effectiveItems = yearItems.map(item => {
+        const rowKey = item.row_key || item.release_key;
+        const isForced = forcedKeys.has(rowKey);
+        const isForceNumbered = forceNumberedKeys.has(rowKey);
+        const isNaturalUnnumbered = Boolean(item.is_natural_unnumbered);
+        const isManualOverride = isManualNumberingOverride(item);
+        return {
+            ...item,
+            is_force_unnumbered: isForced && !isForceNumbered,
+            is_force_numbered: isForceNumbered,
+            is_manual_numbering_override: isManualOverride,
+            is_unnumbered: (isNaturalUnnumbered || isForced) && !isManualOverride && !isForceNumbered,
+        };
+    });
+
+    const splitItems = {
+        waiting: effectiveItems.filter(item => item.is_unnumbered),
+        numbered: effectiveItems.filter(item => !item.is_unnumbered),
+    };
+
+    const orderedItems = ['waiting', 'numbered'].flatMap(groupName => {
+        const groupItems = splitItems[groupName];
+        const groupedItems = groupItems.reduce((acc, item) => {
+            const bucket = getReleaseOrderBucket(item);
+            if (!acc[bucket]) {
+                acc[bucket] = [];
+            }
+            acc[bucket].push(item);
+            return acc;
+        }, {});
+        const orderedByBucket = releaseOrderDraft[groupName] || {};
+
+        return groupItems.flatMap(item => {
+            const bucket = getReleaseOrderBucket(item);
+            const bucketItems = groupedItems[bucket] || [];
+            if (!bucketItems.length || bucketItems[0] !== item) {
+                return [];
+            }
+
+            const bucketByKey = new Map(bucketItems.map(bucketItem => [bucketItem.row_key || bucketItem.release_key, bucketItem]));
+            const orderedItems = [];
+            const usedKeys = new Set();
+            (orderedByBucket[bucket] || []).forEach(rowKey => {
+                const orderedItem = bucketByKey.get(rowKey);
+                if (orderedItem) {
+                    orderedItems.push(orderedItem);
+                    usedKeys.add(rowKey);
+                }
+            });
+            bucketItems.forEach(bucketItem => {
+                const rowKey = bucketItem.row_key || bucketItem.release_key;
+                if (!usedKeys.has(rowKey)) {
+                    orderedItems.push(bucketItem);
+                }
+            });
+            return orderedItems;
+        });
+    });
+    return withReleaseDisplayNumbers(orderedItems);
+}
+
+function refreshReleaseOrderModeUi() {
+    const orderBtn = document.getElementById('releaseMonitorOrderBtn');
+    const saveBtn = document.getElementById('releaseMonitorOrderSaveBtn');
+    const cancelBtn = document.getElementById('releaseMonitorOrderCancelBtn');
+    const hint = document.getElementById('releaseOrderModeHint');
+    const buttonRow = document.querySelector('.release-monitor-button-row');
+
+    if (buttonRow) {
+        buttonRow.classList.toggle('is-order-mode', isReleaseOrderMode);
+    }
+    if (orderBtn) {
+        orderBtn.classList.toggle('active-order', isReleaseOrderMode);
+        const orderTitle = isReleaseOrderMode ? 'Режим порядка строк включен' : 'Порядок строк';
+        orderBtn.title = orderTitle;
+        orderBtn.setAttribute('aria-label', orderTitle);
+        if (!orderBtn.querySelector('i')) {
+            orderBtn.innerHTML = '<i class="bi bi-sliders"></i>';
+        }
+    }
+    if (saveBtn) {
+        saveBtn.style.display = isReleaseOrderMode ? '' : 'none';
+        saveBtn.disabled = !releaseOrderDirty;
+    }
+    if (cancelBtn) {
+        cancelBtn.style.display = isReleaseOrderMode ? '' : 'none';
+    }
+    if (hint) {
+        hint.style.display = isReleaseOrderMode ? '' : 'none';
+    }
+}
+
+function toggleReleaseOrderMode() {
+    const searchValue = (document.getElementById('releaseSearchInput')?.value || '').trim();
+    const statusValue = document.getElementById('releaseStatusFilter')?.value || 'all';
+    const viewValue = document.getElementById('releaseViewFilter')?.value || 'all';
+    const workMarkValue = document.getElementById('releaseWorkMarkFilter')?.value || 'all';
+
+    if (!isReleaseOrderMode) {
+        if (searchValue || statusValue !== 'all' || viewValue !== 'all' || workMarkValue !== 'all') {
+            alert('Режим порядка строк доступен только без поиска и дополнительных фильтров.');
+            return;
+        }
+        releaseOrderDraft = buildReleaseOrderDraft(getYearFilteredReleaseItems(releaseMonitorItems));
+        releaseOrderDirty = false;
+        releaseManualOverrideDraft = {};
+        isReleaseOrderMode = true;
+    } else {
+        cancelReleaseOrderMode();
+        return;
+    }
+
+    refreshReleaseOrderModeUi();
+    applyReleaseFilters();
+}
+
+async function cancelReleaseOrderMode() {
+    isReleaseOrderMode = false;
+    releaseOrderDraft = null;
+    releaseOrderDirty = false;
+    releaseManualOverrideDraft = {};
+    refreshReleaseOrderModeUi();
+    applyReleaseFilters();
+}
+
+function applyReleaseRowMoveToDraft(draft, rowKey, direction) {
+    if (!draft || !rowKey) {
+        return false;
+    }
+
+    return ['waiting', 'numbered'].some(groupName => {
+        const item = getReleaseMonitorItem(rowKey);
+        if (!item) {
+            return false;
+        }
+        const bucket = getReleaseOrderBucket(item);
+        const groupItems = draft[groupName]?.[bucket];
+        if (!Array.isArray(groupItems)) {
+            return false;
+        }
+        const currentIndex = groupItems.indexOf(rowKey);
+        if (currentIndex === -1) {
+            return false;
+        }
+
+        const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+        if (targetIndex < 0 || targetIndex >= groupItems.length) {
+            return true;
+        }
+
+        const swapValue = groupItems[targetIndex];
+        groupItems[targetIndex] = groupItems[currentIndex];
+        groupItems[currentIndex] = swapValue;
+        return true;
+    });
+}
+
+function moveReleaseRow(rowKey, direction) {
+    if (!isReleaseOrderMode || !releaseOrderDraft) {
+        return;
+    }
+
+    if (!applyReleaseRowMoveToDraft(releaseOrderDraft, rowKey, direction)) {
+        return;
+    }
+
+    releaseOrderDirty = true;
+    refreshReleaseOrderModeUi();
+    applyReleaseFilters();
+}
+
+async function saveReleaseOrder() {
+    if (!isReleaseOrderMode || !releaseOrderDraft || !releaseOrderDirty) {
+        return;
+    }
+
+    const saveBtn = document.getElementById('releaseMonitorOrderSaveBtn');
+    const cancelBtn = document.getElementById('releaseMonitorOrderCancelBtn');
+    const orderBtn = document.getElementById('releaseMonitorOrderBtn');
+    [saveBtn, cancelBtn, orderBtn].forEach(btn => {
+        if (btn) {
+            btn.disabled = true;
+        }
+    });
+
+    try {
+        const manualPayloads = Object.values(releaseManualOverrideDraft || {});
+        for (const manualPayload of manualPayloads) {
+            const manualUrl = manualPayload.reset
+                ? getReleaseUrl('manual_override_reset')
+                : getReleaseUrl('manual_override_fields');
+            const manualBody = manualPayload.reset
+                ? { row_key: manualPayload.row_key }
+                : { row_key: manualPayload.row_key, fields: manualPayload.fields || {} };
+            const manualResponse = await fetch(manualUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(manualBody),
+            });
+            const manualData = await manualResponse.json();
+            if (!manualResponse.ok || !manualData.success) {
+                throw new Error(manualData.error || 'Не удалось сохранить ручные правки');
+            }
+        }
+
+        const response = await fetch(getReleaseUrl('order'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                year: getSelectedReleaseYear(),
+                waiting_row_keys: releaseOrderDraft.waiting || [],
+                numbered_row_keys: releaseOrderDraft.numbered || [],
+                force_unnumbered_row_keys: releaseOrderDraft.force_unnumbered || [],
+                force_numbered_row_keys: releaseOrderDraft.force_numbered || [],
+            })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Не удалось сохранить порядок релизов');
+        }
+
+        isReleaseOrderMode = false;
+        releaseOrderDraft = null;
+        releaseOrderDirty = false;
+        releaseManualOverrideDraft = {};
+        renderReleaseMonitor(data.release_monitor || [], data.release_monitor_meta || {});
+        refreshReleaseOrderModeUi();
+        alert('Порядок строк сохранен');
+    } catch (error) {
+        console.error('Release settings save error:', error);
+        alert('Ошибка сохранения порядка строк: ' + error.message);
+    } finally {
+        [saveBtn, cancelBtn, orderBtn].forEach(btn => {
+            if (btn) {
+                btn.disabled = false;
+            }
+        });
+    }
+}
+
+function scrollReleasePageToTop() {
+    window.scrollTo({
+        top: 0,
+        behavior: 'smooth'
+    });
+}
+
+function scrollToInstalledPromRelease() {
+    const targetRow = document.querySelector('#releaseMonitorBody tr[data-final-installed="true"]');
+    if (!targetRow) {
+        return;
+    }
+
+    const rowRect = targetRow.getBoundingClientRect();
+    const viewportOffset = Math.max(140, Math.round(window.innerHeight * 0.42));
+    const targetTop = rowRect.top + window.scrollY - viewportOffset;
+    window.scrollTo({
+        top: Math.max(0, targetTop),
+        behavior: 'smooth'
+    });
+}
+
+function updateReleaseScrollButtons() {
+    const finalButton = document.getElementById('releaseScrollFinalBtn');
+    if (!finalButton) {
+        return;
+    }
+
+    const hasFinalInstalled = Boolean(document.querySelector('#releaseMonitorBody tr[data-final-installed="true"]'));
+    finalButton.disabled = !hasFinalInstalled;
+}
+
+function toggleReleaseMonitorExpand() {
+    return;
+    const tableWrap = document.getElementById('releaseTableWrap');
+    const toggleBtn = document.getElementById('releaseMonitorToggleBtn');
+
+    if (tableWrap) {
+        tableWrap.classList.toggle('compact', !isReleaseMonitorExpanded);
+    }
+    if (toggleBtn) {
+        toggleBtn.innerHTML = isReleaseMonitorExpanded
+            ? '<i class="bi bi-arrows-collapse"></i> Свернуть'
+            : '<i class="bi bi-arrows-expand"></i> Показать все';
+    }
+}
+
+function getReleaseItemResponsibles(releaseKey) {
+    const item = getReleaseMonitorItem(releaseKey);
+    return Array.isArray(item?.psi_responsibles) ? [...item.psi_responsibles] : [];
+}
+
+function applyCompactReleaseMutation(data, fallbackRowKey = '') {
+    const updatedRow = data?.row;
+    if (!updatedRow || typeof updatedRow !== 'object') {
+        return false;
+    }
+    const updatedRowKey = String(
+        updatedRow.row_key || updatedRow.release_key || fallbackRowKey || ''
+    ).trim();
+    if (!updatedRowKey) {
+        return false;
+    }
+    let replaced = false;
+    releaseMonitorItems = releaseMonitorItems.map(item => {
+        const itemRowKey = String(item?.row_key || item?.release_key || '').trim();
+        if (itemRowKey !== updatedRowKey) {
+            return item;
+        }
+        replaced = true;
+        return updatedRow;
+    });
+    if (!replaced) {
+        return false;
+    }
+    renderReleaseMonitor(
+        releaseMonitorItems,
+        data.release_monitor_meta || releaseMonitorMeta
+    );
+    return true;
+}
+
+function addResponsibleAssignment(releaseKey) {
+    const responsibles = ['', ...getReleaseItemResponsibles(releaseKey)];
+    replaceReleaseAssignmentItem(releaseKey, { psi_responsibles: responsibles });
+    patchReleaseAssignmentDom(releaseKey, { psi_responsibles: responsibles }, false, 'responsibles');
+}
+
+function removeResponsibleAssignment(releaseKey, index) {
+    const responsibles = getReleaseItemResponsibles(releaseKey);
+    if (index < 0 || index >= responsibles.length) {
+        return;
+    }
+    responsibles.splice(index, 1);
+    saveReleaseAssignmentOptimistic(releaseKey, { psi_responsibles: responsibles }, 'responsibles');
+}
+
+function updateResponsibleAssignment(releaseKey, index, value) {
+    const responsibles = getReleaseItemResponsibles(releaseKey);
+    while (responsibles.length <= index) {
+        responsibles.push('');
+    }
+    responsibles[index] = value || '';
+    saveReleaseAssignmentOptimistic(releaseKey, { psi_responsibles: responsibles }, 'responsibles');
+}
+
+function chooseReleaseZniReporter(item) {
+    const responsibles = (Array.isArray(item?.psi_responsibles) ? item.psi_responsibles : [])
+        .map(value => String(value || '').trim())
+        .filter(Boolean);
+    if (responsibles.length <= 1) {
+        return responsibles[0] || '';
+    }
+
+    const optionsText = responsibles.map((name, index) => `${index + 1}. ${name}`).join('\n');
+    const answer = window.prompt(
+        `В строке несколько ответственных. Укажите номер автора задачи:\n\n${optionsText}`,
+        '1'
+    );
+    if (answer === null) {
+        return null;
+    }
+    const selectedIndex = Number(answer) - 1;
+    if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || selectedIndex >= responsibles.length) {
+        alert('Некорректный номер ответственного.');
+        return null;
+    }
+    return responsibles[selectedIndex];
+}
+
+async function createReleaseZni(releaseKey, reporterOverride = undefined, options = {}) {
+    const item = getReleaseMonitorItem(releaseKey);
+    if (!item) {
+        alert('Не удалось найти строку релиза.');
+        return null;
+    }
+    if (item.zni_key) {
+        return item.zni_key;
+    }
+    if (!item.psi_owner) {
+        alert('Перед созданием ЗНИ заполните дежурного ОПЛОТ.');
+        return null;
+    }
+    const responsibles = (Array.isArray(item.psi_responsibles) ? item.psi_responsibles : [])
+        .map(value => String(value || '').trim())
+        .filter(Boolean);
+    if (!responsibles.length) {
+        alert('Перед созданием ЗНИ заполните ответственного.');
+        return null;
+    }
+
+    const reporter = reporterOverride !== undefined ? reporterOverride : chooseReleaseZniReporter(item);
+    if (reporter === null) {
+        return null;
+    }
+
+    if (!options.skipConfirm) {
+        const confirmed = window.confirm(`Создать ЗНИ в Jira OPLOT для релиза ${item.release_key || ''}?`);
+        if (!confirmed) {
+            return null;
+        }
+    }
+
+    try {
+        const response = await fetch(getReleaseUrl('zni'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                release_key: releaseKey,
+                reporter,
+                compact: true
+            })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Не удалось создать ЗНИ');
+        }
+
+        if (!applyCompactReleaseMutation(data, releaseKey)) {
+            renderReleaseMonitor(data.release_monitor || [], data.release_monitor_meta || {});
+        }
+        if (!options.silent) {
+            alert(`ЗНИ создана: ${data.issue?.key || ''}`);
+        }
+        return data.issue?.key || null;
+    } catch (error) {
+        console.error('Release ZNI create error:', error);
+        alert('Ошибка создания ЗНИ: ' + error.message);
+        return null;
+    }
+}
+
+function getReleaseManualColorLevel(item) {
+    const level = String(item?.rollout_notes_level || '').trim().toLowerCase();
+    if (['success', 'warning', 'danger', 'none'].includes(level)) {
+        return level;
+    }
+    return item?.has_rollout_notes ? 'warning' : '';
+}
+
+function applyReleaseManualColorToItem(item, level) {
+    if (!item) {
+        return;
+    }
+    const normalizedLevel = ['success', 'warning', 'danger', 'none'].includes(level) ? level : '';
+    item.rollout_notes_level = normalizedLevel;
+    item.has_rollout_notes = Boolean(normalizedLevel && normalizedLevel !== 'none');
+}
+
+function getReleaseRowElement(rowKey) {
+    const normalizedRowKey = String(rowKey || '').trim();
+    const body = document.getElementById('releaseMonitorBody');
+    if (!normalizedRowKey || !body) {
+        return null;
+    }
+    return Array.from(body.querySelectorAll('tr.release-row')).find(
+        row => row.dataset.rowKey === normalizedRowKey
+    ) || null;
+}
+
+function normalizeReleaseAssignmentResponsibles(values, keepEmpty = false) {
+    if (!Array.isArray(values)) {
+        return [];
+    }
+    return values
+        .map(value => String(value || '').trim())
+        .filter(value => keepEmpty || Boolean(value));
+}
+
+function getReleaseAssignmentSnapshot(item) {
+    return {
+        psi_owner: item?.psi_owner || '',
+        psi_owner_source: item?.psi_owner_source || '',
+        psi_owner_date: item?.psi_owner_date || '',
+        psi_zni_reviewer: item?.psi_zni_reviewer || '',
+        psi_checker: item?.psi_checker || '',
+        psi_responsibles: Array.isArray(item?.psi_responsibles) ? [...item.psi_responsibles] : [],
+        is_missing_week_responsible: Boolean(item?.is_missing_week_responsible)
+    };
+}
+
+function applyReleaseAssignmentToItem(item, patch) {
+    if (!item) {
+        return item;
+    }
+    const nextItem = { ...item };
+    if (Object.prototype.hasOwnProperty.call(patch, 'psi_owner')) {
+        nextItem.psi_owner = patch.psi_owner || '';
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'psi_owner_source')) {
+        nextItem.psi_owner_source = patch.psi_owner_source || '';
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'psi_owner_date')) {
+        nextItem.psi_owner_date = patch.psi_owner_date || '';
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'psi_zni_reviewer')) {
+        nextItem.psi_zni_reviewer = patch.psi_zni_reviewer || '';
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'psi_checker')) {
+        nextItem.psi_checker = patch.psi_checker || '';
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'psi_responsibles')) {
+        nextItem.psi_responsibles = Array.isArray(patch.psi_responsibles) ? [...patch.psi_responsibles] : [];
+    }
+    return withUpdatedWeekAssignmentFlags(nextItem);
+}
+
+function replaceReleaseAssignmentItem(rowKey, patch) {
+    let updatedItem = null;
+    releaseMonitorItems = releaseMonitorItems.map(item => {
+        if ((item.row_key || item.release_key) !== rowKey) {
+            return item;
+        }
+        updatedItem = applyReleaseAssignmentToItem(item, patch);
+        return updatedItem;
+    });
+    return updatedItem;
+}
+
+function shouldRefreshReleaseAssignmentFilters(fieldGroup) {
+    return fieldGroup === 'responsibles' && (currentReleaseResponsibleFilter || 'all') !== 'all';
+}
+
+function refreshReleaseAssignmentAfterLocalChange(rowKey, patch, pending, fieldGroup) {
+    const shouldRefreshFilters = shouldRefreshReleaseAssignmentFilters(fieldGroup);
+    if (fieldGroup === 'responsibles') {
+        populateResponsibleFilterOptions();
+    }
+    if (shouldRefreshFilters) {
+        applyReleaseFilters();
+        setReleaseAssignmentPending(rowKey, fieldGroup, pending);
+        return;
+    }
+    patchReleaseAssignmentDom(rowKey, patch, pending, fieldGroup);
+}
+
+function getReleaseReviewerCell(rowKey) {
+    const row = getReleaseRowElement(rowKey);
+    if (!row) {
+        return null;
+    }
+    return row.querySelector('.reviewer-cell')?.closest('td') || row.children[8] || null;
+}
+
+function focusPendingManualDutyInput(rowKey) {
+    if (!pendingManualDutyFocusReleaseKey || pendingManualDutyFocusReleaseKey !== rowKey) {
+        return;
+    }
+    const manualInput = Array.from(document.querySelectorAll('.duty-manual-input')).find(
+        element => element.dataset.releaseKey === rowKey
+    );
+    if (manualInput) {
+        manualInput.focus();
+        if (typeof manualInput.select === 'function') {
+            manualInput.select();
+        }
+        pendingManualDutyFocusReleaseKey = '';
+    }
+}
+
+function patchReleaseAssignmentDom(rowKey, patch = {}, pending = false, fieldGroup = 'assignment') {
+    const item = getReleaseMonitorItem(rowKey);
+    const cell = getReleaseReviewerCell(rowKey);
+    if (!item || !cell) {
+        return;
+    }
+
+    const hasManualDutyInput = Boolean(cell.querySelector('.duty-manual-input'));
+    const nextReviewer = item.psi_owner || '';
+    const nextReviewerSource = item.psi_owner_source || '';
+    const nextManualDutyMode = nextReviewerSource === 'manual_text' || (nextReviewer && isCustomDutyText(nextReviewer));
+    const shouldRebuildCell =
+        Object.prototype.hasOwnProperty.call(patch, 'psi_responsibles') ||
+        (
+            Object.prototype.hasOwnProperty.call(patch, 'psi_owner_source') &&
+            hasManualDutyInput !== nextManualDutyMode
+        );
+
+    if (shouldRebuildCell) {
+        cell.innerHTML = buildReviewerCell(item);
+        focusPendingManualDutyInput(rowKey);
+        setReleaseAssignmentPending(rowKey, fieldGroup, pending);
+        return;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(patch, 'psi_owner')) {
+        const dutyField = cell.querySelector('.duty-select, .duty-manual-input');
+        if (dutyField && document.activeElement !== dutyField) {
+            dutyField.value = item.psi_owner || '';
+        }
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'psi_checker')) {
+        const checkerInput = cell.querySelector('.checker-input');
+        if (checkerInput && document.activeElement !== checkerInput) {
+            checkerInput.value = item.psi_checker || '';
+        }
+    }
+    setReleaseAssignmentPending(rowKey, fieldGroup, pending);
+}
+
+function setReleaseAssignmentPending(rowKey, fieldGroup, pending) {
+    const row = getReleaseRowElement(rowKey);
+    if (!row) {
+        return;
+    }
+    const selectors = {
+        responsibles: '.responsible-select, .responsible-icon-btn',
+        duty: '.duty-select, .duty-manual-input',
+        checker: '.checker-input',
+        assignment: '.reviewer-select, .checker-input, .responsible-icon-btn'
+    };
+    const selector = selectors[fieldGroup] || selectors.assignment;
+    row.querySelectorAll(selector).forEach(element => {
+        element.classList.toggle('assignment-save-pending', Boolean(pending));
+        if (pending) {
+            element.setAttribute('aria-busy', 'true');
+        } else {
+            element.removeAttribute('aria-busy');
+        }
+    });
+}
+
+function buildReleaseAssignmentPayload(item) {
+    return {
+        release_key: item.row_key || item.release_key,
+        reviewer: item.psi_owner || '',
+        reviewer_source: item.psi_owner_source || '',
+        zni_reviewer: item.psi_zni_reviewer || '',
+        checker: item.psi_checker || '',
+        responsibles: normalizeReleaseAssignmentResponsibles(item.psi_responsibles || [])
+    };
+}
+
+function buildReleaseAssignmentSuccessPatch(data) {
+    return {
+        psi_owner: data.reviewer || '',
+        psi_owner_source: data.reviewer_source || '',
+        psi_owner_date: data.reviewer_date || '',
+        psi_zni_reviewer: data.zni_reviewer || '',
+        psi_checker: data.checker || '',
+        psi_responsibles: Array.isArray(data.responsibles) ? data.responsibles : []
+    };
+}
+
+async function saveReleaseAssignmentOptimistic(releaseKey, patch, fieldGroup = 'assignment') {
+    const rowKey = String(releaseKey || '').trim();
+    const currentItem = getReleaseMonitorItem(rowKey);
+    if (!rowKey || !currentItem) {
+        return null;
+    }
+
+    const beforeSnapshot = getReleaseAssignmentSnapshot(currentItem);
+    const saveKey = `${rowKey}:${fieldGroup || 'assignment'}`;
+    const saveSeq = (releaseAssignmentSaveSeqByKey.get(saveKey) || 0) + 1;
+    releaseAssignmentSaveSeqByKey.set(saveKey, saveSeq);
+
+    const optimisticItem = replaceReleaseAssignmentItem(rowKey, patch);
+    refreshReleaseAssignmentAfterLocalChange(rowKey, patch, true, fieldGroup);
+
+    try {
+        const response = await fetch(getReleaseUrl('reviewer'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(buildReleaseAssignmentPayload(optimisticItem))
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Не удалось сохранить назначение');
+        }
+        if (releaseAssignmentSaveSeqByKey.get(saveKey) !== saveSeq) {
+            return data;
+        }
+        if (data.data_revision) {
+            releaseMonitorKnownRevision = String(data.data_revision);
+            releaseMonitorDismissedRevision = '';
+        }
+        const successPatch = buildReleaseAssignmentSuccessPatch(data);
+        replaceReleaseAssignmentItem(rowKey, successPatch);
+        refreshReleaseAssignmentAfterLocalChange(rowKey, successPatch, false, fieldGroup);
+        setReleaseAssignmentPending(rowKey, fieldGroup, false);
+        return data;
+    } catch (error) {
+        console.error('Release assignment save error:', error);
+        if (releaseAssignmentSaveSeqByKey.get(saveKey) !== saveSeq) {
+            return null;
+        }
+        const rollbackPatch = {
+            psi_owner: beforeSnapshot.psi_owner,
+            psi_owner_source: beforeSnapshot.psi_owner_source,
+            psi_owner_date: beforeSnapshot.psi_owner_date,
+            psi_zni_reviewer: beforeSnapshot.psi_zni_reviewer,
+            psi_checker: beforeSnapshot.psi_checker,
+            psi_responsibles: beforeSnapshot.psi_responsibles
+        };
+        replaceReleaseAssignmentItem(rowKey, rollbackPatch);
+        refreshReleaseAssignmentAfterLocalChange(rowKey, rollbackPatch, false, fieldGroup);
+        setReleaseAssignmentPending(rowKey, fieldGroup, false);
+        alert('Ошибка сохранения назначения: ' + error.message);
+        return null;
+    }
+}
+
+function patchReleaseManualColorDom(rowKey, level, pending = false) {
+    const row = getReleaseRowElement(rowKey);
+    if (!row) {
+        return;
+    }
+
+    const normalizedLevel = ['success', 'warning', 'danger', 'none'].includes(level) ? level : '';
+    row.classList.remove(
+        'rollout-notes-success',
+        'rollout-notes-warning',
+        'rollout-notes-danger',
+        'rollout-notes-none'
+    );
+    if (normalizedLevel) {
+        row.classList.add(`rollout-notes-${normalizedLevel}`);
+    }
+    row.classList.toggle('color-save-pending', Boolean(pending));
+
+    row.querySelectorAll('.release-color-swatch').forEach(swatch => {
+        swatch.classList.toggle('active', Boolean(normalizedLevel && swatch.dataset.colorLevel === normalizedLevel));
+    });
+}
+
+function setReleaseManualColorPending(rowKey, pending) {
+    const row = getReleaseRowElement(rowKey);
+    if (row) {
+        row.classList.toggle('color-save-pending', Boolean(pending));
+    }
+}
+
+function refreshReleaseManualColorAfterLocalChange(rowKey, level, workMark, pending, workMarkChanged) {
+    if (workMarkChanged) {
+        refreshReleaseWorkMarkAfterLocalChange(rowKey, workMark, pending);
+        setReleaseWorkMarkPending(rowKey, pending);
+    }
+    patchReleaseManualColorDom(rowKey, level, pending);
+}
+
+async function setReleaseManualColor(releaseKey, level) {
+    const item = getReleaseMonitorItem(releaseKey);
+    if (!item) {
+        alert('Не удалось найти строку релиза.');
+        return;
+    }
+
+    const normalizedLevel = ['success', 'warning', 'danger'].includes(level) ? level : '';
+    const currentLevel = getReleaseManualColorLevel(item);
+    const nextLevel = currentLevel === normalizedLevel ? '' : normalizedLevel;
+    const enabled = Boolean(nextLevel);
+    const previousLevel = currentLevel;
+    const previousWorkMark = getReleaseWorkMarkSnapshot(item);
+    const shouldClearWorkMark = ['success', 'warning', 'danger'].includes(nextLevel) && Boolean(previousWorkMark.work_mark);
+    const saveSeq = (releaseColorSaveSeqByKey.get(releaseKey) || 0) + 1;
+    releaseColorSaveSeqByKey.set(releaseKey, saveSeq);
+    applyReleaseManualColorToItem(item, nextLevel);
+    if (shouldClearWorkMark) {
+        applyReleaseWorkMarkToItem(item, '');
+        refreshReleaseManualColorAfterLocalChange(releaseKey, nextLevel, '', true, true);
+    } else {
+        patchReleaseManualColorDom(releaseKey, nextLevel, true);
+    }
+    try {
+        const response = await fetch(getReleaseUrl('rollout_notes'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                release_key: releaseKey,
+                enabled,
+                level: nextLevel,
+                compact: true
+            })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Не удалось сохранить подсветку релиза');
+        }
+        if (releaseColorSaveSeqByKey.get(releaseKey) === saveSeq) {
+            setReleaseManualColorPending(releaseKey, false);
+            setReleaseWorkMarkPending(releaseKey, false);
+            releaseMonitorMeta = data.release_monitor_meta || releaseMonitorMeta;
+            releaseMonitorKnownRevision = getReleaseMonitorRevision(releaseMonitorMeta) || releaseMonitorKnownRevision;
+            updateReleaseAutoRefreshBadge(releaseMonitorMeta);
+            hideReleaseUpdateBanner();
+            if (data.work_mark_cleanup_failed) {
+                alert('Цвет релиза сохранен, но метку смены не удалось очистить. Обновите страницу или очистите метку вручную.');
+            }
+        }
+    } catch (error) {
+        console.error('Release rollout notes save error:', error);
+        if (releaseColorSaveSeqByKey.get(releaseKey) !== saveSeq) {
+            return;
+        }
+        if (releaseColorSaveSeqByKey.get(releaseKey) === saveSeq) {
+            applyReleaseManualColorToItem(item, previousLevel);
+            if (shouldClearWorkMark) {
+                applyReleaseWorkMarkToItem(item, previousWorkMark.work_mark);
+                refreshReleaseManualColorAfterLocalChange(
+                    releaseKey,
+                    previousLevel,
+                    previousWorkMark.work_mark,
+                    false,
+                    true
+                );
+            } else {
+                patchReleaseManualColorDom(releaseKey, previousLevel, false);
+            }
+        }
+        alert('Ошибка сохранения подсветки релиза: ' + error.message);
+    }
+}
+
+async function moveReleaseRowFromSettings(releaseKey, direction) {
+    const rowKey = String(releaseKey || '').trim();
+    if (!rowKey) {
+        return;
+    }
+
+    if (isReleaseOrderMode) {
+        moveReleaseRow(rowKey, direction);
+        return;
+    }
+
+    const item = getReleaseMonitorItem(rowKey);
+    if (!item) {
+        alert('Не удалось найти строку релиза.');
+        return;
+    }
+
+    const previousDraft = cloneReleaseOrderDraft(releaseOrderDraft);
+    const draft = getActiveReleaseOrderDraft();
+    if (!applyReleaseRowMoveToDraft(draft, rowKey, direction)) {
+        return;
+    }
+
+    releaseOrderDraft = draft;
+    releaseRowOrderSavingKey = '';
+    releaseRowNumberingSavingKey = '';
+    applyReleaseFilters();
+    queueReleaseRowOrderDraftSave(draft, previousDraft);
+}
+
+async function toggleReleaseRowNumbering(releaseKey, action) {
+    const rowKey = String(releaseKey || '').trim();
+    if (!rowKey) {
+        return;
+    }
+
+    if (isReleaseOrderMode) {
+        if (action === 'force_numbered') {
+            toggleReleaseForceNumbered(rowKey);
+        } else if (action === 'force_unnumbered') {
+            toggleReleaseForceUnnumbered(rowKey);
+        }
+        return;
+    }
+
+    const item = getReleaseMonitorItem(rowKey);
+    if (!item) {
+        alert('Не удалось найти строку релиза.');
+        return;
+    }
+
+    const previousDraft = cloneReleaseOrderDraft(releaseOrderDraft);
+    const draft = getActiveReleaseOrderDraft();
+    if (!applyReleaseNumberingActionToDraft(draft, item, rowKey, action)) {
+        return;
+    }
+
+    const saveSeq = ++releaseRowOrderSaveSeq;
+    releaseOrderDraft = draft;
+    releaseRowNumberingSavingKey = rowKey;
+    releaseRowOrderSavingKey = '';
+    applyReleaseFilters();
+    try {
+        const statusData = await persistReleaseOrderDraft(draft);
+        if (releaseRowOrderSaveSeq !== saveSeq) {
+            return;
+        }
+        releaseRowNumberingSavingKey = '';
+        updateReleaseMonitorMetaFromStatusData(statusData);
+        applyReleaseFilters();
+    } catch (error) {
+        console.error('Release row numbering save error:', error);
+        if (releaseRowOrderSaveSeq !== saveSeq) {
+            return;
+        }
+        releaseRowNumberingSavingKey = '';
+        releaseOrderDraft = previousDraft;
+        applyReleaseFilters();
+        alert('Ошибка сохранения нумерации строки: ' + error.message);
+    }
+}
+
+function toggleReleaseForceUnnumbered(releaseKey) {
+    if (!isReleaseOrderMode || !releaseOrderDraft) {
+        return;
+    }
+
+    const item = getReleaseMonitorItem(releaseKey);
+    if (!item) {
+        alert('Не удалось найти строку релиза.');
+        return;
+    }
+
+    if (!applyReleaseNumberingActionToDraft(releaseOrderDraft, item, releaseKey, 'force_unnumbered')) {
+        return;
+    }
+
+    releaseOrderDirty = true;
+    refreshReleaseOrderModeUi();
+    applyReleaseFilters();
+}
+
+function toggleReleaseForceNumbered(releaseKey) {
+    if (!isReleaseOrderMode || !releaseOrderDraft) {
+        return;
+    }
+
+    const item = getReleaseMonitorItem(releaseKey);
+    if (!item) {
+        alert('Не удалось найти строку релиза.');
+        return;
+    }
+
+    if (!applyReleaseNumberingActionToDraft(releaseOrderDraft, item, releaseKey, 'force_numbered')) {
+        return;
+    }
+
+    releaseOrderDirty = true;
+    refreshReleaseOrderModeUi();
+    applyReleaseFilters();
+}
+
+async function saveReleaseAssignment(releaseKey, reviewerOverride = null, checkerOverride = null, responsiblesOverride = null, reviewerSourceOverride = null, zniReviewerOverride = null) {
+    const patch = {};
+    if (reviewerOverride !== null) {
+        patch.psi_owner = reviewerOverride;
+    }
+    if (checkerOverride !== null) {
+        patch.psi_checker = checkerOverride;
+    }
+    if (responsiblesOverride !== null) {
+        patch.psi_responsibles = responsiblesOverride;
+    }
+    if (reviewerSourceOverride !== null) {
+        patch.psi_owner_source = reviewerSourceOverride;
+    }
+    if (zniReviewerOverride !== null) {
+        patch.psi_zni_reviewer = zniReviewerOverride;
+    }
+
+    const fieldGroup = responsiblesOverride !== null
+        ? 'responsibles'
+        : (checkerOverride !== null && reviewerOverride === null && reviewerSourceOverride === null && zniReviewerOverride === null)
+            ? 'checker'
+            : 'duty';
+    return saveReleaseAssignmentOptimistic(releaseKey, patch, fieldGroup);
+}
+
+async function updateReleaseAssignment(releaseKey, changedElement) {
+    if (!releaseKey || !changedElement) {
+        return;
+    }
+
+    const cell = changedElement.closest('.reviewer-cell');
+    const reviewerField = cell?.querySelector('.duty-select, .duty-manual-input');
+    const checkerInput = cell?.querySelector('.checker-input');
+    if (changedElement.classList.contains('checker-input')) {
+        await saveReleaseAssignmentOptimistic(releaseKey, {
+            psi_checker: changedElement.value || ''
+        }, 'checker');
+        return;
+    }
+
+    const reviewer = changedElement.classList.contains('duty-manual-input')
+        ? changedElement.value || ''
+        : (reviewerField?.value || '');
+    const currentItem = getReleaseMonitorItem(releaseKey);
+    const reviewerSource = changedElement.classList.contains('duty-manual-input')
+        ? 'manual_text'
+        : (changedElement.classList.contains('duty-select')
+            ? 'manual'
+            : (currentItem?.psi_owner_source || ''));
+    await saveReleaseAssignmentOptimistic(releaseKey, {
+        psi_owner: reviewer,
+        psi_owner_source: reviewerSource,
+        psi_checker: checkerInput?.value || ''
+    }, 'duty');
+}
+
+function setReleaseRefreshButtonsLoading(isLoading) {
+    const effectiveLoading = Boolean(isLoading || releaseMonitorGlobalRefreshing);
+    ['releaseMonitorConfluenceSyncBtn', 'releaseMonitorCurrentWeekReportBtn', 'releaseMonitorAssignmentCenterBtn', 'releaseManualCreateBtn'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (!btn) {
+            return;
+        }
+        btn.disabled = effectiveLoading;
+    });
+}
+
+async function syncReleaseMonitorFromConfluence() {
+    const selectedYear = getSelectedReleaseYear();
+    setReleaseRefreshButtonsLoading(true);
+
+    try {
+        const response = await fetch(getReleaseUrl('confluence_sync'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ year: selectedYear })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Не удалось выгрузить таблицу в Confluence');
+        }
+
+        renderReleaseMonitor(data.release_monitor || [], data.release_monitor_meta || {});
+        const pushInfo = data.page_url ? `\n${data.page_url}` : '';
+        alert(`Таблица релизов выгружена в Confluence. Строк: ${data.rows_pushed || 0}.${pushInfo}`);
+    } catch (error) {
+        console.error('Release monitor Confluence sync error:', error);
+        alert('Ошибка выгрузки в Confluence: ' + error.message);
+    } finally {
+        setReleaseRefreshButtonsLoading(false);
+    }
+}
+
+async function generateCurrentWeekReleaseReport() {
+    window.open(getReleaseUrl('current_week'), '_blank', 'noopener');
+}
+
+function openReleaseAssignmentCenter() {
+    window.open(getReleaseUrl('assignment_center'), '_blank', 'noopener');
+}
+
+function hideReleaseSnapshotProtectionWarning() {
+    document.getElementById('releaseSnapshotProtectionWarning')?.classList.remove('show');
+}
+
+function showReleaseSnapshotProtectionWarning(refreshStatus = {}) {
+    const banner = document.getElementById('releaseSnapshotProtectionWarning');
+    const details = document.getElementById('releaseSnapshotProtectionWarningDetails');
+    if (!banner || !details) {
+        return;
+    }
+
+    const report = refreshStatus.validation_report || {};
+    const reason = Array.isArray(report.reasons) && report.reasons.length
+        ? String(report.reasons[0]?.message || '')
+        : String(refreshStatus.error || '');
+    const previousTotal = Number(refreshStatus.previous_total || report.baseline?.total || 0);
+    const candidateTotal = Number(refreshStatus.candidate_total || report.candidate?.total || 0);
+    const confirmedAt = String(refreshStatus.confirmed_snapshot_at || '').trim();
+    const parts = [];
+    if (previousTotal || candidateTotal) {
+        parts.push(`Подтверждено: ${previousTotal}; получено: ${candidateTotal}.`);
+    }
+    if (reason) {
+        parts.push(`Причина: ${reason}.`);
+    }
+    if (confirmedAt) {
+        parts.push(`Снимок: ${confirmedAt}.`);
+    }
+    details.textContent = parts.join(' ');
+    banner.classList.add('show');
+}
+
+function updateReleaseEmailNotificationStatus(status = {}) {
+    const container = document.getElementById('releaseMonitorEmailAutoStatus');
+    const text = document.getElementById('releaseMonitorEmailAutoStatusText');
+    if (!container || !text) {
+        return;
+    }
+
+    const state = String(status.status || 'disabled');
+    const eventCount = Number(status.last_email_new_count || 0);
+    const pendingCount = Number(status.pending_count || 0);
+    const visualState = status.running ? 'sending' : state;
+    const successAt = String(status.last_email_success_at || '').trim();
+    let successLabel = '';
+    if (successAt) {
+        const parsed = new Date(successAt);
+        if (!Number.isNaN(parsed.getTime())) {
+            successLabel = parsed.toLocaleString('ru-RU', {
+                day: '2-digit',
+                month: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+            });
+        }
+    }
+    const labels = {
+        disabled: 'Почта: выключена',
+        waiting_refresh: 'Почта: ожидает refresh',
+        baseline_created: 'Почта: baseline создан',
+        waiting: pendingCount > 0
+            ? `Почта: ожидает отправки · ${pendingCount}`
+            : 'Почта: ожидает новых',
+        sending: pendingCount > 0
+            ? `Почта: отправка · ${pendingCount}`
+            : 'Почта: отправка',
+        sent: `Почта: отправлено${successLabel ? ` ${successLabel}` : ''}${eventCount > 0 ? ` · событий ${eventCount}` : ''}`,
+        error: 'Почта: ошибка',
+    };
+    const className = {
+        disabled: 'is-paused',
+        waiting_refresh: 'is-paused',
+        baseline_created: 'is-ok',
+        waiting: 'is-paused',
+        sending: 'is-running',
+        sent: 'is-ok',
+        error: 'is-error',
+    }[visualState] || 'is-paused';
+    const iconClass = {
+        disabled: 'bi-envelope-slash',
+        waiting_refresh: 'bi-clock',
+        baseline_created: 'bi-check2-circle',
+        waiting: 'bi-envelope',
+        sending: 'bi-arrow-repeat spinning',
+        sent: 'bi-envelope-check',
+        error: 'bi-exclamation-triangle',
+    }[visualState] || 'bi-envelope';
+
+    container.classList.remove(
+        'is-ok',
+        'is-running',
+        'is-error',
+        'is-paused',
+        'is-partial'
+    );
+    container.classList.add(className);
+    const icon = container.querySelector('i');
+    if (icon) {
+        icon.className = `bi ${iconClass}`;
+    }
+    text.textContent = labels[visualState] || labels.waiting;
+
+    const titleParts = [];
+    if (status.last_evaluated_at) {
+        titleParts.push(`Последняя проверка: ${status.last_evaluated_at}`);
+    }
+    if (status.last_email_success_at) {
+        titleParts.push(`Последнее письмо: ${status.last_email_success_at}`);
+    }
+    if (pendingCount > 0) {
+        titleParts.push(`Ожидают отправки: ${pendingCount}`);
+    }
+    if (status.last_error) {
+        titleParts.push(`Ошибка: ${status.last_error}`);
+    }
+    container.title = titleParts.join('\n') || labels[visualState] || labels.waiting;
+}
+
+function releaseMonitorPollingDebugSnapshot() {
+    return {
+        ...releaseMonitorPollingDebugState,
+        controllerActive: Boolean(releaseMonitorPollingController),
+        fullRequestActive: Boolean(releaseMonitorFullStatusRequest),
+        pendingRevision: releaseMonitorPendingFullStatusRevision,
+    };
+}
+
+async function loadReleaseMonitorFullStatus(targetRevision = '') {
+    const normalizedRevision = String(targetRevision || '').trim();
+    if (releaseMonitorFullStatusRequest) {
+        if (normalizedRevision && normalizedRevision !== releaseMonitorFullStatusRevision) {
+            releaseMonitorPendingFullStatusRevision = normalizedRevision;
+        }
+        return releaseMonitorFullStatusRequest;
+    }
+    if (
+        normalizedRevision &&
+        (normalizedRevision === releaseMonitorLastAppliedViewRevision ||
+            normalizedRevision === releaseMonitorLastRequestedFullRevision)
+    ) {
+        return null;
+    }
+
+    releaseMonitorFullStatusRevision = normalizedRevision;
+    releaseMonitorLastRequestedFullRevision = normalizedRevision;
+    releaseMonitorPollingDebugState.fullRequests += 1;
+    releaseMonitorPollingDebugState.fullRequestsInFlight += 1;
+    releaseMonitorPollingDebugState.maxFullRequestsInFlight = Math.max(
+        releaseMonitorPollingDebugState.maxFullRequestsInFlight,
+        releaseMonitorPollingDebugState.fullRequestsInFlight
+    );
+
+    releaseMonitorFullStatusRequest = (async () => {
+        const response = await fetch(getReleaseUrl('status'));
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            const error = new Error(data.error || 'Не удалось получить обновлённые данные релизов');
+            error.retry = Boolean(data.retry);
+            error.viewRevision = String(data.view_revision || '').trim();
+            throw error;
+        }
+        const responseRevision = getReleaseMonitorRevision(data.release_monitor_meta || {}) || normalizedRevision;
+        renderReleaseMonitor(data.release_monitor || [], data.release_monitor_meta || {});
+        releaseMonitorLastAppliedViewRevision = responseRevision;
+        releaseMonitorKnownRevision = responseRevision || releaseMonitorKnownRevision;
+        return data;
+    })();
+
+    try {
+        return await releaseMonitorFullStatusRequest;
+    } finally {
+        releaseMonitorPollingDebugState.fullRequestsInFlight = Math.max(
+            0,
+            releaseMonitorPollingDebugState.fullRequestsInFlight - 1
+        );
+        releaseMonitorFullStatusRequest = null;
+        releaseMonitorFullStatusRevision = '';
+        const pendingRevision = releaseMonitorPendingFullStatusRevision;
+        releaseMonitorPendingFullStatusRevision = '';
+        if (pendingRevision && pendingRevision !== releaseMonitorLastAppliedViewRevision) {
+            window.setTimeout(() => loadReleaseMonitorFullStatus(pendingRevision).catch(error => {
+                if (error.name !== 'AbortError') {
+                    console.error('Release monitor pending full status error:', error);
+                }
+            }), 0);
+        }
+    }
+}
+
+async function handleReleaseMonitorCompactStatus(data) {
+    updateReleaseEmailNotificationStatus(data.email || {});
+    const refreshStatus = data.refresh || {};
+    const isRefreshing = Boolean(data.refresh_in_progress);
+    setReleaseMonitorGlobalRefreshing(isRefreshing);
+
+    const autoIncrementalStatus = data.auto_incremental || {};
+    if (Object.keys(autoIncrementalStatus).length) {
+        releaseMonitorMeta = {
+            ...releaseMonitorMeta,
+            auto_incremental_status: autoIncrementalStatus,
+            auto_incremental_refresh_enabled: autoIncrementalStatus.enabled !== false,
+        };
+        updateReleaseAutoRefreshBadge(releaseMonitorMeta);
+        window.dashboardData.release_monitor_meta = releaseMonitorMeta;
+    }
+
+    if (refreshStatus.state === 'failed' || refreshStatus.state === 'rejected') {
+        showReleaseSnapshotProtectionWarning(refreshStatus);
+    } else if (refreshStatus.state === 'completed' || refreshStatus.state === 'idle') {
+        hideReleaseSnapshotProtectionWarning();
+    }
+
+    const latestRevision = String(data.view_revision || '').trim();
+    const compactMeta = {
+        view_revision: latestRevision,
+        view_updated_at: data.updated_at || '',
+        last_updated: data.updated_at || '',
+    };
+    if (
+        latestRevision &&
+        releaseMonitorKnownRevision &&
+        latestRevision !== releaseMonitorKnownRevision &&
+        latestRevision !== releaseMonitorDismissedRevision
+    ) {
+        releaseMonitorKnownRevision = latestRevision;
+        if (refreshStatus.state === 'completed') {
+            try {
+                await loadReleaseMonitorFullStatus(latestRevision);
+                return;
+            } catch (error) {
+                if (error.name !== 'AbortError') {
+                    console.error('Release monitor refresh result error:', error);
+                }
+            }
+        }
+        showReleaseUpdateBanner(compactMeta);
+    }
+}
+
+function stopReleaseMonitorGlobalStatusPolling() {
+    const controller = releaseMonitorPollingController;
+    if (!controller) {
+        return;
+    }
+    controller.stopped = true;
+    if (controller.timer) {
+        clearTimeout(controller.timer);
+    }
+    if (controller.abortController) {
+        controller.abortController.abort();
+    }
+    releaseMonitorPollingController = null;
+    releaseMonitorPollingDebugState.activeLoops = 0;
+}
+
+function scheduleReleaseMonitorStatusPoll(controller, delayMs) {
+    if (
+        controller.stopped ||
+        controller !== releaseMonitorPollingController ||
+        document.hidden
+    ) {
+        return;
+    }
+    if (controller.timer) {
+        clearTimeout(controller.timer);
+    }
+    controller.timer = window.setTimeout(() => runReleaseMonitorStatusPoll(controller), delayMs);
+}
+
+async function runReleaseMonitorStatusPoll(controller) {
+    if (
+        controller.stopped ||
+        controller !== releaseMonitorPollingController ||
+        document.hidden
+    ) {
+        return;
+    }
+
+    controller.timer = null;
+    controller.abortController = new AbortController();
+    releaseMonitorPollingDebugState.compactRequests += 1;
+    releaseMonitorPollingDebugState.compactRequestsInFlight += 1;
+    releaseMonitorPollingDebugState.maxCompactRequestsInFlight = Math.max(
+        releaseMonitorPollingDebugState.maxCompactRequestsInFlight,
+        releaseMonitorPollingDebugState.compactRequestsInFlight
+    );
+    let nextDelay = releaseMonitorGlobalRefreshing ? 2000 : 15000;
+    try {
+        const response = await fetch(
+            getReleaseUrlWithQuery('status', { compact: '1' }),
+            { signal: controller.abortController.signal }
+        );
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Не удалось получить статус обновления релизов');
+        }
+        controller.errorCount = 0;
+        await handleReleaseMonitorCompactStatus(data);
+        nextDelay = (
+            data.refresh_in_progress ||
+            data.auto_refresh_in_progress
+        ) ? 2000 : 15000;
+    } catch (error) {
+        if (error.name !== 'AbortError') {
+            controller.errorCount += 1;
+            nextDelay = Math.min(60000, 2000 * (2 ** Math.min(controller.errorCount, 5)));
+            console.error('Release monitor compact status error:', error);
+        }
+    } finally {
+        releaseMonitorPollingDebugState.compactRequestsInFlight = Math.max(
+            0,
+            releaseMonitorPollingDebugState.compactRequestsInFlight - 1
+        );
+        controller.abortController = null;
+        scheduleReleaseMonitorStatusPoll(controller, nextDelay);
+    }
+}
+
+function startReleaseMonitorGlobalStatusPolling(immediate = true) {
+    stopReleaseMonitorGlobalStatusPolling();
+    const controller = {
+        stopped: false,
+        timer: null,
+        abortController: null,
+        errorCount: 0,
+    };
+    releaseMonitorPollingController = controller;
+    releaseMonitorPollingDebugState.activeLoops = 1;
+    if (!document.hidden) {
+        scheduleReleaseMonitorStatusPoll(controller, immediate ? 0 : 15000);
+    }
+}
+
+function registerReleaseLifecycleListeners() {
+    if (releaseLifecycleListenersRegistered) return;
+    releaseLifecycleListenersRegistered = true;
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) stopReleaseMonitorGlobalStatusPolling();
+        else startReleaseMonitorGlobalStatusPolling(true);
+    });
+    window.addEventListener('pagehide', stopReleaseMonitorGlobalStatusPolling);
+    window.addEventListener('beforeunload', stopReleaseMonitorGlobalStatusPolling);
+    window.addEventListener('pageshow', event => {
+        if (event.persisted || !releaseMonitorPollingController) startReleaseMonitorGlobalStatusPolling(true);
+    });
+}
+
+function parseReleaseDateValue(value) {
+    const rawValue = String(value || '').trim();
+    if (!rawValue) {
+        return null;
+    }
+    const isoMatch = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?/.exec(rawValue);
+    if (isoMatch) {
+        return new Date(
+            Number(isoMatch[1]),
+            Number(isoMatch[2]) - 1,
+            Number(isoMatch[3]),
+            Number(isoMatch[4] || 0),
+            Number(isoMatch[5] || 0),
+            Number(isoMatch[6] || 0)
+        );
+    }
+    const displayMatch = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(rawValue);
+    if (displayMatch) {
+        return new Date(Number(displayMatch[3]), Number(displayMatch[2]) - 1, Number(displayMatch[1]));
+    }
+    return null;
+}
+
+function getReleaseEffectiveStartDate(item) {
+    return parseReleaseDateValue(
+        item?.deployment_start_iso ||
+        item?.deployment_start ||
+        item?.manual_deployment_start ||
+        item?.source_deployment_start_iso ||
+        item?.source_deployment_start
+    );
+}
+
+function getReleaseEffectiveEndDate(item) {
+    return parseReleaseDateValue(
+        item?.deployment_end_iso ||
+        item?.deployment_end ||
+        item?.manual_deployment_end ||
+        item?.source_deployment_end_iso ||
+        item?.source_deployment_end
+    );
+}
+
+function getReleaseOperationalDayBounds(now = new Date()) {
+    const start = new Date(now);
+    start.setHours(RELEASE_OPERATIONAL_DAY_START_HOUR, 0, 0, 0);
+    if (now < start) {
+        start.setDate(start.getDate() - 1);
+    }
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    return { start, end };
+}
+
+function isReleaseFarFuture(item) {
+    const deploymentDate = getReleaseEffectiveStartDate(item);
+    if (!deploymentDate) {
+        return false;
+    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const threshold = new Date(today);
+    threshold.setDate(threshold.getDate() + 10);
+    return deploymentDate > threshold;
+}
+
+function isReleaseStartingToday(item) {
+    let deploymentStart = getReleaseEffectiveStartDate(item);
+    let deploymentEnd = getReleaseEffectiveEndDate(item) || deploymentStart;
+    if (!deploymentStart) {
+        return false;
+    }
+    if (deploymentEnd < deploymentStart) {
+        [deploymentStart, deploymentEnd] = [deploymentEnd, deploymentStart];
+    }
+    const { start, end } = getReleaseOperationalDayBounds();
+    const isDateOnlyPoint = (
+        deploymentStart.getTime() === deploymentEnd.getTime() &&
+        deploymentStart.getHours() === 0 &&
+        deploymentStart.getMinutes() === 0 &&
+        deploymentStart.getSeconds() === 0
+    );
+    if (isDateOnlyPoint) {
+        return (
+            deploymentStart.getFullYear() === start.getFullYear() &&
+            deploymentStart.getMonth() === start.getMonth() &&
+            deploymentStart.getDate() === start.getDate()
+        );
+    }
+    if (deploymentStart.getTime() === deploymentEnd.getTime()) {
+        return deploymentStart >= start && deploymentStart < end;
+    }
+    return deploymentStart < end && deploymentEnd > start;
+}
+
+function applyReleaseFilters() {
+    const body = document.getElementById('releaseMonitorBody');
+    const tableWrap = document.getElementById('releaseTableWrap');
+    const emptyState = document.getElementById('releaseMonitorEmptyState');
+    const visibleCounter = document.getElementById('releaseVisibleCount');
+    const searchValue = (document.getElementById('releaseSearchInput')?.value || '').toLowerCase().trim();
+    const statusValue = document.getElementById('releaseStatusFilter')?.value || 'all';
+    const workMarkFilterValue = document.getElementById('releaseWorkMarkFilter')?.value || 'all';
+    const responsibleValue = currentReleaseResponsibleFilter || 'all';
+    const responsibleOption = responsibleValue === 'all'
+        ? null
+        : releaseResponsibleDirectoryOptions.find(
+            option => option.employeeId === responsibleValue
+        );
+    const rawYearItems = getYearFilteredReleaseItems(releaseMonitorItems);
+    const yearItems = applyReleaseOrderDraft(rawYearItems);
+    const filteredItems = yearItems.filter(item => {
+        const matchesRovVisibility = showReleaseRowsWithoutRov || !item.is_unnumbered;
+        const matchesFarFutureVisibility = showFarFutureReleases || !isReleaseFarFuture(item);
+        const itemResponsibles = Array.isArray(item.psi_responsibles) ? item.psi_responsibles : [];
+        const matchesResponsible = (
+            responsibleValue === 'all' ||
+            Boolean(responsibleOption) && itemResponsibles.some(value => (
+                responsibleOption.normalizedIdentities.has(
+                    normalizeReleaseResponsibleIdentity(value)
+                )
+            ))
+        );
+        const matchesView = (
+            currentReleaseViewFilter === 'all' ||
+            (currentReleaseViewFilter === 'week' && isReleaseInCurrentWeek(item) && !item.is_cancelled) ||
+            (currentReleaseViewFilter === 'overdue' && item.is_overdue) ||
+            (currentReleaseViewFilter === 'today' && isReleaseStartingToday(item)) ||
+            (currentReleaseViewFilter === 'final' && item.is_final) ||
+            (currentReleaseViewFilter === 'cancelled' && item.is_cancelled)
+        );
+        const matchesStatus = statusValue === 'all' || item.release_status === statusValue;
+        const itemWorkMark = normalizeReleaseWorkMark(item.work_mark);
+        const matchesWorkMark = (
+            workMarkFilterValue === 'all' ||
+            itemWorkMark === workMarkFilterValue
+        );
+        const haystack = [
+            item.release_key,
+            item.rov_key,
+            item.ke,
+            item.release_status,
+            item.system_name,
+            itemWorkMark,
+            ...(Array.isArray(item.release_name_lines) ? item.release_name_lines : [])
+        ].join(' ').toLowerCase();
+        const matchesSearch = !searchValue || haystack.includes(searchValue);
+        return matchesRovVisibility && matchesFarFutureVisibility && matchesResponsible && matchesView && matchesStatus && matchesWorkMark && matchesSearch;
+    });
+    updateReleaseSmsVisibleButton(filteredItems);
+
+    if (body) {
+        body.innerHTML = filteredItems.map(buildReleaseRow).join('');
+    }
+    if (pendingManualDutyFocusReleaseKey) {
+        const manualInput = Array.from(document.querySelectorAll('.duty-manual-input')).find(
+            element => element.dataset.releaseKey === pendingManualDutyFocusReleaseKey
+        );
+        if (manualInput) {
+            manualInput.focus();
+            if (typeof manualInput.select === 'function') {
+                manualInput.select();
+            }
+            pendingManualDutyFocusReleaseKey = '';
+        }
+    }
+
+    const yearSummary = buildReleaseYearSummary(yearItems);
+    document.getElementById('releaseSummaryTotal').textContent = yearSummary.total || 0;
+    document.getElementById('releaseSummaryOverdue').textContent = yearSummary.overdue || 0;
+    document.getElementById('releaseSummaryNonFinal').textContent = yearSummary.non_final || 0;
+    document.getElementById('releaseSummaryPreFinal').textContent = yearSummary.pre_final || 0;
+    updateReleaseStatusFilterOptions(yearItems);
+    updateReleaseWorkMarkFilterOptions(yearItems);
+    recomputeReleaseWorkMarkChips(filteredItems);
+
+    if (visibleCounter) {
+        visibleCounter.textContent = filteredItems.length;
+    }
+    if (tableWrap) {
+        tableWrap.style.display = filteredItems.length ? '' : 'none';
+    }
+    if (emptyState) {
+        emptyState.style.display = filteredItems.length ? 'none' : '';
+        if (!releaseMonitorItems.length) {
+            updateReleaseEmptyState('initial');
+        } else if (!yearItems.length) {
+            updateReleaseEmptyState('empty-year');
+        } else if (!filteredItems.length) {
+            updateReleaseEmptyState('empty-filter');
+        }
+    }
+
+    updateReleaseScrollButtons();
+    refreshReleaseOrderModeUi();
+    setReleaseMonitorGlobalRefreshing(releaseMonitorGlobalRefreshing);
+    restoreReleaseScrollPosition();
+}
+
+Object.assign(window, {
+    addReleaseWorkMarkParticipantFromPicker,
+    addResponsibleAssignment,
+    addSmsTemplatePhone,
+    changeReleaseSmsDate,
+    changeReleaseSmsPreviousVersion,
+    changeReleaseSmsProfile,
+    changeReleaseSmsResult,
+    changeReleaseSmsText,
+    clearReleaseSmsDraft,
+    closeSmsTemplateEditor,
+    confirmReleaseSmsReview,
+    copyReleaseSmsText,
+    createReleaseZni,
+    dismissReleaseUpdateBanner,
+    ensureReleaseReviewerOptions,
+    generateReleaseSmsZip,
+    handleReleaseFarFutureToggle,
+    handleReleaseNoRovToggle,
+    handleReleaseResponsibleFilter,
+    handleReleaseSearch,
+    handleReleaseViewFilter,
+    handleReleaseWorkMarkFilter,
+    handleReleaseWorkMarkRowClick,
+    handleReleaseYearFilter,
+    lookupReleaseManualCreateJira,
+    moveReleaseRow,
+    moveReleaseRowFromSettings,
+    openReleaseDateOverrideModal,
+    openReleaseDocumentWizard,
+    openReleaseManualCreateModal,
+    openReleaseManualOverrideModal,
+    openReleaseSmsModal,
+    openSmsTemplateEditor,
+    reloadReleaseMonitorWithScrollRestore,
+    reloadSmsTemplateEditor,
+    removeReleaseWorkMarkParticipant,
+    removeResponsibleAssignment,
+    removeSmsTemplatePhone,
+    resetReleaseDateOverride,
+    resetReleaseManualOverride,
+    resetReleaseSmsText,
+    saveReleaseDateOverride,
+    saveReleaseManualCreate,
+    saveReleaseManualOverride,
+    saveReleaseWorkMarkOptimistic,
+    saveSmsTemplateProfile,
+    scrollReleasePageToTop,
+    scrollToInstalledPromRelease,
+    setActiveReleaseWorkMark,
+    setAllReleaseSmsIncluded,
+    setAllReleaseSmsResults,
+    setReleaseDocumentPlaybookMode,
+    setReleaseManualColor,
+    setReleaseSmsScope,
+    setReleaseWorkMarkMode,
+    setReleaseWorkMarkPanelCollapsed,
+    setSmsTemplateProfile,
+    syncReleaseMonitorFromConfluence,
+    toggleReleaseDutyMode,
+    toggleReleaseRowNumbering,
+    toggleReleaseRowSettings,
+    toggleReleaseSmsIncluded,
+    toggleReleaseWorkMarkMode,
+    updateReleaseAssignment,
+    updateReleaseDocumentPlaybookPastePreview,
+    updateResponsibleAssignment,
+    updateSmsTemplatePhone
+});
+
+function initOplotReleasePage() {
+    if (releasePageInitializationState !== 'not_started') return;
+    const root = document.getElementById('oplotReleaseRoot');
+    if (!root) return;
+    if (!releaseConfigValid) {
+        releasePageInitializationState = 'failed';
+        showReleaseConfigError();
+        return;
+    }
+    releasePageInitializationState = 'initialized';
+    registerReleaseLifecycleListeners();
+    syncReleaseEmployeeDirectoryProjection(releaseConfigData.release_monitor_meta);
+    if (new URLSearchParams(window.location.search).get('debug_polling') === '1') window.__releaseMonitorPollingDebug = releaseMonitorPollingDebugSnapshot;
+    window.dashboardData = {
+        page_context: 'release_monitor', sup_tasks: [], logi_tasks: [],
+        vnedrenie_prom_tasks: [], vnedrenie_psi_tasks: [], assignee_stats: {},
+        release_monitor: releaseConfigData.release_monitor,
+        release_monitor_summary: releaseConfigData.release_monitor_summary,
+        release_monitor_meta: releaseConfigData.release_monitor_meta
+    };
+    loadReleaseWorkMarkPreferences();
+    renderReleaseMonitor(window.dashboardData.release_monitor || [], window.dashboardData.release_monitor_meta || {});
+    startReleaseMonitorGlobalStatusPolling();
+}
+window.initOplotReleasePage = initOplotReleasePage;
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initOplotReleasePage, { once: true });
+else initOplotReleasePage();
+})();
