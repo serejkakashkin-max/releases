@@ -2,11 +2,11 @@
 {% set oplot_page_title = candidate.source_filename %}
 {% set oplot_page_pretitle = 'Кандидат шаблона' %}
 {% set oplot_page_description = candidate.comment %}
-{% set oplot_context_label = 'Администрирование' %}
-{% set oplot_context_title = 'Документы Oplot' %}
+{% set oplot_context_label = 'Блок релизов' %}
+{% set oplot_context_title = 'Центр шаблонов' %}
 {% set oplot_actor = actor|default('') %}
 {% set oplot_logout_endpoint = 'document_templates.logout_session' if actor|default('') else '' %}
-{% set oplot_breadcrumbs = [{'label':'Главная','endpoint':'main.index'},{'label':'Центр шаблонов','endpoint':'document_templates.index'},{'label':'Кандидат'}] %}
+{% set oplot_breadcrumbs = [{'label':'Главная','endpoint':'main.index'},{'label':'Блок релизов','endpoint':'dashboard.release_monitor_page'},{'label':'Центр шаблонов','endpoint':'document_templates.index'},{'label':'Кандидат'}] %}
 {% block title %}Кандидат — Центр шаблонов{% endblock %}
 {% block styles %}<link rel="stylesheet" href="{{ public_url_for('static', filename='css/document_templates.css') }}">{% endblock %}
 {% block page_actions %}<a href="{{ public_url_for('document_templates.index') }}" class="btn btn-ghost-secondary">К каталогу</a>{% endblock %}

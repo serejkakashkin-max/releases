@@ -2,9 +2,9 @@
 {% set oplot_page_title = 'Центр шаблонов' %}
 {% set oplot_page_pretitle = 'Требуется настройка' %}
 {% set oplot_page_description = 'Защищённый редактор закрыт до завершения серверной конфигурации.' %}
-{% set oplot_context_label = 'Администрирование' %}
-{% set oplot_context_title = 'Документы Oplot' %}
-{% set oplot_breadcrumbs = [{'label':'Главная','endpoint':'main.index'},{'label':'Центр шаблонов'}] %}
+{% set oplot_context_label = 'Блок релизов' %}
+{% set oplot_context_title = 'Центр шаблонов' %}
+{% set oplot_breadcrumbs = [{'label':'Главная','endpoint':'main.index'},{'label':'Блок релизов','endpoint':'dashboard.release_monitor_page'},{'label':'Центр шаблонов'}] %}
 {% block title %}Центр шаблонов — требуется настройка{% endblock %}
 {% block styles %}<link rel="stylesheet" href="{{ public_url_for('static', filename='css/document_templates.css') }}">{% endblock %}
 {% block content %}
@@ -14,7 +14,7 @@
     <div class="page-pretitle">Центр шаблонов</div>
     <h1>Редактор пока недоступен</h1>
     <p>Для безопасной работы требуется завершить серверную настройку. Обратитесь к администратору Oplot.</p>
-    <a class="btn btn-outline-primary" href="{{ public_url_for('main.index') }}">Вернуться на главную</a>
+    <a class="btn btn-outline-primary" href="{{ safe_public_url_for('dashboard.release_monitor_page') or public_url_for('main.index') }}">Вернуться в Блок релизов</a>
   </div>
 </div>
 {% endblock %}

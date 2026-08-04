@@ -132,6 +132,10 @@ html[data-theme="dark"] {
 .oplot-topbar__context span { color: var(--oplot-muted); font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; }
 .oplot-topbar__context strong { overflow: hidden; font-size: .95rem; text-overflow: ellipsis; white-space: nowrap; }
 .oplot-topbar__actions { display: flex; align-items: center; gap: var(--oplot-space-3); }
+.oplot-topbar--compact { min-height: 56px; padding-block: 8px; }
+.oplot-topbar__brand { display: inline-flex; align-items: center; min-height: 36px; padding: 6px 9px; border-radius: var(--oplot-radius-sm); color: var(--oplot-primary); font-size: 1rem; font-weight: 850; letter-spacing: .035em; text-decoration: none; }
+a.oplot-topbar__brand:hover { color: color-mix(in srgb, var(--oplot-primary) 76%, var(--oplot-text)); background: var(--oplot-primary-soft); }
+a.oplot-topbar__brand:focus-visible { outline: 3px solid var(--oplot-focus); outline-offset: 2px; }
 .oplot-actor { display: flex; align-items: center; gap: var(--oplot-space-2); padding-right: var(--oplot-space-3); border-right: 1px solid var(--oplot-border); }
 .oplot-actor__avatar { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 11px; color: var(--oplot-primary); background: var(--oplot-primary-soft); font-weight: 750; }
 .oplot-actor > span:last-child { display: flex; flex-direction: column; }

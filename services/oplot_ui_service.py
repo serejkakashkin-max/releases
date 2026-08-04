@@ -46,17 +46,13 @@ _NAVIGATION = (
     NavigationItem("home", "Главная", "main.index", "home", "main", ("main.index",)),
     NavigationItem(
         "release-monitor", "Блок релизов", "dashboard.release_monitor_page", "rocket", "main",
-        ("dashboard.release_monitor_page",),
+        ("dashboard.release_monitor_page", "document_templates.*"),
     ),
     NavigationItem(
         "duty-dashboard", "Рабочий стол дежурного", "dashboard.dashboard", "dashboard", "main",
         ("dashboard.dashboard",),
     ),
     NavigationItem("mpr", "МПР", "mpr.mpr_page", "document", "documents", ("mpr.mpr_page",)),
-    NavigationItem(
-        "document-templates", "Центр шаблонов", "document_templates.index", "template", "documents",
-        ("document_templates.*",), feature_flag="DOCUMENT_TEMPLATE_CENTER_ENABLED",
-    ),
     NavigationItem(
         "assignment-center", "Центр назначений", "dashboard.release_monitor_assignment_center_page",
         "users", "management", ("dashboard.release_monitor_assignment_center_page",),

@@ -1,8 +1,14 @@
-<header class="oplot-topbar">
-  <div class="oplot-topbar__context">
-    <span>{{ oplot_context_label|default('Рабочее пространство') }}</span>
-    <strong>{{ oplot_context_title|default('Oplot') }}</strong>
-  </div>
+{% set topbar_variant = oplot_topbar_variant|default('default') %}
+<header class="oplot-topbar{% if topbar_variant == 'compact' %} oplot-topbar--compact{% endif %}">
+  {% if topbar_variant == 'compact' %}
+    {% set topbar_home_url = safe_public_url_for('main.index') %}
+    {% if topbar_home_url %}<a class="oplot-topbar__brand" href="{{ topbar_home_url }}">OPLOT</a>{% else %}<span class="oplot-topbar__brand">OPLOT</span>{% endif %}
+  {% else %}
+    <div class="oplot-topbar__context">
+      <span>{{ oplot_context_label|default('Рабочее пространство') }}</span>
+      <strong>{{ oplot_context_title|default('Oplot') }}</strong>
+    </div>
+  {% endif %}
   <div class="oplot-topbar__actions">
     {% if oplot_actor|default(actor|default('')) %}
       {% set shell_actor = oplot_actor|default(actor) %}
