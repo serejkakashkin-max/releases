@@ -19,6 +19,7 @@ prepare_config_import()
 from services.docx_service import add_hyperlink
 from services.document_template_audit_service import append_audit_event as real_append_audit_event
 from services.document_template_candidate_service import candidate_preview_payload, validate_staged_candidate
+from services.document_template_csrf_service import CSRF_COOKIE_NAME
 from services.document_template_generation_service import (
     SYNTHETIC_ISSUE,
     SYNTHETIC_JIRA_BASE,
@@ -46,7 +47,7 @@ from services.document_template_storage_service import (
 )
 from services.document_template_validation_service import build_contract, validate_candidate
 from services.release_template_catalog_service import clear_template_catalog_cache
-from tests.test_document_template_stage2 import TOKEN, build_app, make_template
+from tests.test_document_template_stage2 import build_app, make_template
 
 
 def make_no_jira_template(path: Path, *, heading: str = "Шаблон без Jira", unexpected_link: bool = False) -> bytes:
@@ -157,9 +158,8 @@ class Stage2FollowupTests(unittest.TestCase):
         clear_template_catalog_cache()
         self.app = build_app(self.root, self.base / "runtime")
         self.client = self.app.test_client()
-        self.client.post("/admin/document-templates/session/login", data={"display_name": "Редактор", "token": TOKEN})
-        with self.client.session_transaction() as session:
-            self.csrf = session["document_template_editor_csrf_nonce"]
+        self.client.get("/dashboard/release-monitor/document-templates")
+        self.csrf = self.client.get_cookie(CSRF_COOKIE_NAME, path="/dashboard/release-monitor/document-templates/").value
         with self.app.app_context():
             self.document_id = next(iter(build_document_whitelist(self.root)))
             self.document = resolve_document(self.document_id, self.root)
@@ -341,7 +341,7 @@ class Stage2FollowupTests(unittest.TestCase):
             wrong_sha = self._history_version(self.active_bytes, sha="0" * 64)
             unsafe = self._history_version(b"not a docx")
 
-        base = f"/admin/document-templates/documents/{self.document_id}/history"
+        base = f"/dashboard/release-monitor/document-templates/documents/{self.document_id}/history"
         preview = self.client.get(f"{base}/{committed['version_uuid']}/preview")
         download = self.client.get(f"{base}/{committed['version_uuid']}/download")
         self.assertEqual(200, preview.status_code)

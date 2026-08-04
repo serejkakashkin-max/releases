@@ -100,7 +100,17 @@ class DocumentTemplateReadServiceTests(unittest.TestCase):
         catalog = build_catalog_page(self.root)
         self.assertEqual(2, catalog["summary"]["kits"])
         self.assertEqual(3, catalog["summary"]["documents"])
-        self.assertEqual(["BH", "PL"], catalog["filter_options"]["variants"])
+        self.assertEqual(
+            ["Другой BH (54321)", "Комплект PL (12345)"],
+            catalog["filter_options"]["variants"],
+        )
+        self.assertEqual(
+            {
+                "CAT_A": ["Комплект PL (12345)"],
+                "CAT_B": ["Другой BH (54321)"],
+            },
+            catalog["filter_options"]["variants_by_category"],
+        )
         self.assertNotIn(str(self.root), repr(catalog))
         for document in catalog["kits"][0]["documents"]:
             self.assertEqual(12, len(document["sha256_short"]))
@@ -109,8 +119,54 @@ class DocumentTemplateReadServiceTests(unittest.TestCase):
         self.assertEqual(1, by_query["summary"]["filtered_kits"])
         by_category = build_catalog_page(self.root, category="CAT_B")
         self.assertEqual(1, by_category["summary"]["filtered_kits"])
-        by_ke = build_catalog_page(self.root, ke="12345", variant="PL")
+        self.assertEqual(["Другой BH (54321)"], by_category["filter_options"]["variants"])
+        invalid_pair = build_catalog_page(
+            self.root,
+            category="CAT_B",
+            variant="Комплект PL (12345)",
+        )
+        self.assertEqual("", invalid_pair["filters"]["variant"])
+        self.assertEqual(1, invalid_pair["summary"]["filtered_kits"])
+        all_categories = build_catalog_page(
+            self.root,
+            category="",
+            variant="Комплект PL (12345)",
+        )
+        self.assertEqual(
+            ["Другой BH (54321)", "Комплект PL (12345)"],
+            all_categories["filter_options"]["variants"],
+        )
+        by_ke = build_catalog_page(
+            self.root,
+            ke="12345",
+            variant="Комплект PL (12345)",
+        )
         self.assertEqual(1, by_ke["summary"]["filtered_kits"])
+
+    def test_category_variant_options_follow_actual_kit_directories(self):
+        names = [
+            "AEF Containers AI-Агент оркестратор рабочих мест ММБ(14290659)",
+            "AEF Containers AI-Планировщик E2E(14061745)",
+            "AEF Containers AI-Цифровой клиентский менеджер ММБ(13204700)",
+            "AI-Помощник по развитию бизнеса(13300754)",
+        ]
+        for name in names:
+            self.make_kit(category="AI_AGENTS", name=name)
+
+        catalog = build_catalog_page(self.root, category="AI_AGENTS")
+
+        self.assertEqual(names, catalog["filter_options"]["variants"])
+        self.assertEqual(
+            names,
+            catalog["filter_options"]["variants_by_category"]["AI_AGENTS"],
+        )
+        selected = build_catalog_page(
+            self.root,
+            category="AI_AGENTS",
+            variant=names[2],
+        )
+        self.assertEqual(1, selected["summary"]["filtered_kits"])
+        self.assertEqual(names[2], selected["kits"][0]["release_full"])
 
     def test_pagination_is_clamped_and_deterministic(self):
         for index in range(13):

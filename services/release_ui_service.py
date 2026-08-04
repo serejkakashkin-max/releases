@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
 
-from flask import current_app, request
+from flask import request
 
 from services.oplot_ui_service import safe_public_url_for
 from services.public_url_service import public_url_for
@@ -16,7 +16,6 @@ class ReleaseNavigationItem:
     endpoint: str
     icon: str
     target: str = "_self"
-    feature_flag: str | None = None
     active_patterns: tuple[str, ...] = ()
 
 
@@ -49,7 +48,6 @@ _RELEASE_NAVIGATION = (
         "Центр шаблонов",
         "document_templates.index",
         "template",
-        feature_flag="DOCUMENT_TEMPLATE_CENTER_ENABLED",
         active_patterns=("document_templates.*",),
     ),
 )
@@ -59,8 +57,6 @@ def build_release_navigation(current_endpoint: str | None = None) -> list[dict]:
     endpoint = str(current_endpoint if current_endpoint is not None else request.endpoint or "")
     navigation: list[dict] = []
     for item in _RELEASE_NAVIGATION:
-        if item.feature_flag and not current_app.config.get(item.feature_flag, False):
-            continue
         url = safe_public_url_for(item.endpoint)
         if url is None:
             continue

@@ -19,6 +19,7 @@ from tests._support import PROJECT_ROOT, prepare_config_import
 prepare_config_import()
 
 from services.document_template_candidate_service import validate_staged_candidate
+from services.document_template_csrf_service import CSRF_COOKIE_NAME
 from services.document_template_generation_service import generate_synthetic_document
 from services.document_template_publish_service import (
     DocumentMutationBlocked,
@@ -63,7 +64,7 @@ from services.document_template_vendor_service import (
     verify_vendor_assets,
 )
 from services.release_template_catalog_service import clear_template_catalog_cache
-from tests.test_document_template_stage2 import SECRET, TOKEN, build_app, make_template
+from tests.test_document_template_stage2 import build_app, make_template
 
 
 def _set_candidate_metadata(candidate_uuid: str, **updates):
@@ -119,26 +120,30 @@ class Stage2ReviewWorkflowTests(unittest.TestCase):
         clear_template_catalog_cache(); clear_document_template_read_cache(); clear_document_template_vendor_cache()
         self.app = build_app(self.root, base / "runtime")
         self.client = self.app.test_client()
-        self.client.post("/admin/document-templates/session/login", data={"display_name": "Редактор", "token": TOKEN})
-        with self.client.session_transaction() as session:
-            self.csrf = session["document_template_editor_csrf_nonce"]
+        self.client.get("/dashboard/release-monitor/document-templates")
+        self.csrf = self.client.get_cookie(CSRF_COOKIE_NAME, path="/dashboard/release-monitor/document-templates/").value
         self.document_id = next(iter(build_document_whitelist(self.root)))
 
     def tearDown(self):
         clear_template_catalog_cache(); clear_document_template_read_cache(); clear_document_template_vendor_cache(); self.temp.cleanup()
 
     def _upload(self, payload=None):
-        response = self.client.post(
-            f"/admin/document-templates/documents/{self.document_id}/candidates",
-            data={"_csrf_token": self.csrf, "comment": "Regression candidate", "file": (io.BytesIO(payload or self.candidate), "candidate.docx")},
-            content_type="multipart/form-data",
-        )
-        self.assertEqual(303, response.status_code, response.get_data(as_text=True))
-        return response.headers["Location"].rstrip("/").split("/")[-1]
+        with self.app.app_context():
+            document = resolve_document(self.document_id, self.root)
+            item = write_uploaded_candidate(
+                io.BytesIO(payload or self.candidate),
+                document_id=self.document_id,
+                source_filename="candidate.docx",
+                active_filename=document.filename,
+                active_sha=document.sha256,
+                uploaded_by="Review Tester",
+                comment="Regression candidate",
+            )
+        return item["candidate_uuid"]
 
     def _validate(self, candidate_uuid):
         return self.client.post(
-            f"/admin/document-templates/documents/{self.document_id}/candidates/{candidate_uuid}/validate",
+            f"/dashboard/release-monitor/document-templates/documents/{self.document_id}/candidates/{candidate_uuid}/validate",
             data={"_csrf_token": self.csrf},
         )
 
@@ -155,11 +160,13 @@ class Stage2ReviewWorkflowTests(unittest.TestCase):
 
     def test_candidate_and_test_preview_server_gates(self):
         candidate_uuid = self._upload()
-        preview_url = f"/admin/document-templates/documents/{self.document_id}/candidates/{candidate_uuid}/preview"
-        test_url = f"/admin/document-templates/documents/{self.document_id}/candidates/{candidate_uuid}/test-document/preview"
+        preview_url = f"/dashboard/release-monitor/document-templates/documents/{self.document_id}/candidates/{candidate_uuid}/preview"
+        test_url = f"/dashboard/release-monitor/document-templates/documents/{self.document_id}/candidates/{candidate_uuid}/test-document/preview"
         self.assertEqual(409, self.client.get(preview_url).status_code)
         self.assertEqual(409, self.client.get(test_url).status_code)
-        self.assertEqual(200, self._validate(candidate_uuid).status_code)
+        with self.app.app_context():
+            document = resolve_document(self.document_id, self.root)
+            validate_staged_candidate(self.document_id, candidate_uuid, document.path)
         self.assertEqual(200, self.client.get(preview_url).status_code)
         self.assertEqual(200, self.client.get(test_url).status_code)
         with self.app.app_context():
@@ -177,7 +184,7 @@ class Stage2ReviewWorkflowTests(unittest.TestCase):
             archive.writestr("_rels/.rels", "<Relationships/>")
             archive.writestr("word/document.xml", b"A" * (2 * 1024 * 1024))
         candidate_uuid = self._upload(payload.getvalue())
-        url = f"/admin/document-templates/documents/{self.document_id}/candidates/{candidate_uuid}/preview"
+        url = f"/dashboard/release-monitor/document-templates/documents/{self.document_id}/candidates/{candidate_uuid}/preview"
         self.assertEqual(409, self.client.get(url).status_code)
         self.assertEqual(422, self._validate(candidate_uuid).status_code)
         with self.app.app_context():
@@ -191,8 +198,8 @@ class Stage2ReviewWorkflowTests(unittest.TestCase):
             old_test = candidate_directory(candidate_uuid) / "test.docx"
             old_test.write_bytes(self.candidate)
         self.assertEqual(422, self._validate(candidate_uuid).status_code)
-        preview = f"/admin/document-templates/documents/{self.document_id}/candidates/{candidate_uuid}/preview"
-        test_preview = f"/admin/document-templates/documents/{self.document_id}/candidates/{candidate_uuid}/test-document/preview"
+        preview = f"/dashboard/release-monitor/document-templates/documents/{self.document_id}/candidates/{candidate_uuid}/preview"
+        test_preview = f"/dashboard/release-monitor/document-templates/documents/{self.document_id}/candidates/{candidate_uuid}/test-document/preview"
         self.assertEqual(200, self.client.get(preview).status_code)
         self.assertEqual(409, self.client.get(test_preview).status_code)
         with self.app.app_context():
@@ -331,34 +338,43 @@ class Stage2ReviewWorkflowTests(unittest.TestCase):
             recovery = next(item for item in list_history(self.document_id) if item.get("action") == "rollback_previous")
             self.assertEqual("publish_failed", recovery["state"])
 
-    def test_expected_sha_requires_lowercase_hex_and_retry_after_is_present(self):
+    def test_expected_sha_requires_lowercase_hex(self):
         candidate_uuid = self._upload()
-        self.assertEqual(200, self._validate(candidate_uuid).status_code)
-        published = self.client.post(f"/admin/document-templates/documents/{self.document_id}/candidates/{candidate_uuid}/publish", data={"_csrf_token": self.csrf})
+        with self.app.app_context():
+            document = resolve_document(self.document_id, self.root)
+            validate_staged_candidate(self.document_id, candidate_uuid, document.path)
+        published = self.client.post(f"/dashboard/release-monitor/document-templates/documents/{self.document_id}/candidates/{candidate_uuid}/publish", data={"_csrf_token": self.csrf})
         self.assertEqual(303, published.status_code)
         with self.app.app_context():
             version = list_history(self.document_id)[0]
-        invalid = self.client.post(f"/admin/document-templates/documents/{self.document_id}/history/{version['version_uuid']}/rollback", data={"_csrf_token": self.csrf, "reason": "Invalid uppercase SHA", "expected_active_sha": "A" * 64})
+        invalid = self.client.post(f"/dashboard/release-monitor/document-templates/documents/{self.document_id}/history/{version['version_uuid']}/rollback", data={"_csrf_token": self.csrf, "reason": "Invalid uppercase SHA", "expected_active_sha": "A" * 64})
         self.assertEqual(400, invalid.status_code)
 
-        other = self.app.test_client()
-        last = None
-        for _ in range(5):
-            last = other.post("/admin/document-templates/session/login", data={"display_name": "Rate Limited", "token": "wrong"}, environ_base={"REMOTE_ADDR": "192.0.2.77"})
-        self.assertEqual(429, last.status_code)
-        self.assertEqual("300", last.headers.get("Retry-After"))
-
     def test_upload_validation_and_cancel_are_audited_without_sensitive_values(self):
-        candidate_uuid = self._upload()
-        self.assertEqual(200, self._validate(candidate_uuid).status_code)
-        cancelled = self.client.post(f"/admin/document-templates/documents/{self.document_id}/candidates/{candidate_uuid}/cancel", data={"_csrf_token": self.csrf})
+        invalid_path = Path(self.temp.name) / "invalid-contract.docx"
+        invalid_document = Document()
+        invalid_document.add_paragraph("No required placeholders")
+        invalid_document.save(invalid_path)
+        response = self.client.post(
+            f"/dashboard/release-monitor/document-templates/documents/{self.document_id}/candidates",
+            data={
+                "_csrf_token": self.csrf,
+                "comment": "Regression candidate",
+                "file": (io.BytesIO(invalid_path.read_bytes()), "candidate.docx"),
+            },
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(303, response.status_code)
+        candidate_uuid = response.headers["Location"].rstrip("/").split("/")[-1]
+        with self.app.app_context():
+            self.assertTrue(get_candidate(candidate_uuid)["state"].startswith("invalid_"))
+        cancelled = self.client.post(f"/dashboard/release-monitor/document-templates/documents/{self.document_id}/candidates/{candidate_uuid}/cancel", data={"_csrf_token": self.csrf})
         self.assertEqual(303, cancelled.status_code)
         audit_path = Path(self.temp.name) / "runtime/data/document_template_center/audit/events.jsonl"
         events = [json.loads(line) for line in audit_path.read_text(encoding="utf-8").splitlines()]
         actions = {event["action"] for event in events}
         self.assertTrue({"upload", "validation_result", "cancel"}.issubset(actions))
         audit_text = audit_path.read_text(encoding="utf-8")
-        self.assertNotIn(TOKEN, audit_text)
         self.assertNotIn(self.csrf, audit_text)
         self.assertNotIn(str(self.root), audit_text)
 
@@ -431,7 +447,6 @@ class TargetReadAndCacheReviewTests(unittest.TestCase):
         clear_document_template_read_cache(); clear_document_template_vendor_cache()
         self.app = build_app(self.root, base / "runtime")
         self.client = self.app.test_client()
-        self.client.post("/admin/document-templates/session/login", data={"display_name": "Reader", "token": TOKEN})
         self.document_id = next(iter(build_document_whitelist(self.root)))
         clear_document_template_read_cache()
 
@@ -440,16 +455,16 @@ class TargetReadAndCacheReviewTests(unittest.TestCase):
 
     def test_preview_does_not_hash_other_docx_and_detects_target_replacement_and_deletion(self):
         with mock.patch.object(read_service, "_sha256", wraps=read_service._sha256) as catalog_hash:
-            response = self.client.get(f"/admin/document-templates/documents/{self.document_id}/preview")
+            response = self.client.get(f"/dashboard/release-monitor/document-templates/documents/{self.document_id}/preview")
         self.assertEqual(200, response.status_code)
         catalog_hash.assert_not_called()
         selected = resolve_document(self.document_id, self.root)
         replacement = make_template(Path(self.temp.name) / "replacement.docx", heading="Replacement")
         selected.path.write_bytes(replacement)
-        replaced = self.client.get(f"/admin/document-templates/documents/{self.document_id}/preview")
+        replaced = self.client.get(f"/dashboard/release-monitor/document-templates/documents/{self.document_id}/preview")
         self.assertEqual(200, replaced.status_code); self.assertEqual(replacement, replaced.data)
         selected.path.unlink()
-        self.assertEqual(404, self.client.get(f"/admin/document-templates/documents/{self.document_id}/preview").status_code)
+        self.assertEqual(404, self.client.get(f"/dashboard/release-monitor/document-templates/documents/{self.document_id}/preview").status_code)
 
     def test_direct_read_rejects_a_symlink_component_before_open(self):
         original = read_service._contains_symlink
@@ -461,7 +476,7 @@ class TargetReadAndCacheReviewTests(unittest.TestCase):
 
         clear_document_template_read_cache()
         with mock.patch.object(read_service, "_contains_symlink", side_effect=injected):
-            self.assertEqual(404, self.client.get(f"/admin/document-templates/documents/{self.document_id}/preview").status_code)
+            self.assertEqual(404, self.client.get(f"/dashboard/release-monitor/document-templates/documents/{self.document_id}/preview").status_code)
 
     def test_concurrent_read_and_vendor_caches_lru_ttl_and_invalidation(self):
         failures = []

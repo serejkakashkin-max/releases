@@ -56,10 +56,10 @@ class _MarkupParser(HTMLParser):
             self._in_toc = False
 
 
-def build_app(*, templates_enabled: bool = True, omitted: set[str] | None = None) -> Flask:
+def build_app(*, omitted: set[str] | None = None) -> Flask:
     omitted = omitted or set()
     app = Flask(__name__, template_folder=str(PROJECT_ROOT / "templates"), static_folder=str(PROJECT_ROOT / "static"))
-    app.config.update(TESTING=True, SECRET_KEY="core-pages-test", DOCUMENT_TEMPLATE_CENTER_ENABLED=templates_enabled)
+    app.config.update(TESTING=True, SECRET_KEY="core-pages-test")
     app.register_blueprint(main_bp)
     routes = (
         ("/release-monitor", "dashboard.release_monitor_page"),
@@ -68,7 +68,7 @@ def build_app(*, templates_enabled: bool = True, omitted: set[str] | None = None
         ("/mpr", "mpr.mpr_page"),
         ("/dashboard/release-monitor/assignment-center", "dashboard.release_monitor_assignment_center_page"),
         ("/dashboard/release-monitor/duty-schedule", "dashboard.release_monitor_duty_schedule_page"),
-        ("/admin/document-templates/", "document_templates.index"),
+        ("/dashboard/release-monitor/document-templates/", "document_templates.index"),
         ("/admin/sup-parameters", "sup_parameters.sup_parameters_page"),
         ("/admin/va/schedule-manager/", "va_schedule_manager.web.index"),
     )
@@ -111,7 +111,7 @@ class HomeActionTests(unittest.TestCase):
         self.assertFalse({"label", "icon", "endpoint"} & set(oplot_ui_service.HomeAction.__dataclass_fields__))
 
     def test_feature_flag_does_not_add_templates_and_missing_endpoint_hides_action(self):
-        app = build_app(templates_enabled=True, omitted={"dashboard.release_monitor_page"})
+        app = build_app(omitted={"dashboard.release_monitor_page"})
         with app.test_request_context("/"):
             ids = {item["id"] for group in build_oplot_home_actions() for item in group["items"]}
         self.assertNotIn("document-templates", ids)

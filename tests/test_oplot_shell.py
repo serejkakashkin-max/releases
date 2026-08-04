@@ -29,9 +29,9 @@ class _UrlParser(HTMLParser):
                 self.urls.append(values[name])
 
 
-def build_app(*, templates_enabled: bool = True, schedule_manager: bool = False) -> Flask:
+def build_app(*, schedule_manager: bool = False) -> Flask:
     app = Flask(__name__, template_folder=str(PROJECT_ROOT / "templates"), static_folder=str(PROJECT_ROOT / "static"))
-    app.config.update(TESTING=True, SECRET_KEY="shell-test", DOCUMENT_TEMPLATE_CENTER_ENABLED=templates_enabled)
+    app.config.update(TESTING=True, SECRET_KEY="shell-test")
     app.jinja_loader = ChoiceLoader([
         app.jinja_loader,
         FileSystemLoader(str(PROJECT_ROOT / "tests" / "fixtures" / "templates")),
@@ -63,7 +63,7 @@ def _item(groups, item_id):
 class OplotNavigationTests(unittest.TestCase):
     def test_groups_order_ids_and_route_aware_active_state(self):
         app = build_app(schedule_manager=True)
-        with app.test_request_context("/admin/document-templates"):
+        with app.test_request_context("/dashboard/release-monitor/document-templates"):
             groups = build_oplot_navigation("document_templates.history")
         self.assertEqual(["main", "documents", "management", "support"], [group["id"] for group in groups])
         self.assertTrue(_item(groups, "release-monitor")["active"])
@@ -72,8 +72,8 @@ class OplotNavigationTests(unittest.TestCase):
         self.assertEqual(1, sum(item["active"] for group in groups for item in group["items"]))
         self.assertEqual("schedule-manager", _item(groups, "schedule-manager")["id"])
 
-    def test_feature_flag_and_missing_endpoint_are_safely_skipped(self):
-        app = build_app(templates_enabled=False)
+    def test_missing_optional_endpoint_is_safely_skipped(self):
+        app = build_app()
         with app.test_request_context("/"):
             groups = build_oplot_navigation("main.index")
         ids = {item["id"] for group in groups for item in group["items"]}

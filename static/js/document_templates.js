@@ -260,11 +260,71 @@
     });
   }
 
+  function readVariantsMap() {
+    var source = document.getElementById("oplot-dtc-variants-map");
+    if (!source) {
+      return {};
+    }
+    try {
+      var value = JSON.parse(source.textContent || "{}");
+      return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    } catch (_error) {
+      return {};
+    }
+  }
+
+  function variantsForCategory(map, category) {
+    if (category && Array.isArray(map[category])) {
+      return map[category].slice();
+    }
+    var seen = Object.create(null);
+    var result = [];
+    Object.keys(map).forEach(function (key) {
+      if (!Array.isArray(map[key])) {
+        return;
+      }
+      map[key].forEach(function (value) {
+        var text = String(value || "");
+        if (text && !seen[text]) {
+          seen[text] = true;
+          result.push(text);
+        }
+      });
+    });
+    return result.sort(function (left, right) {
+      return left.localeCompare(right, "ru", { sensitivity: "base" });
+    });
+  }
+
+  function syncVariantFilter() {
+    var category = document.getElementById("category-filter");
+    var variant = document.getElementById("variant-filter");
+    if (!category || !variant) {
+      return;
+    }
+    var selected = variant.value;
+    var values = variantsForCategory(readVariantsMap(), category.value);
+    while (variant.options.length) {
+      variant.remove(0);
+    }
+    variant.add(new Option("Все", ""));
+    values.forEach(function (value) {
+      variant.add(new Option(value, value));
+    });
+    variant.value = values.indexOf(selected) !== -1 ? selected : "";
+  }
+
   function initialize() {
     if (initialized) {
       return;
     }
     initialized = true;
+    syncVariantFilter();
+    document.addEventListener("change", function (event) {
+      if (event.target && event.target.id === "category-filter") {
+        syncVariantFilter();
+      }
+    }, true);
     document.addEventListener("click", function (event) {
       var button = event.target.closest(".js-document-preview");
       if (button) {
@@ -333,6 +393,11 @@
         if (window.OplotUI) {
           window.OplotUI.showToast("Не удалось обновить данные Центра шаблонов.", "danger");
         }
+      }
+    });
+    document.addEventListener("htmx:afterSwap", function (event) {
+      if (event.detail && event.detail.target && event.detail.target.id === "template-catalog") {
+        syncVariantFilter();
       }
     });
     document.addEventListener("htmx:beforeSwap", function (event) {

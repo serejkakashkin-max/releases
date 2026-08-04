@@ -2,20 +2,11 @@
 
 Этап 2 добавляет защищённое редактирование DOCX через независимые кандидаты. Действующий файл меняется только короткой атомарной операцией после security-, contract- и synthetic-generation проверок.
 
-## Конфигурация
+## Доступность после Этапа 5Б
 
-Центр по-прежнему включается только для процесса:
+Отдельные DTC login, editor token, session secret и feature flag удалены. Центр доступен как часть «Блока релизов». Изменяющие формы защищены host-only HttpOnly CSRF cookie с prefix-safe Path; файловая валидация, audit, locking и atomic publish остаются обязательными.
 
-```powershell
-$env:DOCUMENT_TEMPLATE_CENTER_ENABLED='1'
-$env:DOCUMENT_TEMPLATE_EDITOR_TOKEN='<shared editor token>'
-$env:SUP_ADMIN_SESSION_SECRET='<cryptographically random secret, at least 32 bytes>'
-$env:SESSION_COOKIE_SECURE='1' # обязательно на production HTTPS
-```
-
-`SUP_ADMIN_SESSION_SECRET` используется как существующий application signing secret. Он не является editor access token. Слабый, отсутствующий или default secret закрывает только Центр шаблонов с безопасной ошибкой 503. Значения secret/token не должны попадать в Git, логи или URL.
-
-Proxy headers по умолчанию не учитываются. `TRUST_PROXY_HEADERS=1` разрешается только за настроенным доверенным reverse proxy.
+Публичный URL Центра — `/dashboard/release-monitor/document-templates/`. После загрузки новой версии существующие validation и atomic publish выполняются как единая защищённая операция. Отдельное пользовательское подтверждение публикации не требуется; при ошибке проверки или SHA-конфликте действующий DOCX не изменяется.
 
 ## Runtime и обслуживание
 
@@ -27,12 +18,6 @@ python tools/recover_document_template_center.py
 ```
 
 Cleanup помечает истёкшие кандидаты. Recovery не повторяет `replace`: он только сопоставляет фактические SHA с persisted operation metadata и финализирует outcome. `publish_failed` блокирует дальнейшие mutations документа до контролируемого вмешательства.
-
-Emergency disable:
-
-```powershell
-$env:DOCUMENT_TEMPLATE_CENTER_ENABLED='0'
-```
 
 ## Ограничения безопасности
 
@@ -58,7 +43,7 @@ $env:DOCUMENT_TEMPLATE_CENTER_ENABLED='0'
 7. rollback;
 8. финальную сверку SHA-256.
 
-До этой проверки Центр может быть развёрнут с выключенным флагом записи.
+До этой проверки запись должна оставаться ограниченной операционными правилами окружения.
 
 ## Проверки перед commit
 

@@ -120,17 +120,15 @@ class _ReleaseMarkupParser(HTMLParser):
             self._in_header = False
 
 
-def _build_app(*, document_templates_enabled: bool = True, include_document_templates: bool = True) -> Flask:
+def _build_app(*, legacy_templates_flag=None, include_document_templates: bool = True) -> Flask:
     app = Flask(
         __name__,
         template_folder=str(PROJECT_ROOT / "templates"),
         static_folder=str(PROJECT_ROOT / "static"),
     )
-    app.config.update(
-        TESTING=True,
-        SECRET_KEY="release-block-characterization",
-        DOCUMENT_TEMPLATE_CENTER_ENABLED=document_templates_enabled,
-    )
+    app.config.update(TESTING=True, SECRET_KEY="release-block-characterization")
+    if legacy_templates_flag is not None:
+        app.config["DOCUMENT_TEMPLATE_CENTER_ENABLED"] = legacy_templates_flag
     app.add_url_rule("/", endpoint="main.index", view_func=lambda: "home")
     app.add_url_rule("/release/monitor-init", endpoint="release.release_monitor_init", view_func=lambda: "ok", methods=["POST"])
     app.add_url_rule("/release/monitor-generate", endpoint="release.release_monitor_generate", view_func=lambda: "ok", methods=["POST"])
@@ -139,7 +137,7 @@ def _build_app(*, document_templates_enabled: bool = True, include_document_temp
     app.add_url_rule("/sms/templates/<profile>", endpoint="sms.save_sms_template", view_func=lambda profile: profile, methods=["POST"])
     if include_document_templates:
         app.add_url_rule(
-            "/admin/document-templates/",
+            "/dashboard/release-monitor/document-templates/",
             endpoint="document_templates.index",
             view_func=lambda: "templates",
         )
@@ -301,7 +299,7 @@ class ReleaseBlockMigrationTests(unittest.TestCase):
         resource_positions = [text.index(label) for label in resource_labels]
         self.assertEqual(resource_positions, sorted(resource_positions))
 
-    def test_internal_navigation_order_targets_and_feature_flag(self):
+    def test_internal_navigation_order_targets_and_endpoint_availability(self):
         app = _build_app()
         with app.test_request_context("/release-monitor"):
             items = build_release_navigation("dashboard.release_monitor_page")
@@ -315,16 +313,16 @@ class ReleaseBlockMigrationTests(unittest.TestCase):
         )
         self.assertEqual(["_self", "_blank", "_blank", "_self"], [item["target"] for item in items])
 
-        disabled = _build_app(document_templates_enabled=False)
+        disabled = _build_app(legacy_templates_flag=False)
         with disabled.test_request_context("/release-monitor"):
-            self.assertNotIn("document-templates", [item["id"] for item in build_release_navigation()])
+            self.assertEqual("document-templates", build_release_navigation()[-1]["id"])
         missing = _build_app(include_document_templates=False)
         with missing.test_request_context("/release-monitor"):
             self.assertNotIn("document-templates", [item["id"] for item in build_release_navigation()])
 
     def test_global_navigation_uses_release_context_for_document_templates(self):
         app = _build_app()
-        with app.test_request_context("/admin/document-templates/"):
+        with app.test_request_context("/dashboard/release-monitor/document-templates/"):
             groups = build_oplot_navigation("document_templates.index")
         items = [item for group in groups for item in group["items"]]
         self.assertNotIn("document-templates", [item["id"] for item in items])
@@ -513,21 +511,24 @@ class ReleaseBlockMigrationTests(unittest.TestCase):
         self.assertEqual(7, config["settings"]["operational_day_start_hour"])
         self.assertFalse(config["settings"]["maintenance_enabled"])
 
-    def test_core_shell_is_opt_in_for_home_and_release_monitor_only(self):
+    def test_core_shell_is_opt_in_for_home_release_monitor_and_dtc(self):
         release_source = TEMPLATE_PATH.read_text(encoding="utf-8")
         self.assertIn("{% set oplot_topbar_variant = 'core' %}", release_source)
         self.assertIn("{% set oplot_topbar_variant = 'core' %}", (PROJECT_ROOT / "templates" / "index.html").read_text(encoding="utf-8"))
         self.assertIn("{% set oplot_show_breadcrumbs = false %}", release_source)
+        help_source = (PROJECT_ROOT / "templates/help.html").read_text(encoding="utf-8")
+        self.assertNotIn("oplot_topbar_variant = 'core'", help_source)
         for relative in (
-            "templates/help.html",
             "templates/document_templates/index.html",
             "templates/document_templates/candidate.html",
             "templates/document_templates/history.html",
+            "templates/document_templates/configuration_error.html",
         ):
             with self.subTest(template=relative):
                 source = (PROJECT_ROOT / relative).read_text(encoding="utf-8")
-                self.assertNotIn("oplot_topbar_variant = 'core'", source)
-                self.assertNotIn("oplot_show_breadcrumbs = false", source)
+                self.assertIn("oplot_topbar_variant = 'core'", source)
+                self.assertIn("oplot_show_sidebar = false", source)
+                self.assertIn("oplot_show_breadcrumbs = false", source)
         home_css = (PROJECT_ROOT / "static" / "css" / "oplot_home.css").read_text(encoding="utf-8")
         release_css = (PROJECT_ROOT / "static" / "css" / "oplot_release.css").read_text(encoding="utf-8")
         self.assertNotIn(".oplot-home .oplot-topbar", home_css)
