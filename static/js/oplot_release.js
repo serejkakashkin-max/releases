@@ -65,6 +65,13 @@ function buildReleaseUrlFromTemplate(key, value) {
     if (!isSafeReleaseUrl(template) || template.split(SMS_TEMPLATE_PROFILE_PLACEHOLDER).length !== 2) throw new Error('release_monitor_configuration_error');
     return template.replace(SMS_TEMPLATE_PROFILE_PLACEHOLDER, encodeURIComponent(String(value || '')));
 }
+function getReleaseModalApi() {
+    const ModalApi = window.bootstrap?.Modal || window.tabler?.Modal;
+    if (typeof ModalApi !== 'function') {
+        throw new Error('Release Monitor modal API is unavailable');
+    }
+    return ModalApi;
+}
 function showReleaseConfigError() {
     const error = document.getElementById('releaseMonitorConfigError');
     const root = document.getElementById('oplotReleaseRoot');
@@ -1653,7 +1660,7 @@ function inputValueToDisplayDate(value) {
 
 function ensureReleaseDateOverrideModal() {
     if (!releaseDateOverrideModalInstance) {
-        releaseDateOverrideModalInstance = new bootstrap.Modal(document.getElementById('releaseDateOverrideModal'));
+        releaseDateOverrideModalInstance = new (getReleaseModalApi())(document.getElementById('releaseDateOverrideModal'));
     }
     return releaseDateOverrideModalInstance;
 }
@@ -1724,7 +1731,7 @@ function resetReleaseDateOverride() {
 
 function ensureReleaseManualCreateModal() {
     if (!releaseManualCreateModalInstance) {
-        releaseManualCreateModalInstance = new bootstrap.Modal(document.getElementById('releaseManualCreateModal'));
+        releaseManualCreateModalInstance = new (getReleaseModalApi())(document.getElementById('releaseManualCreateModal'));
     }
     return releaseManualCreateModalInstance;
 }
@@ -2007,7 +2014,7 @@ async function saveReleaseManualCreate() {
 
 function ensureReleaseManualOverrideModal() {
     if (!releaseManualOverrideModalInstance) {
-        releaseManualOverrideModalInstance = new bootstrap.Modal(document.getElementById('releaseManualOverrideModal'));
+        releaseManualOverrideModalInstance = new (getReleaseModalApi())(document.getElementById('releaseManualOverrideModal'));
     }
     return releaseManualOverrideModalInstance;
 }
@@ -2632,7 +2639,7 @@ function applyReleaseDocumentInitData(state, data) {
 function ensureReleaseDocumentModal() {
     if (!releaseDocumentModalInstance) {
         const modalElement = document.getElementById('releaseDocumentModal');
-        releaseDocumentModalInstance = new bootstrap.Modal(modalElement);
+        releaseDocumentModalInstance = new (getReleaseModalApi())(modalElement);
         modalElement.addEventListener('hide.bs.modal', () => {
             if (releaseDocumentWizardState) {
                 releaseDocumentWizardState.cancelled = true;
@@ -4141,7 +4148,7 @@ function openReleaseSmsModal() {
     showReleaseSmsMessage('');
     renderReleaseSmsModal();
     const modalElement = document.getElementById('releaseSmsModal');
-    releaseSmsModalInstance = releaseSmsModalInstance || bootstrap.Modal.getOrCreateInstance(modalElement);
+    releaseSmsModalInstance = releaseSmsModalInstance || getReleaseModalApi().getOrCreateInstance(modalElement);
     releaseSmsModalInstance.show();
 }
 
@@ -4571,7 +4578,7 @@ function openSmsTemplateEditor(event) {
     if (!modalElement) {
         return;
     }
-    smsTemplateEditorModalInstance = smsTemplateEditorModalInstance || bootstrap.Modal.getOrCreateInstance(modalElement);
+    smsTemplateEditorModalInstance = smsTemplateEditorModalInstance || getReleaseModalApi().getOrCreateInstance(modalElement);
     smsTemplateEditorModalInstance.show();
     loadSmsTemplateEditor();
 }

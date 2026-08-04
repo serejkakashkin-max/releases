@@ -442,6 +442,33 @@ class ReleaseBlockMigrationTests(unittest.TestCase):
         self.assertEqual(1, business.count("registerReleaseLifecycleListeners();"))
         self.assertEqual(1, business.count("startReleaseMonitorGlobalStatusPolling();"))
 
+    def test_modal_api_uses_tabler_compatible_adapter_without_global_substitution(self):
+        business = RELEASE_JS_PATH.read_text(encoding="utf-8")
+        helper = re.search(
+            r"function getReleaseModalApi\(\) \{([\s\S]*?)\n\}",
+            business,
+        )
+        self.assertIsNotNone(helper)
+        helper_source = helper.group(1)
+        self.assertIn("window.bootstrap?.Modal", helper_source)
+        self.assertIn("window.tabler?.Modal", helper_source)
+        self.assertIn("typeof ModalApi !== 'function'", helper_source)
+        self.assertIn("Release Monitor modal API is unavailable", helper_source)
+        self.assertNotRegex(business, r"window\.bootstrap\s*=")
+        self.assertNotIn("bootstrap.Modal", business)
+        self.assertEqual(6, business.count("getReleaseModalApi()") - 1)
+        self.assertEqual(4, business.count("new (getReleaseModalApi())"))
+        self.assertEqual(2, business.count("getReleaseModalApi().getOrCreateInstance"))
+        for modal_id in (
+            "releaseDocumentModal", "releaseDateOverrideModal", "releaseManualCreateModal",
+            "releaseManualOverrideModal", "releaseSmsModal", "smsTemplateEditorModal",
+        ):
+            with self.subTest(modal_id=modal_id):
+                self.assertIn(modal_id, business)
+        for handler in PUBLIC_RELEASE_HANDLERS:
+            with self.subTest(handler=handler):
+                self.assertRegex(business, rf"(?:async\s+)?function\s+{re.escape(handler)}\s*\(")
+
     def test_rendered_config_contains_complete_prefix_safe_endpoint_map(self):
         response, _build_model, _maintenance = _render_release_monitor()
         text = response.get_data(as_text=True)
