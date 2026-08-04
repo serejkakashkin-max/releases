@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import hashlib
+import json
 import re
 import os
 import unittest
@@ -19,6 +19,77 @@ from services.release_ui_service import build_release_navigation
 
 
 TEMPLATE_PATH = PROJECT_ROOT / "templates" / "release_monitor.html"
+RELEASE_JS_PATH = PROJECT_ROOT / "static" / "js" / "oplot_release.js"
+
+PUBLIC_RELEASE_HANDLERS = (
+    "addReleaseWorkMarkParticipantFromPicker",
+    "addResponsibleAssignment",
+    "addSmsTemplatePhone",
+    "changeReleaseSmsDate",
+    "changeReleaseSmsPreviousVersion",
+    "changeReleaseSmsProfile",
+    "changeReleaseSmsResult",
+    "changeReleaseSmsText",
+    "clearReleaseSmsDraft",
+    "closeSmsTemplateEditor",
+    "confirmReleaseSmsReview",
+    "copyReleaseSmsText",
+    "createReleaseZni",
+    "dismissReleaseUpdateBanner",
+    "ensureReleaseReviewerOptions",
+    "generateReleaseSmsZip",
+    "handleReleaseFarFutureToggle",
+    "handleReleaseNoRovToggle",
+    "handleReleaseResponsibleFilter",
+    "handleReleaseSearch",
+    "handleReleaseViewFilter",
+    "handleReleaseWorkMarkFilter",
+    "handleReleaseWorkMarkRowClick",
+    "handleReleaseYearFilter",
+    "lookupReleaseManualCreateJira",
+    "moveReleaseRow",
+    "moveReleaseRowFromSettings",
+    "openReleaseDateOverrideModal",
+    "openReleaseDocumentWizard",
+    "openReleaseManualCreateModal",
+    "openReleaseManualOverrideModal",
+    "openReleaseSmsModal",
+    "openSmsTemplateEditor",
+    "reloadReleaseMonitorWithScrollRestore",
+    "reloadSmsTemplateEditor",
+    "removeReleaseWorkMarkParticipant",
+    "removeResponsibleAssignment",
+    "removeSmsTemplatePhone",
+    "resetReleaseDateOverride",
+    "resetReleaseManualOverride",
+    "resetReleaseSmsText",
+    "saveReleaseDateOverride",
+    "saveReleaseManualCreate",
+    "saveReleaseManualOverride",
+    "saveReleaseWorkMarkOptimistic",
+    "saveSmsTemplateProfile",
+    "scrollReleasePageToTop",
+    "scrollToInstalledPromRelease",
+    "setActiveReleaseWorkMark",
+    "setAllReleaseSmsIncluded",
+    "setAllReleaseSmsResults",
+    "setReleaseDocumentPlaybookMode",
+    "setReleaseManualColor",
+    "setReleaseSmsScope",
+    "setReleaseWorkMarkMode",
+    "setReleaseWorkMarkPanelCollapsed",
+    "setSmsTemplateProfile",
+    "syncReleaseMonitorFromConfluence",
+    "toggleReleaseDutyMode",
+    "toggleReleaseRowNumbering",
+    "toggleReleaseRowSettings",
+    "toggleReleaseSmsIncluded",
+    "toggleReleaseWorkMarkMode",
+    "updateReleaseAssignment",
+    "updateReleaseDocumentPlaybookPastePreview",
+    "updateResponsibleAssignment",
+    "updateSmsTemplatePhone",
+)
 
 
 class _ReleaseMarkupParser(HTMLParser):
@@ -61,6 +132,11 @@ def _build_app(*, document_templates_enabled: bool = True, include_document_temp
         DOCUMENT_TEMPLATE_CENTER_ENABLED=document_templates_enabled,
     )
     app.add_url_rule("/", endpoint="main.index", view_func=lambda: "home")
+    app.add_url_rule("/release/monitor-init", endpoint="release.release_monitor_init", view_func=lambda: "ok", methods=["POST"])
+    app.add_url_rule("/release/monitor-generate", endpoint="release.release_monitor_generate", view_func=lambda: "ok", methods=["POST"])
+    app.add_url_rule("/sms/release-monitor/generate", endpoint="sms.generate_release_monitor_sms", view_func=lambda: "ok", methods=["POST"])
+    app.add_url_rule("/sms/templates", endpoint="sms.get_sms_templates", view_func=lambda: "ok")
+    app.add_url_rule("/sms/templates/<profile>", endpoint="sms.save_sms_template", view_func=lambda profile: profile, methods=["POST"])
     if include_document_templates:
         app.add_url_rule(
             "/admin/document-templates/",
@@ -90,6 +166,31 @@ def _render_release_monitor():
 
 
 class ReleaseMonitorCharacterizationTests(unittest.TestCase):
+    def test_business_script_inventory_and_public_handler_contract(self):
+        source = TEMPLATE_PATH.read_text(encoding="utf-8")
+        external = RELEASE_JS_PATH.read_text(encoding="utf-8")
+        business = re.search(
+            r"let currentReleaseYearFilter[\s\S]*?(?=\n\nObject\.assign\(window,)",
+            external,
+        ).group(0)
+        functions = re.findall(
+            r"^(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(",
+            business,
+            re.MULTILINE,
+        )
+        self.assertEqual(
+            311,
+            len([name for name in functions if name != "registerReleaseLifecycleListeners"]),
+        )
+        self.assertEqual(
+            79,
+            len(re.findall(r"^(?:let|const|var)\s+[A-Za-z_$][\w$]*", business, re.MULTILINE)),
+        )
+        self.assertEqual(90, len(re.findall(r"\bon[a-z]+\s*=", source + external, re.IGNORECASE)))
+        for handler in PUBLIC_RELEASE_HANDLERS:
+            with self.subTest(handler=handler):
+                self.assertRegex(business, rf"(?:async\s+)?function\s+{re.escape(handler)}\s*\(")
+
     def test_endpoint_url_provider_contract_and_table_structure(self):
         response, build_model, maintenance = _render_release_monitor()
         self.assertEqual(200, response.status_code)
@@ -118,6 +219,7 @@ class ReleaseMonitorCharacterizationTests(unittest.TestCase):
     def test_dom_filter_modal_and_field_contracts(self):
         response, _build_model, _maintenance = _render_release_monitor()
         text = response.get_data(as_text=True)
+        script = RELEASE_JS_PATH.read_text(encoding="utf-8")
         parser = _ReleaseMarkupParser()
         parser.feed(text)
         for value in (
@@ -129,43 +231,34 @@ class ReleaseMonitorCharacterizationTests(unittest.TestCase):
         ):
             self.assertIn(value, parser.ids)
         for dynamic_id in ("releaseResponsibleFilter", "releaseStatusFilter"):
-            self.assertIn(dynamic_id, text)
+            self.assertIn(dynamic_id, script)
         for field_name in (
             "release_key", "release_type", "release_summary", "deployment_start",
             "deployment_end", "rov_key", "release_status", "rov_status", "system_name",
             "ke_id", "release_version", "ke", "release_dist_url", "zni_key",
         ):
-            self.assertIn(f"name: '{field_name}'", text)
+            self.assertIn(f"name: '{field_name}'", script)
 
     def test_action_methods_polling_and_existing_transitions_are_stable(self):
-        source = TEMPLATE_PATH.read_text(encoding="utf-8")
-        post_paths = (
-            "/dashboard/release-monitor/work-mark",
-            "/dashboard/release-monitor/date-override",
-            "/dashboard/release-monitor/manual-release/lookup",
-            "/dashboard/release-monitor/manual-release",
-            "/release/monitor-init",
-            "/dashboard/release-monitor/manual-distribution",
-            "/release/monitor-generate",
-            "/sms/release-monitor/generate",
-            "/sms/templates/",
-            "/dashboard/release-monitor/order",
-            "/dashboard/release-monitor/zni",
-            "/dashboard/release-monitor/reviewer",
-            "/dashboard/release-monitor/rollout-notes",
-            "/dashboard/release-monitor/confluence-sync",
+        source = RELEASE_JS_PATH.read_text(encoding="utf-8")
+        post_keys = (
+            "work_mark", "date_override", "manual_release_lookup", "manual_release",
+            "monitor_init", "manual_distribution", "monitor_generate", "sms_generate",
+            "sms_template_profile", "order", "zni", "reviewer", "rollout_notes", "confluence_sync",
         )
-        for path in post_paths:
-            match = re.search(re.escape(path) + r"[\s\S]{0,260}?method:\s*'POST'", source)
-            self.assertIsNotNone(match, path)
-        self.assertIn("/dashboard/release-monitor/status?compact=1", source)
+        for key in post_keys:
+            with self.subTest(key=key):
+                self.assertIn(key, source)
+        self.assertIn("method: 'POST'", source)
+        self.assertIn("getReleaseUrlWithQuery('status', { compact: '1' })", source)
         self.assertIn("releaseMonitorGlobalRefreshing ? 2000 : 15000", source)
         self.assertIn("Math.min(60000", source)
-        self.assertIn('id="oplot-release-config"', source)
+        self.assertIn('id="oplot-release-config"', TEMPLATE_PATH.read_text(encoding="utf-8"))
         self.assertNotIn("location.hostname", source)
+        self.assertNotIn("BASE_PATH", source)
         self.assertIn("dashboard.release_monitor_duty_schedule_page", (PROJECT_ROOT / "services" / "release_ui_service.py").read_text(encoding="utf-8"))
-        self.assertRegex(source, r"window\.open\(BASE_PATH \+ '/dashboard/release-monitor/current-week', '_blank'")
-        self.assertRegex(source, r"window\.open\(BASE_PATH \+ '/dashboard/release-monitor/assignment-center', '_blank'")
+        self.assertRegex(source, r"window\.open\(getReleaseUrl\('current_week'\), '_blank'")
+        self.assertRegex(source, r"window\.open\(getReleaseUrl\('assignment_center'\), '_blank'")
 
     def test_release_monitor_does_not_load_document_template_viewer_assets(self):
         response, _build_model, _maintenance = _render_release_monitor()
@@ -186,7 +279,7 @@ class ReleaseBlockMigrationTests(unittest.TestCase):
         self.assertIn("oplot_release.css", text)
         self.assertNotIn("bootstrap.bundle.min.js", text)
         self.assertNotIn("base_styles.html", text)
-        self.assertIn('class="oplot-topbar oplot-topbar--compact"', text)
+        self.assertIn('class="oplot-topbar oplot-topbar--core"', text)
         self.assertIn('class="oplot-topbar__brand" href="/">OPLOT</a>', text)
         self.assertNotIn('class="oplot-topbar__context"', text)
         self.assertNotIn('class="oplot-breadcrumbs"', text)
@@ -272,6 +365,9 @@ class ReleaseBlockMigrationTests(unittest.TestCase):
                 self.assertNotIn('class="oplot-sidebar', text)
                 self.assertIn(f'href="{expected}"', text)
                 self.assertIn(f'class="oplot-topbar__brand" href="{expected_home}"', text)
+                prefix = expected_home.rstrip("/")
+                self.assertIn(f'"status": "{prefix}/dashboard/release-monitor/status"', text)
+                self.assertIn(f'"sms_template_profile": "{prefix}/sms/templates/__OPLOT_PROFILE__"', text)
                 self.assertEqual(10, len(_ReleaseMarkupParser_with_headers(text)))
                 self.assertNotIn("htmx.min.js", text)
                 self.assertNotIn("docx-preview.min.js", text)
@@ -290,28 +386,89 @@ class ReleaseBlockMigrationTests(unittest.TestCase):
             text = _build_app().test_client().get("/release-monitor").get_data(as_text=True)
         self.assertIn('href="/base/dashboard/release-monitor/duty-schedule"', text)
         self.assertIn('class="oplot-topbar__brand" href="/base/"', text)
-        self.assertIn('"public_base": "/base"', text)
+        self.assertIn('"status": "/base/dashboard/release-monitor/status"', text)
+        self.assertIn('"sms_template_profile": "/base/sms/templates/__OPLOT_PROFILE__"', text)
         self.assertNotIn("/base/base/", text)
 
-    def test_business_sensitive_inline_javascript_is_unchanged(self):
+    def test_business_javascript_is_external_and_contract_is_preserved(self):
         source = TEMPLATE_PATH.read_text(encoding="utf-8")
-        match = re.search(
-            r"<script>\s*let currentReleaseYearFilter[\s\S]*?</script>",
+        business = RELEASE_JS_PATH.read_text(encoding="utf-8")
+        self.assertNotRegex(source, r"<script>\s*let currentReleaseYearFilter")
+        self.assertIn("js/oplot_release.js", source)
+        self.assertIn("defer", source)
+        self.assertNotIn('type="module"', source)
+        self.assertNotIn("{{", business)
+        self.assertNotIn("CHATBOT_BASE_PATH", business)
+        self.assertIn("window.dashboardData", business)
+        self.assertIn("window.initOplotReleasePage = initOplotReleasePage", business)
+        self.assertIn("releasePageInitializationState", business)
+        for template_name in (
+            "index.html",
+            "help.html",
+            "document_templates/index.html",
+            "document_templates/candidate.html",
+            "document_templates/history.html",
+        ):
+            self.assertNotIn(
+                "oplot_release.js",
+                (PROJECT_ROOT / "templates" / template_name).read_text(encoding="utf-8"),
+            )
+
+        maintenance_match = re.search(
+            r'<script type="application/json" id="oplot-release-config">[\s\S]*?</script>\s*<script>([\s\S]*?)</script>',
             source,
         )
-        self.assertIsNotNone(match)
-        normalized = match.group(0).replace("\r\n", "\n").strip()
-        self.assertEqual(
-            "512d78e7f474b932d245ce087dd4c5745a99650fc113caafb6914ec2b388b908",
-            hashlib.sha256(normalized.encode("utf-8")).hexdigest(),
-        )
+        self.assertIsNotNone(maintenance_match)
+        self.assertNotIn("{{", maintenance_match.group(1))
+        self.assertIn("applyReleaseMaintenanceGate", maintenance_match.group(1))
 
-    def test_compact_shell_is_release_monitor_only(self):
+    def test_public_handlers_are_explicitly_exported_and_initialization_is_fail_closed(self):
+        business = RELEASE_JS_PATH.read_text(encoding="utf-8")
+        export_match = re.search(r"Object\.assign\(window, \{([\s\S]*?)\n\}\);", business)
+        self.assertIsNotNone(export_match)
+        exported = tuple(
+            line.strip().rstrip(",")
+            for line in export_match.group(1).splitlines()
+            if line.strip()
+        )
+        self.assertEqual(PUBLIC_RELEASE_HANDLERS, exported)
+        self.assertIn("window.initOplotReleasePage = initOplotReleasePage", business)
+        self.assertIn("if (releasePageInitializationState !== 'not_started') return;", business)
+        self.assertIn("releasePageInitializationState = 'failed';", business)
+        self.assertIn("root.inert = true", business)
+        self.assertIn("if (!releaseConfigValid)", business)
+        self.assertIn("REQUIRED_RELEASE_URL_KEYS.every", business)
+        self.assertIn("profileTemplate.split(SMS_TEMPLATE_PROFILE_PLACEHOLDER).length !== 2", business)
+        self.assertEqual(1, business.count("registerReleaseLifecycleListeners();"))
+        self.assertEqual(1, business.count("startReleaseMonitorGlobalStatusPolling();"))
+
+    def test_rendered_config_contains_complete_prefix_safe_endpoint_map(self):
+        response, _build_model, _maintenance = _render_release_monitor()
+        text = response.get_data(as_text=True)
+        match = re.search(r'<script type="application/json" id="oplot-release-config">(.*?)</script>', text)
+        self.assertIsNotNone(match)
+        config = json.loads(match.group(1))
+        self.assertEqual(
+            {
+                "status", "reviewer", "zni", "date_override", "manual_release_lookup",
+                "manual_release", "manual_override_fields", "manual_override_reset",
+                "manual_distribution", "monitor_init", "monitor_generate", "work_mark",
+                "rollout_notes", "order", "confluence_sync", "sms_generate", "sms_templates",
+                "current_week", "assignment_center",
+            },
+            set(config["urls"]),
+        )
+        self.assertEqual("/sms/templates/__OPLOT_PROFILE__", config["url_templates"]["sms_template_profile"])
+        self.assertEqual([], config["data"]["release_monitor"])
+        self.assertEqual(7, config["settings"]["operational_day_start_hour"])
+        self.assertFalse(config["settings"]["maintenance_enabled"])
+
+    def test_core_shell_is_opt_in_for_home_and_release_monitor_only(self):
         release_source = TEMPLATE_PATH.read_text(encoding="utf-8")
-        self.assertIn("{% set oplot_topbar_variant = 'compact' %}", release_source)
+        self.assertIn("{% set oplot_topbar_variant = 'core' %}", release_source)
+        self.assertIn("{% set oplot_topbar_variant = 'core' %}", (PROJECT_ROOT / "templates" / "index.html").read_text(encoding="utf-8"))
         self.assertIn("{% set oplot_show_breadcrumbs = false %}", release_source)
         for relative in (
-            "templates/index.html",
             "templates/help.html",
             "templates/document_templates/index.html",
             "templates/document_templates/candidate.html",
@@ -319,8 +476,12 @@ class ReleaseBlockMigrationTests(unittest.TestCase):
         ):
             with self.subTest(template=relative):
                 source = (PROJECT_ROOT / relative).read_text(encoding="utf-8")
-                self.assertNotIn("oplot_topbar_variant = 'compact'", source)
+                self.assertNotIn("oplot_topbar_variant = 'core'", source)
                 self.assertNotIn("oplot_show_breadcrumbs = false", source)
+        home_css = (PROJECT_ROOT / "static" / "css" / "oplot_home.css").read_text(encoding="utf-8")
+        release_css = (PROJECT_ROOT / "static" / "css" / "oplot_release.css").read_text(encoding="utf-8")
+        self.assertNotIn(".oplot-home .oplot-topbar", home_css)
+        self.assertNotIn(".oplot-release .oplot-topbar", release_css)
 
 
 def _ReleaseMarkupParser_with_headers(text: str) -> list[str]:

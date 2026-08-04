@@ -282,6 +282,7 @@ def release_monitor_page():
             "view_updated_at": view_state["updated_at"],
         }
         release_monitor_items = release_monitor_data.get('items', [])
+        maintenance_enabled = is_maintenance_enabled("release_monitor")
         return render_template(
             'release_monitor.html',
             basepath=BASE_PATH,
@@ -294,13 +295,27 @@ def release_monitor_page():
             sms_profile_availability=model["sms_profile_availability"],
             release_operational_day_start_hour=RELEASE_OPERATIONAL_DAY_START_HOUR,
             release_navigation=build_release_navigation(),
-            release_ui_config=build_release_ui_config(),
+            release_ui_config=build_release_ui_config(
+                release_monitor=release_monitor_items,
+                release_monitor_summary=release_monitor_data.get('summary', {}),
+                release_monitor_meta=release_monitor_data.get('meta', {}),
+                reviewer_options=model["reviewer_options"],
+                sms_profile_availability=model["sms_profile_availability"],
+                template_hints=model["template_hints"],
+                document_playbooks=DEFAULT_BH_PLAYBOOKS,
+                operational_day_start_hour=RELEASE_OPERATIONAL_DAY_START_HOUR,
+                maintenance_enabled=maintenance_enabled,
+                maintenance_scope="release_monitor",
+            ),
             last_update=datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
-            maintenance_enabled=is_maintenance_enabled("release_monitor"),
+            maintenance_enabled=maintenance_enabled,
             maintenance_scope="release_monitor",
             maintenance_title="Блок релизов на обслуживании",
         )
     except ReleaseMonitorViewChanged:
+        maintenance_enabled = is_maintenance_enabled("release_monitor")
+        reviewer_options = get_release_monitor_reviewer_options()
+        sms_profile_availability = get_sms_profile_availability()
         return render_template(
             'release_monitor.html',
             basepath=BASE_PATH,
@@ -309,19 +324,29 @@ def release_monitor_page():
             release_monitor_meta={},
             release_monitor_template_hints={},
             release_document_playbooks=DEFAULT_BH_PLAYBOOKS,
-            reviewer_options=get_release_monitor_reviewer_options(),
-            sms_profile_availability=get_sms_profile_availability(),
+            reviewer_options=reviewer_options,
+            sms_profile_availability=sms_profile_availability,
             release_operational_day_start_hour=RELEASE_OPERATIONAL_DAY_START_HOUR,
             release_navigation=build_release_navigation(),
-            release_ui_config=build_release_ui_config(),
+            release_ui_config=build_release_ui_config(
+                reviewer_options=reviewer_options,
+                sms_profile_availability=sms_profile_availability,
+                document_playbooks=DEFAULT_BH_PLAYBOOKS,
+                operational_day_start_hour=RELEASE_OPERATIONAL_DAY_START_HOUR,
+                maintenance_enabled=maintenance_enabled,
+                maintenance_scope="release_monitor",
+            ),
             last_update=datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
-            maintenance_enabled=is_maintenance_enabled("release_monitor"),
+            maintenance_enabled=maintenance_enabled,
             maintenance_scope="release_monitor",
             maintenance_title="Блок релизов на обслуживании",
             error="Данные релизов обновляются. Повторите открытие страницы через несколько секунд.",
         ), 503
     except Exception as e:
         logging.error(f"Ошибка загрузки страницы контроля релизов: {e}")
+        maintenance_enabled = is_maintenance_enabled("release_monitor")
+        reviewer_options = get_release_monitor_reviewer_options()
+        sms_profile_availability = get_sms_profile_availability()
         return render_template(
             'release_monitor.html',
             basepath=BASE_PATH,
@@ -330,13 +355,20 @@ def release_monitor_page():
             release_monitor_meta={},
             release_monitor_template_hints={},
             release_document_playbooks=DEFAULT_BH_PLAYBOOKS,
-            reviewer_options=get_release_monitor_reviewer_options(),
-            sms_profile_availability=get_sms_profile_availability(),
+            reviewer_options=reviewer_options,
+            sms_profile_availability=sms_profile_availability,
             release_operational_day_start_hour=RELEASE_OPERATIONAL_DAY_START_HOUR,
             release_navigation=build_release_navigation(),
-            release_ui_config=build_release_ui_config(),
+            release_ui_config=build_release_ui_config(
+                reviewer_options=reviewer_options,
+                sms_profile_availability=sms_profile_availability,
+                document_playbooks=DEFAULT_BH_PLAYBOOKS,
+                operational_day_start_hour=RELEASE_OPERATIONAL_DAY_START_HOUR,
+                maintenance_enabled=maintenance_enabled,
+                maintenance_scope="release_monitor",
+            ),
             last_update=datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
-            maintenance_enabled=is_maintenance_enabled("release_monitor"),
+            maintenance_enabled=maintenance_enabled,
             maintenance_scope="release_monitor",
             maintenance_title="Блок релизов на обслуживании",
             error="Ошибка загрузки данных по релизам. Попробуйте обновить страницу позже.",

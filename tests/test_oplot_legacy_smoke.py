@@ -23,6 +23,11 @@ def build_app() -> Flask:
         static_folder=str(PROJECT_ROOT / "static"),
     )
     app.config.update(TESTING=True, SECRET_KEY="legacy-smoke")
+    app.add_url_rule("/release/monitor-init", endpoint="release.release_monitor_init", view_func=lambda: "ok", methods=["POST"])
+    app.add_url_rule("/release/monitor-generate", endpoint="release.release_monitor_generate", view_func=lambda: "ok", methods=["POST"])
+    app.add_url_rule("/sms/release-monitor/generate", endpoint="sms.generate_release_monitor_sms", view_func=lambda: "ok", methods=["POST"])
+    app.add_url_rule("/sms/templates", endpoint="sms.get_sms_templates", view_func=lambda: "ok")
+    app.add_url_rule("/sms/templates/<profile>", endpoint="sms.save_sms_template", view_func=lambda profile: profile, methods=["POST"])
     for blueprint in (main_bp, dashboard_bp, mpr_bp, sup_parameters_bp):
         app.register_blueprint(blueprint)
     register_oplot_ui(app)
