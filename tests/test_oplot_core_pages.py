@@ -96,10 +96,10 @@ class HomeActionTests(unittest.TestCase):
         with app.test_request_context("/"):
             groups = build_oplot_home_actions()
             navigation = {item["id"]: item for group in build_oplot_navigation("main.index") for item in group["items"]}
-        self.assertEqual(["primary", "management"], [group["id"] for group in groups])
+        self.assertEqual(["primary"], [group["id"] for group in groups])
         ids = [item["id"] for group in groups for item in group["items"]]
         self.assertEqual(
-            ["release-monitor", "duty-dashboard", "mpr", "assignment-center", "duty-schedule", "document-templates"],
+            ["release-monitor", "duty-dashboard", "mpr"],
             ids,
         )
         self.assertEqual(len(ids), len(set(ids)))
@@ -110,12 +110,12 @@ class HomeActionTests(unittest.TestCase):
             self.assertEqual(navigation[item["id"]]["url"], item["url"])
         self.assertFalse({"label", "icon", "endpoint"} & set(oplot_ui_service.HomeAction.__dataclass_fields__))
 
-    def test_feature_flag_and_missing_endpoint_hide_actions(self):
-        app = build_app(templates_enabled=False, omitted={"dashboard.release_monitor_duty_schedule_page"})
+    def test_feature_flag_does_not_add_templates_and_missing_endpoint_hides_action(self):
+        app = build_app(templates_enabled=True, omitted={"dashboard.release_monitor_page"})
         with app.test_request_context("/"):
             ids = {item["id"] for group in build_oplot_home_actions() for item in group["items"]}
         self.assertNotIn("document-templates", ids)
-        self.assertNotIn("duty-schedule", ids)
+        self.assertNotIn("release-monitor", ids)
 
     def test_urls_honor_prefix_sources_without_duplication(self):
         app = build_app()
@@ -148,22 +148,80 @@ class CorePageTests(unittest.TestCase):
         text = response.get_data(as_text=True)
         parser = _MarkupParser(); parser.feed(text)
         self.assertIn("oplot-shell", text)
+        self.assertIn("oplot-shell--no-sidebar", text)
+        self.assertNotIn('class="oplot-sidebar"', text)
+        self.assertNotIn('class="oplot-page-header"', text)
         self.assertEqual(1, parser.h1_count)
-        self.assertIn('aria-current="page"', text)
+        self.assertIn("<h1>AI-агент команды OPLOT</h1>", text)
         self.assertIn("Статистика", text)
+        self.assertIn('id="home-usage-modal"', text)
+        self.assertIn('id="home-version-modal"', text)
         self.assertIn("История версий Oplot", text)
         self.assertIn('id="embeddedChatBot"', text)
         self.assertIn("css/chatbot.css", text)
         self.assertIn("js/chatbot.js", text)
         self.assertIn('data-refresh-url="/dashboard/refresh"', text)
-        self.assertNotIn("sandbox", text.lower())
+        self.assertIn('id="link-sandbox"', text)
+        self.assertIn('href="/releases/sandbox/"', text)
+        self.assertEqual(1, text.count("Песочница"))
+        self.assertNotIn("Эксперименты", text)
+        self.assertNotIn("Основные сценарии", text)
+        self.assertNotIn("Управление", text)
+        self.assertNotIn("Рабочий навигатор", text)
+        self.assertNotIn("oplot-home-service-line", text)
+        self.assertNotIn("<footer", text.lower())
         self.assertNotIn("toggleTheme", text)
         self.assertNotIn("htmx.min.js", text)
         self.assertNotIn("jszip.min.js", text)
         self.assertNotIn("docx-preview.min.js", text)
         action_ids = [value for value in parser.ids if value.startswith("home-action-")]
-        self.assertEqual(6, len(action_ids))
+        self.assertEqual(
+            ["home-action-release-monitor", "home-action-duty-dashboard", "home-action-mpr"],
+            action_ids,
+        )
         self.assertEqual(len(action_ids), len(set(action_ids)))
+        self.assertNotIn("home-action-assignment-center", text)
+        self.assertNotIn("home-action-duty-schedule", text)
+        self.assertNotIn("home-action-document-templates", text)
+        self.assertIn('data-home-icon="release"', text)
+        self.assertIn('data-home-icon="dashboard"', text)
+        self.assertIn('data-home-icon="mpr"', text)
+        self.assertIn('src="/static/img/oplot-home-release.svg"', text)
+        self.assertIn('src="/static/img/oplot-home-dashboard.svg"', text)
+        self.assertIn('src="/static/img/oplot-home-mpr.svg"', text)
+        self.assertEqual(3, text.count("oplot-home-action-label"))
+        dashboard_card = re.search(
+            r'<a id="home-action-duty-dashboard"[\s\S]*?href="([^"]+)"[\s\S]*?data-home-dashboard-link[\s\S]*?data-refresh-url="([^"]+)"',
+            text,
+        )
+        self.assertIsNotNone(dashboard_card)
+        self.assertEqual(("/dashboard", "/dashboard/refresh"), dashboard_card.groups())
+        self.assertLess(text.index('class="oplot-home-utility-row"'), text.index("<h1>AI-агент команды OPLOT</h1>"))
+        self.assertLess(text.index("<h1>AI-агент команды OPLOT</h1>"), text.index('class="oplot-home-actions"'))
+        self.assertLess(text.index('class="oplot-home-actions"'), text.index('id="chatbotAgentShell"'))
+        utility_start = text.index('class="oplot-home-utility-row"')
+        utility_end = text.index("</div>", utility_start)
+        utility_markup = text[utility_start:utility_end]
+        self.assertIn("Статистика", utility_markup)
+        self.assertIn("data-bs-target=\"#home-version-modal\"", utility_markup)
+        self.assertIn('id="link-sandbox"', utility_markup)
+        self.assertIn("data-oplot-theme-toggle", utility_markup)
+        self.assertIn("theme-label", utility_markup)
+        self.assertIn("oplot-home-theme-icon--dark", utility_markup)
+        self.assertIn("oplot-home-theme-icon--light", utility_markup)
+        self.assertLess(utility_markup.index("Статистика"), utility_markup.index('data-bs-target="#home-version-modal"'))
+        self.assertLess(utility_markup.index('data-bs-target="#home-version-modal"'), utility_markup.index('id="link-sandbox"'))
+        self.assertLess(utility_markup.index('id="link-sandbox"'), utility_markup.index("data-oplot-theme-toggle"))
+        menu_start = text.index('class="oplot-home-actions"')
+        menu_end = text.index("</section>", menu_start)
+        self.assertNotIn('id="link-sandbox"', text[menu_start:menu_end])
+        home_css = (PROJECT_ROOT / "static" / "css" / "oplot_home.css").read_text(encoding="utf-8")
+        self.assertIn(".oplot-home .oplot-topbar .oplot-theme-toggle { display: none; }", home_css)
+        self.assertIn("background: rgba(5, 20, 46, .72);", home_css)
+        self.assertIn("@supports ((backdrop-filter: blur(1px))", home_css)
+        chatbot_source = (PROJECT_ROOT / "static" / "js" / "chatbot.js").read_text(encoding="utf-8")
+        self.assertIn('id="chat-suggestions"', chatbot_source)
+        self.assertIn("chat-suggestion-btn", chatbot_source)
         self.assertFalse([url for url in parser.urls if url.startswith(("http://", "https://", "//"))])
         get_stats.assert_called_once_with()
         self.assertEqual([mock.call("index"), mock.call("chatbot")], maintenance.call_args_list)
@@ -172,14 +230,35 @@ class CorePageTests(unittest.TestCase):
         text = render_page(self.app, "/", headers={"X-Forwarded-Prefix": "/oplot"})
         self.assertIn('href="/oplot/dashboard"', text)
         self.assertIn('data-refresh-url="/oplot/dashboard/refresh"', text)
+        self.assertIn('id="link-sandbox" class="oplot-home-utility-chip oplot-home-sandbox-link" href="/oplot/releases/sandbox/"', text)
         self.assertIn('src="/oplot/static/js/oplot_home.js"', text)
         self.assertNotIn("/oplot/oplot/", text)
+
+    def test_sandbox_url_honors_public_prefix_without_duplication(self):
+        cases = (
+            ({}, "/releases/sandbox/"),
+            ({"headers": {"X-Forwarded-Prefix": "/proxy"}}, "/proxy/releases/sandbox/"),
+            ({"environ_overrides": {"SCRIPT_NAME": "/script"}}, "/script/releases/sandbox/"),
+            ({"headers": {"X-Forwarded-Prefix": "/releases"}}, "/releases/sandbox/"),
+        )
+        for request_options, expected in cases:
+            with self.subTest(expected=expected):
+                text = render_page(self.app, **request_options)
+                self.assertIn(f'id="link-sandbox" class="oplot-home-utility-chip oplot-home-sandbox-link" href="{expected}"', text)
+
+        with mock.patch.dict(os.environ, {"BASE_PATH": "/base"}, clear=False):
+            text = render_page(self.app)
+        self.assertIn('href="/base/releases/sandbox/"', text)
+        self.assertNotIn("/base/base/", text)
 
     def test_help_shell_toc_content_and_assets(self):
         text = render_page(self.app, "/help", headers={"X-Forwarded-Prefix": "/oplot"})
         parser = _MarkupParser(); parser.feed(text)
         expected = ["start", "bot", "docs", "release-block", "week-control", "reports", "issues", "screens", "commands"]
         self.assertIn("oplot-shell", text)
+        self.assertIn("oplot-shell--no-sidebar", text)
+        self.assertNotIn('class="oplot-sidebar"', text)
+        self.assertIn('class="oplot-page-header"', text)
         self.assertEqual(1, parser.h1_count)
         self.assertEqual(expected, parser.section_ids)
         self.assertEqual(expected, parser.toc_targets)
@@ -196,6 +275,8 @@ class CorePageTests(unittest.TestCase):
         self.assertNotIn("docx-preview", text)
         self.assertNotIn("htmx.min.js", text)
         self.assertFalse([url for url in parser.urls if url.startswith(("http://", "https://", "//"))])
+        help_css = (PROJECT_ROOT / "static" / "css" / "oplot_help.css").read_text(encoding="utf-8")
+        self.assertRegex(help_css, r"\.oplot-help-layout\s*\{[^}]*margin-inline:\s*auto")
 
     def test_maintenance_partial_default_and_shell_modes(self):
         template = "{% with maintenance_enabled=true, maintenance_scope='test' %}{% include 'maintenance_gate.html' %}{% endwith %}"

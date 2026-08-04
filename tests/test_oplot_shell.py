@@ -112,6 +112,8 @@ class OplotLayoutTests(unittest.TestCase):
         text = self.client.get("/shell").get_data(as_text=True)
         for value in ("oplot-sidebar", "oplot-topbar", "oplot-breadcrumbs", "oplot-operation-indicator", "oplot-toast-region", "fixture-modal", "fixture-confirm"):
             self.assertIn(value, text)
+        self.assertNotIn("oplot-shell--no-sidebar", text)
+        self.assertIn("oplot-page-header", text)
         self.assertIn("Очень длинное русское название", text)
         self.assertIn("Отсутствующий раздел", text)
         self.assertNotIn('href="None"', text)

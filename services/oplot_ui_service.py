@@ -77,8 +77,7 @@ _NAVIGATION = (
 )
 
 _HOME_GROUPS = (
-    ("primary", "Основные сценарии"),
-    ("management", "Управление"),
+    ("primary", "Oplot"),
 )
 
 _HOME_ACTIONS = (
@@ -100,21 +99,6 @@ _HOME_ACTIONS = (
         "Подготовка и загрузка документов МПР по рабочим шаблонам.",
         "primary",
         "primary",
-    ),
-    HomeAction(
-        "assignment-center",
-        "Рекомендации и контроль назначений на релизы текущей недели.",
-        "management",
-    ),
-    HomeAction(
-        "duty-schedule",
-        "Просмотр рабочего графика дежурств и смен команды.",
-        "management",
-    ),
-    HomeAction(
-        "document-templates",
-        "Безопасное управление действующими версиями шаблонов DOCX.",
-        "management",
     ),
 )
 

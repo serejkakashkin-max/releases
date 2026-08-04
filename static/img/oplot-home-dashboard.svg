@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Рабочий экран">
+  <defs>
+    <linearGradient id="dashboard-icon-fill" x1="13" y1="12" x2="49" y2="54" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#ded8ff"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="10" width="48" height="35" rx="5.5" fill="url(#dashboard-icon-fill)"/>
+  <rect x="13" y="15" width="38" height="24" rx="2.5" fill="#37257f"/>
+  <rect x="17" y="19" width="8" height="7" rx="1.4" fill="#f7f4ff"/>
+  <rect x="28" y="19" width="8" height="7" rx="1.4" fill="#cfc8ff"/>
+  <rect x="39" y="19" width="8" height="16" rx="1.4" fill="#f7f4ff"/>
+  <rect x="17" y="29" width="19" height="6" rx="1.4" fill="#dcd6ff"/>
+  <circle cx="32" cy="42" r="1.5" fill="#8a76ff"/>
+  <path fill="url(#dashboard-icon-fill)" d="M26 45h12l1.8 5H46v4H18v-4h6.2l1.8-5Z"/>
+</svg>

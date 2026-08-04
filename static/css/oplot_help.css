@@ -1,4 +1,4 @@
-.oplot-help-layout { display: grid; min-width: 0; grid-template-columns: 248px minmax(0, 1fr); align-items: start; gap: var(--oplot-space-6); }
+.oplot-help-layout { display: grid; width: min(100%, 1320px); min-width: 0; grid-template-columns: 248px minmax(0, 1fr); align-items: start; gap: var(--oplot-space-6); margin-inline: auto; }
 .oplot-help-toc { position: sticky; top: calc(var(--oplot-topbar-height) + var(--oplot-space-4)); min-width: 0; padding: var(--oplot-space-4); border: 1px solid var(--oplot-border); border-radius: var(--oplot-radius-md); background: var(--oplot-surface); box-shadow: var(--oplot-shadow-sm); }
 .oplot-help-toc > strong { display: block; margin-bottom: var(--oplot-space-3); color: var(--oplot-text); font-size: .82rem; }
 .oplot-help-toc ol { display: grid; gap: var(--oplot-space-1); margin: 0; padding: 0; list-style: none; }

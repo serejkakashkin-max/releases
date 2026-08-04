@@ -1,11 +1,13 @@
 {% extends 'layouts/oplot_base.html' %}
 {% import 'components/oplot_ui.html' as ui %}
-{% set oplot_page_title = 'Рабочее пространство Oplot' %}
+{% set oplot_page_title = 'Oplot' %}
 {% set oplot_page_pretitle = 'Главная' %}
 {% set oplot_page_description = 'Быстрый доступ к релизам, документам, задачам смены и рабочему помощнику команды.' %}
 {% set oplot_context_label = 'Oplot' %}
 {% set oplot_context_title = 'Главная' %}
-{% set oplot_breadcrumbs = [{'label':'Главная'}] %}
+{% set oplot_breadcrumbs = [] %}
+{% set oplot_show_sidebar = false %}
+{% set oplot_show_page_header = false %}
 
 {% block title %}Рабочее пространство Oplot — Oplot{% endblock %}
 {% block body_class %}oplot-home{% endblock %}
@@ -15,13 +17,23 @@
   <link rel="stylesheet" href="{{ public_url_for('static', filename='css/oplot_home.css') }}">
 {% endblock %}
 
-{% block page_actions %}
-  <button class="btn btn-ghost-secondary oplot-home-page-action" type="button" data-bs-toggle="modal" data-bs-target="#home-usage-modal">
-    Статистика <span class="badge bg-secondary-lt">{{ stats.total_combined }}</span>
-  </button>
-  <button class="btn btn-primary oplot-home-page-action" type="button" data-bs-toggle="modal" data-bs-target="#home-version-modal">
-    v{{ version }}
-  </button>
+{% block topbar_utilities %}
+  <div class="oplot-home-utility-row" aria-label="Служебные сведения">
+    <button class="oplot-home-utility-chip" type="button" data-bs-toggle="modal" data-bs-target="#home-usage-modal">
+      <i class="bi bi-bar-chart-line" aria-hidden="true"></i>
+      <span>Статистика</span><span class="oplot-home-utility-count">{{ stats.total_combined }}</span>
+    </button>
+    <button class="oplot-home-utility-chip oplot-home-utility-chip--version" type="button" data-bs-toggle="modal" data-bs-target="#home-version-modal">v{{ version }}</button>
+    <a id="link-sandbox" class="oplot-home-utility-chip oplot-home-sandbox-link" href="{{ sandbox_url }}">
+      <i class="bi bi-grid-3x3-gap" aria-hidden="true"></i>
+      <span>Песочница</span>
+    </a>
+    <button class="oplot-home-utility-chip oplot-home-theme-toggle oplot-theme-toggle" type="button" data-oplot-theme-toggle aria-pressed="false" aria-label="Переключить тему">
+      <i class="bi bi-moon-stars oplot-home-theme-icon oplot-home-theme-icon--dark" aria-hidden="true"></i>
+      <i class="bi bi-sun oplot-home-theme-icon oplot-home-theme-icon--light" aria-hidden="true"></i>
+      <span class="theme-label">Тёмная тема</span>
+    </button>
+  </div>
 {% endblock %}
 
 {% block content %}
@@ -30,54 +42,41 @@
      data-chatbot-maintenance="{{ 'true' if chatbot_maintenance else 'false' }}"
      data-maintenance-enabled="{{ 'true' if maintenance_enabled else 'false' }}"
      data-maintenance-scope="{{ maintenance_scope }}">
-  <section class="oplot-home-actions" aria-labelledby="home-actions-title">
-    <div class="oplot-home-section-heading">
-      <div>
-        <span class="oplot-home-eyebrow">Рабочий навигатор</span>
-        <h2 id="home-actions-title">Основные разделы</h2>
-      </div>
-      <a class="oplot-home-help-link" href="{{ public_url_for('main.help_page') }}">Помощь по Oplot</a>
-    </div>
+  <header class="oplot-home-title">
+    <h1>AI-агент команды OPLOT</h1>
+  </header>
 
-    {% for group in oplot_home_actions %}
-      <section class="oplot-home-action-group oplot-home-action-group--{{ group.id }}" aria-labelledby="home-group-{{ group.id }}">
-        <h3 id="home-group-{{ group.id }}">{{ group.label }}</h3>
-        <div class="oplot-home-action-grid">
+  <section class="oplot-home-actions" aria-label="Основное меню">
+    <div class="oplot-home-action-grid">
+      {% for group in oplot_home_actions %}
           {% for action in group['items'] %}
             <a id="home-action-{{ action.id }}"
                class="oplot-home-action-card{% if action.priority == 'primary' %} oplot-home-action-card--primary{% endif %}"
+               data-home-action="{{ action.id }}"
                href="{{ action.url }}"
-               {% if action.refresh_url %}data-home-dashboard-link data-refresh-url="{{ action.refresh_url }}"{% endif %}>
-              <span class="oplot-home-action-icon">{{ ui.icon(action.icon) }}</span>
-              <span class="oplot-home-action-copy">
-                <strong>{{ action.label }}</strong>
-                <span>{{ action.description }}</span>
+              {% if action.refresh_url %}data-home-dashboard-link data-refresh-url="{{ action.refresh_url }}"{% endif %}>
+              {% set home_icon_name = {'release-monitor': 'release', 'duty-dashboard': 'dashboard', 'mpr': 'mpr'}[action.id] %}
+              <span class="oplot-home-action-icon" aria-hidden="true">
+                <img class="oplot-home-action-svg"
+                     data-home-icon="{{ home_icon_name }}"
+                     src="{{ public_url_for('static', filename='img/oplot-home-' ~ home_icon_name ~ '.svg') }}"
+                     alt="">
               </span>
-              <span class="oplot-home-action-arrow" aria-hidden="true">→</span>
+              <span class="oplot-home-action-label"><strong>{{ action.label }}</strong><span class="oplot-home-action-arrow" aria-hidden="true">→</span></span>
             </a>
           {% endfor %}
-        </div>
-      </section>
-    {% endfor %}
+      {% endfor %}
+    </div>
   </section>
 
   <section class="oplot-home-assistant" id="chatbotAgentShell" aria-labelledby="home-assistant-title">
     <div class="oplot-home-assistant-heading">
-      <div>
-        <span class="oplot-home-eyebrow">Рабочий помощник</span>
-        <h2 id="home-assistant-title">AI-бот Oplot</h2>
-        <p>Живой помощник по релизам, документам, Confluence и сменным задачам.</p>
-      </div>
-      <span class="status status-green"><span class="status-dot status-dot-animated"></span>Готов к работе</span>
+      <h2 id="home-assistant-title"><span class="oplot-home-assistant-icon" aria-hidden="true"><i class="bi bi-robot"></i></span>AI-бот Oplot</h2>
+      <p>Живой помощник по релизам, документам, Confluence и сменным задачам.</p>
+      <a class="oplot-home-help-link" href="{{ public_url_for('main.help_page') }}">Помощь по Oplot</a>
     </div>
     <div class="oplot-home-chat-wrap"><div id="embeddedChatBot"></div></div>
   </section>
-
-  <footer class="oplot-home-service-line">
-    <span>Oplot v{{ version }}</span>
-    {% if version_history %}<span>Обновлено {{ version_history[0].date }}</span>{% endif %}
-    <span>Всего операций: {{ stats.total_combined }}</span>
-  </footer>
 </div>
 
 <div class="oplot-home-refresh-overlay" data-home-dashboard-loader role="status" aria-live="polite" hidden>

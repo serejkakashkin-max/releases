@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template
 from services.counter_service import get_stats
 from services.feature_flags_service import is_maintenance_enabled
+from services.public_url_service import with_public_base
 from config import VERSION, VERSION_HISTORY  # НОВОЕ: импорт версии
 
 main_bp = Blueprint('main', __name__)
@@ -17,6 +18,7 @@ def index():
         maintenance_scope="index",
         maintenance_title="Главная страница на обслуживании",
         chatbot_maintenance=is_maintenance_enabled("chatbot"),
+        sandbox_url=with_public_base("/releases/sandbox/"),
     )
 
 

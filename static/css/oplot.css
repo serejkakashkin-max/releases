@@ -67,6 +67,8 @@ html[data-theme="dark"] {
   min-height: 100vh;
 }
 
+.oplot-shell--no-sidebar { grid-template-columns: minmax(0, 1fr); }
+
 .oplot-shell__main { min-width: 0; }
 
 .oplot-sidebar {
