@@ -533,6 +533,15 @@ class ReleaseBlockMigrationTests(unittest.TestCase):
         self.assertNotIn(".oplot-home .oplot-topbar", home_css)
         self.assertNotIn(".oplot-release .oplot-topbar", release_css)
 
+    def test_release_modal_keeps_the_page_width_stable(self):
+        release_css = (PROJECT_ROOT / "static" / "css" / "oplot_release.css").read_text(encoding="utf-8")
+        viewport_rule = re.search(r"html:has\(> body\.oplot-release\) \{([\s\S]*?)\n\}", release_css)
+        self.assertIsNotNone(viewport_rule)
+        self.assertIn("scrollbar-gutter: stable", viewport_rule.group(1))
+        modal_open = re.search(r"\.oplot-release\.modal-open \{([\s\S]*?)\n\}", release_css)
+        self.assertIsNotNone(modal_open)
+        self.assertIn("padding-right: 0 !important", modal_open.group(1))
+
 
 def _ReleaseMarkupParser_with_headers(text: str) -> list[str]:
     parser = _ReleaseMarkupParser()

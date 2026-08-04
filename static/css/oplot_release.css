@@ -3385,9 +3385,17 @@ html[data-theme="dark"] .oplot-release .release-doc-modal .form-select:focus {
             }
         }
 /* Stage 5A.1 shell integration. Business DOM classes intentionally remain unchanged. */
+html:has(> body.oplot-release) {
+    scrollbar-gutter: stable;
+}
+
 .oplot-release {
     overflow-x: hidden;
     background: var(--oplot-bg);
+}
+
+.oplot-release.modal-open {
+    padding-right: 0 !important;
 }
 
 .oplot-release .oplot-shell__main,
