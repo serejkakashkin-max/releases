@@ -32,6 +32,8 @@ from services.sup_admin_auth_service import csrf_protect_request, require_sup_ad
 from services.va_schedule_manager_admin_service import (
     build_va_schedule_manager_admin_data,
 )
+from services.sup_ui_service import build_sup_admin_ui_config
+from services.va_schedule_manager_registry import get_va_schedule_manager_metadata
 from VA.schedule_manager.repositories.competency_repository import (
     CompetencyRepository,
 )
@@ -108,6 +110,9 @@ def sup_parameters_page():
     return render_template(
         "sup_parameters.html",
         token_configured=bool(_configured_token()),
+        sup_admin_ui_config=build_sup_admin_ui_config(
+            schedule_manager_metadata=get_va_schedule_manager_metadata(),
+        ),
     )
 
 
