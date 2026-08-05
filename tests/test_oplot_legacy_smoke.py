@@ -13,6 +13,7 @@ from routes.dashboard_routes import dashboard_bp
 from routes.main_routes import main_bp
 from routes.mpr_routes import mpr_bp
 from routes.sup_parameters_routes import sup_parameters_bp
+from routes.sup_admin_session_routes import sup_admin_session_bp
 from services.oplot_ui_service import register_oplot_ui
 
 
@@ -28,7 +29,7 @@ def build_app() -> Flask:
     app.add_url_rule("/sms/release-monitor/generate", endpoint="sms.generate_release_monitor_sms", view_func=lambda: "ok", methods=["POST"])
     app.add_url_rule("/sms/templates", endpoint="sms.get_sms_templates", view_func=lambda: "ok")
     app.add_url_rule("/sms/templates/<profile>", endpoint="sms.save_sms_template", view_func=lambda profile: profile, methods=["POST"])
-    for blueprint in (main_bp, dashboard_bp, mpr_bp, sup_parameters_bp):
+    for blueprint in (main_bp, dashboard_bp, mpr_bp, sup_admin_session_bp, sup_parameters_bp):
         app.register_blueprint(blueprint)
     register_oplot_ui(app)
     return app
@@ -99,8 +100,8 @@ class LegacyGetSmokeTests(unittest.TestCase):
                     response = client.get(path)
                     self.assertEqual(200, response.status_code)
                     text = response.get_data(as_text=True)
-                    self.assertIn("<html", text.lower())
-                    self.assertNotIn("oplot-shell", text)
+                    self.assertIn("oplot-shell oplot-shell--no-sidebar", text)
+                    self.assertIn("oplot-sup-admin", text)
 
 
 if __name__ == "__main__":

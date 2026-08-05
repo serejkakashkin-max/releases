@@ -723,7 +723,6 @@ class ReleaseReportService:
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Релизы текущей недели — {html.escape(period['label'])}</title>
-    <link href="/static/css/bootstrap-icons.css" rel="stylesheet">
     <script>
         (function () {{
             const savedTheme = localStorage.getItem('theme') || 'light';
@@ -735,50 +734,49 @@ class ReleaseReportService:
             box-sizing: border-box;
         }}
         :root {{
-            --cw-bg: #f4f7fb;
-            --cw-panel: rgba(255, 255, 255, 0.94);
+            --cw-bg: #edf5ff;
+            --cw-panel: linear-gradient(150deg, rgba(255, 255, 255, 0.96), rgba(231, 243, 255, 0.93));
             --cw-panel-strong: #ffffff;
-            --cw-soft: rgba(15, 23, 42, 0.035);
-            --cw-soft-hover: rgba(13, 110, 253, 0.08);
-            --cw-border: rgba(148, 163, 184, 0.24);
-            --cw-border-strong: rgba(148, 163, 184, 0.36);
-            --cw-text: #172033;
-            --cw-muted: #66748a;
-            --cw-blue: #0d6efd;
+            --cw-soft: rgba(45, 126, 214, 0.055);
+            --cw-soft-hover: rgba(28, 128, 239, 0.11);
+            --cw-border: rgba(44, 126, 211, 0.28);
+            --cw-border-strong: rgba(36, 119, 207, 0.43);
+            --cw-text: #10233f;
+            --cw-muted: #607794;
+            --cw-blue: #157ee8;
             --cw-green: #16a34a;
             --cw-amber: #d97706;
             --cw-red: #dc2626;
-            --cw-shadow: rgba(15, 23, 42, 0.10);
-            --cw-table-head: rgba(241, 245, 249, 0.92);
-            --cw-icon-filter: none;
+            --cw-shadow: rgba(22, 67, 116, 0.16);
+            --cw-table-head: rgba(220, 238, 255, 0.94);
         }}
         [data-theme="dark"] {{
-            --cw-bg: #141922;
+            --cw-bg: #030b1a;
             --cw-panel:
-                radial-gradient(circle at 50% 0%, rgba(59, 130, 246, 0.13), transparent 34%),
-                linear-gradient(135deg, rgba(31, 41, 55, 0.94), rgba(17, 24, 39, 0.96));
-            --cw-panel-strong: rgba(31, 41, 55, 0.92);
-            --cw-soft: rgba(255, 255, 255, 0.04);
-            --cw-soft-hover: rgba(59, 130, 246, 0.12);
-            --cw-border: rgba(148, 163, 184, 0.14);
-            --cw-border-strong: rgba(148, 163, 184, 0.23);
-            --cw-text: #e5edf7;
-            --cw-muted: #9aa7ba;
-            --cw-blue: #60a5fa;
+                radial-gradient(circle at 88% 0%, rgba(15, 202, 194, 0.08), transparent 32%),
+                linear-gradient(155deg, rgba(10, 31, 61, 0.97), rgba(5, 17, 35, 0.98));
+            --cw-panel-strong: rgba(10, 25, 48, 0.96);
+            --cw-soft: rgba(77, 151, 230, 0.08);
+            --cw-soft-hover: rgba(48, 145, 255, 0.15);
+            --cw-border: rgba(75, 151, 230, 0.38);
+            --cw-border-strong: rgba(82, 164, 248, 0.55);
+            --cw-text: #f1f7ff;
+            --cw-muted: #9fb3cd;
+            --cw-blue: #55aaff;
             --cw-green: #86efac;
             --cw-amber: #fbbf24;
             --cw-red: #fb7185;
-            --cw-shadow: rgba(0, 0, 0, 0.20);
-            --cw-table-head: rgba(255, 255, 255, 0.055);
-            --cw-icon-filter: invert(1);
+            --cw-shadow: rgba(0, 5, 20, 0.38);
+            --cw-table-head: rgba(20, 53, 91, 0.98);
         }}
         body {{
             margin: 0;
             min-height: 100vh;
             font-family: "Inter", "Segoe UI", Tahoma, sans-serif;
             background:
-                radial-gradient(circle at 18% -10%, rgba(13, 110, 253, 0.11), transparent 34%),
-                radial-gradient(circle at 88% 0%, rgba(34, 197, 94, 0.10), transparent 28%),
+                radial-gradient(circle at 5% 30%, rgba(46, 116, 255, 0.20), transparent 35%),
+                radial-gradient(circle at 96% 34%, rgba(0, 201, 190, 0.15), transparent 31%),
+                radial-gradient(circle at 50% 0%, rgba(91, 72, 218, 0.10), transparent 28%),
                 var(--cw-bg);
             color: var(--cw-text);
             padding: 18px;
@@ -832,9 +830,17 @@ class ReleaseReportService:
             transition: transform 0.16s ease, background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
         }}
 
-        .theme-toggle i {{
-            font-size: 1rem;
-            line-height: 1;
+        .theme-toggle svg {{
+            width: 18px;
+            height: 18px;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 1.8;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }}
+        .theme-toggle svg[hidden] {{
+            display: none;
         }}
 
         .nav-pill:hover,
@@ -1209,8 +1215,11 @@ class ReleaseReportService:
     <div class="container">
         <div class="top-bar">
             <a class="nav-pill" href="../../release-monitor">← Блок релизов</a>
-            <button type="button" class="theme-toggle" id="themeToggle" title="Переключить тему" aria-label="Переключить тему">
-                <i id="themeToggleIcon" class="bi bi-sun" aria-hidden="true"></i>
+            <button type="button" class="theme-toggle" id="themeToggle" title="Переключить тему" aria-label="Переключить тему" aria-pressed="false">
+                <span id="themeToggleIcon" aria-hidden="true">
+                    <svg data-theme-icon="sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.5"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42"></path></svg>
+                    <svg data-theme-icon="moon" viewBox="0 0 24 24" hidden><path d="M20.4 14.5A8.5 8.5 0 0 1 9.5 3.6 8.5 8.5 0 1 0 20.4 14.5Z"></path></svg>
+                </span>
             </button>
         </div>
         <section class="hero">
@@ -1298,11 +1307,11 @@ class ReleaseReportService:
                 document.documentElement.setAttribute('data-theme', theme);
                 localStorage.setItem('theme', theme);
                 if (themeToggle) {{
-                    const icon = document.getElementById('themeToggleIcon');
-                    if (icon) {{
-                        icon.classList.toggle('bi-sun', theme !== 'dark');
-                        icon.classList.toggle('bi-moon', theme === 'dark');
-                    }}
+                    const sun = themeToggle.querySelector('[data-theme-icon="sun"]');
+                    const moon = themeToggle.querySelector('[data-theme-icon="moon"]');
+                    if (sun) sun.hidden = theme === 'dark';
+                    if (moon) moon.hidden = theme !== 'dark';
+                    themeToggle.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false');
                 }}
             }}
 
