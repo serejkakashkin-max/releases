@@ -21,7 +21,7 @@ Legacy-разделы открываются обычной полной нав�
 
 ## Tokens и компоненты
 
-Общие tokens используют prefix `--oplot-`: spacing 4/8/12/16/24/32, surfaces, semantic colors, borders, radii, shadows и focus ring. Общие selectors используют prefix `oplot-`, чтобы не влиять на legacy Bootstrap templates.
+Общие tokens используют prefix `--oplot-`: spacing 4/8/12/16/24/32, surfaces, semantic colors, borders, radii, shadows и focus ring. Принятое визуальное ДНК современных модулей закреплено отдельным набором `--oplot-dna-*`: глубокий navy canvas, layered blue/cyan/violet surfaces, светящиеся линии и согласованные light/dark shadows. Новые module CSS обязаны собирать свою композицию из этих tokens и не вводить самостоятельную серо-графитовую палитру. Общие selectors используют prefix `oplot-`, чтобы не влиять на legacy Bootstrap templates.
 
 `components/oplot_ui.html` предоставляет фиксированные inline icons, alert, badge, empty/error/loading states, modal shell и confirmation dialog. Компоненты должны получать пользовательский текст через autoescape и не содержать business-specific URL или scripts.
 
@@ -67,3 +67,9 @@ Release Monitor использует общие визуальные primitives 
 Главная и Блок релизов используют opt-in вариант `core`: одинаковую рабочую высоту верхней полосы, бренд OPLOT и единый переключатель темы. Состав действий остаётся контекстным: статистика, версия и песочница принадлежат только главной. Default shell, sidebar, auth и Центр шаблонов не наследуют этот вариант автоматически.
 
 Business JavaScript Блока релизов подключается локальным classic deferred-файлом. Server data и application URL передаются через один JSON config; статические URL строятся из Flask endpoints, динамические сегменты — из server-rendered templates с точным placeholder. Inline handlers считаются совместимым публичным контрактом и экспортируются явно, а ошибочная конфигурация блокирует polling и mutation requests.
+
+## Duty operations (Stage 6)
+
+Рабочий стол дежурного, Центр назначений и График дежурств используют no-sidebar core shell. Общий topbar предоставляет prefix-safe бренд и переключатель темы; дочерние страницы Блока релизов добавляют возврат через штатный action slot. Композиция остаётся предметной: task board, assignment cockpit и read-only calendar не копируют layout главной страницы.
+
+Page-specific CSS ограничивается namespace `.oplot-duty-dashboard`, `.oplot-assignment-center` или `.oplot-duty-schedule` и использует канонические `--oplot-dna-*` tokens. Они являются единственным источником canvas, layered surfaces, lines, glow и основных blue/cyan/violet accents для всех трёх страниц; legacy neutral tokens не должны определять их палитру. Application/API URL передаются JavaScript только через server-rendered JSON config и Flask endpoints. Provider calls, polling, optimistic rollback и maintenance сохраняют прежние контракты. Standalone-отчёт «Релизы текущей недели» намеренно не мигрирован в Этапе 6 и сохраняет прежний контракт.

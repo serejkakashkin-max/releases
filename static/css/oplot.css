@@ -29,6 +29,24 @@
   --oplot-focus: rgba(32, 107, 196, .32);
   --oplot-shadow-sm: 0 6px 20px rgba(28, 45, 70, .07);
   --oplot-shadow-lg: 0 18px 52px rgba(28, 45, 70, .12);
+  /* Canonical visual DNA shared by modern Oplot modules. */
+  --oplot-dna-canvas: #eff6ff;
+  --oplot-dna-canvas-gradient: radial-gradient(ellipse 48% 44% at 2% 52%, rgba(117, 77, 255, .14), transparent 70%), radial-gradient(ellipse 46% 42% at 98% 49%, rgba(12, 213, 203, .13), transparent 70%), radial-gradient(circle at 50% 2%, rgba(22, 114, 221, .13), transparent 38%), #eff6ff;
+  --oplot-dna-panel: rgba(251, 253, 255, .88);
+  --oplot-dna-panel-strong: rgba(247, 251, 255, .96);
+  --oplot-dna-panel-soft: rgba(232, 243, 255, .82);
+  --oplot-dna-panel-gradient: linear-gradient(145deg, rgba(255, 255, 255, .94), rgba(232, 243, 255, .84));
+  --oplot-dna-panel-gradient-strong: linear-gradient(135deg, rgba(255, 255, 255, .98), rgba(224, 240, 255, .90));
+  --oplot-dna-line: rgba(73, 143, 218, .48);
+  --oplot-dna-line-strong: rgba(43, 137, 235, .72);
+  --oplot-dna-blue: #1672dd;
+  --oplot-dna-cyan: #08aaa8;
+  --oplot-dna-violet: #7059e8;
+  --oplot-dna-glow-blue: rgba(42, 135, 235, .18);
+  --oplot-dna-glow-cyan: rgba(8, 190, 184, .14);
+  --oplot-dna-glow-violet: rgba(112, 89, 232, .13);
+  --oplot-dna-shadow: 0 16px 42px rgba(35, 77, 123, .16);
+  --oplot-dna-shadow-soft: 0 9px 26px rgba(35, 77, 123, .11);
 }
 
 html[data-theme="dark"] {
@@ -50,6 +68,23 @@ html[data-theme="dark"] {
   --oplot-focus: rgba(106, 169, 237, .38);
   --oplot-shadow-sm: 0 8px 24px rgba(0, 0, 0, .2);
   --oplot-shadow-lg: 0 20px 60px rgba(0, 0, 0, .3);
+  --oplot-dna-canvas: #030b1a;
+  --oplot-dna-canvas-gradient: radial-gradient(ellipse 48% 44% at 2% 52%, rgba(92, 62, 238, .20), transparent 70%), radial-gradient(ellipse 46% 42% at 98% 49%, rgba(0, 201, 190, .16), transparent 70%), radial-gradient(circle at 50% 2%, rgba(46, 139, 255, .16), transparent 38%), linear-gradient(180deg, #061225, #030b19 58%, #020813);
+  --oplot-dna-panel: rgba(8, 25, 50, .94);
+  --oplot-dna-panel-strong: rgba(10, 31, 61, .97);
+  --oplot-dna-panel-soft: rgba(16, 42, 76, .86);
+  --oplot-dna-panel-gradient: radial-gradient(circle at 86% 0%, rgba(15, 202, 194, .07), transparent 34%), linear-gradient(155deg, rgba(10, 31, 61, .97), rgba(5, 17, 35, .98));
+  --oplot-dna-panel-gradient-strong: radial-gradient(circle at 15% 0%, rgba(46, 139, 255, .15), transparent 36%), linear-gradient(145deg, rgba(12, 35, 67, .97), rgba(5, 18, 38, .98));
+  --oplot-dna-line: rgba(75, 151, 230, .42);
+  --oplot-dna-line-strong: rgba(75, 166, 255, .72);
+  --oplot-dna-blue: #55aaff;
+  --oplot-dna-cyan: #2dc9c7;
+  --oplot-dna-violet: #7a6bf2;
+  --oplot-dna-glow-blue: rgba(46, 139, 255, .18);
+  --oplot-dna-glow-cyan: rgba(15, 202, 194, .13);
+  --oplot-dna-glow-violet: rgba(122, 107, 242, .12);
+  --oplot-dna-shadow: 0 18px 48px rgba(0, 5, 20, .42);
+  --oplot-dna-shadow-soft: 0 11px 30px rgba(0, 5, 20, .32);
 }
 
 .oplot-body {

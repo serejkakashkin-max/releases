@@ -1,0 +1,7 @@
+{% set release_block_url = safe_public_url_for('dashboard.release_monitor_page') %}
+{% if release_block_url %}
+<a class="oplot-duty-back" href="{{ release_block_url }}">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6M9 12h10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  <span>К блоку релизов</span>
+</a>
+{% endif %}
