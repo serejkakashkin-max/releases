@@ -89,7 +89,12 @@ class LegacyGetSmokeTests(unittest.TestCase):
                     self.assertEqual(200, response.status_code)
                     text = response.get_data(as_text=True)
                     self.assertIn("oplot-shell oplot-shell--no-sidebar", text)
-            for path in ("/mpr", "/admin/sup-parameters"):
+            mpr_response = client.get("/mpr")
+            self.assertEqual(200, mpr_response.status_code)
+            mpr_text = mpr_response.get_data(as_text=True)
+            self.assertIn("oplot-shell oplot-shell--no-sidebar", mpr_text)
+            self.assertIn("oplot-mpr", mpr_text)
+            for path in ("/admin/sup-parameters",):
                 with self.subTest(path=path):
                     response = client.get(path)
                     self.assertEqual(200, response.status_code)

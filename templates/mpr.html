@@ -1,771 +1,107 @@
-<!doctype html>
-<html lang="ru">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>МПР</title>
-    <link href="/static/css/bootstrap.min.css" rel="stylesheet">
-    <link href="/static/css/bootstrap-icons.css" rel="stylesheet">
-    <script src="/static/js/bootstrap.bundle.min.js"></script>
-    {% include 'base_styles.html' %}
-    <style>
-        body {
-            min-height: 100vh;
-            --mpr-panel-bg: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96));
-            --mpr-surface-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96));
-            --mpr-soft-bg: rgba(15, 23, 42, 0.035);
-            --mpr-soft-border: rgba(148, 163, 184, 0.24);
-            --mpr-shadow: rgba(15, 23, 42, 0.10);
-            --mpr-upload-bg: rgba(245, 158, 11, 0.07);
-        }
+{% extends 'layouts/oplot_base.html' %}
+{% set oplot_show_sidebar = false %}
+{% set oplot_topbar_variant = 'core' %}
+{% set oplot_show_breadcrumbs = false %}
+{% set oplot_show_page_header = false %}
+{% set oplot_page_title = 'МПР' %}
+{% block title %}МПР — Oplot{% endblock %}
+{% block body_class %}oplot-mpr{% endblock %}
+{% block styles %}<link rel="stylesheet" href="{{ public_url_for('static', filename='css/oplot_mpr.css') }}">{% endblock %}
 
-        [data-theme="dark"] body {
-            --mpr-panel-bg:
-                radial-gradient(circle at 50% 0%, rgba(245, 158, 11, 0.12), transparent 34%),
-                linear-gradient(135deg, rgba(31, 41, 55, 0.94), rgba(17, 24, 39, 0.96));
-            --mpr-surface-bg: linear-gradient(180deg, rgba(31, 41, 55, 0.92), rgba(17, 24, 39, 0.94));
-            --mpr-soft-bg: rgba(255, 255, 255, 0.035);
-            --mpr-soft-border: rgba(148, 163, 184, 0.13);
-            --mpr-shadow: rgba(0, 0, 0, 0.14);
-            --mpr-upload-bg: rgba(245, 158, 11, 0.10);
-        }
+{% block content %}
+{% import 'components/oplot_ui.html' as ui %}
+<div class="oplot-mpr__root" id="oplotMprRoot">
+  <script type="application/json" id="oplot-mpr-config">{{ mpr_ui_config | tojson }}</script>
 
-        .page-shell {
-            max-width: 1060px;
-            margin: 0 auto;
-            padding: 0 1rem 3rem;
-        }
+  <header class="oplot-mpr__hero">
+    <div class="oplot-mpr__hero-icon" aria-hidden="true">{{ ui.icon('document') }}</div>
+    <div>
+      <div class="oplot-mpr__pretitle">Генерация документов</div>
+      <h1>МПР</h1>
+      <p>Подготовка планов работ по выгрузкам лимитов XLSX и CSV.</p>
+    </div>
+  </header>
 
-        .nav-home-btn {
-            width: 40px;
-            height: 40px;
-            border-radius: 12px;
-            background: var(--bg-secondary);
-            color: var(--text-primary);
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            text-decoration: none;
-            border: 1px solid var(--border-color);
-        }
-
-        .nav-home-btn:hover {
-            color: var(--primary);
-            border-color: var(--primary);
-        }
-
-        .theme-toggle {
-            border: 1px solid var(--border-color);
-            background: var(--bg-secondary);
-            color: var(--text-primary);
-            border-radius: 12px;
-            width: 40px;
-            height: 40px;
-        }
-
-        .mpr-hero {
-            max-width: 920px;
-            margin: 0 auto 1rem;
-            padding: 1.05rem 1.2rem 1.18rem;
-            border-radius: 18px;
-            border: 1px solid var(--border-color);
-            background: var(--mpr-panel-bg);
-            box-shadow: 0 20px 44px var(--mpr-shadow);
-            text-align: center;
-        }
-
-        .mpr-hero-title {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.65rem;
-            margin: 0;
-            color: var(--text-primary);
-            font-size: clamp(1.55rem, 2.4vw, 2.05rem);
-            font-weight: 850;
-            letter-spacing: 0;
-            line-height: 1.1;
-        }
-
-        .mpr-hero-title .bi {
-            width: 38px;
-            height: 38px;
-            border-radius: 13px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            color: #fff;
-            background: linear-gradient(135deg, #f59e0b, #3b82f6);
-            box-shadow: 0 12px 28px rgba(245, 158, 11, 0.22);
-            font-size: 1.05rem;
-        }
-
-        .mpr-hero-subtitle {
-            margin: 0.55rem 0 0;
-            color: var(--text-secondary);
-            font-size: 0.92rem;
-            font-weight: 600;
-        }
-
-        .mpr-workspace {
-            max-width: 920px;
-            margin: 0 auto;
-            padding: 1.25rem;
-            border-radius: 18px;
-            border: 1px solid var(--border-color);
-            background: var(--mpr-surface-bg);
-            box-shadow: 0 18px 44px var(--mpr-shadow);
-        }
-
-        .mpr-grid {
-            display: grid;
-            grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
-            gap: 1rem;
-        }
-
-        .mpr-panel {
-            border: 1px solid var(--mpr-soft-border);
-            border-radius: 16px;
-            background: var(--mpr-soft-bg);
-            padding: 1rem;
-        }
-
-        .mpr-panel.upload {
-            border-style: dashed;
-            border-color: rgba(245, 158, 11, 0.42);
-            background: var(--mpr-upload-bg);
-        }
-
-        .mpr-panel-head {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            margin-bottom: 0.9rem;
-        }
-
-        .mpr-panel-icon {
-            width: 40px;
-            height: 40px;
-            border-radius: 13px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            color: #fff;
-            background: rgba(59, 130, 246, 0.95);
-            flex: 0 0 auto;
-        }
-
-        .mpr-panel.upload .mpr-panel-icon {
-            background: rgba(245, 158, 11, 0.95);
-        }
-
-        .mpr-panel-title {
-            margin: 0;
-            color: var(--text-primary);
-            font-size: 1rem;
-            font-weight: 850;
-        }
-
-        .mpr-panel-note {
-            margin: 0.15rem 0 0;
-            color: var(--text-secondary);
-            font-size: 0.84rem;
-            font-weight: 600;
-        }
-
-        .mpr-template-list {
-            display: grid;
-            gap: 0.5rem;
-        }
-
-        .mpr-template-option {
-            border: 1px solid var(--border-color);
-            border-radius: 14px;
-            padding: 0.85rem;
-            background: var(--bg-secondary);
-            color: var(--text-primary);
-            cursor: pointer;
-            transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
-        }
-
-        .mpr-template-option.active {
-            border-color: rgba(59, 130, 246, 0.70);
-            box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.28);
-            background: rgba(59, 130, 246, 0.10);
-        }
-
-        .mpr-template-name {
-            font-weight: 850;
-            line-height: 1.2;
-        }
-
-        .mpr-template-file {
-            color: var(--text-secondary);
-            font-size: 0.82rem;
-            margin-top: 0.25rem;
-        }
-
-        .mpr-file-input {
-            border: 1px solid var(--border-color);
-            border-radius: 14px;
-            padding: 0.8rem;
-            background: var(--bg-secondary);
-            color: var(--text-primary);
-            width: 100%;
-        }
-
-        .mpr-file-list {
-            display: grid;
-            gap: 0.45rem;
-            margin-top: 0.85rem;
-        }
-
-        .mpr-file-row {
-            display: flex;
-            align-items: center;
-            gap: 0.55rem;
-            min-width: 0;
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 0.55rem 0.7rem;
-            background: var(--bg-secondary);
-            color: var(--text-primary);
-            font-weight: 700;
-        }
-
-        .mpr-file-row span {
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .mpr-actions {
-            display: flex;
-            align-items: center;
-            justify-content: flex-end;
-            gap: 0.65rem;
-            margin-top: 1rem;
-        }
-
-        .mpr-alert {
-            display: none;
-            margin-top: 1rem;
-            border-radius: 14px;
-            border: 1px solid rgba(239, 68, 68, 0.28);
-            background: rgba(239, 68, 68, 0.08);
-            color: #f87171;
-            padding: 0.8rem 0.9rem;
-            font-weight: 700;
-        }
-
-        .mpr-alert ul {
-            margin: 0.45rem 0 0;
-            padding-left: 1.2rem;
-        }
-
-        .mpr-status {
-            min-height: 1.4rem;
-            color: var(--text-secondary);
-            font-size: 0.86rem;
-            font-weight: 700;
-        }
-
-        .mpr-package-modal .modal-content {
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            background: #ffffff;
-            color: var(--text-primary);
-            box-shadow: 0 24px 64px rgba(15, 23, 42, 0.28);
-            isolation: isolate;
-            opacity: 1;
-            overflow: hidden;
-            transform: translateZ(0);
-        }
-
-        [data-theme="dark"] .mpr-package-modal .modal-content {
-            background: #1f2937;
-        }
-
-        .mpr-package-modal .modal-header,
-        .mpr-package-modal .modal-body,
-        .mpr-package-modal .modal-footer {
-            background: #ffffff;
-        }
-
-        [data-theme="dark"] .mpr-package-modal .modal-header,
-        [data-theme="dark"] .mpr-package-modal .modal-body,
-        [data-theme="dark"] .mpr-package-modal .modal-footer {
-            background: #1f2937;
-        }
-
-        .mpr-package-modal .modal-header,
-        .mpr-package-modal .modal-footer {
-            border-color: var(--border-color);
-        }
-
-        .mpr-package-modal .btn-close {
-            filter: none;
-        }
-
-        [data-theme="dark"] .mpr-package-modal .btn-close {
-            filter: invert(1) grayscale(100%) brightness(200%);
-        }
-
-        .mpr-package-summary {
-            color: var(--text-secondary);
-            font-size: 0.86rem;
-            font-weight: 650;
-            margin-bottom: 0.85rem;
-        }
-
-        .mpr-package-options {
-            display: grid;
-            gap: 0.65rem;
-        }
-
-        .mpr-package-option {
-            display: grid;
-            grid-template-columns: 22px minmax(0, 1fr) auto;
-            gap: 0.75rem;
-            align-items: center;
-            padding: 0.85rem;
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            background: var(--mpr-soft-bg);
-            cursor: pointer;
-            transition: border-color 0.16s ease, background 0.16s ease;
-        }
-
-        .mpr-package-option.selected {
-            border-color: rgba(59, 130, 246, 0.72);
-            background: rgba(59, 130, 246, 0.10);
-        }
-
-        .mpr-package-option.disabled {
-            cursor: not-allowed;
-            opacity: 0.55;
-        }
-
-        .mpr-package-option input {
-            width: 18px;
-            height: 18px;
-            margin: 0;
-            accent-color: #3b82f6;
-        }
-
-        .mpr-package-name {
-            color: var(--text-primary);
-            font-weight: 850;
-            line-height: 1.2;
-        }
-
-        .mpr-package-datacenters {
-            color: var(--text-secondary);
-            font-size: 0.8rem;
-            font-weight: 600;
-            margin-top: 0.2rem;
-        }
-
-        .mpr-package-count {
-            min-width: 74px;
-            text-align: right;
-            color: var(--primary);
-            font-weight: 850;
-        }
-
-        .mpr-unmapped {
-            display: none;
-            margin-top: 0.8rem;
-            padding: 0.75rem 0.85rem;
-            border: 1px solid rgba(239, 68, 68, 0.32);
-            border-radius: 8px;
-            background: rgba(239, 68, 68, 0.08);
-            color: #ef4444;
-            font-size: 0.84rem;
-            font-weight: 700;
-        }
-
-        .mpr-unmapped ul {
-            margin: 0.4rem 0 0;
-            padding-left: 1.2rem;
-        }
-
-        @media (max-width: 768px) {
-            .mpr-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .mpr-actions {
-                align-items: stretch;
-                flex-direction: column-reverse;
-            }
-
-            .mpr-actions .btn {
-                width: 100%;
-            }
-
-            .mpr-package-option {
-                grid-template-columns: 22px minmax(0, 1fr);
-            }
-
-            .mpr-package-count {
-                grid-column: 2;
-                text-align: left;
-            }
-        }
-    </style>
-</head>
-<body>
-    <nav class="navbar navbar-expand-lg navbar-dark mb-4">
-        <div class="container-fluid">
-            <a class="nav-home-btn" href="{{ basepath }}/" title="На главную">
-                <i class="bi bi-house-door-fill"></i>
-            </a>
-            <button class="theme-toggle" onclick="toggleTheme()" title="Переключить тему">
-                <i class="bi bi-sun"></i>
-            </button>
-        </div>
-    </nav>
-
-    <main class="page-shell">
-        <section class="mpr-hero">
-            <h1 class="mpr-hero-title">
-                <i class="bi bi-file-earmark-word"></i>
-                МПР
-            </h1>
-            <p class="mpr-hero-subtitle">Генерация плана работ по загруженным выгрузкам лимитов.</p>
-        </section>
-
-        <section class="mpr-workspace">
-            <div class="mpr-grid">
-                <div class="mpr-panel">
-                    <div class="mpr-panel-head">
-                        <div class="mpr-panel-icon"><i class="bi bi-layout-text-window"></i></div>
-                        <div>
-                            <h2 class="mpr-panel-title">Шаблон документа</h2>
-                            <p class="mpr-panel-note">Выберите тип МПР для итогового DOCX.</p>
-                        </div>
-                    </div>
-
-                    <div class="mpr-template-list" id="mprTemplateList">
-                        {% if templates %}
-                            {% for item in templates %}
-                                <button
-                                    class="mpr-template-option{% if loop.first %} active{% endif %}"
-                                    type="button"
-                                    data-template-code="{{ item.code }}"
-                                >
-                                    <div class="mpr-template-name">{{ item.name }}</div>
-                                    <div class="mpr-template-file">{{ item.filename }}</div>
-                                </button>
-                            {% endfor %}
-                        {% else %}
-                            <div class="mpr-status">В папке doc_templates_MPR нет DOCX-шаблонов.</div>
-                        {% endif %}
-                    </div>
-                </div>
-
-                <div class="mpr-panel upload">
-                    <div class="mpr-panel-head">
-                        <div class="mpr-panel-icon"><i class="bi bi-cloud-arrow-up"></i></div>
-                        <div>
-                            <h2 class="mpr-panel-title">Excel/CSV выгрузки</h2>
-                            <p class="mpr-panel-note">Можно загрузить несколько файлов download*.xlsx или CSV.</p>
-                        </div>
-                    </div>
-
-                    <input
-                        id="mprFiles"
-                        class="mpr-file-input"
-                        type="file"
-                        accept=".xlsx,.csv"
-                        multiple
-                    >
-                    <div class="mpr-file-list" id="mprFileList"></div>
-                </div>
-            </div>
-
-            <div class="mpr-alert" id="mprAlert"></div>
-
-            <div class="mpr-actions">
-                <div class="mpr-status" id="mprStatus"></div>
-                <button
-                    id="mprGenerateBtn"
-                    class="btn btn-primary"
-                    type="button"
-                    {% if not templates %}disabled{% endif %}
-                >
-                    <i class="bi bi-arrow-right"></i>
-                    Продолжить
-                </button>
-            </div>
-        </section>
-    </main>
-
-    <div class="modal fade mpr-package-modal" id="mprPackageModal" tabindex="-1" aria-labelledby="mprPackageModalTitle" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <div>
-                        <h2 class="modal-title fs-5" id="mprPackageModalTitle">Какие документы сформировать?</h2>
-                        <div class="mpr-package-summary" id="mprPackageSummary"></div>
-                    </div>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="mpr-package-options" id="mprPackageOptions"></div>
-                    <div class="mpr-unmapped" id="mprUnmapped"></div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
-                    <button type="button" class="btn btn-primary" id="mprConfirmGenerateBtn">
-                        <i class="bi bi-file-earmark-arrow-down"></i>
-                        <span id="mprConfirmGenerateLabel">Сформировать пакет (2)</span>
-                    </button>
-                </div>
-            </div>
-        </div>
+  <section class="oplot-mpr__workspace" aria-labelledby="mpr-workspace-title">
+    <div class="oplot-mpr__workspace-heading">
+      <div>
+        <span class="oplot-mpr__step">Рабочая область</span>
+        <h2 id="mpr-workspace-title">Сформировать комплект МПР</h2>
+      </div>
+      <span class="oplot-mpr__format-badge">XLSX · CSV → DOCX / ZIP</span>
     </div>
 
-    <script>
-        const BASE_PATH = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '' : '/releases';
-        let selectedTemplateCode = {{ (templates[0].code if templates else '') | tojson }};
+    <div class="oplot-mpr__grid">
+      <section class="oplot-mpr__panel oplot-mpr__panel--template" aria-labelledby="mpr-template-title">
+        <div class="oplot-mpr__panel-heading">
+          <span class="oplot-mpr__panel-number">1</span>
+          <div><h2 id="mpr-template-title">Шаблон документа</h2><p>Используется только разрешённый шаблон из каталога МПР.</p></div>
+        </div>
+        <div class="oplot-mpr__template-list" id="mprTemplateList">
+          {% if templates|length == 1 %}
+            {% set item = templates[0] %}
+            <div class="oplot-mpr__template-option is-active is-readonly" data-template-code="{{ item.code }}" data-template-name="{{ item.name }}">
+              <span class="oplot-mpr__template-mark" aria-hidden="true">DOCX</span>
+              <span><strong>{{ item.name }}</strong><small>{{ item.filename }}</small></span>
+              <span class="oplot-mpr__ready">Готов</span>
+            </div>
+          {% elif templates %}
+            {% for item in templates %}
+              <button class="oplot-mpr__template-option{% if loop.first %} is-active{% endif %}" type="button" data-template-code="{{ item.code }}" data-template-name="{{ item.name }}" aria-pressed="{{ 'true' if loop.first else 'false' }}">
+                <span class="oplot-mpr__template-mark" aria-hidden="true">DOCX</span>
+                <span><strong>{{ item.name }}</strong><small>{{ item.filename }}</small></span>
+              </button>
+            {% endfor %}
+          {% else %}
+            <div class="oplot-mpr__blocking-state" role="alert"><strong>Шаблон МПР недоступен</strong><span>Обратитесь к администратору: генерация временно заблокирована.</span></div>
+          {% endif %}
+        </div>
+        <input id="mprTemplateCode" name="template_code" type="hidden" value="{{ mpr_ui_config.initial_template_code }}">
+      </section>
 
-        const fileInput = document.getElementById('mprFiles');
-        const fileList = document.getElementById('mprFileList');
-        const alertBox = document.getElementById('mprAlert');
-        const statusBox = document.getElementById('mprStatus');
-        const generateBtn = document.getElementById('mprGenerateBtn');
-        const packageModalElement = document.getElementById('mprPackageModal');
-        const packageModal = new bootstrap.Modal(packageModalElement);
-        const packageSummary = document.getElementById('mprPackageSummary');
-        const packageOptions = document.getElementById('mprPackageOptions');
-        const unmappedBox = document.getElementById('mprUnmapped');
-        const confirmGenerateBtn = document.getElementById('mprConfirmGenerateBtn');
-        const confirmGenerateLabel = document.getElementById('mprConfirmGenerateLabel');
-        let mprPreview = null;
+      <section class="oplot-mpr__panel oplot-mpr__panel--upload" aria-labelledby="mpr-upload-title">
+        <div class="oplot-mpr__panel-heading">
+          <span class="oplot-mpr__panel-number">2</span>
+          <div><h2 id="mpr-upload-title">Исходные данные</h2><p>Можно выбрать несколько выгрузок. Они будут обработаны вместе.</p></div>
+        </div>
+        <label class="oplot-mpr__file-control" for="mprFiles">
+          <span class="oplot-mpr__file-control-title">Выберите XLSX или CSV</span>
+          <span>Поддерживаются лист «История лимитов», UTF-8 и Windows-1251.</span>
+          <input id="mprFiles" name="files" type="file" accept=".xlsx,.csv" multiple>
+        </label>
+        <div class="oplot-mpr__file-list" id="mprFileList" aria-live="polite"></div>
+      </section>
+    </div>
 
-        function setAlert(message, details = []) {
-            if (!message) {
-                alertBox.style.display = 'none';
-                alertBox.innerHTML = '';
-                return;
-            }
-            const detailHtml = details.length
-                ? `<ul>${details.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`
-                : '';
-            alertBox.innerHTML = `<div>${escapeHtml(message)}</div>${detailHtml}`;
-            alertBox.style.display = 'block';
-        }
+    <div class="oplot-mpr__alert" id="mprAlert" role="alert" hidden></div>
+    <div class="oplot-mpr__actions">
+      <div class="oplot-mpr__status" id="mprStatus" role="status" aria-live="polite"></div>
+      <button class="btn btn-primary oplot-mpr__primary-action" id="mprGenerateBtn" type="button" {% if not templates %}disabled{% endif %}>Проверить данные</button>
+    </div>
+  </section>
 
-        function escapeHtml(value) {
-            return String(value || '')
-                .replaceAll('&', '&amp;')
-                .replaceAll('<', '&lt;')
-                .replaceAll('>', '&gt;')
-                .replaceAll('"', '&quot;')
-                .replaceAll("'", '&#39;');
-        }
+  <section class="oplot-mpr__result" id="mprResult" aria-labelledby="mpr-result-title" hidden>
+    <div class="oplot-mpr__result-heading"><div><span class="oplot-mpr__success-mark" aria-hidden="true">✓</span><div><span class="oplot-mpr__step">Готово</span><h2 id="mpr-result-title">Документ сформирован</h2></div></div><span class="oplot-mpr__result-type" id="mprResultType"></span></div>
+    <dl class="oplot-mpr__result-grid">
+      <div><dt>Файл</dt><dd id="mprResultFilename"></dd></div>
+      <div><dt>Шаблон</dt><dd id="mprResultTemplate"></dd></div>
+      <div><dt>Исходные файлы</dt><dd id="mprResultSources"></dd></div>
+      <div><dt>Обработано строк</dt><dd id="mprResultRows"></dd></div>
+      <div><dt>Комплекты</dt><dd id="mprResultPackages"></dd></div>
+    </dl>
+    <div class="oplot-mpr__result-actions"><button class="btn btn-primary" id="mprDownloadAgainBtn" type="button">Скачать ещё раз</button><button class="btn btn-outline-secondary" id="mprNewGenerationBtn" type="button">Новая генерация</button></div>
+  </section>
+</div>
+{% endblock %}
 
-        function renderFileList() {
-            const files = Array.from(fileInput.files || []);
-            if (!files.length) {
-                fileList.innerHTML = '<div class="mpr-status">Файлы пока не выбраны.</div>';
-                return;
-            }
-            fileList.innerHTML = files.map(file => `
-                <div class="mpr-file-row">
-                    <i class="bi bi-file-earmark-spreadsheet"></i>
-                    <span>${escapeHtml(file.name)}</span>
-                </div>
-            `).join('');
-        }
+{% block overlays %}
+<div class="modal modal-blur fade oplot-mpr__package-modal" id="mprPackageModal" tabindex="-1" aria-labelledby="mprPackageModalTitle" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content">
+    <div class="modal-header"><div><div class="oplot-mpr__step">Состав результата</div><h2 class="modal-title" id="mprPackageModalTitle">Какие документы сформировать?</h2><div class="oplot-mpr__package-summary" id="mprPackageSummary"></div></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button></div>
+    <div class="modal-body"><div class="oplot-mpr__package-options" id="mprPackageOptions"></div><div class="oplot-mpr__unmapped" id="mprUnmapped" role="alert" hidden></div></div>
+    <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button><button type="button" class="btn btn-primary" id="mprConfirmGenerateBtn"><span id="mprConfirmGenerateLabel">Сформировать пакет (2)</span></button></div>
+  </div></div>
+</div>
+{% endblock %}
 
-        document.querySelectorAll('.mpr-template-option').forEach(button => {
-            button.addEventListener('click', () => {
-                document.querySelectorAll('.mpr-template-option').forEach(item => item.classList.remove('active'));
-                button.classList.add('active');
-                selectedTemplateCode = button.dataset.templateCode || '';
-                mprPreview = null;
-                setAlert('');
-            });
-        });
-
-        fileInput.addEventListener('change', () => {
-            renderFileList();
-            mprPreview = null;
-            setAlert('');
-        });
-
-        generateBtn.addEventListener('click', async () => {
-            setAlert('');
-            const files = Array.from(fileInput.files || []);
-            if (!selectedTemplateCode) {
-                setAlert('Не выбран шаблон');
-                return;
-            }
-            if (!files.length) {
-                setAlert('Не загружены файлы');
-                return;
-            }
-
-            generateBtn.disabled = true;
-            statusBox.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Проверяем состав пакетов...';
-            try {
-                const response = await fetch(`${BASE_PATH}/mpr/preview`, {
-                    method: 'POST',
-                    body: buildMprFormData(files),
-                });
-                if (!response.ok) {
-                    throw await readErrorPayload(response);
-                }
-                mprPreview = await response.json();
-                renderPackageSelection(mprPreview, files.length);
-                statusBox.textContent = '';
-                packageModal.show();
-            } catch (error) {
-                statusBox.textContent = '';
-                setAlert(error.error || 'Не удалось проверить данные МПР', error.details || []);
-            } finally {
-                generateBtn.disabled = false;
-            }
-        });
-
-        confirmGenerateBtn.addEventListener('click', async () => {
-            const selectedPackages = getSelectedPackageCodes();
-            if (!selectedPackages.length || (mprPreview?.unmapped || []).length) {
-                updateConfirmGenerateState();
-                return;
-            }
-
-            const files = Array.from(fileInput.files || []);
-            const formData = buildMprFormData(files);
-            selectedPackages.forEach(code => formData.append('packages', code));
-
-            confirmGenerateBtn.disabled = true;
-            confirmGenerateLabel.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Формируем...';
-            try {
-                const response = await fetch(`${BASE_PATH}/mpr/generate`, {
-                    method: 'POST',
-                    body: formData,
-                });
-                if (!response.ok) {
-                    throw await readErrorPayload(response);
-                }
-                await downloadResponse(response);
-                packageModal.hide();
-                statusBox.textContent = selectedPackages.length > 1
-                    ? 'Пакет МПР сформирован.'
-                    : 'DOCX МПР сформирован.';
-                setAlert('');
-            } catch (error) {
-                packageModal.hide();
-                statusBox.textContent = '';
-                setAlert(error.error || 'Не удалось сформировать документы МПР', error.details || []);
-            } finally {
-                updateConfirmGenerateState();
-            }
-        });
-
-        function buildMprFormData(files) {
-            const formData = new FormData();
-            formData.append('template_code', selectedTemplateCode);
-            files.forEach(file => formData.append('files', file, file.name));
-            return formData;
-        }
-
-        function renderPackageSelection(preview, filesCount) {
-            packageSummary.textContent = `Файлов: ${filesCount} · хостов после обработки: ${preview.rows_count || 0}`;
-            packageOptions.innerHTML = (preview.packages || []).map(item => {
-                const disabled = !item.available;
-                return `
-                    <label class="mpr-package-option${disabled ? ' disabled' : ' selected'}">
-                        <input
-                            type="checkbox"
-                            class="mpr-package-checkbox"
-                            value="${escapeHtml(item.code)}"
-                            ${disabled ? 'disabled' : 'checked'}
-                        >
-                        <span>
-                            <span class="mpr-package-name">${escapeHtml(item.label)}</span>
-                            <span class="mpr-package-datacenters d-block">${escapeHtml((item.datacenters || []).join(' · '))}</span>
-                        </span>
-                        <span class="mpr-package-count">${item.rows_count || 0} хостов</span>
-                    </label>
-                `;
-            }).join('');
-
-            packageOptions.querySelectorAll('.mpr-package-checkbox').forEach(checkbox => {
-                checkbox.addEventListener('change', () => {
-                    checkbox.closest('.mpr-package-option')?.classList.toggle('selected', checkbox.checked);
-                    updateConfirmGenerateState();
-                });
-            });
-
-            const unmapped = preview.unmapped || [];
-            if (unmapped.length) {
-                unmappedBox.innerHTML = `
-                    <div>Есть хосты с нераспределенным значением ЦОД:</div>
-                    <ul>${unmapped.map(item => `<li>${escapeHtml(item.datacenter)}: ${item.rows_count} строк</li>`).join('')}</ul>
-                `;
-                unmappedBox.style.display = 'block';
-            } else {
-                unmappedBox.innerHTML = '';
-                unmappedBox.style.display = 'none';
-            }
-            updateConfirmGenerateState();
-        }
-
-        function getSelectedPackageCodes() {
-            return Array.from(packageOptions.querySelectorAll('.mpr-package-checkbox:checked'))
-                .map(item => item.value);
-        }
-
-        function updateConfirmGenerateState() {
-            const count = getSelectedPackageCodes().length;
-            const hasUnmapped = Boolean((mprPreview?.unmapped || []).length);
-            confirmGenerateBtn.disabled = count === 0 || hasUnmapped;
-            confirmGenerateLabel.textContent = count > 1
-                ? `Сформировать пакет (${count})`
-                : count === 1
-                    ? 'Сформировать DOCX (1)'
-                    : 'Выберите документ';
-        }
-
-        async function readErrorPayload(response) {
-            const contentType = response.headers.get('content-type') || '';
-            if (contentType.includes('application/json')) {
-                return await response.json();
-            }
-            return { error: 'Сервис вернул непредвиденный ответ' };
-        }
-
-        async function downloadResponse(response) {
-            const blob = await response.blob();
-            const disposition = response.headers.get('content-disposition') || '';
-            const contentType = response.headers.get('content-type') || '';
-            const fallback = contentType.includes('application/zip') ? 'mpr.zip' : 'mpr.docx';
-            const filename = getDownloadFilename(disposition) || fallback;
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = filename;
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            URL.revokeObjectURL(url);
-        }
-
-        function getDownloadFilename(disposition) {
-            const utfMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
-            if (utfMatch) {
-                return decodeURIComponent(utfMatch[1]);
-            }
-            const match = disposition.match(/filename="?([^"]+)"?/i);
-            return match ? match[1] : '';
-        }
-
-        renderFileList();
-    </script>
-</body>
-</html>
+{% block scripts %}<script defer src="{{ public_url_for('static', filename='js/oplot_mpr.js') }}"></script>{% endblock %}

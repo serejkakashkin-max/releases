@@ -7,12 +7,17 @@ from VA.schedule_manager.services.autoplan_hint_service import (
     build_autoplan_hints,
     normalize_autoplan_artifact,
 )
+from VA.schedule_manager.repositories.managed_employee_repository import ManagedEmployeeRepository
+from VA.schedule_manager.services.employee_service import EmployeeService
 
 
 class ScheduleDisplayService:
     def __init__(self, schedule_service: ScheduleService, shift_service: ShiftService) -> None:
         self.schedule_service = schedule_service
         self.shift_service = shift_service
+        # 🔥 Инициализируем сервис сотрудников для получения порядка
+        self.employee_repo = ManagedEmployeeRepository()
+        self.employee_service = EmployeeService(self.employee_repo)
 
     def shift_lookup(self) -> dict:
         return self.shift_service.lookup()
@@ -77,6 +82,10 @@ class ScheduleDisplayService:
         if selected_option is not None:
             try:
                 schedule_grid = snapshot.get_month_grid(selected_option["sheet_name"])
+
+                # 🔥 СОРТИРУЕМ ПО ПОРЯДКУ ИЗ СПРАВОЧНИКА (ТОЛЬКО ДЛЯ ОТОБРАЖЕНИЯ)
+                schedule_grid = self._sort_by_directory_order(schedule_grid)
+
                 raw_autoplan_artifact = snapshot.get_month_metadata(
                     selected_option["sheet_name"],
                     "autoplan",
@@ -156,3 +165,39 @@ class ScheduleDisplayService:
             except KeyError:
                 return None
         return None
+
+    def _sort_by_directory_order(self, grid):
+        """Сортирует сотрудников по порядку из справочника."""
+        if grid is None or not grid.employees:
+            return grid
+
+        try:
+            # Получаем активных сотрудников в порядке из справочника
+            directory_employees = [
+                emp.name
+                for emp in self.employee_service.list_employees()
+                if emp.status == "active"
+            ]
+
+            if not directory_employees:
+                return grid
+
+            # Сортируем по порядку из справочника
+            order_index = {name: idx for idx, name in enumerate(directory_employees)}
+            sorted_employees = sorted(
+                grid.employees,
+                key=lambda row: order_index.get(row.employee_name, len(order_index) + 1)
+            )
+
+            # Возвращаем новый грид с отсортированными сотрудниками
+            from VA.schedule_manager.models.schedule_grid import ScheduleGrid
+            return ScheduleGrid(
+                title=grid.title,
+                year=grid.year,
+                month=grid.month,
+                days=grid.days,
+                employees=sorted_employees,
+            )
+        except Exception:
+            # Если не удалось получить порядок — возвращаем как есть
+            return grid

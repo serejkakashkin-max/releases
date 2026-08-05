@@ -1,0 +1,509 @@
+.oplot-mpr {
+  min-width: 0;
+  color: var(--oplot-text);
+  background: var(--oplot-dna-canvas-gradient);
+}
+
+.oplot-mpr .oplot-page {
+  min-height: calc(100vh - var(--oplot-topbar-height));
+  overflow-x: clip;
+  background: transparent;
+}
+
+.oplot-mpr .oplot-page__container {
+  width: min(100%, 1180px);
+}
+
+.oplot-mpr .oplot-mpr__root {
+  display: grid;
+  min-width: 0;
+  gap: var(--oplot-space-6);
+}
+
+.oplot-mpr .oplot-mpr__hero,
+.oplot-mpr .oplot-mpr__workspace,
+.oplot-mpr .oplot-mpr__result {
+  border: 1px solid var(--oplot-dna-line);
+  border-radius: var(--oplot-radius-lg);
+  background: var(--oplot-dna-panel-gradient);
+  box-shadow: var(--oplot-dna-shadow);
+}
+
+.oplot-mpr .oplot-mpr__hero {
+  display: flex;
+  align-items: center;
+  gap: var(--oplot-space-4);
+  padding: 22px 26px;
+  background: var(--oplot-dna-panel-gradient-strong);
+}
+
+.oplot-mpr .oplot-mpr__hero-icon {
+  display: grid;
+  flex: 0 0 auto;
+  width: 52px;
+  height: 52px;
+  place-items: center;
+  border: 1px solid var(--oplot-dna-line-strong);
+  border-radius: 16px;
+  color: var(--oplot-dna-blue);
+  background: color-mix(in srgb, var(--oplot-dna-blue) 13%, var(--oplot-dna-panel-strong));
+  box-shadow: 0 0 26px var(--oplot-dna-glow-blue);
+}
+
+.oplot-mpr .oplot-mpr__hero-icon .oplot-icon {
+  width: 26px;
+  height: 26px;
+}
+
+.oplot-mpr .oplot-mpr__pretitle,
+.oplot-mpr .oplot-mpr__step {
+  color: var(--oplot-dna-blue);
+  font-size: .7rem;
+  font-weight: 800;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+
+.oplot-mpr .oplot-mpr__hero h1 {
+  margin: 2px 0 0;
+  font-size: clamp(1.8rem, 2.6vw, 2.45rem);
+  font-weight: 850;
+  line-height: 1.08;
+}
+
+.oplot-mpr .oplot-mpr__hero p {
+  margin: 7px 0 0;
+  color: var(--oplot-muted);
+  font-size: .92rem;
+}
+
+.oplot-mpr .oplot-mpr__workspace {
+  padding: var(--oplot-space-6);
+}
+
+.oplot-mpr .oplot-mpr__workspace-heading,
+.oplot-mpr .oplot-mpr__result-heading,
+.oplot-mpr .oplot-mpr__actions,
+.oplot-mpr .oplot-mpr__result-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--oplot-space-4);
+}
+
+.oplot-mpr .oplot-mpr__workspace-heading {
+  margin-bottom: var(--oplot-space-4);
+}
+
+.oplot-mpr .oplot-mpr__workspace-heading h2,
+.oplot-mpr .oplot-mpr__result-heading h2 {
+  margin: 2px 0 0;
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.oplot-mpr .oplot-mpr__format-badge,
+.oplot-mpr .oplot-mpr__result-type,
+.oplot-mpr .oplot-mpr__ready {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--oplot-dna-cyan) 54%, var(--oplot-dna-line));
+  border-radius: 999px;
+  color: var(--oplot-dna-cyan);
+  background: color-mix(in srgb, var(--oplot-dna-cyan) 9%, transparent);
+  font-size: .72rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.oplot-mpr .oplot-mpr__grid {
+  display: grid;
+  grid-template-columns: minmax(0, .86fr) minmax(0, 1.14fr);
+  gap: var(--oplot-space-4);
+}
+
+.oplot-mpr .oplot-mpr__panel {
+  min-width: 0;
+  padding: var(--oplot-space-4);
+  border: 1px solid var(--oplot-dna-line);
+  border-radius: var(--oplot-radius-md);
+  background: var(--oplot-dna-panel-soft);
+  box-shadow: var(--oplot-dna-shadow-soft);
+}
+
+.oplot-mpr .oplot-mpr__panel--upload {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--oplot-dna-cyan) 7%, var(--oplot-dna-panel-soft)), var(--oplot-dna-panel-soft));
+}
+
+.oplot-mpr .oplot-mpr__panel-heading {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: var(--oplot-space-3);
+  margin-bottom: var(--oplot-space-4);
+}
+
+.oplot-mpr .oplot-mpr__panel-number {
+  display: grid;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid var(--oplot-dna-line-strong);
+  border-radius: 11px;
+  color: var(--oplot-dna-blue);
+  background: color-mix(in srgb, var(--oplot-dna-blue) 11%, transparent);
+  font-weight: 850;
+}
+
+.oplot-mpr .oplot-mpr__panel-heading h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.oplot-mpr .oplot-mpr__panel-heading p {
+  margin: 3px 0 0;
+  color: var(--oplot-muted);
+  font-size: .78rem;
+}
+
+.oplot-mpr .oplot-mpr__template-list,
+.oplot-mpr .oplot-mpr__file-list,
+.oplot-mpr .oplot-mpr__package-options {
+  display: grid;
+  min-width: 0;
+  gap: var(--oplot-space-2);
+}
+
+.oplot-mpr .oplot-mpr__template-option {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--oplot-space-3);
+  padding: 13px;
+  border: 1px solid var(--oplot-border);
+  border-radius: var(--oplot-radius-sm);
+  color: var(--oplot-text);
+  background: color-mix(in srgb, var(--oplot-surface) 68%, transparent);
+  text-align: left;
+  transition: border-color .16s ease, background-color .16s ease, transform .16s ease, box-shadow .16s ease;
+}
+
+.oplot-mpr button.oplot-mpr__template-option:hover {
+  border-color: var(--oplot-dna-line-strong);
+  transform: translateY(-1px);
+}
+
+.oplot-mpr .oplot-mpr__template-option.is-active {
+  border-color: var(--oplot-dna-line-strong);
+  background: color-mix(in srgb, var(--oplot-dna-blue) 10%, var(--oplot-dna-panel-strong));
+  box-shadow: inset 0 0 0 1px var(--oplot-dna-glow-blue), 0 10px 24px var(--oplot-dna-glow-blue);
+}
+
+.oplot-mpr .oplot-mpr__template-option.is-readonly {
+  cursor: default;
+}
+
+.oplot-mpr .oplot-mpr__template-option strong,
+.oplot-mpr .oplot-mpr__template-option small {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.oplot-mpr .oplot-mpr__template-option strong {
+  font-size: .9rem;
+}
+
+.oplot-mpr .oplot-mpr__template-option small {
+  margin-top: 3px;
+  color: var(--oplot-muted);
+  font-size: .73rem;
+}
+
+.oplot-mpr .oplot-mpr__template-mark {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--oplot-dna-violet) 58%, var(--oplot-dna-line));
+  border-radius: 13px;
+  color: var(--oplot-dna-violet);
+  background: color-mix(in srgb, var(--oplot-dna-violet) 10%, transparent);
+  font-size: .62rem;
+  font-weight: 900;
+}
+
+.oplot-mpr .oplot-mpr__file-control {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  padding: 14px;
+  border: 1px dashed color-mix(in srgb, var(--oplot-dna-cyan) 64%, var(--oplot-dna-line));
+  border-radius: var(--oplot-radius-sm);
+  background: color-mix(in srgb, var(--oplot-dna-cyan) 7%, transparent);
+  cursor: pointer;
+}
+
+.oplot-mpr .oplot-mpr__file-control-title {
+  color: var(--oplot-text);
+  font-weight: 800;
+}
+
+.oplot-mpr .oplot-mpr__file-control > span:not(.oplot-mpr__file-control-title) {
+  color: var(--oplot-muted);
+  font-size: .75rem;
+}
+
+.oplot-mpr .oplot-mpr__file-control input {
+  width: 100%;
+  min-width: 0;
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid var(--oplot-border);
+  border-radius: 9px;
+  color: var(--oplot-text);
+  background: color-mix(in srgb, var(--oplot-surface) 78%, transparent);
+}
+
+.oplot-mpr .oplot-mpr__file-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--oplot-space-3);
+  padding: 8px 10px;
+  border: 1px solid var(--oplot-border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--oplot-surface) 64%, transparent);
+}
+
+.oplot-mpr .oplot-mpr__file-row strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: .78rem;
+}
+
+.oplot-mpr .oplot-mpr__file-row span {
+  flex: 0 0 auto;
+  color: var(--oplot-muted);
+  font-size: .7rem;
+  white-space: nowrap;
+}
+
+.oplot-mpr .oplot-mpr__empty-files {
+  color: var(--oplot-muted);
+  font-size: .76rem;
+}
+
+.oplot-mpr .oplot-mpr__blocking-state,
+.oplot-mpr .oplot-mpr__alert,
+.oplot-mpr .oplot-mpr__unmapped {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--oplot-danger) 58%, var(--oplot-border));
+  border-radius: var(--oplot-radius-sm);
+  color: var(--oplot-danger);
+  background: color-mix(in srgb, var(--oplot-danger) 9%, var(--oplot-dna-panel));
+}
+
+.oplot-mpr .oplot-mpr__blocking-state span,
+.oplot-mpr .oplot-mpr__alert li {
+  color: color-mix(in srgb, var(--oplot-danger) 72%, var(--oplot-text));
+  font-size: .78rem;
+}
+
+.oplot-mpr .oplot-mpr__alert {
+  margin-top: var(--oplot-space-4);
+}
+
+.oplot-mpr .oplot-mpr__alert ul,
+.oplot-mpr .oplot-mpr__unmapped ul {
+  margin: 4px 0 0;
+  padding-left: 20px;
+}
+
+.oplot-mpr .oplot-mpr__actions {
+  min-height: 42px;
+  margin-top: var(--oplot-space-4);
+}
+
+.oplot-mpr .oplot-mpr__status {
+  min-width: 0;
+  color: var(--oplot-muted);
+  font-size: .8rem;
+}
+
+.oplot-mpr .oplot-mpr__status.is-loading {
+  color: var(--oplot-dna-blue);
+}
+
+.oplot-mpr .oplot-mpr__primary-action {
+  min-width: 154px;
+}
+
+.oplot-mpr .oplot-mpr__package-modal .modal-content {
+  overflow: hidden;
+  border: 1px solid var(--oplot-dna-line-strong);
+  border-radius: var(--oplot-radius-lg);
+  color: var(--oplot-text);
+  background: var(--oplot-dna-panel-gradient-strong);
+  box-shadow: var(--oplot-dna-shadow);
+}
+
+.oplot-mpr .oplot-mpr__package-modal .modal-header,
+.oplot-mpr .oplot-mpr__package-modal .modal-footer {
+  border-color: var(--oplot-dna-line);
+}
+
+.oplot-mpr .oplot-mpr__package-summary {
+  margin-top: 4px;
+  color: var(--oplot-muted);
+  font-size: .8rem;
+}
+
+.oplot-mpr .oplot-mpr__package-option {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--oplot-space-3);
+  padding: 13px 14px;
+  border: 1px solid var(--oplot-border);
+  border-radius: var(--oplot-radius-sm);
+  background: color-mix(in srgb, var(--oplot-surface) 58%, transparent);
+  cursor: pointer;
+}
+
+.oplot-mpr .oplot-mpr__package-option.is-selected {
+  border-color: var(--oplot-dna-line-strong);
+  background: color-mix(in srgb, var(--oplot-dna-blue) 10%, var(--oplot-dna-panel));
+}
+
+.oplot-mpr .oplot-mpr__package-option.is-disabled {
+  cursor: not-allowed;
+  opacity: .58;
+}
+
+.oplot-mpr .oplot-mpr__package-option input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--oplot-dna-blue);
+}
+
+.oplot-mpr .oplot-mpr__package-option strong,
+.oplot-mpr .oplot-mpr__package-option small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.oplot-mpr .oplot-mpr__package-option small {
+  margin-top: 3px;
+  color: var(--oplot-muted);
+  font-size: .72rem;
+}
+
+.oplot-mpr .oplot-mpr__package-count {
+  color: var(--oplot-dna-cyan);
+  font-size: .76rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.oplot-mpr .oplot-mpr__unmapped {
+  margin-top: var(--oplot-space-3);
+}
+
+.oplot-mpr .oplot-mpr__result {
+  padding: var(--oplot-space-6);
+  border-color: color-mix(in srgb, var(--oplot-success) 56%, var(--oplot-dna-line));
+}
+
+.oplot-mpr .oplot-mpr__result-heading > div {
+  display: flex;
+  align-items: center;
+  gap: var(--oplot-space-3);
+}
+
+.oplot-mpr .oplot-mpr__success-mark {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--oplot-success) 62%, var(--oplot-border));
+  border-radius: 14px;
+  color: var(--oplot-success);
+  background: color-mix(in srgb, var(--oplot-success) 12%, transparent);
+  font-size: 1.2rem;
+  font-weight: 900;
+}
+
+.oplot-mpr .oplot-mpr__result-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin: var(--oplot-space-4) 0;
+  overflow: hidden;
+  border: 1px solid var(--oplot-dna-line);
+  border-radius: var(--oplot-radius-sm);
+  background: var(--oplot-dna-line);
+}
+
+.oplot-mpr .oplot-mpr__result-grid > div {
+  min-width: 0;
+  padding: 11px 13px;
+  background: var(--oplot-dna-panel-soft);
+}
+
+.oplot-mpr .oplot-mpr__result-grid dt {
+  color: var(--oplot-muted);
+  font-size: .67rem;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.oplot-mpr .oplot-mpr__result-grid dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  font-size: .82rem;
+  font-weight: 700;
+}
+
+.oplot-mpr .oplot-mpr__result-actions {
+  justify-content: flex-end;
+}
+
+.oplot-mpr .oplot-mpr__root[aria-busy="true"] .oplot-mpr__panel {
+  opacity: .82;
+}
+
+.oplot-mpr .oplot-mpr__root [hidden] {
+  display: none !important;
+}
+
+.oplot-mpr .oplot-mpr__root :where(button, input):focus-visible,
+.oplot-mpr .oplot-mpr__package-modal :where(button, input):focus-visible {
+  outline: 3px solid var(--oplot-focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 980px) {
+  .oplot-mpr .oplot-mpr__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oplot-mpr .oplot-mpr__template-option {
+    transition: none;
+  }
+}

@@ -4,8 +4,8 @@ from dataclasses import asdict, dataclass
 @dataclass(frozen=True)
 class CalendarIntegrationSettings:
     enabled: bool = True
-    provider: str = "consultant"
-    api_url: str = "https://www.consultant.ru/law/ref/calendar/proizvodstvennye/"
+    provider: str = "holidays"  # теперь по умолчанию holidays
+    api_url: str = ""
     api_token: str = ""
     github_config_url: str = ""
     github_branch: str = ""
@@ -16,19 +16,18 @@ class CalendarIntegrationSettings:
 
     @classmethod
     def from_dict(cls, data: dict) -> "CalendarIntegrationSettings":
-        provider = str(data.get("provider", "consultant"))
-        if provider not in {"consultant", "isdayoff", "custom"}:
-            provider = "consultant"
-        default_url = {
-            "consultant": "https://www.consultant.ru/law/ref/calendar/proizvodstvennye/",
-            "isdayoff": "https://isdayoff.ru/api/getdata",
-            "custom": "",
-        }[provider]
-        api_url = str(data.get("api_url", default_url))
-        if provider == "consultant" and not api_url:
-            api_url = default_url
-        if provider == "isdayoff" and not api_url:
-            api_url = default_url
+        provider = str(data.get("provider", "holidays"))
+        # Разрешаем провайдеры
+        allowed_providers = {"holidays", "consultant", "isdayoff", "custom", "local", "russia"}
+        if provider not in allowed_providers:
+            provider = "holidays"
+
+        # Для holidays не нужен URL
+        if provider in ["holidays", "local", "russia"]:
+            api_url = ""
+        else:
+            api_url = str(data.get("api_url", ""))
+
         return cls(
             enabled=bool(data.get("enabled", True)),
             provider=provider,

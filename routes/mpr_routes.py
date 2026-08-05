@@ -1,5 +1,4 @@
 import logging
-import os
 from datetime import datetime
 from io import BytesIO
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -19,18 +18,19 @@ from services.mpr_service import (
     resolve_mpr_template,
     select_mpr_package_rows,
 )
+from services.mpr_ui_service import build_mpr_ui_config
 
 
 mpr_bp = Blueprint("mpr", __name__)
-BASE_PATH = os.getenv("BASE_PATH", "")
 
 
 @mpr_bp.route("/mpr", methods=["GET"])
 def mpr_page():
+    templates = list_mpr_templates()
     return render_template(
         "mpr.html",
-        basepath=BASE_PATH,
-        templates=list_mpr_templates(),
+        templates=templates,
+        mpr_ui_config=build_mpr_ui_config(templates=templates),
     )
 
 
