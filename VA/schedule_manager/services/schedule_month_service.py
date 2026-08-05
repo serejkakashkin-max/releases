@@ -237,15 +237,44 @@ class ScheduleMonthService:
 
     def _employees_for_new_month(self, snapshot: ScheduleSnapshot, employee_source: str) -> List[str]:
         try:
-            return [
+            all_active = [
                 employee.name
                 for employee in self.employee_service.list_employees()
                 if employee.status == "active"
             ]
+
+            # Если выбран источник "last_schedule" и есть snapshot с графиками
+            if employee_source == "last_schedule" and snapshot is not None:
+                last_employees = self._get_employees_from_last_schedule(snapshot)
+                if last_employees:
+                    last_order = {name: idx for idx, name in enumerate(last_employees)}
+                    all_active.sort(key=lambda name: last_order.get(name, len(last_order) + 1))
+                    return all_active
+
+            # 🔥 БЕЗ СОРТИРОВКИ ПО АЛФАВИТУ — порядок из справочника
+            return all_active
+
         except RuntimeError as exc:
             raise ScheduleMonthValidationError(
                 "Current employee list is temporarily unavailable."
             ) from exc
+
+    def _get_employees_from_last_schedule(self, snapshot: ScheduleSnapshot) -> List[str]:
+        if snapshot is None or not snapshot.month_schedules:
+            return []
+
+        last_month = max(
+            snapshot.month_options(),
+            key=lambda item: (int(item["year"]), int(item["month"])),
+        )
+        sheet_name = str(last_month.get("sheet_name") or "")
+        if not sheet_name:
+            return []
+        try:
+            grid = snapshot.get_month_grid(sheet_name)
+            return [row.employee_name for row in grid.employees]
+        except KeyError:
+            return []
 
     def _build_empty_grid(self, year: int, month: int, employee_names: List[str], holidays: set) -> ScheduleGrid:
         days_count = calendar.monthrange(year, month)[1]

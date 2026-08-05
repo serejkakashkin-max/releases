@@ -145,6 +145,9 @@ cache/
 /cache/va_schedule_manager/
 sms_templates/
 /VA/schedule_manager/**/__pycache__/
+/VA/schedule_manager/exports/
+/VA/schedule_manager/state/
+/VA/schedule_manager/uploads/
 *.pyc
 
 # Config with sensitive data
