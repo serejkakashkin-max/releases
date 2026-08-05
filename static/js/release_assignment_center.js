@@ -1,9 +1,32 @@
 (function () {
     'use strict';
 
-    const config = window.RELEASE_ASSIGNMENT_CENTER_CONFIG || {};
-    const BASE_PATH = config.basePath || '';
-    const POLL_INTERVAL_MS = 15000;
+    function readConfig() {
+        const node = document.getElementById('oplot-assignment-center-config');
+        if (!node) throw new Error('missing_config');
+        const parsed = JSON.parse(node.textContent || '{}');
+        const required = ['data', 'reviewer', 'recommend'];
+        required.forEach((key) => {
+            const value = parsed?.urls?.[key];
+            const url = new URL(value, window.location.origin);
+            if (!value || url.origin !== window.location.origin || !url.pathname.startsWith('/')) {
+                throw new Error('invalid_url');
+            }
+        });
+        return parsed;
+    }
+
+    let config;
+    try {
+        config = readConfig();
+    } catch (_error) {
+        const error = document.getElementById('assignmentConfigError');
+        const root = document.querySelector('.assignment-shell');
+        if (error) error.hidden = false;
+        if (root) root.inert = true;
+        return;
+    }
+    const POLL_INTERVAL_MS = Number(config.settings?.poll_interval_ms) || 15000;
     const NORMAL_TITLE = 'Центр назначений';
     const SESSION_KEY = 'releaseAssignmentCenterNotifications';
 
@@ -549,7 +572,7 @@
         elements.refreshBtn.disabled = true;
         setConnection('waiting', 'Проверяем данные');
         try {
-            const response = await fetch(`${BASE_PATH}/dashboard/release-monitor/assignment-center/data`, {
+            const response = await fetch(config.urls.data, {
                 cache: 'no-store'
             });
             const data = await response.json();
@@ -618,7 +641,7 @@
         }
 
         try {
-            const response = await fetch(`${BASE_PATH}/dashboard/release-monitor/reviewer`, {
+            const response = await fetch(config.urls.reviewer, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -729,7 +752,7 @@
         elements.aiSummary.textContent = 'GigaChat анализирует график, нагрузку и историю назначений...';
         elements.aiList.innerHTML = '';
         try {
-            const response = await fetch(`${BASE_PATH}/dashboard/release-monitor/week-control/recommend`, {
+            const response = await fetch(config.urls.recommend, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({})
@@ -806,12 +829,22 @@
         }
     });
 
-    document.addEventListener('DOMContentLoaded', () => {
+    let initialized = false;
+    function initOplotAssignmentCenter() {
+        if (initialized) return;
+        initialized = true;
         cacheElements();
         elements.refreshBtn.addEventListener('click', () => fetchControl(true));
         elements.aiBtn.addEventListener('click', loadRecommendations);
         elements.applyAllBtn.addEventListener('click', applyAllRecommendations);
         fetchControl(true);
         startPolling();
-    });
+    }
+
+    window.initOplotAssignmentCenter = initOplotAssignmentCenter;
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initOplotAssignmentCenter, { once: true });
+    } else {
+        initOplotAssignmentCenter();
+    }
 })();

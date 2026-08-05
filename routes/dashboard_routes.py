@@ -60,6 +60,10 @@ from services.duty_schedule_provider_registry import (
 )
 from services.release_monitor_view_revision import get_release_monitor_view_state
 from services.release_ui_service import build_release_navigation, build_release_ui_config
+from services.duty_ui_service import (
+    build_assignment_center_ui_config,
+    build_duty_dashboard_ui_config,
+)
 
 BASE_PATH = os.getenv("BASE_PATH", "")
 
@@ -231,6 +235,17 @@ def dashboard():
             maintenance_enabled=is_maintenance_enabled("duty_dashboard"),
             maintenance_scope="duty_dashboard",
             maintenance_title="Рабочий стол дежурного на обслуживании",
+            duty_dashboard_ui_config=build_duty_dashboard_ui_config(
+                hidden_tasks=hidden_tasks,
+                sup_tasks=sup_tasks,
+                logi_tasks=logi_tasks,
+                vnedrenie_prom_tasks=vnedrenie_prom_tasks,
+                vnedrenie_psi_tasks=vnedrenie_psi_tasks,
+                release_monitor=release_monitor,
+                release_monitor_summary=release_monitor_summary,
+                release_monitor_meta=release_monitor_meta,
+                assignee_stats=assignee_stats,
+            ),
         )
     except Exception as e:
         logging.error(f"Ошибка загрузки дашборда: {e}")
@@ -258,6 +273,7 @@ def dashboard():
             maintenance_enabled=is_maintenance_enabled("duty_dashboard"),
             maintenance_scope="duty_dashboard",
             maintenance_title="Рабочий стол дежурного на обслуживании",
+            duty_dashboard_ui_config=build_duty_dashboard_ui_config(),
         )
 
 @dashboard_bp.route('/release-monitor')
@@ -451,6 +467,7 @@ def release_monitor_assignment_center_page():
             maintenance_enabled=is_maintenance_enabled("release_monitor"),
             maintenance_scope="release_monitor",
             maintenance_title="Центр назначений на обслуживании",
+            assignment_center_ui_config=build_assignment_center_ui_config(),
         )
     except Exception as e:
         logging.exception("Ошибка открытия Центра назначений")

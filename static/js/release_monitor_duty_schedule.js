@@ -1,21 +1,10 @@
 (function () {
-    const root = document.documentElement;
-    const button = document.getElementById('themeToggle');
-    const stored = localStorage.getItem('theme');
-    const initial = stored === 'light' || stored === 'dark' ? stored : 'dark';
+    'use strict';
+    let initialized = false;
 
-    function applyTheme(theme) {
-        root.dataset.theme = theme;
-        localStorage.setItem('theme', theme);
-        const icon = button && button.querySelector('i');
-        if (icon) icon.className = theme === 'dark' ? 'bi bi-sun' : 'bi bi-moon-stars';
-    }
-
-    applyTheme(initial);
-    if (button) button.addEventListener('click', function () {
-        applyTheme(root.dataset.theme === 'dark' ? 'light' : 'dark');
-    });
-
+    function initOplotDutySchedule() {
+        if (initialized) return;
+        initialized = true;
     const yearSelect = document.getElementById('scheduleYear');
     const monthSelect = document.getElementById('scheduleMonth');
     const periodsNode = document.getElementById('availableScheduleMonths');
@@ -94,5 +83,13 @@
         if (event.target.closest('[data-autoplan-hint]')) hideAutoplanTooltip();
     });
     window.addEventListener('scroll', hideAutoplanTooltip, { passive: true });
-    window.addEventListener('resize', hideAutoplanTooltip);
+        window.addEventListener('resize', hideAutoplanTooltip);
+    }
+
+    window.initOplotDutySchedule = initOplotDutySchedule;
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initOplotDutySchedule, { once: true });
+    } else {
+        initOplotDutySchedule();
+    }
 }());

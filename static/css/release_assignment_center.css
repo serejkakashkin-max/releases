@@ -1,3 +1,38 @@
+﻿.oplot-assignment-center {
+  --oplot-bg: var(--oplot-dna-canvas);
+  --oplot-surface: var(--oplot-dna-panel);
+  --oplot-surface-muted: var(--oplot-dna-panel-soft);
+  --oplot-border: var(--oplot-dna-line);
+  --oplot-primary: var(--oplot-dna-blue);
+  --oplot-primary-soft: color-mix(in srgb, var(--oplot-dna-blue) 18%, transparent);
+  --bg-body: var(--oplot-dna-canvas);
+  --bg-input: color-mix(in srgb, var(--oplot-dna-panel-soft) 82%, var(--oplot-dna-panel));
+  --border-color: var(--oplot-dna-line);
+    --text-primary: var(--oplot-text);
+    --text-secondary: var(--oplot-muted);
+  --assignment-panel: var(--oplot-dna-panel-gradient);
+  --assignment-surface: color-mix(in srgb, var(--oplot-dna-panel-soft) 82%, transparent);
+    --assignment-soft: color-mix(in srgb, var(--oplot-primary-soft) 32%, transparent);
+    --assignment-soft-hover: color-mix(in srgb, var(--oplot-primary-soft) 68%, transparent);
+  --assignment-line: var(--oplot-dna-line);
+  --assignment-accent: var(--oplot-dna-violet);
+    --assignment-mint: var(--oplot-success);
+    --assignment-amber: var(--oplot-warning);
+    --assignment-red: var(--oplot-danger);
+  --assignment-shadow: var(--oplot-dna-shadow-soft);
+  --assignment-table-head: var(--oplot-dna-panel-soft);
+  --assignment-row-line: var(--oplot-dna-line);
+    min-width:0;
+  background: var(--oplot-dna-canvas-gradient);
+}
+.oplot-assignment-center .oplot-page__container { max-width:1540px; }
+.oplot-assignment-center .oplot-page-header { min-height:108px; }
+.assignment-config-error { margin-bottom:16px; padding:14px 16px; border:1px solid color-mix(in srgb,var(--oplot-danger) 55%,var(--oplot-border)); border-radius:var(--oplot-radius-md); color:var(--oplot-danger); background:color-mix(in srgb,var(--oplot-danger) 10%,var(--oplot-surface)); }
+.oplot-duty-back { display:inline-flex; min-height:40px; align-items:center; gap:8px; padding:8px 14px; border:1px solid color-mix(in srgb,var(--oplot-primary) 30%,var(--oplot-border)); border-radius:14px; color:var(--oplot-muted); background:color-mix(in srgb,var(--oplot-surface) 64%,transparent); text-decoration:none; }
+.oplot-duty-back svg { width:18px; height:18px; }
+.oplot-duty-back:hover { color:var(--oplot-text); border-color:var(--oplot-primary); background:var(--oplot-primary-soft); }
+.oplot-duty-back:focus-visible { outline:3px solid var(--oplot-focus); outline-offset:2px; }
+@scope (.oplot-assignment-center) {
 :root {
     --assignment-panel: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96));
     --assignment-surface: rgba(241, 245, 249, 0.84);
@@ -1065,3 +1100,20 @@ body {
         margin-left: 0;
     }
 }
+
+}
+.oplot-assignment-center .assignment-topbar { display:none; }
+.oplot-assignment-center .assignment-shell { width:100%; max-width:none; margin:0; padding:0; }
+.oplot-assignment-center .assignment-cockpit,
+.oplot-assignment-center .assignment-queue,
+.oplot-assignment-center .assignment-people { border-color:var(--oplot-dna-line); background:var(--oplot-dna-panel-gradient); box-shadow:var(--oplot-dna-shadow-soft); }
+.oplot-assignment-center .oplot-page-header { border-color:var(--oplot-dna-line); background:var(--oplot-dna-panel-gradient-strong); box-shadow:var(--oplot-dna-shadow); }
+.oplot-assignment-center .assignment-stat { border-color:color-mix(in srgb,var(--oplot-dna-line) 76%,transparent); background:color-mix(in srgb,var(--oplot-dna-panel-soft) 88%,transparent); }
+.oplot-assignment-center .assignment-release-card,
+.oplot-assignment-center .assignment-candidate,
+.oplot-assignment-center .assignment-availability-row { border-color:color-mix(in srgb,var(--oplot-dna-line) 72%,transparent); background:color-mix(in srgb,var(--oplot-dna-panel) 94%,transparent); }
+.oplot-assignment-center .assignment-layout { min-width:0; }
+.oplot-assignment-center .assignment-release-list,
+.oplot-assignment-center .assignment-people-list { max-height:calc(100vh - 360px); overflow:auto; scrollbar-gutter:stable; }
+.oplot-assignment-center :where(button,a,input,select):focus-visible { outline:3px solid var(--oplot-focus); outline-offset:2px; }
+@media (prefers-reduced-motion: reduce) { .oplot-assignment-center *, .oplot-assignment-center *::before, .oplot-assignment-center *::after { transition-duration:.01ms!important; animation-duration:.01ms!important; animation-iteration-count:1!important; } }

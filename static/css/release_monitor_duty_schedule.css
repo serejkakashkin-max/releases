@@ -1,3 +1,39 @@
+﻿.oplot-duty-schedule {
+  --oplot-bg: var(--oplot-dna-canvas);
+  --oplot-surface: var(--oplot-dna-panel);
+  --oplot-surface-muted: var(--oplot-dna-panel-soft);
+  --oplot-border: var(--oplot-dna-line);
+  --oplot-primary: var(--oplot-dna-blue);
+  --oplot-primary-soft: color-mix(in srgb, var(--oplot-dna-blue) 18%, transparent);
+  --bg: var(--oplot-dna-canvas);
+  --surface: var(--oplot-dna-panel);
+  --surface-2: var(--oplot-dna-panel-soft);
+  --border: var(--oplot-dna-line);
+    --text: var(--oplot-text);
+    --muted: var(--oplot-muted);
+  --accent: var(--oplot-dna-blue);
+    --danger: var(--oplot-danger);
+    --warning: var(--oplot-warning);
+    --success: var(--oplot-success);
+  --shadow: var(--oplot-dna-shadow-soft);
+  --page-gradient: var(--oplot-dna-canvas-gradient);
+  --panel-base: var(--oplot-dna-panel);
+  --panel-soft: var(--oplot-dna-panel-soft);
+  --panel-gradient: var(--oplot-dna-panel-gradient);
+  --content-gradient: var(--oplot-dna-panel-gradient-strong);
+  --weekend-bg: color-mix(in srgb,var(--oplot-success) 12%,var(--oplot-surface));
+  --weekend-text: var(--oplot-success);
+  min-width:0;
+  overflow-x:hidden;
+  background: var(--oplot-dna-canvas-gradient);
+}
+.oplot-duty-schedule .oplot-page__container { max-width:1680px; }
+.oplot-duty-schedule .oplot-page-header { min-height:108px; }
+.oplot-duty-schedule .oplot-duty-back { display:inline-flex; min-height:40px; align-items:center; gap:8px; padding:8px 14px; border:1px solid color-mix(in srgb,var(--oplot-primary) 30%,var(--oplot-border)); border-radius:14px; color:var(--oplot-muted); background:color-mix(in srgb,var(--oplot-surface) 64%,transparent); text-decoration:none; }
+.oplot-duty-schedule .oplot-duty-back svg { width:18px; height:18px; }
+.oplot-duty-schedule .oplot-duty-back:hover { color:var(--oplot-text); border-color:var(--oplot-primary); background:var(--oplot-primary-soft); }
+.oplot-duty-schedule .oplot-duty-back:focus-visible { outline:3px solid var(--oplot-focus); outline-offset:2px; }
+@scope (.oplot-duty-schedule) {
 :root {
     color-scheme: dark;
     --bg: #1a1d23;
@@ -565,3 +601,39 @@ html[data-theme="light"] .schedule-table thead th { color: #17324d; }
     .autoplan-summary time { grid-column: 2; }
     .autoplan-summary-details { padding-left: 12px; }
 }
+
+}
+.oplot-duty-schedule .app-bar { display:none; }
+.oplot-duty-schedule .page-shell { width:100%; max-width:none; margin:0; padding:0; }
+.oplot-duty-schedule .schedule-toolbar,
+.oplot-duty-schedule .schedule-panel,
+.oplot-duty-schedule .legend,
+.oplot-duty-schedule .autoplan-summary { border-color:var(--oplot-dna-line); background:var(--oplot-dna-panel-gradient); box-shadow:var(--oplot-dna-shadow-soft); }
+.oplot-duty-schedule .legend {
+    display: flex;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 18px;
+}
+.oplot-duty-schedule .legend-item {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+.oplot-duty-schedule .legend-item span:last-child { display: inline; }
+.oplot-duty-schedule .legend-swatch { flex: 0 0 auto; }
+.oplot-duty-schedule .oplot-page-header { border-color:var(--oplot-dna-line); background:var(--oplot-dna-panel-gradient-strong); box-shadow:var(--oplot-dna-shadow); }
+.oplot-duty-schedule .schedule-toolbar { background:var(--oplot-dna-panel-gradient); }
+.oplot-duty-schedule .schedule-panel { background:var(--oplot-dna-panel); }
+.oplot-duty-schedule .schedule-table-wrap { max-width:100%; max-height:calc(100vh - 360px); overflow:auto; scrollbar-gutter:stable; }
+.oplot-duty-schedule .schedule-table thead th { position:sticky; top:0; z-index:3; }
+.oplot-duty-schedule .schedule-table .employee-col { position:sticky; left:0; z-index:2; }
+.oplot-duty-schedule .schedule-table thead .employee-col { z-index:4; }
+.oplot-duty-schedule :where(button,a,input,select,[tabindex]):focus-visible { outline:3px solid var(--oplot-focus); outline-offset:2px; }
+@media (prefers-reduced-motion: reduce) { .oplot-duty-schedule *, .oplot-duty-schedule *::before, .oplot-duty-schedule *::after { transition-duration:.01ms!important; animation-duration:.01ms!important; animation-iteration-count:1!important; } }

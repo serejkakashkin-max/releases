@@ -1,37 +1,27 @@
-<!doctype html>
-<html lang="ru" data-theme="dark">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>График дежурств</title>
-    <link rel="stylesheet" href="{{ basepath }}/static/css/bootstrap-icons.css">
-    <link rel="stylesheet" href="{{ basepath }}/static/css/release_monitor_duty_schedule.css">
-</head>
-<body>
-    <header class="app-bar">
-        <nav class="app-nav" aria-label="Навигация">
-            <a class="icon-btn" href="{{ basepath }}/" aria-label="На главную" title="На главную"><i class="bi bi-house-door-fill"></i></a>
-            <a class="icon-btn" href="{{ basepath }}/release-monitor" aria-label="Вернуться в Блок релизов" title="Вернуться в Блок релизов"><i class="bi bi-arrow-left"></i></a>
-        </nav>
-        <button class="icon-btn" id="themeToggle" type="button" aria-label="Переключить тему" title="Переключить тему"><i class="bi bi-sun"></i></button>
-    </header>
+﻿{% extends 'layouts/oplot_base.html' %}
+{% set oplot_show_sidebar = false %}
+{% set oplot_topbar_variant = 'core' %}
+{% set oplot_show_breadcrumbs = false %}
+{% set oplot_page_title = 'График дежурств' %}
+{% set oplot_page_pretitle = 'Блок релизов' %}
+{% set oplot_page_description = 'Актуальный график из VA Schedule Manager в режиме просмотра.' %}
 
-    <main class="page-shell">
-        <section class="page-heading">
-            <div>
-                <p class="eyebrow">Блок релизов</p>
-                <h1>График дежурств</h1>
-                <p class="subtitle">Актуальный график из VA Schedule Manager в режиме просмотра</p>
-            </div>
-            <div class="source-status status-{{ provider_status.status }}">
-                <span class="status-dot"></span>
-                <span>
-                    {% if provider_status.authoritative %}Источник доступен{% elif provider_status.status == 'recovered_backup' %}Резервная копия{% else %}График временно недоступен{% endif %}
-                </span>
-            </div>
-        </section>
-
-        {% if query_invalid %}<div class="notice warning">Некорректный месяц заменён текущим.</div>{% endif %}
+{% block title %}График дежурств — Oplot{% endblock %}
+{% block body_class %}oplot-duty-schedule{% endblock %}
+{% block styles %}
+<link rel="stylesheet" href="{{ public_url_for('static', filename='css/bootstrap-icons.css') }}">
+<link rel="stylesheet" href="{{ public_url_for('static', filename='css/release_monitor_duty_schedule.css') }}">
+{% endblock %}
+{% block topbar_utilities %}{% include 'duty/_topbar_back.html' %}{% endblock %}
+{% block page_actions %}
+<div class="source-status status-{{ provider_status.status }}">
+  <span class="status-dot" aria-hidden="true"></span>
+  <span>{% if provider_status.authoritative %}Источник доступен{% elif provider_status.status == 'recovered_backup' %}Резервная копия{% else %}График временно недоступен{% endif %}</span>
+</div>
+{% endblock %}
+{% block content %}
+<div class="page-shell">
+{% if query_invalid %}<div class="notice warning">Некорректный месяц заменён текущим.</div>{% endif %}
         {% if fallback_month %}<div class="notice info">Текущий месяц отсутствует. Открыт ближайший доступный график.</div>{% endif %}
         {% if provider_status.status == 'recovered_backup' %}
         <div class="notice danger"><strong>Резервная копия.</strong> Эти данные показаны только для просмотра и не используются для автоматических назначений.</div>
@@ -120,8 +110,7 @@
         {% endif %}
 
         <footer class="source-meta">Обновлено: {{ provider_status.updated_at or 'не указано' }}{% if provider_status.revision %}<span>Версия {{ provider_status.revision[:18] }}…</span>{% endif %}</footer>
-    </main>
-    <div class="autoplan-tooltip" id="autoplanTooltip" role="tooltip" hidden></div>
-    <script src="{{ basepath }}/static/js/release_monitor_duty_schedule.js"></script>
-</body>
-</html>
+</div>
+{% endblock %}
+{% block overlays %}<div class="autoplan-tooltip" id="autoplanTooltip" role="tooltip" hidden></div>{% endblock %}
+{% block scripts %}<script defer src="{{ public_url_for('static', filename='js/release_monitor_duty_schedule.js') }}"></script>{% endblock %}
