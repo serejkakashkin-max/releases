@@ -12,10 +12,7 @@
 {% endblock %}
 
 {% block topbar_utilities %}
-<a class="btn btn-outline-secondary" href="{{ public_url_for('dashboard.release_monitor_page') }}">
-  <span aria-hidden="true">←</span>
-  <span>К блоку релизов</span>
-</a>
+{% include 'document_templates/_topbar_back.html' %}
 {% endblock %}
 
 {% block content %}
