@@ -1,0 +1,86 @@
+/*
+ * Release Monitor performance profile.
+ *
+ * This stylesheet is intentionally scoped to the Release Monitor body class.
+ * It changes presentation cost only: no DOM hooks, routes, payloads, polling,
+ * filtering, modal behaviour, or business JavaScript contracts are touched.
+ */
+
+/* The shared sticky topbar normally uses backdrop blur. On a long data table
+ * that forces continuous backdrop recomposition while scrolling. Keep the
+ * same translucent visual language with a nearly opaque surface instead. */
+body.oplot-body.oplot-release .oplot-topbar--core {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: color-mix(in srgb, var(--oplot-dna-panel-strong) 96%, #06111e);
+  box-shadow:
+    inset 0 -1px 0 color-mix(in srgb, var(--oplot-dna-line) 34%, transparent),
+    0 4px 14px rgba(0, 8, 20, .10);
+}
+
+html[data-theme="light"] body.oplot-body.oplot-release .oplot-topbar--core {
+  background: color-mix(in srgb, var(--oplot-dna-panel-strong) 97%, #f5f9fe);
+  box-shadow:
+    inset 0 -1px 0 rgba(255, 255, 255, .72),
+    0 4px 14px rgba(38, 64, 94, .045);
+}
+
+/* Release Monitor keeps the Oplot navy/blue atmosphere, but uses two paint
+ * layers instead of the shared five-layer ambient canvas. This is local to
+ * the data-heavy page and deliberately does not affect Home or other modules. */
+html[data-theme="dark"] body.oplot-body.oplot-release,
+html[data-theme="dark"] body.oplot-body.oplot-release .oplot-page {
+  background:
+    radial-gradient(ellipse 58% 34% at 50% -10%, rgba(73, 105, 154, .075), transparent 72%),
+    linear-gradient(180deg, #050d18 0%, #071321 56%, #06111e 100%);
+}
+
+html[data-theme="light"] body.oplot-body.oplot-release,
+html[data-theme="light"] body.oplot-body.oplot-release .oplot-page {
+  background:
+    radial-gradient(ellipse 58% 34% at 50% -10%, rgba(78, 111, 158, .065), transparent 72%),
+    linear-gradient(180deg, #f7faff 0%, #eff5fc 58%, #edf4fb 100%);
+}
+
+/* Large blurred shadows on containers surrounding a long table increase the
+ * paint region during scroll. Keep separation through borders and shallow
+ * shadows instead of wide blur radii. */
+body.oplot-body.oplot-release .release-monitor-section {
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--release-shadow) 34%, transparent);
+}
+
+body.oplot-body.oplot-release .release-table-wrap {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .035);
+}
+
+/* The header remains sticky. Only its wide drop shadow is replaced by a
+ * one-pixel separator so scrolling does not repaint a large blurred region. */
+body.oplot-body.oplot-release .release-monitor-table th {
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--oplot-primary) 22%, var(--release-soft-border));
+}
+
+/* Scrolling under a stationary cursor continuously changes the hovered row.
+ * Avoid animating/repainting the row shadow on every such change; the accepted
+ * subtle cell hover background remains in place. */
+body.oplot-body.oplot-release .release-monitor-table tbody tr {
+  transition: none;
+}
+
+body.oplot-body.oplot-release .release-monitor-table tbody tr:hover {
+  box-shadow: none;
+}
+
+/* Table action controls can be numerous. Prefer solid surfaces to per-control
+ * gradients/shadows inside the scrolling table while keeping the same border,
+ * text colour, sizing and click targets. */
+body.oplot-body.oplot-release .release-monitor-table .release-doc-btn,
+body.oplot-body.oplot-release .release-monitor-table .release-row-settings-action-btn {
+  background: color-mix(in srgb, var(--oplot-primary) 10%, var(--oplot-surface));
+  box-shadow: none;
+}
+
+body.oplot-body.oplot-release .release-monitor-table .release-row-edit-btn,
+body.oplot-body.oplot-release .release-monitor-table .responsible-icon-btn {
+  background: color-mix(in srgb, var(--release-soft-bg) 84%, var(--oplot-surface));
+  box-shadow: none;
+}
