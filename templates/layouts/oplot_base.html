@@ -15,6 +15,9 @@
   <link rel="stylesheet" href="{{ public_url_for('static', filename='css/oplot_stage9_dna.css') }}">
   <link rel="stylesheet" href="{{ public_url_for('static', filename='css/oplot_stage9_refinement.css') }}">
   <link rel="stylesheet" href="{{ public_url_for('static', filename='css/oplot_stage9_duty.css') }}">
+  {% if request.endpoint == 'dashboard.release_monitor_page' %}
+  <link rel="stylesheet" href="{{ public_url_for('static', filename='css/oplot_release_performance.css') }}">
+  {% endif %}
 </head>
 {% set shell_mode = oplot_shell_mode|default('app') %}
 {% set show_sidebar = oplot_show_sidebar|default(true) %}
