@@ -42,12 +42,14 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
+          python -m pip check
 
-      - name: Create isolated test config
+      - name: Create isolated test runtime
         shell: pwsh
         run: |
           [System.IO.File]::WriteAllText((Join-Path $PWD 'config.json'), '{}', [System.Text.UTF8Encoding]::new($false))
-          Write-Host "Created untracked synthetic config.json for test imports"
+          New-Item -ItemType Directory -Force -Path (Join-Path $PWD 'doc_templates') | Out-Null
+          Write-Host "Created untracked synthetic config.json and empty doc_templates root for clean-runner imports"
 
       - name: Strict unittest suite
         shell: pwsh
