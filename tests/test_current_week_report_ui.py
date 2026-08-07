@@ -13,6 +13,7 @@ prepare_config_import()
 
 from routes.current_week_ui_routes import install_current_week_ui
 from routes.dashboard_routes import dashboard_bp
+from services.oplot_ui_service import register_oplot_ui
 from services.release_report_service import ReleaseReportService
 
 
@@ -56,6 +57,7 @@ def build_app() -> Flask:
     app.config.update(TESTING=True, SECRET_KEY="current-week-tests")
     app.register_blueprint(dashboard_bp)
     install_current_week_ui(app)
+    register_oplot_ui(app)
     return app
 
 
