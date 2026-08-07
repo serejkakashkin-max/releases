@@ -1,0 +1,348 @@
+.oplot-current-week {
+  min-width: 0;
+  color: var(--oplot-text);
+  background: var(--oplot-dna-canvas-gradient);
+}
+
+.oplot-current-week .oplot-page {
+  min-height: calc(100vh - var(--oplot-topbar-height));
+  overflow-x: clip;
+  background: transparent;
+}
+
+.oplot-current-week .oplot-page__container {
+  width: min(100%, 1520px);
+  max-width: 1520px;
+  padding-top: 22px;
+  padding-bottom: 30px;
+}
+
+.oplot-current-week__root {
+  display: grid;
+  min-width: 0;
+  gap: 14px;
+}
+
+.oplot-current-week__hero,
+.oplot-current-week__metric,
+.oplot-current-week__panel,
+.oplot-current-week__table-panel,
+.oplot-current-week__error {
+  border: 1px solid var(--oplot-dna-line);
+  background: var(--oplot-dna-panel-gradient);
+  box-shadow: var(--oplot-dna-shadow-soft);
+}
+
+.oplot-current-week__hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 20px 24px;
+  border-radius: 14px;
+  background:
+    linear-gradient(var(--oplot-dna-panel-strong), var(--oplot-dna-panel-strong)) padding-box,
+    linear-gradient(120deg,
+      color-mix(in srgb, var(--oplot-dna-blue) 60%, var(--oplot-dna-line)),
+      var(--oplot-dna-line) 48%,
+      color-mix(in srgb, var(--oplot-dna-violet) 44%, var(--oplot-dna-line))) border-box;
+  border-color: transparent;
+}
+
+.oplot-current-week__hero-copy { min-width: 0; }
+.oplot-current-week__eyebrow {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--oplot-dna-blue);
+  font-size: .69rem;
+  font-weight: 820;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.oplot-current-week__hero h1 {
+  margin: 0;
+  font-size: clamp(1.7rem, 2.7vw, 2.35rem);
+  font-weight: 850;
+  line-height: 1.08;
+}
+
+.oplot-current-week__hero p {
+  margin: 7px 0 0;
+  color: var(--oplot-muted);
+  font-size: .9rem;
+}
+
+.oplot-current-week__hero p strong { color: var(--oplot-text); }
+.oplot-current-week__back { flex: 0 0 auto; }
+
+.oplot-current-week__summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 11px;
+}
+
+.oplot-current-week__metric {
+  display: grid;
+  min-width: 0;
+  min-height: 92px;
+  align-content: space-between;
+  gap: 10px;
+  padding: 15px 16px;
+  border-radius: 12px;
+  color: var(--oplot-text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .16s ease, background .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+
+.oplot-current-week__metric:hover,
+.oplot-current-week__metric:focus-visible {
+  border-color: var(--oplot-dna-line-strong);
+  background: color-mix(in srgb, var(--oplot-dna-blue) 7%, var(--oplot-dna-panel-strong));
+  box-shadow: 0 10px 26px var(--oplot-dna-glow-blue);
+}
+
+.oplot-current-week__metric span {
+  color: var(--oplot-muted);
+  font-size: .75rem;
+  font-weight: 720;
+}
+
+.oplot-current-week__metric strong {
+  color: var(--oplot-text);
+  font-size: 1.8rem;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.oplot-current-week__breakdown {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px;
+}
+
+.oplot-current-week__panel {
+  min-width: 0;
+  padding: 15px 17px;
+  border-radius: 12px;
+}
+
+.oplot-current-week__panel h2 {
+  margin: 0 0 11px;
+  font-size: .96rem;
+  font-weight: 820;
+}
+
+.oplot-current-week__chips {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.oplot-current-week__chip {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 32px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--oplot-dna-line);
+  border-radius: 9px;
+  color: var(--oplot-text);
+  background: color-mix(in srgb, var(--oplot-dna-panel-soft) 70%, transparent);
+  font: inherit;
+  font-size: .76rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.oplot-current-week__chip:hover,
+.oplot-current-week__chip:focus-visible {
+  border-color: var(--oplot-dna-line-strong);
+  color: var(--oplot-dna-blue);
+  background: color-mix(in srgb, var(--oplot-dna-blue) 8%, var(--oplot-dna-panel-soft));
+}
+
+.oplot-current-week__chip .counter-filter-label {
+  min-width: 0;
+  max-width: 250px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oplot-current-week__chip strong { color: var(--oplot-dna-blue); }
+.oplot-current-week__empty { color: var(--oplot-muted); font-size: .82rem; }
+
+.oplot-current-week__table-panel {
+  min-width: 0;
+  padding: 16px;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.oplot-current-week__table-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 12px;
+}
+
+.oplot-current-week__table-head h2 {
+  margin: 0;
+  font-size: 1.18rem;
+  font-weight: 830;
+}
+
+.oplot-current-week__table-head p {
+  max-width: 930px;
+  margin: 4px 0 0;
+  color: var(--oplot-muted);
+  font-size: .82rem;
+  line-height: 1.45;
+}
+
+.oplot-current-week__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 9px 10px;
+  border: 1px solid var(--oplot-dna-line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--oplot-dna-panel-soft) 62%, transparent);
+}
+
+.oplot-current-week__toolbar .report-filter-state {
+  color: var(--oplot-muted);
+  font-size: .8rem;
+}
+
+.oplot-current-week__toolbar .report-filter-state strong { color: var(--oplot-text); }
+.oplot-current-week__toolbar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.oplot-current-week__final-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 35px;
+  padding: 6px 10px;
+  border: 1px solid var(--oplot-dna-line);
+  border-radius: 9px;
+  color: var(--oplot-muted);
+  background: color-mix(in srgb, var(--oplot-dna-panel-strong) 70%, transparent);
+  font-size: .77rem;
+  font-weight: 680;
+  cursor: pointer;
+}
+
+.oplot-current-week__final-toggle input { accent-color: var(--oplot-dna-blue); }
+
+.oplot-current-week__table-scroll {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid color-mix(in srgb, var(--oplot-dna-line) 78%, transparent);
+  border-radius: 10px;
+}
+
+.oplot-current-week table {
+  width: 100%;
+  min-width: 1240px;
+  border-collapse: collapse;
+  background: color-mix(in srgb, var(--oplot-dna-panel-strong) 88%, transparent);
+}
+
+.oplot-current-week th,
+.oplot-current-week td {
+  padding: 9px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--oplot-dna-line) 62%, transparent);
+  color: var(--oplot-text);
+  font-size: .76rem;
+  line-height: 1.35;
+  text-align: left;
+  vertical-align: top;
+}
+
+.oplot-current-week th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  color: var(--oplot-muted);
+  background: color-mix(in srgb, var(--oplot-dna-panel-soft) 82%, var(--oplot-dna-panel-strong));
+  font-size: .69rem;
+  font-weight: 820;
+  letter-spacing: .02em;
+  white-space: nowrap;
+}
+
+.oplot-current-week tbody tr { transition: background .14s ease; }
+.oplot-current-week tbody tr:hover { background: color-mix(in srgb, var(--oplot-dna-blue) 5%, transparent); }
+.oplot-current-week tbody tr[hidden] { display: none; }
+.oplot-current-week td a { color: var(--oplot-dna-blue); }
+.oplot-current-week td a:hover { color: color-mix(in srgb, var(--oplot-dna-blue) 78%, var(--oplot-text)); }
+
+.oplot-current-week tr.state-cancelled { background: color-mix(in srgb, var(--oplot-danger) 7%, transparent); }
+.oplot-current-week tr.state-overdue { background: color-mix(in srgb, var(--oplot-danger) 9%, transparent); }
+.oplot-current-week tr.state-notes { background: color-mix(in srgb, var(--oplot-warning) 9%, transparent); }
+.oplot-current-week tr.state-final { background: color-mix(in srgb, var(--oplot-success) 7%, transparent); }
+.oplot-current-week tr.rollout-notes-success,
+.oplot-current-week tr.rollout-notes-success td { background: color-mix(in srgb, var(--oplot-success) 7%, transparent); }
+.oplot-current-week tr.rollout-notes-warning,
+.oplot-current-week tr.rollout-notes-warning td { background: color-mix(in srgb, var(--oplot-warning) 10%, transparent); }
+.oplot-current-week tr.rollout-notes-danger,
+.oplot-current-week tr.rollout-notes-danger td { background: color-mix(in srgb, var(--oplot-danger) 8%, transparent); }
+.oplot-current-week tr.rollout-notes-none,
+.oplot-current-week tr.rollout-notes-none td { background: transparent; }
+
+.oplot-current-week__footer {
+  padding: 1px 0 0;
+  color: var(--oplot-muted);
+  font-size: .74rem;
+  text-align: center;
+}
+
+.oplot-current-week__error {
+  display: grid;
+  gap: 5px;
+  padding: 18px 20px;
+  border-color: color-mix(in srgb, var(--oplot-danger) 45%, var(--oplot-dna-line));
+  border-radius: 12px;
+  color: var(--oplot-text);
+}
+.oplot-current-week__error span { color: var(--oplot-muted); }
+
+.oplot-current-week button:focus-visible,
+.oplot-current-week a:focus-visible,
+.oplot-current-week input:focus-visible {
+  outline: 3px solid var(--oplot-focus);
+  outline-offset: 2px;
+}
+
+html[data-theme="light"] .oplot-current-week__metric,
+html[data-theme="light"] .oplot-current-week__panel,
+html[data-theme="light"] .oplot-current-week__table-panel {
+  box-shadow: 0 9px 24px rgba(33, 57, 86, .07);
+}
+
+@media (max-width: 1180px) {
+  .oplot-current-week__summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .oplot-current-week__breakdown { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 760px) {
+  .oplot-current-week__hero,
+  .oplot-current-week__table-head,
+  .oplot-current-week__toolbar { align-items: stretch; flex-direction: column; }
+  .oplot-current-week__summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .oplot-current-week__toolbar-actions { align-items: stretch; flex-direction: column; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oplot-current-week__metric,
+  .oplot-current-week__chip { transition: none; }
+}
