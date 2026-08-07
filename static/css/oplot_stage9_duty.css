@@ -1,0 +1,66 @@
+/* Stage 9 duty-dashboard presentation refinements. */
+
+.oplot-duty-dashboard .oplot-page-header__actions > #trashBtn {
+  display: none;
+}
+
+.oplot-duty-topbar-trash-mount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.oplot-duty-dashboard .trash-btn.oplot-duty-topbar-trash {
+  position: relative;
+  width: 42px;
+  height: 40px;
+  flex: 0 0 auto;
+  border: 1px solid var(--oplot-dna-line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--oplot-dna-panel-soft) 62%, transparent);
+  color: var(--oplot-muted);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent);
+  font-size: 1rem;
+  opacity: 1;
+  transition: border-color .16s ease, background-color .16s ease, color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+
+.oplot-duty-dashboard .trash-btn.oplot-duty-topbar-trash > span:not(.trash-count) {
+  display: none;
+}
+
+.oplot-duty-dashboard .trash-btn.oplot-duty-topbar-trash:hover,
+.oplot-duty-dashboard .trash-btn.oplot-duty-topbar-trash:focus-visible {
+  border-color: var(--oplot-dna-line-strong);
+  background: color-mix(in srgb, var(--oplot-dna-blue) 9%, var(--oplot-dna-panel-soft));
+  color: var(--oplot-dna-blue);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--oplot-dna-blue) 10%, transparent);
+  transform: translateY(-1px);
+}
+
+.oplot-duty-dashboard .trash-btn.oplot-duty-topbar-trash:focus-visible {
+  outline: 3px solid var(--oplot-focus);
+  outline-offset: 2px;
+}
+
+.oplot-duty-dashboard .trash-btn.oplot-duty-topbar-trash .trash-count {
+  top: -5px;
+  right: -5px;
+  bottom: auto;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border: 2px solid var(--oplot-dna-panel-strong);
+  border-radius: 9px;
+  background: var(--oplot-dna-blue);
+  color: #fff;
+  font-size: .6rem;
+  line-height: 1;
+  font-weight: 800;
+  opacity: 1;
+}
+
+html[data-theme="light"] .oplot-duty-dashboard .trash-btn.oplot-duty-topbar-trash {
+  background: color-mix(in srgb, #fff 78%, var(--oplot-dna-panel-soft));
+  box-shadow: inset 0 1px 0 #fff, 0 5px 14px rgba(41, 68, 98, .06);
+}
