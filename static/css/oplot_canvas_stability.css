@@ -1,0 +1,41 @@
+/*
+ * Oplot canvas stability.
+ *
+ * Keep the application chrome on one continuous page canvas.  Earlier layers
+ * intentionally reused the same ambient gradient on both body and .oplot-page;
+ * when the page was shorter than the viewport (for example while Release
+ * Monitor data was still loading), those independently painted backgrounds
+ * exposed visible horizontal seams.  A root scrollbar gutter could also expose
+ * a narrow strip of the root canvas at the viewport edge on Windows/RDP.
+ *
+ * Home keeps its own accepted page artwork and is intentionally excluded from
+ * the transparent-page rule below.
+ */
+
+html {
+  min-height: 100%;
+  scrollbar-gutter: auto !important;
+}
+
+body.oplot-body {
+  min-height: 100vh;
+  margin: 0;
+}
+
+body.oplot-body:not(.oplot-home) .oplot-shell,
+body.oplot-body:not(.oplot-home) .oplot-shell__main {
+  min-height: 100vh;
+  background: transparent;
+}
+
+body.oplot-body:not(.oplot-home) .oplot-page {
+  min-height: calc(100vh - var(--oplot-topbar-height, 72px));
+  background: transparent !important;
+}
+
+/* Release Monitor previously reserved a stable root gutter.  Override the
+ * legacy rule explicitly as well as the generic root rule above so classic
+ * Windows scrollbars cannot leave a permanent rail on either viewport edge. */
+html:has(> body.oplot-release) {
+  scrollbar-gutter: auto !important;
+}
