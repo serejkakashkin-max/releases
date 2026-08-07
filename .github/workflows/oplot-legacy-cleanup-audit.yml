@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - agent/oplot-legacy-cleanup
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
