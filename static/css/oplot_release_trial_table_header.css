@@ -1,0 +1,9 @@
+/*
+ * Release Monitor A/B trial: disable sticky table-column headers only.
+ * No DOM, JavaScript, API, filtering, modal or business behaviour changes.
+ */
+body.oplot-body.oplot-release .release-monitor-table th {
+  position: static !important;
+  top: auto !important;
+  z-index: auto !important;
+}
