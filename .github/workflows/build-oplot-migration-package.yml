@@ -7,7 +7,6 @@ on:
   pull_request:
     branches:
       - main
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -22,96 +21,9 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Build exact migration delta
+      - name: Build migration ZIP
         shell: pwsh
-        run: |
-          @'
-          from __future__ import annotations
-
-          import subprocess
-          import zipfile
-          from pathlib import Path
-
-          BASE = "4d41d42446d21b06b53e06c8f8e1e67131f87394"
-          TARGET = "e973887521f02373081bf487f880156503226007"
-          ROOT = Path.cwd()
-          OUT = ROOT / "migration_out"
-          STAGE = OUT / "stage"
-          OUT.mkdir(exist_ok=True)
-          STAGE.mkdir(exist_ok=True)
-
-          def git_list(*args: str) -> list[str]:
-              data = subprocess.check_output(["git", *args])
-              return [item.decode("utf-8", "surrogateescape") for item in data.split(b"\0") if item]
-
-          changed = sorted(set(git_list(
-              "diff", "--name-only", "-z", "--diff-filter=ACMRTUXB", BASE, TARGET
-          )))
-          deleted = sorted(set(git_list(
-              "diff", "--name-only", "-z", "--diff-filter=D", BASE, TARGET
-          )))
-
-          copied: list[str] = []
-          for rel in changed:
-              probe = subprocess.run(
-                  ["git", "cat-file", "-e", f"{TARGET}:{rel}"],
-                  stdout=subprocess.DEVNULL,
-                  stderr=subprocess.DEVNULL,
-              )
-              if probe.returncode != 0:
-                  continue
-              data = subprocess.check_output(["git", "show", f"{TARGET}:{rel}"])
-              dest = STAGE / rel
-              dest.parent.mkdir(parents=True, exist_ok=True)
-              dest.write_bytes(data)
-              copied.append(rel)
-
-          deleted_text = "\n".join(deleted) + ("\n" if deleted else "")
-          (STAGE / "DELETED_FILES.txt").write_text(deleted_text, encoding="utf-8")
-          (STAGE / "CHANGED_FILES.txt").write_text("\n".join(copied) + "\n", encoding="utf-8")
-
-          readme = f"""OPLOT — пакет переноса модернизации на рабочий стенд
-
-Исходное состояние до модернизации:
-{BASE}
-
-Целевое состояние GitHub main:
-{TARGET}
-
-Файлов для добавления/замены: {len(copied)}
-Файлов для удаления: {len(deleted)}
-
-КАК ПРИМЕНЯТЬ
-1. Сделать резервную копию рабочей локальной копии проекта/создать отдельную Git-ветку в Bitbucket-репозитории.
-2. Распаковать этот ZIP в КОРЕНЬ проекта с сохранением структуры каталогов и заменой существующих файлов.
-3. Открыть DELETED_FILES.txt и удалить перечисленные там файлы из рабочей копии, если они существуют.
-4. Выполнить установку/синхронизацию Python-зависимостей из requirements.txt.
-5. Проверить git status и внимательно убедиться, что config.json, .env, реальные DOCX и runtime-данные стенда не были заменены случайно.
-6. Запустить тесты/приложение локально на рабочем компьютере, затем commit/push в Bitbucket.
-
-ВАЖНО
-- Архив содержит NET-дельту между указанными commit SHA, а не весь репозиторий.
-- Файлы внутри имеют финальное содержимое TARGET и исходные относительные пути проекта.
-- DELETED_FILES.txt и CHANGED_FILES.txt — служебные файлы пакета, их не требуется коммитить в Bitbucket.
-- Реальные production DOCX, config.json и .env в пакет не добавляются, если они не входят в Git-дельту.
-"""
-          (STAGE / "MIGRATION_README.txt").write_text(readme, encoding="utf-8")
-
-          zip_path = OUT / "OPLOT_migration_4d41d424_to_e9738875.zip"
-          with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
-              for path in sorted(STAGE.rglob("*")):
-                  if path.is_file():
-                      archive.write(path, path.relative_to(STAGE).as_posix())
-
-          print(f"PACKAGE={zip_path}")
-          print(f"COPIED={len(copied)}")
-          print(f"DELETED={len(deleted)}")
-          print("--- DELETED FILES ---")
-          for rel in deleted:
-              print(rel)
-          print("--- END DELETED FILES ---")
-          '@ | Set-Content -Path build_migration_package.py -Encoding UTF8
-          python build_migration_package.py
+        run: python tools/build_oplot_migration_package.py
 
       - name: Upload migration package
         uses: actions/upload-artifact@v4
