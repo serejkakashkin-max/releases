@@ -117,6 +117,25 @@ html[data-theme="dark"] .oplot-body {
   box-shadow: var(--oplot-dna-shadow-soft);
 }
 
+/* Assignment Center: KPI typography follows the Release Block summary cards. */
+.oplot-assignment-center .assignment-stat span {
+  color: var(--text-secondary);
+  font-size: .68rem;
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.oplot-assignment-center .assignment-stat strong {
+  display: block;
+  margin-top: .18rem;
+  color: var(--text-primary);
+  font-size: 1.24rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
 /* HOME ------------------------------------------------------------------ */
 
 /* The three navigation cards must occupy exactly the same visual width as
