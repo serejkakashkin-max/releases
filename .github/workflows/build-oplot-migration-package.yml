@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - agent/oplot-migration-package
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -41,7 +44,6 @@ jobs:
               data = subprocess.check_output(["git", *args])
               return [item.decode("utf-8", "surrogateescape") for item in data.split(b"\0") if item]
 
-          # Net delta needed to transform the pre-modernization working tree into TARGET.
           changed = sorted(set(git_list(
               "diff", "--name-only", "-z", "--diff-filter=ACMRTUXB", BASE, TARGET
           )))
@@ -51,7 +53,6 @@ jobs:
 
           copied: list[str] = []
           for rel in changed:
-              # Only include paths that exist in the final TARGET tree.
               probe = subprocess.run(
                   ["git", "cat-file", "-e", f"{TARGET}:{rel}"],
                   stdout=subprocess.DEVNULL,
