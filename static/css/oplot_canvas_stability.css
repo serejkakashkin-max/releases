@@ -1,15 +1,14 @@
 /*
  * Oplot canvas stability.
  *
- * Keep the application chrome on one continuous page canvas.  Earlier layers
- * intentionally reused the same ambient gradient on both body and .oplot-page;
- * when the page was shorter than the viewport (for example while Release
- * Monitor data was still loading), those independently painted backgrounds
- * exposed visible horizontal seams.  A root scrollbar gutter could also expose
- * a narrow strip of the root canvas at the viewport edge on Windows/RDP.
+ * Paint one continuous application canvas at the viewport root.  Earlier
+ * layers reused the ambient gradient on body and .oplot-page independently;
+ * when their geometry changed during loading this produced visible seams.
+ * Classic Windows/RDP scrollbars can also expose the root canvas outside the
+ * body box, so the root itself must own the canonical background.
  *
- * Home keeps its own accepted page artwork and is intentionally excluded from
- * the transparent-page rule below.
+ * Home keeps its accepted page artwork and is intentionally excluded from the
+ * transparent body/page rules below.
  */
 
 html {
@@ -17,9 +16,19 @@ html {
   scrollbar-gutter: auto !important;
 }
 
+/* The viewport root owns the shared canvas.  This also paints any area exposed
+ * by a classic scrollbar/gutter with exactly the same background as the app. */
+html:has(> body.oplot-body:not(.oplot-home)) {
+  background: var(--oplot-dna-canvas-gradient);
+}
+
 body.oplot-body {
   min-height: 100vh;
   margin: 0;
+}
+
+body.oplot-body:not(.oplot-home) {
+  background: transparent !important;
 }
 
 body.oplot-body:not(.oplot-home) .oplot-shell,
@@ -33,9 +42,21 @@ body.oplot-body:not(.oplot-home) .oplot-page {
   background: transparent !important;
 }
 
-/* Release Monitor previously reserved a stable root gutter.  Override the
- * legacy rule explicitly as well as the generic root rule above so classic
- * Windows scrollbars cannot leave a permanent rail on either viewport edge. */
+/* Release Monitor historically used overflow-x:hidden on body.  On Chromium
+ * that can turn body into a scrolling box once vertical overflow appears.
+ * clip keeps horizontal spill hidden without creating another scroll container. */
+body.oplot-release {
+  overflow-x: clip !important;
+  scrollbar-gutter: auto !important;
+}
+
+body.oplot-release .oplot-shell,
+body.oplot-release .oplot-shell__main,
+body.oplot-release .oplot-page {
+  scrollbar-gutter: auto !important;
+}
+
+/* Release Monitor previously reserved a stable root gutter. */
 html:has(> body.oplot-release) {
   scrollbar-gutter: auto !important;
 }
