@@ -19,6 +19,14 @@ def register_routes(app):
     app.register_blueprint(mpr_bp)
     app.register_blueprint(sms_bp)
     app.register_blueprint(dashboard_bp)
+
+    # The live Current Week screen is an Oplot application page. Keep the
+    # existing dashboard endpoint/URL, but bind it to the shared-shell view.
+    # Saved HTML reports remain export artifacts and keep their own generator.
+    from routes.current_week_ui_routes import install_current_week_ui
+
+    install_current_week_ui(app)
+
     app.register_blueprint(chatbot_bp)
     app.register_blueprint(sup_admin_session_bp)
     app.register_blueprint(sup_parameters_bp)
