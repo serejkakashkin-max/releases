@@ -28,6 +28,9 @@
         </form>
       {% endif %}
     {% endif %}
+    {% if topbar_variant == 'core' and request.endpoint == 'dashboard.dashboard' %}
+      <span class="oplot-duty-topbar-trash-mount" id="oplotDutyTrashMount" aria-label="Скрытые задачи"></span>
+    {% endif %}
     {% if topbar_variant == 'core' %}
       <button class="oplot-theme-toggle oplot-core-theme-toggle" type="button" data-oplot-theme-toggle aria-pressed="false" aria-label="Переключить тему">
         <svg class="oplot-core-theme-toggle__icon oplot-core-theme-toggle__icon--dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.2 15.3A8.4 8.4 0 0 1 8.7 3.8 8.5 8.5 0 1 0 20.2 15.3Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
