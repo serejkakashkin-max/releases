@@ -19,7 +19,22 @@
   --bg-card: var(--oplot-dna-panel);
   --bg-secondary: var(--oplot-dna-panel-soft);
   --border-color: var(--oplot-dna-line);
+  --oplot-dna-canvas-gradient:
+    radial-gradient(ellipse 54% 44% at -8% 61%, rgba(70, 112, 176, .11), transparent 70%),
+    radial-gradient(ellipse 42% 34% at 11% 70%, rgba(113, 91, 172, .075), transparent 72%),
+    radial-gradient(ellipse 52% 44% at 108% 60%, rgba(65, 143, 153, .09), transparent 70%),
+    radial-gradient(circle at 50% -7%, rgba(78, 111, 158, .07), transparent 38%),
+    linear-gradient(180deg, #f7faff 0%, #eff5fc 58%, #edf4fb 100%);
   background: var(--oplot-dna-canvas-gradient);
+}
+
+html[data-theme="dark"] .oplot-body {
+  --oplot-dna-canvas-gradient:
+    radial-gradient(ellipse 54% 46% at -8% 61%, rgba(67, 113, 184, .19), transparent 70%),
+    radial-gradient(ellipse 43% 35% at 12% 71%, rgba(107, 80, 180, .13), transparent 72%),
+    radial-gradient(ellipse 52% 46% at 108% 60%, rgba(46, 137, 151, .16), transparent 70%),
+    radial-gradient(circle at 50% -8%, rgba(73, 105, 154, .08), transparent 39%),
+    linear-gradient(180deg, #050d18 0%, #071321 56%, #06111e 100%);
 }
 
 .oplot-body:not(.oplot-home) .oplot-page {
@@ -84,7 +99,8 @@
 .oplot-duty-schedule,
 .oplot-mpr,
 .oplot-dtc,
-.oplot-sup-admin {
+.oplot-sup-admin,
+.oplot-current-week {
   --primary: var(--oplot-dna-blue);
   --accent-primary: var(--oplot-dna-blue);
   --bg-card: var(--oplot-dna-panel);
@@ -226,6 +242,24 @@ html[data-theme="light"] .oplot-home-assistant {
       rgba(150, 174, 201, .48) 48%,
       rgba(121, 104, 186, .43)) border-box;
   box-shadow: inset 0 1px 0 #fff, 0 15px 38px rgba(38, 64, 94, .10), 0 0 16px rgba(71, 127, 190, .08);
+}
+
+/* A visible but restrained ambient gradient, derived from the same shared
+ * navy/blue/violet/cyan DNA instead of the older bright neon background. */
+html[data-theme="dark"] .oplot-home .oplot-page {
+  background:
+    radial-gradient(ellipse 49% 35% at -5% 57%, rgba(54, 111, 188, .24), transparent 70%),
+    radial-gradient(ellipse 39% 29% at 12% 66%, rgba(101, 73, 190, .18), transparent 72%),
+    radial-gradient(ellipse 48% 36% at 105% 56%, rgba(33, 146, 160, .22), transparent 70%),
+    var(--oplot-dna-canvas-gradient);
+}
+
+html[data-theme="light"] .oplot-home .oplot-page {
+  background:
+    radial-gradient(ellipse 48% 35% at -5% 57%, rgba(73, 126, 194, .13), transparent 70%),
+    radial-gradient(ellipse 38% 29% at 12% 66%, rgba(116, 97, 184, .09), transparent 72%),
+    radial-gradient(ellipse 48% 36% at 105% 56%, rgba(64, 151, 163, .11), transparent 70%),
+    var(--oplot-dna-canvas-gradient);
 }
 
 /* At 1536x864 keep the cards compact without shrinking the shared width. */
