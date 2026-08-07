@@ -1,0 +1,14 @@
+/* Release Monitor A/B performance trial.
+ * Only removes the shared CSS Grid wrapper around the no-sidebar Release Monitor.
+ * No table, visual, API, polling or business-JS behaviour is changed.
+ */
+body.oplot-body.oplot-release .oplot-shell,
+body.oplot-body.oplot-release .oplot-shell--no-sidebar {
+  display: block;
+  grid-template-columns: none;
+}
+
+body.oplot-body.oplot-release .oplot-shell__main {
+  display: block;
+  min-width: 0;
+}
