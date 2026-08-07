@@ -1,0 +1,62 @@
+/* Current Week header aligned with the Document Template Center page-header language. */
+.oplot-current-week .oplot-current-week__hero {
+  position: relative;
+  min-height: 96px;
+  margin: 0 auto 1rem;
+  padding: 17px 22px;
+  overflow: hidden;
+  border: 1px solid var(--oplot-dna-line);
+  border-radius: var(--oplot-radius-lg);
+  background: var(--oplot-dna-panel-gradient-strong);
+  box-shadow: var(--oplot-dna-shadow-soft);
+  text-align: left;
+}
+
+.oplot-current-week .oplot-current-week__hero::after {
+  position: absolute;
+  right: 10%;
+  bottom: 0;
+  left: 10%;
+  height: 1px;
+  content: "";
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--oplot-dna-blue) 55%, var(--oplot-dna-cyan)),
+    transparent
+  );
+  box-shadow: 0 0 10px var(--oplot-dna-glow-blue);
+}
+
+.oplot-current-week__hero-pretitle {
+  margin: 0 0 6px;
+  color: color-mix(in srgb, var(--oplot-dna-blue) 72%, var(--oplot-dna-cyan));
+  font-size: .72rem;
+  font-weight: 800;
+  letter-spacing: .06em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.oplot-current-week .oplot-current-week__hero h1 {
+  margin: 0;
+  color: var(--oplot-text);
+  font-size: clamp(2rem, 2.4vw, 2.55rem);
+  font-weight: 700;
+  letter-spacing: -.035em;
+  line-height: 1.08;
+  text-align: left;
+}
+
+.oplot-current-week .oplot-current-week__hero .meta {
+  margin: 6px 0 0;
+  color: var(--oplot-muted);
+  font-size: .95rem;
+  line-height: 1.45;
+  text-align: left;
+}
+
+.oplot-current-week .oplot-current-week__hero .meta strong {
+  color: var(--oplot-text);
+  font-weight: 700;
+}
