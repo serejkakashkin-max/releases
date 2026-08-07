@@ -43,6 +43,12 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
+      - name: Create isolated test config
+        shell: pwsh
+        run: |
+          [System.IO.File]::WriteAllText((Join-Path $PWD 'config.json'), '{}', [System.Text.UTF8Encoding]::new($false))
+          Write-Host "Created untracked synthetic config.json for test imports"
+
       - name: Strict unittest suite
         shell: pwsh
         run: python -W error::ResourceWarning -m unittest discover -s tests -v
