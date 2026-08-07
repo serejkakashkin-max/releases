@@ -11,12 +11,15 @@
 <link rel="stylesheet" href="{{ public_url_for('static', filename='css/oplot_current_week.css') }}">
 {% endblock %}
 
+{% block topbar_utilities %}
+<a class="btn btn-outline-secondary" href="{{ public_url_for('dashboard.release_monitor_page') }}">
+  <span aria-hidden="true">←</span>
+  <span>К блоку релизов</span>
+</a>
+{% endblock %}
+
 {% block content %}
 <div class="oplot-current-week__root">
-  <div class="oplot-current-week__local-nav">
-    <a class="oplot-current-week__nav-pill" href="{{ public_url_for('dashboard.release_monitor_page') }}">← Блок релизов</a>
-  </div>
-
   {% if current_week_error %}
   <section class="oplot-current-week__error" role="alert">
     <strong>Не удалось загрузить страницу</strong>
@@ -155,7 +158,7 @@
     </div>
   </section>
 
-  <footer class="oplot-current-week__footer footer">Отчет сформирован: {{ report_data.generated_at }}</footer>
+  <footer class="oplot-current-week__footer">Отчет сформирован: {{ report_data.generated_at }}</footer>
   {% endif %}
 </div>
 {% endblock %}
