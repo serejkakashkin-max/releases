@@ -1,0 +1,8 @@
+/*
+ * Release Monitor performance trial: isolate the cost of the shared sticky topbar.
+ * Scope is intentionally limited to the Release Monitor page. No DOM, JS, API,
+ * polling, filtering, modal or business-logic behaviour is changed.
+ */
+body.oplot-body.oplot-release .oplot-topbar {
+  position: static;
+}
