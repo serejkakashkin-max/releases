@@ -1,0 +1,126 @@
+name: Oplot Legacy Cleanup Audit
+
+on:
+  push:
+    branches:
+      - agent/oplot-legacy-cleanup
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Inventory references
+        shell: pwsh
+        run: |
+          @'
+          from __future__ import annotations
+
+          import subprocess
+          from pathlib import Path
+
+          ROOT = Path.cwd()
+          tracked = subprocess.check_output(["git", "ls-files"], text=True, encoding="utf-8").splitlines()
+          tracked = [p.replace("\\", "/") for p in tracked]
+
+          candidate_prefixes = ("static/css/", "static/js/", "templates/")
+          candidates = [p for p in tracked if p.startswith(candidate_prefixes)]
+          candidates = [p for p in candidates if not p.startswith("VA/schedule_manager/")]
+
+          text_exts = {
+              ".py", ".html", ".jinja", ".jinja2", ".js", ".css", ".json", ".md",
+              ".txt", ".yml", ".yaml", ".toml", ".ini", ".cfg", ".ps1", ".bat",
+          }
+
+          corpus: dict[str, str] = {}
+          for rel in tracked:
+              if rel.startswith(".git/"):
+                  continue
+              path = ROOT / rel
+              if path.suffix.lower() not in text_exts:
+                  continue
+              try:
+                  corpus[rel] = path.read_text(encoding="utf-8", errors="ignore")
+              except OSError:
+                  pass
+
+          def needles_for(rel: str) -> list[str]:
+              p = Path(rel)
+              needles = {rel, "/" + rel, p.name}
+              if rel.startswith("static/"):
+                  static_rel = rel[len("static/"):]
+                  needles.update({static_rel, "/static/" + static_rel})
+              if rel.startswith("templates/"):
+                  template_rel = rel[len("templates/"):]
+                  needles.update({template_rel, "templates/" + template_rel})
+              return sorted((n for n in needles if len(n) >= 4), key=len, reverse=True)
+
+          zero_refs: list[str] = []
+          test_only: list[tuple[str, list[str]]] = []
+          production_refs: list[tuple[str, list[str]]] = []
+
+          for candidate in candidates:
+              hits: list[str] = []
+              needles = needles_for(candidate)
+              for rel, text in corpus.items():
+                  if rel == candidate:
+                      continue
+                  if any(needle in text for needle in needles):
+                      hits.append(rel)
+              hits = sorted(set(hits))
+              prod = [h for h in hits if not (h.startswith("tests/") or h.startswith("docs/") or h.startswith(".github/"))]
+              if not hits:
+                  zero_refs.append(candidate)
+              elif not prod:
+                  test_only.append((candidate, hits))
+              else:
+                  production_refs.append((candidate, prod))
+
+          print("=== ZERO REFERENCES ===")
+          for item in zero_refs:
+              print(item)
+          print(f"ZERO_COUNT={len(zero_refs)}")
+
+          print("\n=== TEST/DOCS/CI ONLY REFERENCES ===")
+          for item, hits in test_only:
+              print(item)
+              for hit in hits:
+                  print(f"  <- {hit}")
+          print(f"TEST_ONLY_COUNT={len(test_only)}")
+
+          print("\n=== INVENTORY COUNTS ===")
+          print(f"CANDIDATES={len(candidates)}")
+          print(f"WITH_PRODUCTION_REFS={len(production_refs)}")
+
+          print("\n=== LEGACY-NAMED FILES ===")
+          legacy_words = ("legacy", "old", "backup", "bak", "bootstrap", "base_styles", "style", "script")
+          for candidate in candidates:
+              low = candidate.lower()
+              if any(word in low for word in legacy_words):
+                  hits = []
+                  for rel, text in corpus.items():
+                      if rel == candidate:
+                          continue
+                      if any(needle in text for needle in needles_for(candidate)):
+                          hits.append(rel)
+                  print(candidate)
+                  for hit in sorted(set(hits)):
+                      print(f"  <- {hit}")
+          '@ | Set-Content -Path legacy_cleanup_audit.py -Encoding UTF8
+          python legacy_cleanup_audit.py
+          Remove-Item legacy_cleanup_audit.py
+
+      - name: Confirm audit workflow only changed branch
+        shell: pwsh
+        run: |
+          git status --short
+          git diff --check origin/main...HEAD
