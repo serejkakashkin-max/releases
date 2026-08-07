@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="ru" data-theme="light" data-bs-theme="light">
-{% set release_framework_trial = request.endpoint == 'dashboard.release_monitor_page' %}
+{% set release_legacy_shell_trial = request.endpoint == 'dashboard.release_monitor_page' %}
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -9,19 +9,76 @@
   <link rel="icon" type="image/svg+xml" href="{{ public_url_for('static', filename='img/oplot-favicon.svg') }}">
   <title>{% block title %}{{ oplot_page_title|default('Oplot') }} — Oplot{% endblock %}</title>
   <script src="{{ public_url_for('static', filename='js/oplot-theme.js') }}"></script>
-  {% if release_framework_trial %}
+  {% if release_legacy_shell_trial %}
   <link rel="stylesheet" href="{{ public_url_for('static', filename='css/bootstrap.min.css') }}">
   {% else %}
   <link rel="stylesheet" href="{{ public_url_for('static', filename='vendor/tabler/1.4.0/tabler.min.css') }}">
-  {% endif %}
   <link rel="stylesheet" href="{{ public_url_for('static', filename='css/oplot.css') }}">
   <link rel="stylesheet" href="{{ public_url_for('static', filename='css/oplot_topbar_back.css') }}">
+  {% endif %}
   {% block styles %}{% endblock %}
+  {% if not release_legacy_shell_trial %}
   <link rel="stylesheet" href="{{ public_url_for('static', filename='css/oplot_stage9_dna.css') }}">
   <link rel="stylesheet" href="{{ public_url_for('static', filename='css/oplot_stage9_refinement.css') }}">
   <link rel="stylesheet" href="{{ public_url_for('static', filename='css/oplot_stage9_duty.css') }}">
-  {% if release_framework_trial %}
-  <style>.oplot-topbar__brand::after{content:" · B5 TEST";font-size:.62rem;font-weight:700;letter-spacing:.04em;opacity:.58}</style>
+  {% else %}
+  <style>
+    :root {
+      --oplot-surface: #ffffff;
+      --oplot-surface-muted: #f8f9fa;
+      --oplot-border: #dee2e6;
+      --oplot-text: #212529;
+      --oplot-muted: #6c757d;
+      --oplot-primary: #0d6efd;
+      --oplot-danger: #dc3545;
+      --oplot-warning: #ffc107;
+      --oplot-focus: rgba(13, 110, 253, .22);
+    }
+    html[data-theme="dark"] {
+      --oplot-surface: #21262d;
+      --oplot-surface-muted: #2d333b;
+      --oplot-border: #30363d;
+      --oplot-text: #c9d1d9;
+      --oplot-muted: #8b949e;
+      --oplot-primary: #58a6ff;
+      --oplot-danger: #f85149;
+      --oplot-warning: #d29922;
+      --oplot-focus: rgba(88, 166, 255, .22);
+    }
+    body.oplot-release {
+      margin: 0;
+      background: #ffffff;
+      color: var(--oplot-text);
+    }
+    html[data-theme="dark"] body.oplot-release { background: #1a1d23; }
+    body.oplot-release .oplot-topbar,
+    body.oplot-release .oplot-page-header { display: none !important; }
+    body.oplot-release .oplot-shell,
+    body.oplot-release .oplot-shell__main,
+    body.oplot-release .oplot-page,
+    body.oplot-release .oplot-page__container {
+      display: block !important;
+      width: auto !important;
+      min-width: 0 !important;
+      max-width: none !important;
+      min-height: 0 !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      background: transparent !important;
+      box-shadow: none !important;
+      border: 0 !important;
+    }
+    .oplot-legacy-shell-trial-badge {
+      box-sizing: border-box;
+      width: 100%;
+      padding: 6px 12px;
+      font: 700 11px/1.2 system-ui, sans-serif;
+      letter-spacing: .08em;
+      text-align: center;
+      color: #fff;
+      background: #6f42c1;
+    }
+  </style>
   {% endif %}
 </head>
 {% set shell_mode = oplot_shell_mode|default('app') %}
@@ -29,6 +86,7 @@
 {% set show_page_header = oplot_show_page_header|default(true) %}
 {% set show_breadcrumbs = oplot_show_breadcrumbs|default(true) %}
 <body class="oplot-body oplot-shell-mode-{{ shell_mode }} oplot-topbar-variant-{{ oplot_topbar_variant|default('default') }} {% block body_class %}{% endblock %}">
+  {% if release_legacy_shell_trial %}<div class="oplot-legacy-shell-trial-badge">LEGACY SHELL TEST — OPLOT/TABLER/STAGE 9 CSS OFF</div>{% endif %}
   {% if shell_mode == 'app' %}
     <div class="oplot-shell{% if not show_sidebar %} oplot-shell--no-sidebar{% endif %}">
       {% if show_sidebar %}{% include 'layouts/_oplot_sidebar.html' %}{% endif %}
