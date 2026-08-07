@@ -11,6 +11,7 @@ from tests._support import PROJECT_ROOT, prepare_config_import
 
 prepare_config_import()
 
+from routes.current_week_ui_routes import install_current_week_ui
 from routes.dashboard_routes import dashboard_bp
 from services.release_report_service import ReleaseReportService
 
@@ -54,6 +55,7 @@ def build_app() -> Flask:
     app = Flask(__name__)
     app.config.update(TESTING=True, SECRET_KEY="current-week-tests")
     app.register_blueprint(dashboard_bp)
+    install_current_week_ui(app)
     return app
 
 
@@ -96,11 +98,10 @@ class CurrentWeekHtmlContractTests(unittest.TestCase):
             self.service.generate_current_week_plan_report(items)
         )
 
-    def test_standalone_oplot_dna_and_exact_ten_column_geometry(self):
+    def test_saved_report_stays_self_contained_with_exact_ten_column_geometry(self):
         text = self._html([current_week_item("REL-1")])
         self.assertTrue(text.lower().startswith("<!doctype html>"))
         self.assertIn("--cw-bg: #030b1a", text)
-        self.assertIn("rgba(75, 151, 230, 0.38)", text)
         self.assertIn("data-theme-icon=\"sun\"", text)
         self.assertIn("data-theme-icon=\"moon\"", text)
         self.assertIn("localStorage.getItem('theme')", text)
@@ -139,16 +140,28 @@ class CurrentWeekRouteContractTests(unittest.TestCase):
         self.client = self.app.test_client()
         self.items = [current_week_item("REL-1")]
 
-    def test_live_get_headers_and_autonomous_body(self):
+    def test_live_get_headers_and_shared_oplot_shell(self):
         with mock.patch(
-            "routes.dashboard_routes.get_release_monitor_snapshot",
+            "routes.current_week_ui_routes.get_release_monitor_snapshot",
             return_value={"items": self.items},
         ):
             response = self.client.get("/dashboard/release-monitor/current-week")
         self.assertEqual(200, response.status_code)
         self.assertEqual("text/html; charset=utf-8", response.headers["Content-Type"])
         self.assertIn("no-store", response.headers["Cache-Control"])
-        self.assertNotIn("/static/", response.get_data(as_text=True))
+        text = response.get_data(as_text=True)
+        self.assertIn("oplot-current-week", text)
+        self.assertIn("css/oplot.css", text)
+        self.assertIn("css/oplot_stage9_dna.css", text)
+        self.assertIn("css/oplot_stage9_refinement.css", text)
+        self.assertIn("css/oplot_current_week.css", text)
+        self.assertIn("js/oplot-theme.js", text)
+        self.assertIn("js/oplot_current_week.js", text)
+        self.assertIn("oplot-topbar", text)
+        self.assertIn("Релизы текущей недели", text)
+        thead = re.search(r"<thead>(.*?)</thead>", text, re.S)
+        self.assertIsNotNone(thead)
+        self.assertEqual(10, len(re.findall(r"<th(?:\s|>)", thead.group(1))))
 
     def test_current_and_legacy_post_save_only_mocked_report(self):
         for path in (
