@@ -1,0 +1,162 @@
+{% extends 'layouts/oplot_base.html' %}
+{% set oplot_show_sidebar = false %}
+{% set oplot_topbar_variant = 'core' %}
+{% set oplot_show_breadcrumbs = false %}
+{% set oplot_show_page_header = false %}
+{% set oplot_page_title = 'Релизы текущей недели' %}
+
+{% block body_class %}oplot-current-week{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ public_url_for('static', filename='css/oplot_current_week.css') }}">
+<link rel="stylesheet" href="{{ public_url_for('static', filename='css/oplot_current_week_header.css') }}">
+{% endblock %}
+
+{% block topbar_utilities %}
+{% include 'document_templates/_topbar_back.html' %}
+{% endblock %}
+
+{% block content %}
+<div class="oplot-current-week__root">
+  {% if current_week_error %}
+  <section class="oplot-current-week__error" role="alert">
+    <strong>Не удалось загрузить страницу</strong>
+    <span>{{ current_week_error }}</span>
+  </section>
+  {% elif report_data %}
+  {% set stats = report_data.statistics %}
+
+  <section class="oplot-current-week__hero hero">
+    <div class="oplot-current-week__hero-pretitle">ОПЕРАЦИОННЫЙ КОНТРОЛЬ</div>
+    <h1>Релизы текущей недели</h1>
+    <p class="meta">Период: <strong>{{ report_data.period.label }}</strong>. План и актуальный статус релизов недели.</p>
+  </section>
+
+  <section class="summary-grid" aria-label="Сводка недели">
+    <article class="summary-card">
+      <button type="button" class="summary-card-button" data-filter-type="summary" data-filter-value="all">
+        <h3>Предстоящие релизы</h3>
+        <span class="value">{{ stats.get('upcoming', stats.total - stats.installed) }}</span>
+      </button>
+    </article>
+    <article class="summary-card">
+      <button type="button" class="summary-card-button" data-filter-type="summary" data-filter-value="all_with_final">
+        <h3>Всего релизов недели</h3>
+        <span class="value">{{ stats.total }}</span>
+      </button>
+    </article>
+    <article class="summary-card">
+      <button type="button" class="summary-card-button" data-filter-type="summary" data-filter-value="installed">
+        <h3>Установлен на ПРОМ</h3>
+        <span class="value">{{ stats.installed }}</span>
+      </button>
+    </article>
+    <article class="summary-card">
+      <button type="button" class="summary-card-button" data-filter-type="summary" data-filter-value="reroll">
+        <h3>Перераскатки</h3>
+        <span class="value">{{ stats.rerolls }}</span>
+      </button>
+    </article>
+    <article class="summary-card">
+      <button type="button" class="summary-card-button" data-filter-type="summary" data-filter-value="hotfix">
+        <h3>Хотфиксы</h3>
+        <span class="value">{{ stats.hotfixes }}</span>
+      </button>
+    </article>
+  </section>
+
+  <section class="detail-grid">
+    <article class="mini-card">
+      <h4>По системам</h4>
+      {% if stats.systems %}
+      <ul class="counter-list">
+        {% for name, count in stats.systems.items() %}
+          {% if loop.index <= 8 %}
+          <li>
+            <button type="button" class="counter-filter" data-filter-type="system" data-filter-value="{{ name }}">
+              <span class="counter-filter-label">{{ name }}</span><strong>{{ count }}</strong>
+            </button>
+          </li>
+          {% endif %}
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="oplot-current-week__empty">Нет данных</p>
+      {% endif %}
+    </article>
+
+    <article class="mini-card">
+      <h4>По статусам</h4>
+      {% if stats.statuses %}
+      <ul class="counter-list">
+        {% for name, count in stats.statuses.items() %}
+          {% if loop.index <= 8 %}
+          <li>
+            <button type="button" class="counter-filter" data-filter-type="status" data-filter-value="{{ name }}">
+              <span class="counter-filter-label">{{ name }}</span><strong>{{ count }}</strong>
+            </button>
+          </li>
+          {% endif %}
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="oplot-current-week__empty">Нет данных</p>
+      {% endif %}
+    </article>
+  </section>
+
+  <section class="table-card">
+    <div class="table-card-head">
+      <div>
+        <h3>Список релизов недели</h3>
+        <p class="hint">По умолчанию показаны предстоящие релизы. Установленные на ПРОМ остаются в мониторинге и открываются переключателем.</p>
+      </div>
+    </div>
+
+    <div class="report-toolbar">
+      <div class="report-filter-state">Фильтр: <strong id="activeFilterLabel">не выбран</strong></div>
+      <div class="toolbar-actions">
+        <label class="final-toggle">
+          <input type="checkbox" id="showFinalRows">
+          <span>Показать установленные на ПРОМ ({{ stats.get('hidden_by_default', stats.installed) }})</span>
+        </label>
+        <button type="button" class="refresh-page-btn" id="currentWeekRefresh">Обновить</button>
+        <button type="button" class="clear-filter-btn" id="clearReportFilter" hidden>Сбросить фильтр</button>
+      </div>
+    </div>
+
+    <div class="week-table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>№</th>
+            <th>Название</th>
+            <th>№ ЗНИ</th>
+            <th>ID релиза</th>
+            <th>ID РОВ</th>
+            <th>Сборка</th>
+            <th>Тип</th>
+            <th>Дата начала</th>
+            <th>Дата окончания</th>
+            <th>Система</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if rows_html %}
+            {{ rows_html | safe }}
+          {% else %}
+            <tr><td colspan="10">На текущую неделю релизы не найдены.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer class="oplot-current-week__footer">Отчет сформирован: {{ report_data.generated_at }}</footer>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script defer src="{{ public_url_for('static', filename='js/oplot_current_week.js') }}"></script>
+{% endblock %}

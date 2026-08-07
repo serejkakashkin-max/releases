@@ -50,6 +50,17 @@
     syncThemeControls();
   }
 
+  function promoteDutyTrashButton() {
+    var mount = document.getElementById("oplotDutyTrashMount");
+    var button = document.getElementById("trashBtn");
+    if (!mount || !button || button.dataset.oplotTopbarPromoted === "true") {
+      return;
+    }
+    button.dataset.oplotTopbarPromoted = "true";
+    button.classList.add("oplot-duty-topbar-trash");
+    mount.appendChild(button);
+  }
+
   function showToast(message, kind) {
     var region = document.getElementById("oplot-toast-region");
     if (!region || !message) {
@@ -105,6 +116,7 @@
   function initOplotComponents(container) {
     var target = container || document;
     initThemeControls(target);
+    promoteDutyTrashButton();
     initModalFocus(target);
     window.OplotComponentInitializers.forEach(function (initializer) {
       initializer(target);

@@ -1,0 +1,416 @@
+/*
+ * Oplot Stage 9 — refined visual DNA.
+ *
+ * This layer is intentionally presentation-only and is loaded after every
+ * page-specific stylesheet. It calibrates the shared Oplot palette without
+ * changing routes, DOM hooks, payloads, or JavaScript behaviour.
+ * VA Schedule Manager does not use layouts/oplot_base.html and therefore is
+ * intentionally outside this visual layer.
+ */
+
+:root {
+  --oplot-bg: #f3f7fc;
+  --oplot-surface: #fbfdff;
+  --oplot-surface-muted: #edf3fa;
+  --oplot-text: #17263a;
+  --oplot-muted: #65758a;
+  --oplot-border: #ccd9e8;
+  --oplot-primary: #3d78bd;
+  --oplot-primary-soft: #e4eef9;
+  --oplot-focus: rgba(61, 120, 189, .28);
+  --oplot-shadow-sm: 0 8px 24px rgba(33, 57, 86, .07);
+  --oplot-shadow-lg: 0 20px 56px rgba(33, 57, 86, .11);
+
+  --oplot-dna-canvas: #f1f6fc;
+  --oplot-dna-canvas-gradient:
+    radial-gradient(ellipse 42% 48% at -5% 67%, rgba(97, 123, 176, .10), transparent 72%),
+    radial-gradient(ellipse 40% 46% at 105% 61%, rgba(72, 144, 158, .08), transparent 72%),
+    radial-gradient(circle at 50% -5%, rgba(72, 112, 169, .08), transparent 38%),
+    linear-gradient(180deg, #f7faff 0%, #eff5fc 58%, #edf4fb 100%);
+  --oplot-dna-canvas-art: var(--oplot-dna-canvas-gradient);
+  --oplot-dna-panel: rgba(250, 252, 255, .90);
+  --oplot-dna-panel-strong: rgba(247, 250, 254, .97);
+  --oplot-dna-panel-soft: rgba(232, 239, 248, .84);
+  --oplot-dna-panel-gradient: linear-gradient(150deg, rgba(252, 254, 255, .96), rgba(235, 242, 250, .90));
+  --oplot-dna-panel-gradient-strong: linear-gradient(145deg, rgba(255, 255, 255, .98), rgba(229, 238, 248, .92));
+  --oplot-dna-line: rgba(92, 124, 161, .30);
+  --oplot-dna-line-strong: rgba(70, 112, 161, .50);
+  --oplot-dna-blue: #477fbe;
+  --oplot-dna-cyan: #4e9ba9;
+  --oplot-dna-violet: #7768ba;
+  --oplot-dna-glow-blue: rgba(71, 127, 190, .11);
+  --oplot-dna-glow-cyan: rgba(78, 155, 169, .09);
+  --oplot-dna-glow-violet: rgba(119, 104, 186, .08);
+  --oplot-dna-shadow: 0 18px 46px rgba(31, 58, 91, .12);
+  --oplot-dna-shadow-soft: 0 10px 28px rgba(31, 58, 91, .08);
+}
+
+html[data-theme="dark"] {
+  --oplot-bg: #07111e;
+  --oplot-surface: #0b1828;
+  --oplot-surface-muted: #102033;
+  --oplot-text: #edf3fb;
+  --oplot-muted: #9caabd;
+  --oplot-border: #223750;
+  --oplot-primary: #6d9fd8;
+  --oplot-primary-soft: #132a46;
+  --oplot-focus: rgba(109, 159, 216, .31);
+  --oplot-shadow-sm: 0 8px 24px rgba(0, 5, 15, .22);
+  --oplot-shadow-lg: 0 22px 62px rgba(0, 5, 15, .34);
+
+  --oplot-dna-canvas: #07111e;
+  --oplot-dna-canvas-gradient:
+    radial-gradient(ellipse 43% 52% at -7% 70%, rgba(70, 101, 157, .12), transparent 72%),
+    radial-gradient(ellipse 41% 49% at 107% 64%, rgba(53, 113, 139, .09), transparent 72%),
+    radial-gradient(circle at 50% -7%, rgba(66, 103, 158, .08), transparent 38%),
+    linear-gradient(180deg, #050d18 0%, #071321 56%, #06111e 100%);
+  --oplot-dna-canvas-art: var(--oplot-dna-canvas-gradient);
+  --oplot-dna-panel: rgba(10, 24, 40, .94);
+  --oplot-dna-panel-strong: rgba(12, 29, 48, .97);
+  --oplot-dna-panel-soft: rgba(16, 35, 56, .86);
+  --oplot-dna-panel-gradient:
+    radial-gradient(circle at 88% 0%, rgba(75, 129, 154, .035), transparent 34%),
+    linear-gradient(152deg, rgba(12, 28, 46, .97), rgba(7, 18, 31, .98));
+  --oplot-dna-panel-gradient-strong:
+    radial-gradient(circle at 14% 0%, rgba(91, 132, 184, .07), transparent 36%),
+    linear-gradient(145deg, rgba(14, 32, 52, .97), rgba(7, 18, 31, .99));
+  --oplot-dna-line: rgba(100, 139, 182, .26);
+  --oplot-dna-line-strong: rgba(111, 157, 207, .46);
+  --oplot-dna-blue: #6f9fd7;
+  --oplot-dna-cyan: #62a9b3;
+  --oplot-dna-violet: #8576c8;
+  --oplot-dna-glow-blue: rgba(93, 142, 199, .10);
+  --oplot-dna-glow-cyan: rgba(72, 147, 160, .075);
+  --oplot-dna-glow-violet: rgba(125, 105, 196, .07);
+  --oplot-dna-shadow: 0 20px 52px rgba(0, 5, 16, .34);
+  --oplot-dna-shadow-soft: 0 11px 30px rgba(0, 5, 16, .25);
+}
+
+/* Shared shell: calmer, darker chrome and lower glow intensity. */
+.oplot-body {
+  background: var(--oplot-dna-canvas-gradient);
+}
+
+.oplot-topbar--core {
+  border-bottom-color: color-mix(in srgb, var(--oplot-dna-line) 72%, transparent);
+  background: color-mix(in srgb, var(--oplot-dna-panel-strong) 83%, transparent);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--oplot-dna-line) 30%, transparent), 0 8px 28px rgba(0, 8, 20, .12);
+  -webkit-backdrop-filter: blur(18px) saturate(108%);
+  backdrop-filter: blur(18px) saturate(108%);
+}
+
+html[data-theme="light"] .oplot-topbar--core {
+  border-bottom-color: rgba(99, 127, 158, .18);
+  background: rgba(248, 251, 255, .82);
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, .76), 0 7px 24px rgba(38, 64, 94, .06);
+}
+
+.oplot-topbar__brand {
+  color: var(--oplot-dna-blue);
+}
+
+.oplot-theme-toggle {
+  border-color: color-mix(in srgb, var(--oplot-dna-line) 90%, transparent);
+  background: color-mix(in srgb, var(--oplot-dna-panel-soft) 58%, transparent);
+  box-shadow: none;
+}
+
+.oplot-theme-toggle:hover {
+  border-color: var(--oplot-dna-line-strong);
+  background: color-mix(in srgb, var(--oplot-dna-blue) 9%, var(--oplot-dna-panel-soft));
+}
+
+.oplot-page {
+  background: var(--oplot-dna-canvas-gradient);
+}
+
+.oplot-page-header {
+  border-color: var(--oplot-dna-line);
+  background: var(--oplot-dna-panel-gradient-strong);
+  box-shadow: var(--oplot-dna-shadow-soft);
+}
+
+/* Release Monitor has legacy-local surface variables. Rebind them to DNA. */
+html[data-theme="dark"] .oplot-release {
+  --release-panel-bg: var(--oplot-dna-panel-gradient-strong);
+  --release-surface-bg: var(--oplot-dna-panel-gradient);
+  --release-strip-bg: color-mix(in srgb, var(--oplot-dna-panel-soft) 66%, transparent);
+  --release-soft-bg: color-mix(in srgb, var(--oplot-dna-panel-soft) 38%, transparent);
+  --release-soft-bg-hover: color-mix(in srgb, var(--oplot-dna-blue) 10%, var(--oplot-dna-panel-soft));
+  --release-soft-border: var(--oplot-dna-line);
+  --release-shadow: rgba(0, 5, 16, .20);
+  --release-table-head-bg: color-mix(in srgb, var(--oplot-dna-panel-soft) 58%, transparent);
+  --release-row-line: color-mix(in srgb, var(--oplot-dna-line) 64%, transparent);
+  --release-row-hover-layer: color-mix(in srgb, var(--oplot-dna-blue) 5%, transparent);
+  --release-action-quick: #89add6;
+  --release-action-full: #78b798;
+  --release-action-report: #a79bd6;
+  background: var(--oplot-dna-canvas-gradient);
+}
+
+html[data-theme="light"] .oplot-release {
+  --release-panel-bg: var(--oplot-dna-panel-gradient-strong);
+  --release-surface-bg: var(--oplot-dna-panel-gradient);
+  --release-strip-bg: color-mix(in srgb, var(--oplot-dna-panel-soft) 72%, transparent);
+  --release-soft-bg: color-mix(in srgb, var(--oplot-dna-panel-soft) 42%, transparent);
+  --release-soft-bg-hover: color-mix(in srgb, var(--oplot-dna-blue) 8%, var(--oplot-dna-panel-soft));
+  --release-soft-border: var(--oplot-dna-line);
+  --release-shadow: rgba(31, 58, 91, .08);
+  --release-table-head-bg: color-mix(in srgb, var(--oplot-dna-panel-soft) 68%, transparent);
+  --release-row-line: color-mix(in srgb, var(--oplot-dna-line) 64%, transparent);
+  --release-row-hover-layer: color-mix(in srgb, var(--oplot-dna-blue) 4%, transparent);
+}
+
+/* SUP keeps its accepted hierarchy; only its palette follows the refined DNA. */
+.oplot-sup-admin button.primary {
+  border-color: var(--oplot-dna-blue);
+  background: color-mix(in srgb, var(--oplot-dna-blue) 88%, #274d79);
+}
+
+.oplot-sup-admin button:not(.primary):not(.danger):not(.link) {
+  border-color: var(--oplot-dna-line);
+  background: color-mix(in srgb, var(--oplot-dna-panel-soft) 78%, transparent);
+}
+
+/* Home: preserve the title glow, but use calmer ambient light. */
+html[data-theme="dark"] .oplot-home {
+  --oplot-bg: #07111e;
+  --oplot-surface: #0b1828;
+  --oplot-surface-muted: #102033;
+  --oplot-text: #edf3fb;
+  --oplot-muted: #9caabd;
+  --oplot-border: #223750;
+  --oplot-primary: #6d9fd8;
+  --oplot-primary-soft: #132a46;
+  --oplot-focus: rgba(109, 159, 216, .31);
+}
+
+html[data-theme="light"] .oplot-home {
+  --oplot-bg: #f1f6fc;
+  --oplot-surface: #fbfdff;
+  --oplot-surface-muted: #edf3fa;
+  --oplot-text: #17263a;
+  --oplot-muted: #65758a;
+  --oplot-border: #ccd9e8;
+  --oplot-primary: #3d78bd;
+  --oplot-primary-soft: #e4eef9;
+  --oplot-focus: rgba(61, 120, 189, .28);
+}
+
+.oplot-home .oplot-page {
+  background: var(--oplot-dna-canvas-gradient);
+}
+
+.oplot-home .oplot-page::before,
+.oplot-home .oplot-page::after {
+  width: 62vw;
+  height: 48vh;
+  min-height: 380px;
+  opacity: .25;
+  filter: blur(44px) saturate(88%);
+}
+
+.oplot-home .oplot-page::before {
+  top: 27%;
+  left: -37%;
+  background:
+    radial-gradient(ellipse 45% 27% at 79% 40%, rgba(76, 112, 167, .34), rgba(58, 85, 132, .10) 48%, transparent 74%),
+    radial-gradient(ellipse 48% 31% at 76% 68%, rgba(107, 88, 165, .24), rgba(60, 80, 126, .07) 56%, transparent 77%);
+}
+
+.oplot-home .oplot-page::after {
+  top: 26%;
+  right: -38%;
+  background:
+    radial-gradient(ellipse 45% 27% at 21% 40%, rgba(65, 133, 150, .28), rgba(53, 92, 126, .08) 48%, transparent 74%),
+    radial-gradient(ellipse 50% 32% at 26% 68%, rgba(63, 108, 158, .22), rgba(48, 103, 119, .06) 56%, transparent 77%);
+}
+
+html[data-theme="light"] .oplot-home .oplot-page::before,
+html[data-theme="light"] .oplot-home .oplot-page::after {
+  opacity: .16;
+  filter: blur(52px) saturate(92%);
+}
+
+.oplot-home-workspace {
+  width: min(100%, 1120px);
+  gap: 22px;
+  padding-top: 18px;
+}
+
+.oplot-home-title h1 {
+  text-shadow: 0 5px 26px color-mix(in srgb, var(--oplot-primary) 19%, transparent);
+}
+
+/* Deliberately retain the signature luminous underline under the home title. */
+.oplot-home-title h1::before {
+  opacity: .82;
+  background: radial-gradient(ellipse, color-mix(in srgb, var(--oplot-primary) 60%, transparent), transparent 68%);
+}
+
+.oplot-home-title h1::after {
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--oplot-primary) 54%, #dcecff), transparent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--oplot-primary) 62%, transparent), 0 0 28px color-mix(in srgb, var(--oplot-primary) 34%, transparent);
+}
+
+/* The menu row is intentionally the only architectural change in Stage 9A. */
+.oplot-home-actions {
+  width: min(100%, 980px);
+  margin-inline: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.oplot-home-action-grid {
+  gap: 14px;
+}
+
+.oplot-home-action-card {
+  min-height: 92px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 15px;
+  padding: 14px 17px;
+  border-color: color-mix(in srgb, var(--home-action-accent) 36%, var(--oplot-dna-line));
+  border-radius: 15px;
+  background:
+    linear-gradient(145deg,
+      color-mix(in srgb, var(--home-action-accent) 7%, var(--oplot-dna-panel-strong)),
+      color-mix(in srgb, var(--oplot-dna-panel) 96%, transparent));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent), 0 10px 28px rgba(0, 7, 20, .16);
+  text-align: left;
+}
+
+.oplot-home-action-card[data-home-action="release-monitor"] { --home-action-accent: #6f9fd7; }
+.oplot-home-action-card[data-home-action="duty-dashboard"] { --home-action-accent: #8576c8; }
+.oplot-home-action-card[data-home-action="mpr"] { --home-action-accent: #62a9b3; }
+
+.oplot-home-action-card:hover {
+  border-color: color-mix(in srgb, var(--home-action-accent) 62%, var(--oplot-dna-line));
+  background: color-mix(in srgb, var(--home-action-accent) 9%, var(--oplot-dna-panel-strong));
+  box-shadow: 0 12px 30px color-mix(in srgb, var(--home-action-accent) 12%, transparent);
+  transform: translateY(-1px);
+}
+
+.oplot-home-action-icon {
+  width: 58px;
+  height: 58px;
+  border-color: color-mix(in srgb, var(--home-action-accent) 48%, var(--oplot-dna-line));
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 34% 28%, color-mix(in srgb, #fff 14%, transparent), transparent 33%),
+    color-mix(in srgb, var(--home-action-accent) 18%, var(--oplot-dna-panel-soft));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 10%, transparent), 0 0 15px color-mix(in srgb, var(--home-action-accent) 13%, transparent);
+}
+
+.oplot-home-action-svg {
+  width: 36px;
+  height: 36px;
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--home-action-accent) 24%, transparent));
+}
+
+.oplot-home-action-label {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.oplot-home-action-card strong {
+  font-size: .98rem;
+  font-weight: 690;
+}
+
+.oplot-home-action-arrow {
+  color: color-mix(in srgb, var(--home-action-accent) 72%, var(--oplot-muted));
+  font-size: 1.2rem;
+}
+
+.oplot-home-assistant {
+  border-color: color-mix(in srgb, var(--oplot-dna-line-strong) 70%, var(--oplot-dna-line));
+  background: var(--oplot-dna-panel-gradient-strong);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent), var(--oplot-dna-shadow), 0 0 26px var(--oplot-dna-glow-blue);
+}
+
+.oplot-home .chat-widget.embedded .chat-messages {
+  border-color: var(--oplot-dna-line);
+  background: var(--oplot-dna-panel-gradient);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent), var(--oplot-dna-shadow-soft);
+}
+
+.oplot-home .chat-widget.embedded .chat-suggestion-btn {
+  border-color: var(--oplot-dna-line);
+  background: color-mix(in srgb, var(--oplot-dna-panel-soft) 64%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent);
+}
+
+.oplot-home .chat-widget.embedded .chat-suggestion-btn:hover {
+  border-color: var(--oplot-dna-line-strong);
+  color: var(--oplot-primary);
+  background: color-mix(in srgb, var(--oplot-dna-blue) 8%, var(--oplot-dna-panel-soft));
+  box-shadow: 0 8px 20px var(--oplot-dna-glow-blue);
+}
+
+.oplot-home .chat-widget.embedded .chat-input {
+  border-color: var(--oplot-dna-line);
+  background: color-mix(in srgb, var(--oplot-dna-panel-strong) 76%, transparent);
+  box-shadow: inset 0 1px 8px rgba(0, 0, 0, .10);
+}
+
+.oplot-home .chat-widget.embedded .chat-send-btn {
+  border-color: color-mix(in srgb, var(--oplot-dna-blue) 52%, var(--oplot-dna-line));
+  background: linear-gradient(145deg, #557fb5, #3f6fa9 62%, #355f94);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16), 0 9px 24px rgba(36, 78, 128, .25), 0 0 17px rgba(83, 128, 184, .13);
+}
+
+.oplot-home-utility-chip {
+  border-color: var(--oplot-dna-line);
+  background: color-mix(in srgb, var(--oplot-dna-panel-soft) 58%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent), 0 6px 18px rgba(0, 7, 20, .11);
+}
+
+.oplot-home-utility-chip:hover {
+  border-color: var(--oplot-dna-line-strong);
+  background: color-mix(in srgb, var(--oplot-dna-blue) 8%, var(--oplot-dna-panel-soft));
+  box-shadow: 0 8px 20px var(--oplot-dna-glow-blue);
+}
+
+.oplot-home-utility-chip--version {
+  border-color: color-mix(in srgb, var(--oplot-dna-blue) 48%, var(--oplot-dna-line));
+  background: linear-gradient(145deg, #527bac, #3c6699);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), 0 7px 20px rgba(35, 72, 113, .23);
+}
+
+html[data-theme="light"] .oplot-home-action-card {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--home-action-accent) 5%, #fff), rgba(247, 250, 254, .94));
+  box-shadow: inset 0 1px 0 #fff, 0 9px 24px rgba(41, 68, 98, .08);
+}
+
+html[data-theme="light"] .oplot-home-action-icon {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--home-action-accent) 15%, #eef5fc), #f7faff);
+  box-shadow: inset 0 1px 0 #fff, 0 5px 14px rgba(44, 75, 111, .08);
+}
+
+html[data-theme="light"] .oplot-home-assistant,
+html[data-theme="light"] .oplot-home .chat-widget.embedded .chat-messages {
+  border-color: var(--oplot-dna-line);
+  background: var(--oplot-dna-panel-gradient-strong);
+  box-shadow: inset 0 1px 0 #fff, var(--oplot-dna-shadow-soft);
+}
+
+@media (max-height: 900px) and (min-width: 1180px) {
+  .oplot-home-action-card { min-height: 82px; gap: 12px; padding-block: 11px; }
+  .oplot-home-action-icon { width: 50px; height: 50px; }
+  .oplot-home-action-svg { width: 31px; height: 31px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oplot-home-action-card:hover { transform: none; }
+}

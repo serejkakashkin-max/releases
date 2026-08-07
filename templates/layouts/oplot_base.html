@@ -10,7 +10,11 @@
   <script src="{{ public_url_for('static', filename='js/oplot-theme.js') }}"></script>
   <link rel="stylesheet" href="{{ public_url_for('static', filename='vendor/tabler/1.4.0/tabler.min.css') }}">
   <link rel="stylesheet" href="{{ public_url_for('static', filename='css/oplot.css') }}">
+  <link rel="stylesheet" href="{{ public_url_for('static', filename='css/oplot_topbar_back.css') }}">
   {% block styles %}{% endblock %}
+  <link rel="stylesheet" href="{{ public_url_for('static', filename='css/oplot_stage9_dna.css') }}">
+  <link rel="stylesheet" href="{{ public_url_for('static', filename='css/oplot_stage9_refinement.css') }}">
+  <link rel="stylesheet" href="{{ public_url_for('static', filename='css/oplot_stage9_duty.css') }}">
 </head>
 {% set shell_mode = oplot_shell_mode|default('app') %}
 {% set show_sidebar = oplot_show_sidebar|default(true) %}
