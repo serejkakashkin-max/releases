@@ -1,7 +1,22 @@
 .oplot-current-week {
+  --cw-panel: var(--oplot-dna-panel-gradient);
+  --cw-panel-strong: var(--oplot-dna-panel-strong);
+  --cw-soft: color-mix(in srgb, var(--oplot-dna-blue) 6%, var(--oplot-dna-panel-soft));
+  --cw-soft-hover: color-mix(in srgb, var(--oplot-dna-blue) 11%, var(--oplot-dna-panel-soft));
+  --cw-border: var(--oplot-dna-line);
+  --cw-border-strong: var(--oplot-dna-line-strong);
+  --cw-text: var(--oplot-text);
+  --cw-muted: var(--oplot-muted);
+  --cw-blue: var(--oplot-dna-blue);
+  --cw-green: var(--oplot-success);
+  --cw-amber: var(--oplot-warning);
+  --cw-red: var(--oplot-danger);
+  --cw-shadow: rgba(0, 6, 22, .24);
+  --cw-table-head: color-mix(in srgb, var(--oplot-dna-panel-soft) 88%, var(--oplot-dna-panel-strong));
   min-width: 0;
-  color: var(--oplot-text);
+  color: var(--cw-text);
   background: var(--oplot-dna-canvas-gradient);
+  font-size: 16px;
 }
 
 .oplot-current-week .oplot-page {
@@ -10,311 +25,457 @@
   background: transparent;
 }
 
+/* Preserve the original Current Week canvas geometry inside the shared shell. */
 .oplot-current-week .oplot-page__container {
-  width: min(100%, 1520px);
-  max-width: 1520px;
-  padding-top: 22px;
+  width: min(calc(100% - 36px), 1500px);
+  max-width: 1500px;
+  padding-top: 18px;
   padding-bottom: 30px;
 }
 
 .oplot-current-week__root {
-  display: grid;
   min-width: 0;
-  gap: 14px;
 }
 
-.oplot-current-week__hero,
-.oplot-current-week__metric,
-.oplot-current-week__panel,
-.oplot-current-week__table-panel,
-.oplot-current-week__error {
-  border: 1px solid var(--oplot-dna-line);
-  background: var(--oplot-dna-panel-gradient);
-  box-shadow: var(--oplot-dna-shadow-soft);
-}
-
-.oplot-current-week__hero {
+.oplot-current-week__local-nav {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  padding: 20px 24px;
-  border-radius: 14px;
-  background:
-    linear-gradient(var(--oplot-dna-panel-strong), var(--oplot-dna-panel-strong)) padding-box,
-    linear-gradient(120deg,
-      color-mix(in srgb, var(--oplot-dna-blue) 60%, var(--oplot-dna-line)),
-      var(--oplot-dna-line) 48%,
-      color-mix(in srgb, var(--oplot-dna-violet) 44%, var(--oplot-dna-line))) border-box;
-  border-color: transparent;
+  justify-content: flex-start;
+  gap: .75rem;
+  margin-bottom: .9rem;
 }
 
-.oplot-current-week__hero-copy { min-width: 0; }
-.oplot-current-week__eyebrow {
-  display: block;
-  margin-bottom: 5px;
-  color: var(--oplot-dna-blue);
-  font-size: .69rem;
-  font-weight: 820;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-}
-
-.oplot-current-week__hero h1 {
-  margin: 0;
-  font-size: clamp(1.7rem, 2.7vw, 2.35rem);
-  font-weight: 850;
-  line-height: 1.08;
-}
-
-.oplot-current-week__hero p {
-  margin: 7px 0 0;
-  color: var(--oplot-muted);
+.oplot-current-week__nav-pill,
+.oplot-current-week .refresh-page-btn,
+.oplot-current-week .clear-filter-btn {
+  min-height: 40px;
+  border: 1px solid var(--cw-border);
+  border-radius: 999px;
+  background: var(--cw-soft);
+  color: var(--cw-text);
+  padding: .55rem .85rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .45rem;
+  font: inherit;
   font-size: .9rem;
+  font-weight: 800;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform .16s ease, background .16s ease, border-color .16s ease, color .16s ease;
 }
 
-.oplot-current-week__hero p strong { color: var(--oplot-text); }
-.oplot-current-week__back { flex: 0 0 auto; }
+.oplot-current-week__nav-pill:hover,
+.oplot-current-week .clear-filter-btn:hover {
+  color: var(--cw-blue);
+  background: var(--cw-soft-hover);
+  border-color: var(--cw-border-strong);
+  transform: translateY(-1px);
+}
 
-.oplot-current-week__summary {
+.oplot-current-week .refresh-page-btn {
+  background: color-mix(in srgb, var(--cw-blue) 12%, var(--cw-panel-strong));
+  color: var(--cw-blue);
+  border-color: color-mix(in srgb, var(--cw-blue) 38%, var(--cw-border));
+}
+
+.oplot-current-week .refresh-page-btn:hover,
+.oplot-current-week .refresh-page-btn:focus-visible {
+  background: color-mix(in srgb, var(--cw-blue) 17%, var(--cw-panel-strong));
+  border-color: var(--cw-border-strong);
+  transform: translateY(-1px);
+}
+
+.oplot-current-week .clear-filter-btn[hidden] { display: none; }
+
+/* Original centered hero composition. */
+.oplot-current-week .hero {
+  position: relative;
+  background: var(--cw-panel);
+  border: 1px solid var(--cw-border);
+  border-radius: 22px;
+  padding: 1rem 1.25rem 1.15rem;
+  box-shadow: 0 20px 44px var(--cw-shadow);
+  margin: 0 auto 1rem;
+  overflow: hidden;
+}
+
+.oplot-current-week .hero-main {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .75rem;
+  flex-wrap: wrap;
+  text-align: center;
+}
+
+.oplot-current-week .hero-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--oplot-dna-blue) 92%, #4b75a4),
+    color-mix(in srgb, var(--oplot-dna-cyan) 80%, var(--oplot-dna-blue)));
+  font-size: 1.05rem;
+  box-shadow: 0 14px 28px var(--oplot-dna-glow-blue);
+}
+
+.oplot-current-week .hero h1 {
+  margin: 0;
+  font-size: clamp(1.55rem, 2.6vw, 2.15rem);
+  font-weight: 850;
+  letter-spacing: 0;
+  line-height: 1.1;
+}
+
+.oplot-current-week .hero .meta {
+  margin-top: .55rem;
+  color: var(--cw-muted);
+  font-size: .92rem;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.oplot-current-week .hero .meta strong { color: var(--cw-text); }
+
+/* Restore the original five-card summary structure and dimensions. */
+.oplot-current-week .summary-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 11px;
+  gap: .7rem;
+  margin-bottom: 1rem;
 }
 
-.oplot-current-week__metric {
-  display: grid;
-  min-width: 0;
-  min-height: 92px;
-  align-content: space-between;
-  gap: 10px;
-  padding: 15px 16px;
-  border-radius: 12px;
-  color: var(--oplot-text);
+.oplot-current-week .summary-card,
+.oplot-current-week .mini-card,
+.oplot-current-week .table-card {
+  background: var(--cw-panel-strong);
+  border: 1px solid var(--cw-border);
+  box-shadow: 0 18px 42px var(--cw-shadow);
+}
+
+.oplot-current-week .summary-card {
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.oplot-current-week .summary-card-button {
+  width: 100%;
+  min-height: 98px;
+  border: 0;
+  background: transparent;
+  padding: 1rem;
   text-align: left;
+  font: inherit;
+  color: inherit;
   cursor: pointer;
-  transition: border-color .16s ease, background .16s ease, box-shadow .16s ease, transform .16s ease;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: .7rem;
+  transition: background .16s ease;
 }
 
-.oplot-current-week__metric:hover,
-.oplot-current-week__metric:focus-visible {
-  border-color: var(--oplot-dna-line-strong);
-  background: color-mix(in srgb, var(--oplot-dna-blue) 7%, var(--oplot-dna-panel-strong));
-  box-shadow: 0 10px 26px var(--oplot-dna-glow-blue);
+.oplot-current-week .summary-card-button:hover,
+.oplot-current-week .summary-card-button:focus-visible {
+  background: var(--cw-soft-hover);
 }
 
-.oplot-current-week__metric span {
-  color: var(--oplot-muted);
-  font-size: .75rem;
-  font-weight: 720;
+.oplot-current-week .summary-card h3 {
+  margin: 0;
+  color: var(--cw-muted);
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  line-height: 1.35;
 }
 
-.oplot-current-week__metric strong {
-  color: var(--oplot-text);
-  font-size: 1.8rem;
-  font-weight: 850;
+.oplot-current-week .summary-card .value {
+  color: var(--cw-text);
+  font-size: clamp(1.7rem, 3vw, 2.35rem);
+  font-weight: 900;
   line-height: 1;
 }
 
-.oplot-current-week__breakdown {
+/* Restore original detail cards/list architecture. */
+.oplot-current-week .detail-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 11px;
+  gap: .85rem;
+  margin-bottom: 1rem;
 }
 
-.oplot-current-week__panel {
-  min-width: 0;
-  padding: 15px 17px;
-  border-radius: 12px;
+.oplot-current-week .mini-card {
+  border-radius: 18px;
+  padding: 1rem;
 }
 
-.oplot-current-week__panel h2 {
-  margin: 0 0 11px;
-  font-size: .96rem;
-  font-weight: 820;
+.oplot-current-week .mini-card h4 {
+  margin: 0 0 .85rem;
+  font-size: 1rem;
+  font-weight: 850;
 }
 
-.oplot-current-week__chips {
+.oplot-current-week .counter-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
   display: flex;
-  min-width: 0;
+  gap: .5rem;
   flex-wrap: wrap;
-  gap: 7px;
 }
 
-.oplot-current-week__chip {
+.oplot-current-week .counter-list li { min-width: 0; }
+
+.oplot-current-week .counter-filter,
+.oplot-current-week .counter-list li > span {
+  border: 1px solid var(--cw-border);
+  border-radius: 999px;
+  background: var(--cw-soft);
+  color: var(--cw-text);
+  min-height: 34px;
+  padding: .38rem .62rem;
   display: inline-flex;
-  min-width: 0;
-  min-height: 32px;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border: 1px solid var(--oplot-dna-line);
-  border-radius: 9px;
-  color: var(--oplot-text);
-  background: color-mix(in srgb, var(--oplot-dna-panel-soft) 70%, transparent);
+  gap: .55rem;
   font: inherit;
-  font-size: .76rem;
-  font-weight: 700;
+  font-size: .83rem;
+  font-weight: 750;
+  text-align: left;
   cursor: pointer;
 }
 
-.oplot-current-week__chip:hover,
-.oplot-current-week__chip:focus-visible {
-  border-color: var(--oplot-dna-line-strong);
-  color: var(--oplot-dna-blue);
-  background: color-mix(in srgb, var(--oplot-dna-blue) 8%, var(--oplot-dna-panel-soft));
+.oplot-current-week .counter-list li > span { cursor: default; }
+
+.oplot-current-week .counter-filter:hover,
+.oplot-current-week .counter-filter:focus-visible {
+  color: var(--cw-blue);
+  background: var(--cw-soft-hover);
+  border-color: var(--cw-border-strong);
 }
 
-.oplot-current-week__chip .counter-filter-label {
+.oplot-current-week .counter-filter-label {
   min-width: 0;
-  max-width: 250px;
+  max-width: 260px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.oplot-current-week__chip strong { color: var(--oplot-dna-blue); }
-.oplot-current-week__empty { color: var(--oplot-muted); font-size: .82rem; }
+.oplot-current-week .counter-list strong {
+  color: var(--cw-blue);
+  font-size: .9rem;
+}
 
-.oplot-current-week__table-panel {
-  min-width: 0;
-  padding: 16px;
-  border-radius: 14px;
+.oplot-current-week__empty {
+  margin: 0;
+  color: var(--cw-muted);
+  font-size: .9rem;
+}
+
+/* Restore original table-card, toolbar and table geometry. */
+.oplot-current-week .table-card {
+  border-radius: 22px;
+  padding: 1rem;
   overflow: hidden;
 }
 
-.oplot-current-week__table-head {
+.oplot-current-week .table-card-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 18px;
-  margin-bottom: 12px;
+  gap: 1rem;
+  margin-bottom: .85rem;
+  flex-wrap: wrap;
 }
 
-.oplot-current-week__table-head h2 {
+.oplot-current-week .table-card h3 {
   margin: 0;
-  font-size: 1.18rem;
-  font-weight: 830;
+  font-size: 1.25rem;
+  font-weight: 850;
 }
 
-.oplot-current-week__table-head p {
-  max-width: 930px;
-  margin: 4px 0 0;
-  color: var(--oplot-muted);
-  font-size: .82rem;
+.oplot-current-week .hint {
+  margin: .35rem 0 0;
+  color: var(--cw-muted);
+  font-size: .88rem;
   line-height: 1.45;
+  max-width: 900px;
 }
 
-.oplot-current-week__toolbar {
+.oplot-current-week .report-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-  padding: 9px 10px;
-  border: 1px solid var(--oplot-dna-line);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--oplot-dna-panel-soft) 62%, transparent);
+  gap: .65rem;
+  margin-bottom: .85rem;
+  flex-wrap: wrap;
+  padding: .55rem;
+  border: 1px solid var(--cw-border);
+  border-radius: 16px;
+  background: var(--cw-soft);
 }
 
-.oplot-current-week__toolbar .report-filter-state {
-  color: var(--oplot-muted);
-  font-size: .8rem;
+.oplot-current-week .toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
 }
 
-.oplot-current-week__toolbar .report-filter-state strong { color: var(--oplot-text); }
-.oplot-current-week__toolbar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.oplot-current-week .report-filter-state {
+  color: var(--cw-muted);
+  font-size: .88rem;
+  font-weight: 650;
+}
 
-.oplot-current-week__final-toggle {
+.oplot-current-week .report-filter-state strong { color: var(--cw-text); }
+
+.oplot-current-week .final-toggle {
+  min-height: 40px;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  min-height: 35px;
-  padding: 6px 10px;
-  border: 1px solid var(--oplot-dna-line);
-  border-radius: 9px;
-  color: var(--oplot-muted);
-  background: color-mix(in srgb, var(--oplot-dna-panel-strong) 70%, transparent);
-  font-size: .77rem;
-  font-weight: 680;
+  gap: .5rem;
+  border: 1px solid var(--cw-border);
+  border-radius: 999px;
+  background: var(--cw-panel-strong);
+  color: var(--cw-text);
+  padding: .48rem .75rem;
+  font: inherit;
+  font-size: .88rem;
+  font-weight: 800;
   cursor: pointer;
 }
 
-.oplot-current-week__final-toggle input { accent-color: var(--oplot-dna-blue); }
+.oplot-current-week .final-toggle input { accent-color: var(--cw-blue); }
 
-.oplot-current-week__table-scroll {
-  width: 100%;
-  max-width: 100%;
+.oplot-current-week .week-table-scroll {
   overflow-x: auto;
-  border: 1px solid color-mix(in srgb, var(--oplot-dna-line) 78%, transparent);
-  border-radius: 10px;
+  border: 1px solid var(--cw-border);
+  border-radius: 16px;
+  background: var(--cw-soft);
 }
 
 .oplot-current-week table {
   width: 100%;
-  min-width: 1240px;
   border-collapse: collapse;
-  background: color-mix(in srgb, var(--oplot-dna-panel-strong) 88%, transparent);
+  table-layout: fixed;
+  min-width: 1180px;
+  color: var(--cw-text);
+  font-size: 1rem;
 }
 
 .oplot-current-week th,
 .oplot-current-week td {
-  padding: 9px 10px;
-  border-bottom: 1px solid color-mix(in srgb, var(--oplot-dna-line) 62%, transparent);
-  color: var(--oplot-text);
-  font-size: .76rem;
-  line-height: 1.35;
+  padding: .72rem .62rem;
   text-align: left;
+  border-bottom: 1px solid var(--cw-border);
   vertical-align: top;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
 }
 
 .oplot-current-week th {
   position: sticky;
   top: 0;
-  z-index: 1;
-  color: var(--oplot-muted);
-  background: color-mix(in srgb, var(--oplot-dna-panel-soft) 82%, var(--oplot-dna-panel-strong));
-  font-size: .69rem;
-  font-weight: 820;
-  letter-spacing: .02em;
-  white-space: nowrap;
+  z-index: 2;
+  background: var(--cw-table-head);
+  color: var(--cw-muted);
+  font-size: .7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  line-height: 1.25;
+  backdrop-filter: blur(10px);
 }
 
-.oplot-current-week tbody tr { transition: background .14s ease; }
-.oplot-current-week tbody tr:hover { background: color-mix(in srgb, var(--oplot-dna-blue) 5%, transparent); }
-.oplot-current-week tbody tr[hidden] { display: none; }
-.oplot-current-week td a { color: var(--oplot-dna-blue); }
-.oplot-current-week td a:hover { color: color-mix(in srgb, var(--oplot-dna-blue) 78%, var(--oplot-text)); }
+.oplot-current-week th:nth-child(1),
+.oplot-current-week td:nth-child(1) { width: 50px; }
+.oplot-current-week th:nth-child(2),
+.oplot-current-week td:nth-child(2) { width: 25%; }
+.oplot-current-week th:nth-child(3),
+.oplot-current-week td:nth-child(3) { width: 7.5%; }
+.oplot-current-week th:nth-child(4),
+.oplot-current-week td:nth-child(4),
+.oplot-current-week th:nth-child(5),
+.oplot-current-week td:nth-child(5) { width: 9%; }
+.oplot-current-week th:nth-child(6),
+.oplot-current-week td:nth-child(6) { width: 9%; }
+.oplot-current-week th:nth-child(7),
+.oplot-current-week td:nth-child(7) { width: 8%; }
+.oplot-current-week th:nth-child(8),
+.oplot-current-week td:nth-child(8),
+.oplot-current-week th:nth-child(9),
+.oplot-current-week td:nth-child(9) { width: 8%; }
+.oplot-current-week th:nth-child(10),
+.oplot-current-week td:nth-child(10) { width: 8.5%; }
 
-.oplot-current-week tr.state-cancelled { background: color-mix(in srgb, var(--oplot-danger) 7%, transparent); }
-.oplot-current-week tr.state-overdue { background: color-mix(in srgb, var(--oplot-danger) 9%, transparent); }
-.oplot-current-week tr.state-notes { background: color-mix(in srgb, var(--oplot-warning) 9%, transparent); }
-.oplot-current-week tr.state-final { background: color-mix(in srgb, var(--oplot-success) 7%, transparent); }
+.oplot-current-week tbody tr {
+  transition: background .16s ease, box-shadow .16s ease;
+}
+
+.oplot-current-week tbody tr:hover {
+  box-shadow: inset 3px 0 0 var(--cw-blue);
+}
+
+.oplot-current-week tbody tr:hover td {
+  background-image: linear-gradient(var(--cw-soft-hover), var(--cw-soft-hover));
+}
+
+.oplot-current-week tbody tr:last-child td { border-bottom: 0; }
+.oplot-current-week tbody tr[hidden] { display: none; }
+
+.oplot-current-week .monitor-link,
+.oplot-current-week td a {
+  color: var(--cw-blue);
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.oplot-current-week .monitor-link:hover,
+.oplot-current-week td a:hover { text-decoration: underline; }
+
+.oplot-current-week tr.state-cancelled { background: color-mix(in srgb, var(--cw-red) 8%, transparent); }
+.oplot-current-week tr.state-overdue { background: color-mix(in srgb, var(--cw-red) 12%, transparent); }
+.oplot-current-week tr.state-notes { background: color-mix(in srgb, var(--cw-amber) 14%, transparent); }
+.oplot-current-week tr.state-final { background: color-mix(in srgb, var(--cw-green) 9%, transparent); }
 .oplot-current-week tr.rollout-notes-success,
-.oplot-current-week tr.rollout-notes-success td { background: color-mix(in srgb, var(--oplot-success) 7%, transparent); }
+.oplot-current-week tr.rollout-notes-success td { background: color-mix(in srgb, var(--cw-green) 10%, transparent); }
 .oplot-current-week tr.rollout-notes-warning,
-.oplot-current-week tr.rollout-notes-warning td { background: color-mix(in srgb, var(--oplot-warning) 10%, transparent); }
+.oplot-current-week tr.rollout-notes-warning td { background: color-mix(in srgb, var(--cw-amber) 16%, transparent); }
 .oplot-current-week tr.rollout-notes-danger,
-.oplot-current-week tr.rollout-notes-danger td { background: color-mix(in srgb, var(--oplot-danger) 8%, transparent); }
+.oplot-current-week tr.rollout-notes-danger td { background: color-mix(in srgb, var(--cw-red) 12%, transparent); }
 .oplot-current-week tr.rollout-notes-none,
 .oplot-current-week tr.rollout-notes-none td { background: transparent; }
 
+.oplot-current-week .footer,
 .oplot-current-week__footer {
-  padding: 1px 0 0;
-  color: var(--oplot-muted);
-  font-size: .74rem;
+  color: var(--cw-muted);
   text-align: center;
+  padding: .9rem 0 .25rem;
+  font-size: .85rem;
 }
 
 .oplot-current-week__error {
   display: grid;
   gap: 5px;
   padding: 18px 20px;
-  border-color: color-mix(in srgb, var(--oplot-danger) 45%, var(--oplot-dna-line));
-  border-radius: 12px;
-  color: var(--oplot-text);
+  border: 1px solid color-mix(in srgb, var(--cw-red) 45%, var(--cw-border));
+  border-radius: 18px;
+  color: var(--cw-text);
+  background: var(--cw-panel-strong);
+  box-shadow: 0 18px 42px var(--cw-shadow);
 }
-.oplot-current-week__error span { color: var(--oplot-muted); }
+
+.oplot-current-week__error span { color: var(--cw-muted); }
 
 .oplot-current-week button:focus-visible,
 .oplot-current-week a:focus-visible,
@@ -323,26 +484,34 @@
   outline-offset: 2px;
 }
 
-html[data-theme="light"] .oplot-current-week__metric,
-html[data-theme="light"] .oplot-current-week__panel,
-html[data-theme="light"] .oplot-current-week__table-panel {
-  box-shadow: 0 9px 24px rgba(33, 57, 86, .07);
+html[data-theme="light"] .oplot-current-week {
+  --cw-shadow: rgba(22, 67, 116, .12);
 }
 
-@media (max-width: 1180px) {
-  .oplot-current-week__summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .oplot-current-week__breakdown { grid-template-columns: 1fr; }
+@media (max-width: 1100px) {
+  .oplot-current-week .summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .oplot-current-week .detail-grid { grid-template-columns: 1fr; }
 }
 
-@media (max-width: 760px) {
-  .oplot-current-week__hero,
-  .oplot-current-week__table-head,
-  .oplot-current-week__toolbar { align-items: stretch; flex-direction: column; }
-  .oplot-current-week__summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .oplot-current-week__toolbar-actions { align-items: stretch; flex-direction: column; }
+@media (max-width: 720px) {
+  .oplot-current-week .oplot-page__container { width: min(calc(100% - 24px), 1500px); }
+  .oplot-current-week .table-card-head,
+  .oplot-current-week .report-toolbar { align-items: stretch; flex-direction: column; }
+  .oplot-current-week .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .oplot-current-week .summary-card-button { min-height: 86px; padding: .85rem; }
+  .oplot-current-week .hero { border-radius: 18px; }
+  .oplot-current-week .toolbar-actions { align-items: stretch; flex-direction: column; }
+  .oplot-current-week__nav-pill,
+  .oplot-current-week .refresh-page-btn,
+  .oplot-current-week .clear-filter-btn,
+  .oplot-current-week .final-toggle { width: 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .oplot-current-week__metric,
-  .oplot-current-week__chip { transition: none; }
+  .oplot-current-week__nav-pill,
+  .oplot-current-week .refresh-page-btn,
+  .oplot-current-week .clear-filter-btn,
+  .oplot-current-week .summary-card-button,
+  .oplot-current-week .counter-filter,
+  .oplot-current-week tbody tr { transition: none; }
 }
