@@ -26,13 +26,9 @@
   {% set stats = report_data.statistics %}
 
   <section class="oplot-current-week__hero hero">
-    <div class="hero-main">
-      <span class="hero-icon" aria-hidden="true">▣</span>
-      <h1>Релизы текущей недели</h1>
-    </div>
-    <div class="meta">
-      Период: <strong>{{ report_data.period.label }}</strong>
-    </div>
+    <div class="oplot-current-week__hero-pretitle">ОПЕРАЦИОННЫЙ КОНТРОЛЬ</div>
+    <h1>Релизы текущей недели</h1>
+    <p class="meta">Период: <strong>{{ report_data.period.label }}</strong>. План и актуальный статус релизов недели.</p>
   </section>
 
   <section class="summary-grid" aria-label="Сводка недели">
