@@ -53,7 +53,11 @@ def current_week_item(
 
 
 def build_app() -> Flask:
-    app = Flask(__name__)
+    app = Flask(
+        __name__,
+        template_folder=str(PROJECT_ROOT / "templates"),
+        static_folder=str(PROJECT_ROOT / "static"),
+    )
     app.config.update(TESTING=True, SECRET_KEY="current-week-tests")
     app.register_blueprint(dashboard_bp)
     install_current_week_ui(app)

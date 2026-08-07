@@ -1,0 +1,100 @@
+name: Oplot Final Audit
+
+on:
+  push:
+    branches:
+      - agent/oplot-stage9-final-audit
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  final-audit:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      PYTHONUTF8: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      OPLOT_FLASK_CONSOLE_VERBOSE: "0"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install Python dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip check
+
+      - name: Create isolated test runtime
+        shell: pwsh
+        run: |
+          [System.IO.File]::WriteAllText((Join-Path $PWD 'config.json'), '{}', [System.Text.UTF8Encoding]::new($false))
+          New-Item -ItemType Directory -Force -Path (Join-Path $PWD 'doc_templates') | Out-Null
+          Write-Host "Created untracked synthetic config.json and empty doc_templates root for clean-runner imports"
+
+      - name: Strict unittest suite
+        shell: pwsh
+        run: python -W error::ResourceWarning -m unittest discover -s tests -v
+
+      - name: Compile Python sources
+        shell: pwsh
+        run: python -m compileall .
+
+      - name: Verify vendored assets
+        shell: pwsh
+        run: python tools/verify_vendor_assets.py
+
+      - name: Check first-party JavaScript syntax
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem -Path static/js -Filter *.js -File -Recurse
+          if (-not $files) { throw "No first-party JavaScript files found" }
+          foreach ($file in $files) {
+            Write-Host "node --check $($file.FullName)"
+            node --check $file.FullName
+          }
+
+      - name: Verify protected paths are not changed
+        shell: pwsh
+        run: |
+          git fetch origin main --depth=1
+          $changed = @(git diff --name-only origin/main...HEAD)
+          $forbidden = @(
+            '^VA/schedule_manager/',
+            '^doc_templates/',
+            '^doc_templates_MPR/',
+            '^static/vendor/',
+            '^config\.json$',
+            '^\.env($|\.)'
+          )
+          foreach ($path in $changed) {
+            foreach ($pattern in $forbidden) {
+              if ($path -match $pattern) {
+                throw "Protected path changed during final audit: $path"
+              }
+            }
+          }
+          Write-Host "Protected path diff: OK"
+
+      - name: Diff whitespace check
+        shell: pwsh
+        run: git diff --check origin/main...HEAD

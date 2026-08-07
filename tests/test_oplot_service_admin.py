@@ -180,10 +180,14 @@ class SupShellContractTests(unittest.TestCase):
         self.assertIn("var(--oplot-dna-panel)", css)
         self.assertIn("prefers-reduced-motion", css)
         self.assertIn("overflow-x: hidden", css)
+        theme_scoped = re.compile(
+            r'^html\[data-theme="(?:light|dark)"\]\s+\.oplot-sup-admin(?:\b|\s|[.:#\[])'
+        )
         for line in css.splitlines():
             stripped = line.strip()
-            if stripped.endswith("{") and not stripped.startswith(
-                (".oplot-sup-admin", "@media", "@keyframes")
+            if stripped.endswith("{") and not (
+                stripped.startswith((".oplot-sup-admin", "@media", "@keyframes"))
+                or theme_scoped.match(stripped)
             ):
                 self.fail(f"Unscoped selector: {stripped}")
         self.assertNotRegex(
