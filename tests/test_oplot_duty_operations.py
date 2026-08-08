@@ -208,6 +208,13 @@ class DutyRouteSmokeTests(unittest.TestCase):
                     self.assertIn("oplot-topbar oplot-topbar--core", text)
                     self.assertIn(body_class, text)
                     self.assertEqual(1, len(re.findall(r"<h1\b", text)))
+                    self.assertIn("css/oplot_stage9_dna.css", text)
+                    self.assertIn("css/oplot_stage9_refinement.css", text)
+                    if path == "/dashboard":
+                        self.assertIn("css/oplot_stage9_duty.css", text)
+                    else:
+                        self.assertNotIn("css/oplot_stage9_duty.css", text)
+                    self.assertNotIn("css/oplot_stage9_home.css", text)
 
     def test_schedule_invalid_query_falls_back_without_mutation_controls(self):
         patches = self._patches()

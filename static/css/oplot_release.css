@@ -3643,19 +3643,11 @@ html[data-theme="light"] .oplot-release {
 .oplot-release .oplot-page {
     position: relative;
     isolation: isolate;
-    background:
-        radial-gradient(circle at 4% 26%, rgba(46, 116, 255, 0.18), transparent 34%),
-        radial-gradient(circle at 96% 30%, rgba(0, 201, 190, 0.13), transparent 30%),
-        radial-gradient(circle at 50% 5%, rgba(86, 70, 210, 0.09), transparent 27%),
-        linear-gradient(180deg, #061225, #030b19 58%, #020813);
+    background: transparent;
 }
 
 html[data-theme="light"] .oplot-release .oplot-page {
-    background:
-        radial-gradient(circle at 4% 26%, rgba(77, 134, 244, 0.12), transparent 35%),
-        radial-gradient(circle at 96% 30%, rgba(0, 190, 181, 0.10), transparent 31%),
-        radial-gradient(circle at 50% 5%, rgba(101, 83, 218, 0.07), transparent 28%),
-        linear-gradient(180deg, #edf6ff, #f7fbff 58%, #eef7ff);
+    background: transparent;
 }
 
 .oplot-release .oplot-page__container {
@@ -3670,10 +3662,9 @@ html[data-theme="light"] .oplot-release .oplot-page {
         radial-gradient(circle at 12% 0%, color-mix(in srgb, var(--oplot-primary) 14%, transparent), transparent 38%),
         var(--release-panel-bg);
     box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.05),
-        0 16px 42px var(--release-shadow),
-        0 0 28px color-mix(in srgb, var(--oplot-primary) 8%, transparent);
-    backdrop-filter: blur(16px) saturate(120%);
+        0 16px 42px var(--release-shadow);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
 }
 
 .oplot-release .oplot-page__pretitle {
@@ -3701,9 +3692,10 @@ html[data-theme="light"] .oplot-release .oplot-page {
     border-color: color-mix(in srgb, var(--oplot-primary) 35%, var(--release-soft-border));
     background:
         radial-gradient(circle at 50% -20%, rgba(74, 148, 255, 0.13), transparent 52%),
-        linear-gradient(145deg, color-mix(in srgb, var(--oplot-surface) 84%, transparent), color-mix(in srgb, var(--oplot-surface-muted) 72%, transparent));
-    box-shadow: 0 14px 38px var(--release-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.045);
-    backdrop-filter: blur(14px) saturate(120%);
+        var(--release-panel-bg);
+    box-shadow: 0 14px 38px var(--release-shadow);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
 }
 
 .oplot-release #releaseMonitorDutyScheduleBtn { --release-nav-accent: #48a9ff; }
@@ -3744,8 +3736,10 @@ html[data-theme="light"] .oplot-release .oplot-page {
 
 .oplot-release .release-monitor-section {
     border-color: color-mix(in srgb, var(--oplot-primary) 32%, var(--oplot-border));
-    box-shadow: 0 20px 52px var(--release-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.035);
-    backdrop-filter: blur(14px) saturate(115%);
+    background: var(--release-surface-bg);
+    box-shadow: 0 20px 52px var(--release-shadow);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
 }
 
 .oplot-release .release-summary-card {

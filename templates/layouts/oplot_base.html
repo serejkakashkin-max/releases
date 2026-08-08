@@ -1,3 +1,4 @@
+{% set stage9_profile = oplot_stage9_profile|default('data') %}
 <!doctype html>
 <html lang="ru" data-theme="light" data-bs-theme="light">
 <head>
@@ -13,8 +14,14 @@
   <link rel="stylesheet" href="{{ public_url_for('static', filename='css/oplot_topbar_back.css') }}">
   {% block styles %}{% endblock %}
   <link rel="stylesheet" href="{{ public_url_for('static', filename='css/oplot_stage9_dna.css') }}">
+  {% if stage9_profile == 'home' %}
+  <link rel="stylesheet" href="{{ public_url_for('static', filename='css/oplot_stage9_home.css') }}">
+  {% elif stage9_profile == 'data' %}
   <link rel="stylesheet" href="{{ public_url_for('static', filename='css/oplot_stage9_refinement.css') }}">
+  {% endif %}
+  {% if oplot_stage9_duty|default(false) %}
   <link rel="stylesheet" href="{{ public_url_for('static', filename='css/oplot_stage9_duty.css') }}">
+  {% endif %}
 </head>
 {% set shell_mode = oplot_shell_mode|default('app') %}
 {% set show_sidebar = oplot_show_sidebar|default(true) %}

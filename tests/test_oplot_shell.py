@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import unittest
 from html.parser import HTMLParser
 from pathlib import Path
@@ -141,6 +142,53 @@ class OplotLayoutTests(unittest.TestCase):
         self.assertIn('setAttribute("data-theme"', source)
         self.assertIn('setAttribute("data-bs-theme"', source)
         self.assertIn("oplot:themechange", source)
+
+    def test_stage9_assets_are_profiled_without_duplicates(self):
+        def render_profile(profile: str, *, duty: bool = False) -> str:
+            with self.app.test_request_context("/shell"):
+                return render_template(
+                    "oplot_shell_fixture.html",
+                    oplot_stage9_profile=profile,
+                    oplot_stage9_duty=duty,
+                )
+
+        expected = {
+            "data": ("oplot_stage9_dna.css", "oplot_stage9_refinement.css"),
+            "home": ("oplot_stage9_dna.css", "oplot_stage9_home.css"),
+            "none": ("oplot_stage9_dna.css",),
+        }
+        for profile, assets in expected.items():
+            with self.subTest(profile=profile):
+                text = render_profile(profile)
+                stage9_assets = re.findall(r"css/(oplot_stage9_[^\"?]+\.css)", text)
+                self.assertEqual(list(assets), stage9_assets)
+                self.assertEqual(len(stage9_assets), len(set(stage9_assets)))
+                self.assertNotIn("oplot_stage9_duty.css", stage9_assets)
+
+        duty_text = render_profile("data", duty=True)
+        duty_assets = re.findall(r"css/(oplot_stage9_[^\"?]+\.css)", duty_text)
+        self.assertEqual(
+            ["oplot_stage9_dna.css", "oplot_stage9_refinement.css", "oplot_stage9_duty.css"],
+            duty_assets,
+        )
+
+    def test_stage9_canvas_and_large_surface_performance_contract(self):
+        dna = (PROJECT_ROOT / "static" / "css" / "oplot_stage9_dna.css").read_text(encoding="utf-8")
+        home = (PROJECT_ROOT / "static" / "css" / "oplot_stage9_home.css").read_text(encoding="utf-8")
+        release = (PROJECT_ROOT / "static" / "css" / "oplot_release.css").read_text(encoding="utf-8")
+        self.assertIn(".oplot-body .oplot-shell", dna)
+        self.assertIn(".oplot-body .oplot-page", dna)
+        self.assertRegex(dna, r"\.oplot-body \.oplot-page\s*\{[^}]*background:\s*transparent")
+        self.assertNotIn(".oplot-body:not(.oplot-home) .oplot-page", dna)
+        self.assertIn("html[data-theme=\"dark\"] .oplot-body.oplot-home", home)
+        home_assistant_rules = re.findall(r"\.oplot-home-assistant\s*\{([^}]*)\}", home)
+        self.assertTrue(home_assistant_rules)
+        self.assertTrue(any("backdrop-filter: none" in rule for rule in home_assistant_rules))
+        self.assertRegex(release, r"\.oplot-release \.oplot-page\s*\{[^}]*background:\s*transparent")
+        for selector in (".oplot-release .oplot-page__header", ".oplot-release .oplot-release-menu", ".oplot-release .release-monitor-section"):
+            rules = re.findall(re.escape(selector) + r"\s*\{([^}]*)\}", release)
+            self.assertTrue(rules, selector)
+            self.assertTrue(any("backdrop-filter: none" in rule for rule in rules), selector)
 
 
 if __name__ == "__main__":

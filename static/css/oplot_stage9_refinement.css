@@ -1,94 +1,48 @@
 /*
- * Oplot Stage 9 visual refinement.
+ * Oplot Stage 9 data-page refinements.
  *
- * Presentation-only overrides loaded after oplot_stage9_dna.css.
- * Keeps all route/DOM/JS contracts intact and intentionally does not affect
- * VA Schedule Manager, which does not inherit layouts/oplot_base.html.
+ * Loaded only for data-heavy Oplot modules after shared DNA and page styles.
  */
 
-/* One shared palette contract for every page that uses the Oplot shell. */
-.oplot-body {
-  --oplot-bg: var(--oplot-dna-canvas);
-  --oplot-surface: var(--oplot-dna-panel);
-  --oplot-surface-muted: var(--oplot-dna-panel-soft);
-  --oplot-border: var(--oplot-dna-line);
-  --oplot-primary: var(--oplot-dna-blue);
-  --oplot-primary-soft: color-mix(in srgb, var(--oplot-dna-blue) 14%, var(--oplot-dna-panel-soft));
-  --primary: var(--oplot-dna-blue);
-  --accent-primary: var(--oplot-dna-blue);
-  --bg-card: var(--oplot-dna-panel);
-  --bg-secondary: var(--oplot-dna-panel-soft);
-  --border-color: var(--oplot-dna-line);
-  --oplot-dna-canvas-gradient:
-    radial-gradient(ellipse 54% 44% at -8% 61%, rgba(70, 112, 176, .11), transparent 70%),
-    radial-gradient(ellipse 42% 34% at 11% 70%, rgba(113, 91, 172, .075), transparent 72%),
-    radial-gradient(ellipse 52% 44% at 108% 60%, rgba(65, 143, 153, .09), transparent 70%),
-    radial-gradient(circle at 50% -7%, rgba(78, 111, 158, .07), transparent 38%),
-    linear-gradient(180deg, #f7faff 0%, #eff5fc 58%, #edf4fb 100%);
-  background: var(--oplot-dna-canvas-gradient);
+/* Release Monitor has legacy-local surface variables. Rebind them to DNA. */
+html[data-theme="dark"] .oplot-release {
+  --release-panel-bg: var(--oplot-dna-panel-gradient-strong);
+  --release-surface-bg: var(--oplot-dna-panel-gradient);
+  --release-strip-bg: color-mix(in srgb, var(--oplot-dna-panel-soft) 66%, transparent);
+  --release-soft-bg: color-mix(in srgb, var(--oplot-dna-panel-soft) 38%, transparent);
+  --release-soft-bg-hover: color-mix(in srgb, var(--oplot-dna-blue) 10%, var(--oplot-dna-panel-soft));
+  --release-soft-border: var(--oplot-dna-line);
+  --release-shadow: rgba(0, 5, 16, .20);
+  --release-table-head-bg: color-mix(in srgb, var(--oplot-dna-panel-soft) 58%, transparent);
+  --release-row-line: color-mix(in srgb, var(--oplot-dna-line) 64%, transparent);
+  --release-row-hover-layer: color-mix(in srgb, var(--oplot-dna-blue) 5%, transparent);
+  --release-action-quick: #89add6;
+  --release-action-full: #78b798;
+  --release-action-report: #a79bd6;
 }
 
-html[data-theme="dark"] .oplot-body {
-  --oplot-dna-canvas-gradient:
-    radial-gradient(ellipse 54% 46% at -8% 61%, rgba(67, 113, 184, .19), transparent 70%),
-    radial-gradient(ellipse 43% 35% at 12% 71%, rgba(107, 80, 180, .13), transparent 72%),
-    radial-gradient(ellipse 52% 46% at 108% 60%, rgba(46, 137, 151, .16), transparent 70%),
-    radial-gradient(circle at 50% -8%, rgba(73, 105, 154, .08), transparent 39%),
-    linear-gradient(180deg, #050d18 0%, #071321 56%, #06111e 100%);
+html[data-theme="light"] .oplot-release {
+  --release-panel-bg: var(--oplot-dna-panel-gradient-strong);
+  --release-surface-bg: var(--oplot-dna-panel-gradient);
+  --release-strip-bg: color-mix(in srgb, var(--oplot-dna-panel-soft) 72%, transparent);
+  --release-soft-bg: color-mix(in srgb, var(--oplot-dna-panel-soft) 42%, transparent);
+  --release-soft-bg-hover: color-mix(in srgb, var(--oplot-dna-blue) 8%, var(--oplot-dna-panel-soft));
+  --release-soft-border: var(--oplot-dna-line);
+  --release-shadow: rgba(31, 58, 91, .08);
+  --release-table-head-bg: color-mix(in srgb, var(--oplot-dna-panel-soft) 68%, transparent);
+  --release-row-line: color-mix(in srgb, var(--oplot-dna-line) 64%, transparent);
+  --release-row-hover-layer: color-mix(in srgb, var(--oplot-dna-blue) 4%, transparent);
 }
 
-.oplot-body:not(.oplot-home) .oplot-page {
-  background: var(--oplot-dna-canvas-gradient);
+/* SUP keeps its accepted hierarchy; only its palette follows the refined DNA. */
+.oplot-sup-admin button.primary {
+  border-color: var(--oplot-dna-blue);
+  background: color-mix(in srgb, var(--oplot-dna-blue) 88%, #274d79);
 }
 
-.oplot-body .oplot-page-header {
+.oplot-sup-admin button:not(.primary):not(.danger):not(.link) {
   border-color: var(--oplot-dna-line);
-  background: var(--oplot-dna-panel-gradient-strong);
-  box-shadow: var(--oplot-dna-shadow-soft);
-}
-
-/* Shared button language: same quieter blue as Home, not saturated Bootstrap blue. */
-.oplot-body .btn-primary {
-  border-color: color-mix(in srgb, var(--oplot-dna-blue) 58%, var(--oplot-dna-line));
-  background: linear-gradient(145deg,
-    color-mix(in srgb, var(--oplot-dna-blue) 86%, #55718f),
-    color-mix(in srgb, var(--oplot-dna-blue) 72%, #314f70));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), 0 7px 20px var(--oplot-dna-glow-blue);
-}
-
-.oplot-body .btn-primary:hover,
-.oplot-body .btn-primary:focus-visible {
-  border-color: color-mix(in srgb, var(--oplot-dna-blue) 76%, var(--oplot-dna-line));
-  background: linear-gradient(145deg,
-    color-mix(in srgb, var(--oplot-dna-blue) 92%, #5b7898),
-    color-mix(in srgb, var(--oplot-dna-blue) 79%, #365779));
-  box-shadow: 0 9px 24px color-mix(in srgb, var(--oplot-dna-blue) 14%, transparent);
-}
-
-.oplot-body .btn-outline-primary {
-  border-color: var(--oplot-dna-line-strong);
-  color: var(--oplot-dna-blue);
-  background: color-mix(in srgb, var(--oplot-dna-panel-soft) 56%, transparent);
-}
-
-.oplot-body .btn-outline-primary:hover,
-.oplot-body .btn-outline-primary:focus-visible {
-  border-color: color-mix(in srgb, var(--oplot-dna-blue) 66%, var(--oplot-dna-line));
-  color: var(--oplot-text);
-  background: color-mix(in srgb, var(--oplot-dna-blue) 9%, var(--oplot-dna-panel-soft));
-}
-
-.oplot-body .form-control,
-.oplot-body .form-select {
-  border-color: var(--oplot-dna-line);
-  color: var(--oplot-text);
-  background-color: color-mix(in srgb, var(--oplot-dna-panel-strong) 82%, transparent);
-}
-
-.oplot-body .form-control:focus,
-.oplot-body .form-select:focus {
-  border-color: var(--oplot-dna-line-strong);
-  box-shadow: 0 0 0 3px var(--oplot-focus);
+  background: color-mix(in srgb, var(--oplot-dna-panel-soft) 78%, transparent);
 }
 
 /* Rebind the remaining legacy surface vocabulary on data-heavy Oplot pages. */
@@ -134,162 +88,4 @@ html[data-theme="dark"] .oplot-body {
   font-size: 1.24rem;
   font-weight: 800;
   line-height: 1.1;
-}
-
-/* HOME ------------------------------------------------------------------ */
-
-/* The three navigation cards must occupy exactly the same visual width as
- * the assistant panel below them. */
-.oplot-home-actions,
-.oplot-home-assistant {
-  width: min(100%, 1080px);
-  margin-inline: auto;
-}
-
-.oplot-home-action-grid {
-  width: 100%;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-}
-
-/* Remove the old parent glass panel completely. This fixes the visible
- * rectangular slab behind the three cards in the light theme. */
-.oplot-home .oplot-home-actions,
-html[data-theme="light"] .oplot-home .oplot-home-actions,
-html[data-theme="dark"] .oplot-home .oplot-home-actions {
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-
-.oplot-home-action-card {
-  min-height: 88px;
-  gap: 15px;
-  padding: 13px 16px;
-  border: 1px solid transparent;
-  border-radius: 13px;
-  background:
-    linear-gradient(145deg,
-      color-mix(in srgb, var(--home-action-accent) 6%, var(--oplot-dna-panel-strong)),
-      color-mix(in srgb, var(--oplot-dna-panel) 96%, transparent)) padding-box,
-    linear-gradient(125deg,
-      color-mix(in srgb, var(--home-action-accent) 50%, var(--oplot-dna-line)),
-      color-mix(in srgb, var(--oplot-dna-line) 86%, transparent) 48%,
-      color-mix(in srgb, var(--home-action-accent) 30%, var(--oplot-dna-violet))) border-box;
-  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent), 0 9px 24px rgba(0, 7, 20, .14);
-}
-
-.oplot-home-action-card:hover {
-  border-color: transparent;
-  background:
-    linear-gradient(145deg,
-      color-mix(in srgb, var(--home-action-accent) 10%, var(--oplot-dna-panel-strong)),
-      color-mix(in srgb, var(--oplot-dna-panel) 97%, transparent)) padding-box,
-    linear-gradient(125deg,
-      color-mix(in srgb, var(--home-action-accent) 68%, var(--oplot-dna-line)),
-      color-mix(in srgb, var(--oplot-dna-line-strong) 88%, transparent) 50%,
-      color-mix(in srgb, var(--home-action-accent) 40%, var(--oplot-dna-violet))) border-box;
-  box-shadow: 0 11px 27px color-mix(in srgb, var(--home-action-accent) 11%, transparent);
-}
-
-.oplot-home-action-icon {
-  width: 56px;
-  height: 56px;
-  border-radius: 12px;
-}
-
-.oplot-home-action-svg {
-  width: 34px;
-  height: 34px;
-}
-
-.oplot-home-action-card strong {
-  font-size: .96rem;
-}
-
-/* The assistant is deliberately less pill-shaped than before. Its outline
- * follows the reference with a restrained blue -> neutral -> violet edge. */
-.oplot-home-assistant {
-  border: 1px solid transparent;
-  border-radius: 16px;
-  background:
-    var(--oplot-dna-panel-gradient-strong) padding-box,
-    linear-gradient(125deg,
-      color-mix(in srgb, var(--oplot-dna-blue) 64%, var(--oplot-dna-line)),
-      color-mix(in srgb, var(--oplot-dna-line) 82%, transparent) 47%,
-      color-mix(in srgb, var(--oplot-dna-violet) 52%, var(--oplot-dna-line))) border-box;
-  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent), 0 18px 48px rgba(0, 6, 18, .24), 0 0 20px var(--oplot-dna-glow-blue);
-}
-
-.oplot-home .chat-widget.embedded .chat-messages {
-  border-radius: 13px;
-}
-
-.oplot-home .chat-widget.embedded .chat-suggestion-btn,
-.oplot-home .chat-widget.embedded .chat-reset-btn,
-.oplot-home .chat-widget.embedded .chat-input {
-  border-radius: 11px;
-}
-
-.oplot-home .chat-widget.embedded .chat-send-btn {
-  border-radius: 12px;
-}
-
-html[data-theme="light"] .oplot-home-action-card {
-  border-color: transparent;
-  background:
-    linear-gradient(145deg,
-      color-mix(in srgb, var(--home-action-accent) 4%, #fff),
-      rgba(248, 251, 255, .96)) padding-box,
-    linear-gradient(125deg,
-      color-mix(in srgb, var(--home-action-accent) 40%, #b9cbe0),
-      rgba(177, 198, 221, .62) 48%,
-      color-mix(in srgb, var(--home-action-accent) 25%, #c9c2e6)) border-box;
-  box-shadow: inset 0 1px 0 #fff, 0 8px 22px rgba(41, 68, 98, .08);
-}
-
-html[data-theme="light"] .oplot-home-assistant {
-  border-color: transparent;
-  background:
-    var(--oplot-dna-panel-gradient-strong) padding-box,
-    linear-gradient(125deg,
-      rgba(83, 135, 193, .58),
-      rgba(150, 174, 201, .48) 48%,
-      rgba(121, 104, 186, .43)) border-box;
-  box-shadow: inset 0 1px 0 #fff, 0 15px 38px rgba(38, 64, 94, .10), 0 0 16px rgba(71, 127, 190, .08);
-}
-
-/* A visible but restrained ambient gradient, derived from the same shared
- * navy/blue/violet/cyan DNA instead of the older bright neon background. */
-html[data-theme="dark"] .oplot-home .oplot-page {
-  background:
-    radial-gradient(ellipse 49% 35% at -5% 57%, rgba(54, 111, 188, .24), transparent 70%),
-    radial-gradient(ellipse 39% 29% at 12% 66%, rgba(101, 73, 190, .18), transparent 72%),
-    radial-gradient(ellipse 48% 36% at 105% 56%, rgba(33, 146, 160, .22), transparent 70%),
-    var(--oplot-dna-canvas-gradient);
-}
-
-html[data-theme="light"] .oplot-home .oplot-page {
-  background:
-    radial-gradient(ellipse 48% 35% at -5% 57%, rgba(73, 126, 194, .13), transparent 70%),
-    radial-gradient(ellipse 38% 29% at 12% 66%, rgba(116, 97, 184, .09), transparent 72%),
-    radial-gradient(ellipse 48% 36% at 105% 56%, rgba(64, 151, 163, .11), transparent 70%),
-    var(--oplot-dna-canvas-gradient);
-}
-
-/* At 1536x864 keep the cards compact without shrinking the shared width. */
-@media (max-height: 900px) and (min-width: 1180px) {
-  .oplot-home-actions,
-  .oplot-home-assistant { width: min(100%, 1060px); }
-  .oplot-home-action-card { min-height: 80px; padding-block: 10px; }
-  .oplot-home-action-icon { width: 49px; height: 49px; }
-  .oplot-home-action-svg { width: 30px; height: 30px; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .oplot-home-action-card:hover { transform: none; }
 }
