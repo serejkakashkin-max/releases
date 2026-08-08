@@ -142,6 +142,24 @@ class OplotLayoutTests(unittest.TestCase):
         self.assertIn('setAttribute("data-theme"', source)
         self.assertIn('setAttribute("data-bs-theme"', source)
         self.assertIn("oplot:themechange", source)
+        self.assertIn('classList.add("oplot-theme-switching")', source)
+        self.assertIn('classList.remove("oplot-theme-switching")', source)
+        self.assertIn("requestAnimationFrame", source)
+        common_css = (PROJECT_ROOT / "static" / "css" / "oplot.css").read_text(encoding="utf-8")
+        self.assertIn("html.oplot-theme-switching .oplot-body *", common_css)
+        self.assertIn("transition: none !important", common_css)
+
+    def test_theme_toggle_relies_on_single_themechange_sync(self):
+        source = (PROJECT_ROOT / "static" / "js" / "oplot.js").read_text(encoding="utf-8")
+        click_handler = re.search(
+            r'button\.addEventListener\("click", function \(\) \{(.*?)\n\s*\}\);',
+            source,
+            re.S,
+        )
+        self.assertIsNotNone(click_handler)
+        self.assertIn("window.OplotTheme.toggle()", click_handler.group(1))
+        self.assertNotIn("syncThemeControls()", click_handler.group(1))
+        self.assertEqual(1, source.count('document.addEventListener("oplot:themechange", syncThemeControls)'))
 
     def test_stage9_assets_are_profiled_without_duplicates(self):
         def render_profile(profile: str, *, duty: bool = False) -> str:

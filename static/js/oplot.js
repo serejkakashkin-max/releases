@@ -43,7 +43,6 @@
       button.addEventListener("click", function () {
         if (window.OplotTheme) {
           window.OplotTheme.toggle();
-          syncThemeControls();
         }
       });
     });

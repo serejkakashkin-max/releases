@@ -255,6 +255,14 @@ html[data-theme="light"] .oplot-core-theme-toggle:hover { border-color: rgba(40,
 
 .oplot-body :where(a, button, input, select, textarea, [tabindex]):focus-visible { outline: 3px solid var(--oplot-focus); outline-offset: 2px; }
 
+/* Theme changes are atomic: avoid animating every data row over RDP. */
+html.oplot-theme-switching .oplot-body,
+html.oplot-theme-switching .oplot-body *,
+html.oplot-theme-switching .oplot-body *::before,
+html.oplot-theme-switching .oplot-body *::after {
+  transition: none !important;
+}
+
 @media (min-width: 1920px) {
   :root { --oplot-sidebar-width: 288px; }
   .oplot-page { padding-right: 48px; padding-left: 48px; }
