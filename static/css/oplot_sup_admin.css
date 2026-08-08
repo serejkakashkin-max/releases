@@ -1278,16 +1278,12 @@
   --input: color-mix(in srgb, var(--oplot-dna-panel-strong) 90%, transparent);
   --shadow: var(--oplot-dna-shadow);
   overflow-x: hidden;
-  background: var(--oplot-dna-canvas-art);
+  background: transparent;
 }
 
 .oplot-sup-admin[data-theme="light"] { color-scheme: light; }
 .oplot-sup-admin .oplot-page {
-  background:
-    radial-gradient(circle at 4% 24%, color-mix(in srgb, var(--oplot-dna-blue) 17%, transparent), transparent 34%),
-    radial-gradient(circle at 96% 30%, color-mix(in srgb, var(--oplot-dna-cyan) 13%, transparent), transparent 30%),
-    radial-gradient(circle at 50% 4%, color-mix(in srgb, var(--oplot-dna-violet) 9%, transparent), transparent 27%),
-    var(--oplot-dna-canvas);
+  background: transparent;
 }
 .oplot-sup-admin .oplot-page__container { max-width: 1480px; }
 .oplot-sup-admin .page { width: 100%; max-width: none; margin: 0; padding: 8px 0 32px; }

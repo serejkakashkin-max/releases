@@ -9,7 +9,7 @@
   --oplot-dtc-glow: color-mix(in srgb, var(--oplot-primary) 18%, transparent);
   --oplot-dtc-shadow: color-mix(in srgb, #000 32%, transparent);
   overflow-x: hidden;
-  background: var(--oplot-bg);
+  background: transparent;
 }
 
 html[data-theme="dark"] .oplot-dtc {
@@ -36,11 +36,7 @@ html[data-theme="dark"] .oplot-dtc {
 .oplot-dtc .oplot-page {
   position: relative;
   isolation: isolate;
-  background:
-    radial-gradient(circle at 4% 26%, rgba(46, 116, 255, .18), transparent 34%),
-    radial-gradient(circle at 96% 30%, rgba(0, 201, 190, .13), transparent 30%),
-    radial-gradient(circle at 50% 5%, rgba(86, 70, 210, .09), transparent 27%),
-    linear-gradient(180deg, #061225, #030b19 58%, #020813);
+  background: transparent;
 }
 .oplot-dtc .oplot-page__container { max-width: 1400px; }
 .oplot-dtc .oplot-page-header {
@@ -51,7 +47,6 @@ html[data-theme="dark"] .oplot-dtc {
   border-color: var(--oplot-dtc-line);
   background: var(--oplot-dtc-panel-strong);
   box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 7%, transparent), 0 16px 42px var(--oplot-dtc-shadow), 0 0 28px var(--oplot-dtc-glow);
-  backdrop-filter: blur(16px) saturate(120%);
 }
 .oplot-dtc .oplot-page-header::after { position: absolute; right: 10%; bottom: 0; left: 10%; height: 1px; content: ""; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--oplot-primary) 55%, var(--oplot-dtc-cyan)), transparent); box-shadow: 0 0 10px var(--oplot-dtc-glow); }
 .oplot-dtc .oplot-page-header h1 { overflow-wrap: anywhere; }
@@ -87,7 +82,7 @@ html[data-theme="dark"] .oplot-dtc {
 .oplot-dtc .oplot-dtc-success strong { color: var(--oplot-success); }
 .oplot-dtc .oplot-dtc-success span { color: var(--oplot-muted); }
 
-.oplot-dtc .oplot-dtc-filters { border-color: var(--oplot-dtc-line); background: var(--oplot-dtc-strip); box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent), 0 14px 34px var(--oplot-dtc-shadow); backdrop-filter: blur(14px) saturate(115%); }
+.oplot-dtc .oplot-dtc-filters { border-color: var(--oplot-dtc-line); background: var(--oplot-dtc-strip); box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent), 0 14px 34px var(--oplot-dtc-shadow); }
 .oplot-dtc .oplot-dtc-filters .card-body { padding: 16px 18px; }
 .oplot-dtc .oplot-dtc-filters .form-label { color: var(--oplot-muted); font-size: .72rem; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; }
 .oplot-dtc .oplot-dtc-filters .form-control,
@@ -103,7 +98,7 @@ html[data-theme="dark"] .oplot-dtc {
 .oplot-dtc .modal .form-control:focus { border-color: var(--oplot-primary); box-shadow: 0 0 0 3px var(--oplot-focus); }
 
 .oplot-dtc .template-kit-card { overflow: hidden; }
-.oplot-dtc .template-kit-card { border-color: var(--oplot-dtc-line); background: var(--oplot-dtc-panel); box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent), 0 16px 38px var(--oplot-dtc-shadow); backdrop-filter: blur(14px) saturate(115%); }
+.oplot-dtc .template-kit-card { border-color: var(--oplot-dtc-line); background: var(--oplot-dtc-panel); box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent), 0 16px 38px var(--oplot-dtc-shadow); }
 .oplot-dtc .template-kit-card .card-header { align-items: flex-start; gap: var(--oplot-space-4); padding: 16px 18px; border-bottom: 1px solid var(--oplot-dtc-line); background: var(--oplot-dtc-panel-strong); }
 .oplot-dtc .template-kit-card .card-title { color: var(--oplot-text); overflow-wrap: anywhere; }
 .oplot-dtc .template-kit-card code { color: inherit; white-space: nowrap; }

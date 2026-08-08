@@ -30,7 +30,7 @@
     --dashboard-kpi-surface: var(--dashboard-surface-bg);
     --dashboard-kpi-border: var(--dashboard-soft-border);
     min-width: 0;
-  background: var(--oplot-dna-canvas-gradient);
+  background: transparent;
 }
 .oplot-duty-dashboard .oplot-page__container { max-width: 1600px; }
 .oplot-duty-dashboard .oplot-page-header { min-height: 108px; border-color: var(--oplot-dna-line); background: var(--oplot-dna-panel-gradient-strong); box-shadow: var(--oplot-dna-shadow); }

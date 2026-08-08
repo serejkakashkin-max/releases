@@ -15,7 +15,7 @@
   --cw-table-head: color-mix(in srgb, var(--oplot-dna-panel-soft) 88%, var(--oplot-dna-panel-strong));
   min-width: 0;
   color: var(--cw-text);
-  background: var(--oplot-dna-canvas-gradient);
+  background: transparent;
   font-size: 16px;
 }
 
@@ -394,7 +394,6 @@
   text-transform: uppercase;
   letter-spacing: .03em;
   line-height: 1.25;
-  backdrop-filter: blur(10px);
 }
 
 .oplot-current-week th:nth-child(1),

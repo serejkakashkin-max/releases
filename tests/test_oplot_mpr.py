@@ -170,7 +170,7 @@ class MprTemplateContractTests(unittest.TestCase):
 
     def test_css_is_scoped_and_uses_dna_tokens(self):
         css = MPR_CSS.read_text(encoding="utf-8")
-        self.assertIn("var(--oplot-dna-canvas-gradient)", css)
+        self.assertRegex(css, r"\.oplot-mpr\s*\{[^}]*background:\s*transparent")
         self.assertIn("var(--oplot-dna-panel-gradient)", css)
         self.assertIn("prefers-reduced-motion", css)
         for line in css.splitlines():

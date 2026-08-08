@@ -208,6 +208,43 @@ class OplotLayoutTests(unittest.TestCase):
             self.assertTrue(rules, selector)
             self.assertTrue(any("backdrop-filter: none" in rule for rule in rules), selector)
 
+    def test_data_pages_reuse_shared_canvas_and_avoid_large_backdrops(self):
+        page_roots = {
+            "document_templates.css": ".oplot-dtc",
+            "dashboard.css": ".oplot-duty-dashboard",
+            "release_assignment_center.css": ".oplot-assignment-center",
+            "release_monitor_duty_schedule.css": ".oplot-duty-schedule",
+            "oplot_mpr.css": ".oplot-mpr",
+            "oplot_current_week.css": ".oplot-current-week",
+            "oplot_sup_admin.css": ".oplot-sup-admin",
+        }
+        sources = {}
+        for filename, selector in page_roots.items():
+            source = (PROJECT_ROOT / "static" / "css" / filename).read_text(encoding="utf-8")
+            sources[filename] = source
+            rules = re.findall(re.escape(selector) + r"\s*\{([^}]*)\}", source)
+            self.assertTrue(rules, selector)
+            self.assertTrue(any("background: transparent" in rule for rule in rules), selector)
+
+        dtc = sources["document_templates.css"]
+        self.assertRegex(dtc, r"\.oplot-dtc \.oplot-page\s*\{[^}]*background:\s*transparent")
+        for selector in (
+            ".oplot-dtc .oplot-page-header",
+            ".oplot-dtc .oplot-dtc-filters",
+            ".oplot-dtc .template-kit-card",
+        ):
+            rule = re.search(re.escape(selector) + r"\s*\{([^}]*)\}", dtc)
+            self.assertIsNotNone(rule, selector)
+            self.assertNotIn("backdrop-filter", rule.group(1), selector)
+
+        current_week = sources["oplot_current_week.css"]
+        table_header = re.search(r"\.oplot-current-week th\s*\{([^}]*)\}", current_week)
+        self.assertIsNotNone(table_header)
+        self.assertNotIn("backdrop-filter", table_header.group(1))
+
+        sup = sources["oplot_sup_admin.css"]
+        self.assertRegex(sup, r"\.oplot-sup-admin \.oplot-page\s*\{[^}]*background:\s*transparent")
+
 
 if __name__ == "__main__":
     unittest.main()

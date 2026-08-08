@@ -1,7 +1,7 @@
 .oplot-mpr {
   min-width: 0;
   color: var(--oplot-text);
-  background: var(--oplot-dna-canvas-gradient);
+  background: transparent;
 }
 
 .oplot-mpr .oplot-page {

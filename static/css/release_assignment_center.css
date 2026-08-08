@@ -23,7 +23,7 @@
   --assignment-table-head: var(--oplot-dna-panel-soft);
   --assignment-row-line: var(--oplot-dna-line);
     min-width:0;
-  background: var(--oplot-dna-canvas-gradient);
+  background: transparent;
 }
 .oplot-assignment-center .oplot-page__container { max-width:1540px; }
 .oplot-assignment-center .oplot-page-header { min-height:108px; }

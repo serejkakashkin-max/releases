@@ -25,7 +25,7 @@
   --weekend-text: var(--oplot-success);
   min-width:0;
   overflow-x:hidden;
-  background: var(--oplot-dna-canvas-gradient);
+  background: transparent;
 }
 .oplot-duty-schedule .oplot-page__container { max-width:1680px; }
 .oplot-duty-schedule .oplot-page-header { min-height:108px; }
