@@ -552,12 +552,20 @@ class ReleaseBlockMigrationTests(unittest.TestCase):
         self.assertIn("background-color: #edf4fb", canvas_rule.group(1))
         self.assertIn('html[data-theme="dark"] .oplot-body.oplot-release', release_css)
 
-    def test_fixed_release_scroll_strip_is_hidden_without_changing_handlers(self):
+    def test_fixed_release_scroll_controls_have_no_full_height_strip(self):
         release_css = (PROJECT_ROOT / "static" / "css" / "oplot_release.css").read_text(encoding="utf-8")
         release_js = (PROJECT_ROOT / "static" / "js" / "oplot_release.js").read_text(encoding="utf-8")
         nav_rule = re.search(r"\.oplot-release \.release-scroll-nav\s*\{([^}]*)\}", release_css)
         self.assertIsNotNone(nav_rule)
-        self.assertIn("display: none", nav_rule.group(1))
+        self.assertIn("display: flex", nav_rule.group(1))
+        self.assertIn("background: transparent", nav_rule.group(1))
+        self.assertIn("width: auto", nav_rule.group(1))
+        self.assertIn("height: auto", nav_rule.group(1))
+        self.assertIn("pointer-events: none", nav_rule.group(1))
+        self.assertNotIn("display: none", nav_rule.group(1))
+        button_rule = re.search(r"\.oplot-release \.release-scroll-btn\s*\{([^}]*)\}", release_css)
+        self.assertIsNotNone(button_rule)
+        self.assertIn("pointer-events: auto", button_rule.group(1))
         self.assertIn("function scrollReleasePageToTop", release_js)
         self.assertIn("function scrollToInstalledPromRelease", release_js)
 

@@ -2113,10 +2113,17 @@ html[data-theme="dark"] .oplot-release .release-doc-modal select option {
             top: 50%;
             transform: translateY(-50%);
             z-index: 1040;
-            display: none;
+            display: flex;
             flex-direction: column;
             gap: 0;
             align-items: center;
+            width: auto;
+            height: auto;
+            padding: 0;
+            border: 0;
+            background: transparent;
+            box-shadow: none;
+            pointer-events: none;
         }
 
         .oplot-release .release-scroll-group {
@@ -2140,6 +2147,7 @@ html[data-theme="dark"] .oplot-release .release-doc-modal select option {
             align-items: center;
             justify-content: center;
             cursor: pointer;
+            pointer-events: auto;
             transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
         }
 
