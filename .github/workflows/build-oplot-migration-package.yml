@@ -1,0 +1,34 @@
+name: Build Oplot Migration Package
+
+on:
+  push:
+    branches:
+      - agent/oplot-migration-package
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build migration ZIP
+        shell: pwsh
+        run: python tools/build_oplot_migration_package.py
+
+      - name: Upload migration package
+        uses: actions/upload-artifact@v4
+        with:
+          name: oplot-migration-package
+          path: migration_out/OPLOT_migration_4d41d424_to_e9738875.zip
+          if-no-files-found: error
+          retention-days: 7
