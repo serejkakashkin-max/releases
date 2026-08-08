@@ -1741,3 +1741,158 @@ html[data-theme="light"] .oplot-sup-admin .file-meta,
 html[data-theme="light"] .oplot-sup-admin .inline-status {
   color: #526a83;
 }
+
+/* Access gate: a centered, self-contained entry point without changing auth hooks. */
+.oplot-sup-admin:has(#tokenBox:not(.hidden)) #statusBox {
+  width: min(100%, 720px);
+  margin: 20px auto 0;
+  padding: 10px 14px;
+  text-align: center;
+}
+
+.oplot-sup-admin .token-box {
+  width: min(100%, 720px);
+  max-width: 720px;
+  margin: clamp(20px, 4vh, 42px) auto 0;
+  overflow: hidden;
+  border-color: color-mix(in srgb, var(--oplot-dna-line-strong) 72%, var(--oplot-dna-line));
+  background: var(--sup-panel-strong-art);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent),
+    0 22px 54px rgba(0, 7, 28, .32),
+    0 0 36px color-mix(in srgb, var(--oplot-dna-blue) 8%, transparent);
+}
+
+.oplot-sup-admin .token-box__header {
+  display: grid;
+  grid-template-columns: 50px minmax(0, 1fr);
+  align-items: start;
+  gap: 15px;
+  padding: 22px 24px 20px;
+  background:
+    radial-gradient(circle at 8% 20%, color-mix(in srgb, var(--oplot-dna-blue) 14%, transparent), transparent 34%),
+    var(--sup-nested-surface);
+}
+
+.oplot-sup-admin .token-box__icon {
+  display: grid;
+  width: 50px;
+  height: 50px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--oplot-dna-blue) 66%, var(--oplot-dna-line));
+  border-radius: 15px;
+  color: color-mix(in srgb, var(--oplot-dna-blue) 58%, #fff);
+  background: linear-gradient(145deg,
+    color-mix(in srgb, var(--oplot-dna-blue) 23%, var(--oplot-dna-panel-strong)),
+    color-mix(in srgb, var(--oplot-dna-violet) 13%, var(--oplot-dna-panel)));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 13%, transparent),
+    0 8px 22px color-mix(in srgb, var(--oplot-dna-blue) 15%, transparent);
+}
+
+.oplot-sup-admin .token-box__icon svg {
+  width: 25px;
+  height: 25px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.oplot-sup-admin .token-box__heading {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+}
+
+.oplot-sup-admin .token-box__eyebrow {
+  color: color-mix(in srgb, var(--oplot-dna-cyan) 65%, var(--text));
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .09em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.oplot-sup-admin .token-box__heading h2 {
+  font-size: 22px;
+  line-height: 1.15;
+}
+
+.oplot-sup-admin .token-box__heading .muted {
+  max-width: 560px;
+  line-height: 1.55;
+}
+
+.oplot-sup-admin .token-box__body {
+  gap: 18px;
+  padding: 22px 24px 24px;
+}
+
+.oplot-sup-admin .token-box__field {
+  display: grid;
+  gap: 8px;
+}
+
+.oplot-sup-admin .token-box__field label {
+  color: var(--muted-2);
+  font-size: 12px;
+  letter-spacing: .035em;
+}
+
+.oplot-sup-admin .token-box__field input {
+  min-height: 46px;
+  padding-inline: 14px;
+}
+
+.oplot-sup-admin .token-box__actions {
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr);
+  gap: 12px;
+}
+
+.oplot-sup-admin .token-box__actions button {
+  min-height: 44px;
+}
+
+html[data-theme="light"] .oplot-sup-admin .token-box {
+  border-color: rgba(62, 132, 205, .52);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .96),
+    0 20px 48px rgba(47, 91, 139, .17),
+    0 0 34px rgba(54, 154, 228, .08);
+}
+
+html[data-theme="light"] .oplot-sup-admin .token-box__header {
+  background:
+    radial-gradient(circle at 8% 20%, rgba(41, 143, 226, .13), transparent 34%),
+    #dfebf8;
+}
+
+html[data-theme="light"] .oplot-sup-admin .token-box__icon {
+  color: #176cb4;
+  background: linear-gradient(145deg, #eef7ff, #d7e9fb);
+  box-shadow: inset 0 1px 0 #fff, 0 8px 20px rgba(45, 126, 196, .15);
+}
+
+@media (max-width: 640px) {
+  .oplot-sup-admin .token-box__header {
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 12px;
+    padding: 18px;
+  }
+
+  .oplot-sup-admin .token-box__icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 13px;
+  }
+
+  .oplot-sup-admin .token-box__body {
+    padding: 18px;
+  }
+
+  .oplot-sup-admin .token-box__actions {
+    grid-template-columns: 1fr;
+  }
+}

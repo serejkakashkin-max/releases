@@ -539,9 +539,27 @@ class ReleaseBlockMigrationTests(unittest.TestCase):
         viewport_rule = re.search(r"html:has\(> body\.oplot-release\) \{([\s\S]*?)\n\}", release_css)
         self.assertIsNotNone(viewport_rule)
         self.assertIn("scrollbar-gutter: stable", viewport_rule.group(1))
+        self.assertIn("margin: 0", viewport_rule.group(1))
         modal_open = re.search(r"\.oplot-release\.modal-open \{([\s\S]*?)\n\}", release_css)
         self.assertIsNotNone(modal_open)
         self.assertIn("padding-right: 0 !important", modal_open.group(1))
+
+    def test_release_canvas_does_not_repeat_below_the_viewport(self):
+        release_css = (PROJECT_ROOT / "static" / "css" / "oplot_release.css").read_text(encoding="utf-8")
+        canvas_rule = re.search(r"\.oplot-body\.oplot-release \{([\s\S]*?)\n\}", release_css)
+        self.assertIsNotNone(canvas_rule)
+        self.assertIn("background-repeat: no-repeat", canvas_rule.group(1))
+        self.assertIn("background-color: #edf4fb", canvas_rule.group(1))
+        self.assertIn('html[data-theme="dark"] .oplot-body.oplot-release', release_css)
+
+    def test_fixed_release_scroll_strip_is_hidden_without_changing_handlers(self):
+        release_css = (PROJECT_ROOT / "static" / "css" / "oplot_release.css").read_text(encoding="utf-8")
+        release_js = (PROJECT_ROOT / "static" / "js" / "oplot_release.js").read_text(encoding="utf-8")
+        nav_rule = re.search(r"\.oplot-release \.release-scroll-nav\s*\{([^}]*)\}", release_css)
+        self.assertIsNotNone(nav_rule)
+        self.assertIn("display: none", nav_rule.group(1))
+        self.assertIn("function scrollReleasePageToTop", release_js)
+        self.assertIn("function scrollToInstalledPromRelease", release_js)
 
 
 def _ReleaseMarkupParser_with_headers(text: str) -> list[str]:

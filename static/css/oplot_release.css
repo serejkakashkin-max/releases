@@ -2113,7 +2113,7 @@ html[data-theme="dark"] .oplot-release .release-doc-modal select option {
             top: 50%;
             transform: translateY(-50%);
             z-index: 1040;
-            display: flex;
+            display: none;
             flex-direction: column;
             gap: 0;
             align-items: center;
@@ -3386,12 +3386,18 @@ html[data-theme="dark"] .oplot-release .release-doc-modal .form-select:focus {
         }
 /* Stage 5A.1 shell integration. Business DOM classes intentionally remain unchanged. */
 html:has(> body.oplot-release) {
+    margin: 0;
     scrollbar-gutter: stable;
 }
 
-.oplot-release {
+.oplot-body.oplot-release {
     overflow-x: hidden;
-    background: var(--oplot-bg);
+    background-color: #edf4fb;
+    background-repeat: no-repeat;
+}
+
+html[data-theme="dark"] .oplot-body.oplot-release {
+    background-color: #06111e;
 }
 
 .oplot-release.modal-open {

@@ -208,6 +208,16 @@ class OplotLayoutTests(unittest.TestCase):
             self.assertTrue(rules, selector)
             self.assertTrue(any("backdrop-filter: none" in rule for rule in rules), selector)
 
+    def test_shared_dna_keeps_text_selection_visible_in_both_themes(self):
+        dna = (PROJECT_ROOT / "static" / "css" / "oplot_stage9_dna.css").read_text(encoding="utf-8")
+        self.assertIn("--oplot-selection-bg: #1769c2", dna)
+        self.assertIn("--oplot-selection-bg: #63b7f5", dna)
+        self.assertIn("--oplot-selection-text: #06111e", dna)
+        selection_rule = re.search(r"\.oplot-body \*::selection \{([^}]*)\}", dna)
+        self.assertIsNotNone(selection_rule)
+        self.assertIn("background: var(--oplot-selection-bg)", selection_rule.group(1))
+        self.assertIn("color: var(--oplot-selection-text)", selection_rule.group(1))
+
     def test_data_pages_reuse_shared_canvas_and_avoid_large_backdrops(self):
         page_roots = {
             "document_templates.css": ".oplot-dtc",

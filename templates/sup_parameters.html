@@ -40,18 +40,28 @@
 
     <div id="statusBox" class="status">Введите токен для загрузки СУП-параметров.</div>
 
-    <section id="tokenBox" class="card token-box">
-      <div class="card-header">
-        <h2>Доступ</h2>
-        <p class="muted">Токен сохраняется только в текущем браузере и не показывается после входа.</p>
+    <section id="tokenBox" class="card token-box" aria-labelledby="supAccessTitle">
+      <div class="card-header token-box__header">
+        <span class="token-box__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path d="M7 10V8a5 5 0 0 1 10 0v2"></path>
+            <rect x="5" y="10" width="14" height="10" rx="3"></rect>
+            <path d="M12 14v2"></path>
+          </svg>
+        </span>
+        <div class="token-box__heading">
+          <p class="token-box__eyebrow">Административный контур</p>
+          <h2 id="supAccessTitle">Доступ</h2>
+          <p class="muted">Токен сохраняется только в текущем браузере и не показывается после входа.</p>
+        </div>
       </div>
-      <div class="card-body stack">
+      <div class="card-body stack token-box__body">
         {% if token_configured %}
-        <div>
+        <div class="token-box__field">
           <label for="tokenInput">Токен администратора</label>
           <input id="tokenInput" type="password" autocomplete="off" placeholder="Введите токен">
         </div>
-        <div class="button-stack">
+        <div class="button-stack token-box__actions">
           <button type="button" class="primary" id="unlockBtn">Открыть</button>
           <button type="button" class="ghost" id="clearTokenBtn">Сбросить токен</button>
         </div>
