@@ -14,7 +14,11 @@ from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 
 from services.intent_classifier import IntentClassifier, IntentType, get_intent_classifier
-from services.gigachat_service import GIGA_HELPER
+from services.gigachat_service import (
+    GIGA_HELPER,
+    GigaChatDisabledError,
+    GigaChatUnavailableError,
+)
 from services.dashboard_service import (
     get_dashboard_data, fetch_jira_tasks, process_tasks_data,
     get_hidden_task_keys
@@ -540,7 +544,7 @@ class DashboardChatBot:
         local_intent: IntentType = IntentType.UNKNOWN
     ) -> Optional[Dict]:
         """Просит GigaChat определить сценарий и при необходимости нормализовать запрос."""
-        if not self.giga_helper.client:
+        if not self.giga_helper.is_enabled():
             return None
 
         dashboard_summary = self._get_dashboard_summary(dashboard_context)
@@ -589,7 +593,7 @@ Oplot умеет работать с рабочим столом дежурно�
   "confidence": "high|medium|low"
 }}"""
         try:
-            response = self.giga_helper.client.chat(prompt)
+            response = self.giga_helper.chat(prompt)
             content = response.choices[0].message.content
             match = re.search(r'\{.*\}', content, re.DOTALL)
             if not match:
@@ -3709,10 +3713,10 @@ Oplot умеет работать с рабочим столом дежурно�
                 text += f"\n⚠️ *Зависшие задачи (>10 дней): {len(stale_tasks)}*\n"
             
             # Используем ГигаЧат для рекомендаций
-            if self.giga_helper.client and critical_tasks:
+            if self.giga_helper.is_enabled() and critical_tasks:
                 try:
                     prompt = self._create_analysis_prompt(critical_tasks, all_tasks)
-                    giga_response = self.giga_helper.client.chat(prompt)
+                    giga_response = self.giga_helper.chat(prompt)
                     recommendations = giga_response.choices[0].message.content
                     text += f"\n💡 *AI-рекомендации:*\n{recommendations[:500]}..."
                 except Exception as e:
@@ -4426,20 +4430,23 @@ Oplot умеет работать с рабочим столом дежурно�
             'metadata': {'task_key': task_key}
         }
     
+    def _local_gigachat_unavailable_response(self, message: str) -> Dict:
+        if self._looks_like_casual_chat(message) and not self._looks_like_work_request(message):
+            return {
+                'text': (
+                    "Я на связи. Могу спокойно обсудить вопрос, помочь сформулировать мысль или быстро вернуться к рабочим задачам.\n\n"
+                    "В этой среде свободные ответы через GigaChat сейчас недоступны, поэтому по сторонним темам отвечаю ограниченно. "
+                    "А по релизам, документам, Confluence, задачам и сменным сводкам могу работать сразу."
+                ),
+                'suggestions': self.get_default_suggestions(),
+                'metadata': {'type': 'casual_fallback', 'source': 'local'}
+            }
+        return self._handle_unknown()
+
     def _ask_gigachat(self, message: str, session: ChatContext, dashboard_context: Dict = None) -> Dict:
         """Отправляет запрос к ГигаЧат как fallback"""
-        if not self.giga_helper.client:
-            if self._looks_like_casual_chat(message) and not self._looks_like_work_request(message):
-                return {
-                    'text': (
-                        "Я на связи. Могу спокойно обсудить вопрос, помочь сформулировать мысль или быстро вернуться к рабочим задачам.\n\n"
-                        "В этой среде свободные ответы через GigaChat сейчас недоступны, поэтому по сторонним темам отвечаю ограниченно. "
-                        "А по релизам, документам, Confluence, задачам и сменным сводкам могу работать сразу."
-                    ),
-                    'suggestions': self.get_default_suggestions(),
-                    'metadata': {'type': 'casual_fallback', 'source': 'local'}
-                }
-            return self._handle_unknown()
+        if not self.giga_helper.is_enabled():
+            return self._local_gigachat_unavailable_response(message)
 
         try:
             dashboard_summary = self._get_dashboard_summary(dashboard_context)
@@ -4470,12 +4477,14 @@ Oplot умеет работать с рабочим столом дежурно�
 {message}
 
 Отвечай кратко, естественно и по-русски."""
-            response = self.giga_helper.client.chat(prompt)
+            response = self.giga_helper.chat(prompt)
             text = response.choices[0].message.content.strip()
             return {
                 'text': text or self._handle_unknown()['text'],
                 'metadata': {'source': 'gigachat', 'mode': 'free_chat'}
             }
+        except (GigaChatDisabledError, GigaChatUnavailableError):
+            return self._local_gigachat_unavailable_response(message)
         except Exception as e:
             logging.warning(f"Ошибка fallback-ответа через GigaChat: {e}")
             return self._handle_unknown()

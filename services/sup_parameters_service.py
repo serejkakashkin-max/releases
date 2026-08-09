@@ -286,6 +286,17 @@ def _admin_config_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     release_monitor = (
         payload.get("release_monitor") if isinstance(payload.get("release_monitor"), dict) else {}
     )
+    document_template_center = (
+        payload.get("document_template_center")
+        if isinstance(payload.get("document_template_center"), dict)
+        else {}
+    )
+    integrations = payload.get("integrations") if isinstance(payload.get("integrations"), dict) else {}
+    gigachat = (
+        integrations.get("gigachat")
+        if isinstance(integrations.get("gigachat"), dict)
+        else {}
+    )
     modules = payload.get("modules") if isinstance(payload.get("modules"), dict) else {}
     va_module = (
         modules.get("va_schedule_manager")
@@ -367,6 +378,28 @@ def _admin_config_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         },
         "release_monitor": {
             "prefixes": _admin_prefix_rows(release_monitor.get("prefixes")),
+        },
+        "document_template_center": {
+            "history_retention_limit": max(
+                1,
+                min(
+                    30,
+                    _normalize_int(
+                        document_template_center.get("history_retention_limit"),
+                        DEFAULT_FEATURE_FLAGS["document_template_center"][
+                            "history_retention_limit"
+                        ],
+                    ),
+                ),
+            ),
+        },
+        "integrations": {
+            "gigachat": {
+                "enabled": _coerce_bool(
+                    gigachat.get("enabled"),
+                    DEFAULT_FEATURE_FLAGS["integrations"]["gigachat"]["enabled"],
+                ),
+            },
         },
         "modules": {
             "va_schedule_manager": {
@@ -515,6 +548,21 @@ def _validate_managed_config(raw_config: Any) -> Dict[str, Any]:
         if isinstance(raw_config.get("release_monitor"), dict)
         else {}
     )
+    document_template_center = (
+        raw_config.get("document_template_center")
+        if isinstance(raw_config.get("document_template_center"), dict)
+        else {}
+    )
+    integrations = (
+        raw_config.get("integrations")
+        if isinstance(raw_config.get("integrations"), dict)
+        else {}
+    )
+    gigachat = (
+        integrations.get("gigachat")
+        if isinstance(integrations.get("gigachat"), dict)
+        else {}
+    )
     modules = raw_config.get("modules") if isinstance(raw_config.get("modules"), dict) else {}
     va_module = (
         modules.get("va_schedule_manager")
@@ -530,6 +578,16 @@ def _validate_managed_config(raw_config: Any) -> Dict[str, Any]:
             "email_to_sbertrack": {},
         },
         "release_monitor": {"prefixes": []},
+        "document_template_center": {
+            "history_retention_limit": DEFAULT_FEATURE_FLAGS[
+                "document_template_center"
+            ]["history_retention_limit"]
+        },
+        "integrations": {
+            "gigachat": {
+                "enabled": DEFAULT_FEATURE_FLAGS["integrations"]["gigachat"]["enabled"]
+            }
+        },
         "modules": {"va_schedule_manager": {"enabled": False}},
         "sbertrack_users": {},
     }
@@ -545,6 +603,12 @@ def _validate_managed_config(raw_config: Any) -> Dict[str, Any]:
     if not isinstance(va_enabled, bool):
         va_enabled = DEFAULT_FEATURE_FLAGS["modules"]["va_schedule_manager"]["enabled"]
     normalized["modules"]["va_schedule_manager"]["enabled"] = va_enabled
+
+    gigachat_enabled = gigachat.get("enabled")
+    if not isinstance(gigachat_enabled, bool):
+        errors.append("GigaChat/enabled: значение должно быть true или false")
+        gigachat_enabled = DEFAULT_FEATURE_FLAGS["integrations"]["gigachat"]["enabled"]
+    normalized["integrations"]["gigachat"]["enabled"] = gigachat_enabled
 
     if not isinstance(unassigned.get("enabled"), bool):
         errors.append("РџРёСЃСЊРјР° Р±РµР· РѕС‚РІРµС‚СЃС‚РІРµРЅРЅРѕРіРѕ/enabled: Р·РЅР°С‡РµРЅРёРµ РґРѕР»Р¶РЅРѕ Р±С‹С‚СЊ true РёР»Рё false")
@@ -881,6 +945,26 @@ def _validate_managed_config(raw_config: Any) -> Dict[str, Any]:
     if enabled_count <= 0:
         errors.append("Release prefixes: РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ РІРєР»СЋС‡РµРЅ С…РѕС‚СЏ Р±С‹ РѕРґРёРЅ prefix")
 
+    history_retention_limit = DEFAULT_FEATURE_FLAGS["document_template_center"][
+        "history_retention_limit"
+    ]
+    if "history_retention_limit" in document_template_center:
+        history_retention_limit = _validate_non_negative_int(
+            document_template_center.get("history_retention_limit"),
+            "Document Template Center/history_retention_limit",
+            errors,
+        )
+    if history_retention_limit < 1 or history_retention_limit > 30:
+        errors.append(
+            "Document Template Center/history_retention_limit: value must be between 1 and 30"
+        )
+        history_retention_limit = DEFAULT_FEATURE_FLAGS["document_template_center"][
+            "history_retention_limit"
+        ]
+    normalized["document_template_center"]["history_retention_limit"] = (
+        history_retention_limit
+    )
+
     if errors:
         raise SupParametersValidationError(errors)
     return normalized
@@ -966,6 +1050,24 @@ def _merge_managed_config(base_payload: Dict[str, Any], managed: Dict[str, Any])
     release_monitor_target["prefixes"] = managed["release_monitor"]["prefixes"]
     merged["release_monitor"] = release_monitor_target
 
+    dtc_target = merged.get("document_template_center")
+    if not isinstance(dtc_target, dict):
+        dtc_target = {}
+    dtc_target["history_retention_limit"] = managed["document_template_center"][
+        "history_retention_limit"
+    ]
+    merged["document_template_center"] = dtc_target
+
+    integrations_target = merged.get("integrations")
+    if not isinstance(integrations_target, dict):
+        integrations_target = {}
+    gigachat_target = integrations_target.get("gigachat")
+    if not isinstance(gigachat_target, dict):
+        gigachat_target = {}
+    gigachat_target["enabled"] = managed["integrations"]["gigachat"]["enabled"]
+    integrations_target["gigachat"] = gigachat_target
+    merged["integrations"] = integrations_target
+
     merged["sbertrack_users"] = managed["sbertrack_users"]
 
     modules_target = merged.get("modules")
@@ -1005,6 +1107,12 @@ def _save_sup_parameters_locked(managed_config: Any, expected_revision: str) -> 
     _backup_existing_file(current_data, read_error)
     _atomic_write_json(next_payload)
     reload_feature_flags()
+    try:
+        from services.gigachat_service import GIGA_HELPER
+
+        GIGA_HELPER.sync_runtime_state()
+    except Exception as exc:
+        logging.warning("Не удалось синхронизировать runtime GigaChat: %s", exc)
     return get_sup_parameters_data()
 
 

@@ -328,6 +328,14 @@
         config.modules = config.modules || {};
         config.modules.va_schedule_manager = config.modules.va_schedule_manager || { enabled: false };
         config.modules.va_schedule_manager.enabled = Boolean(config.modules.va_schedule_manager.enabled);
+        config.document_template_center = config.document_template_center || {};
+        config.document_template_center.history_retention_limit = Math.max(
+          1,
+          Math.min(30, Number(config.document_template_center.history_retention_limit || 2))
+        );
+        config.integrations = config.integrations || {};
+        config.integrations.gigachat = config.integrations.gigachat || { enabled: true };
+        config.integrations.gigachat.enabled = config.integrations.gigachat.enabled !== false;
         config.sbertrack_users = Array.isArray(config.sbertrack_users) ? config.sbertrack_users : [];
         return config;
       }
@@ -363,6 +371,14 @@
         config.modules = config.modules || {};
         config.modules.va_schedule_manager = config.modules.va_schedule_manager || {};
         config.modules.va_schedule_manager.enabled = Boolean($("vaScheduleManagerEnabled")?.checked);
+        config.document_template_center = config.document_template_center || {};
+        config.document_template_center.history_retention_limit = Math.max(
+          1,
+          Math.min(30, Number($("dtcHistoryRetentionLimit")?.value || 2))
+        );
+        config.integrations = config.integrations || {};
+        config.integrations.gigachat = config.integrations.gigachat || {};
+        config.integrations.gigachat.enabled = Boolean($("gigachatEnabled")?.checked);
         return config;
       }
 
@@ -626,6 +642,17 @@
         const safeTarget = supUiConfig.schedule_manager.url || "";
         openBtn.disabled = !loaded || !safeTarget;
         openBtn.dataset.url = safeTarget;
+      }
+
+      function renderGigaChatSettings() {
+        const input = $("gigachatEnabled");
+        if (input) input.checked = state.config?.integrations?.gigachat?.enabled !== false;
+      }
+
+      function renderDocumentTemplateCenterSettings() {
+        const input = $("dtcHistoryRetentionLimit");
+        if (!input) return;
+        input.value = String(state.config?.document_template_center?.history_retention_limit || 2);
       }
 
       async function ensureAdminSession() {
@@ -2071,6 +2098,8 @@
         renderMaintenance(state.config.maintenance || {});
         renderMail(state.config);
         renderSberTrack(state.config);
+        renderDocumentTemplateCenterSettings();
+        renderGigaChatSettings();
         renderEmployees();
         renderPrefixes();
         renderVaScheduleManager(state.metadata.va_schedule_manager || {});
@@ -2174,6 +2203,8 @@
         renderMaintenance(state.config.maintenance || {});
         renderMail(state.config);
         renderSberTrack(state.config);
+        renderDocumentTemplateCenterSettings();
+        renderGigaChatSettings();
         renderEmployees();
         renderPrefixes();
         renderVaScheduleManager(state.metadata.va_schedule_manager || {});

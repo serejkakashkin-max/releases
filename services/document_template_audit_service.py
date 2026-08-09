@@ -16,7 +16,7 @@ from services.document_template_storage_service import data_root
 ALLOWED_FIELDS = {
     "actor", "action", "document_id", "relative_target", "candidate_uuid",
     "version_uuid", "comment", "old_sha", "new_sha", "result", "error_code",
-    "operation_uuid",
+    "operation_uuid", "sha256", "source_filename",
 }
 
 

@@ -7,13 +7,13 @@ from pathlib import Path
 
 from flask import (
     Blueprint, abort, current_app, make_response, redirect, render_template,
-    request, send_file,
+    jsonify, request, send_file,
 )
 
 from config import DOC_TEMPLATES_ROOT
 from services.cross_process_file_lock import FileLockTimeoutError
 from services.document_template_csrf_service import (
-    DOCUMENT_TEMPLATE_ACTOR, apply_csrf_cookie, csrf_is_valid, csrf_token,
+    DOCUMENT_TEMPLATE_ACTOR, apply_csrf_cookie, csrf_form_is_valid, csrf_is_valid, csrf_token,
 )
 from services.document_template_audit_service import append_audit_event
 from services.document_template_candidate_service import (
@@ -29,11 +29,16 @@ from services.document_template_read_service import (
 from services.document_template_storage_service import (
     MAX_UPLOAD_BYTES, UPLOAD_REQUEST_OVERHEAD, CandidateNotFound,
     CandidateStateConflict, CandidateUploadTooLarge, cancel_candidate, claim_maintenance_window, cleanup_candidates,
-    HistoryPreviewDenied, candidate_directory, committed_history_payload, get_candidate, list_candidates, list_history,
+    HistoryPreviewDenied, candidate_directory, committed_history_payload, delete_history_version,
+    document_lock, get_candidate, get_history_version, list_candidates, list_history,
     update_candidate, write_uploaded_candidate,
 )
 from services.document_template_vendor_service import verify_vendor_assets
+from services.oplot_ui_service import safe_public_url_for
 from services.public_url_service import public_url_for
+from services.sup_admin_auth_service import (
+    csrf_protect_request, is_admin_session_secret_configured, is_sup_admin_authenticated,
+)
 
 
 DOCX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -345,7 +350,15 @@ def cancel_candidate_route(document_id, candidate_uuid):
 @document_template_bp.get("/documents/<document_id>/history")
 def document_history(document_id):
     document = _resolved_or_404(document_id)
-    return render_template("document_templates/history.html", document=document.as_view_model(), versions=list_history(document_id), csrf_token=csrf_token())
+    return render_template(
+        "document_templates/history.html",
+        document=document.as_view_model(),
+        versions=list_history(document_id),
+        csrf_token=csrf_token(),
+        admin_session_configured=is_admin_session_secret_configured(),
+        admin_session_login_url=safe_public_url_for("sup_admin_session.login") or "",
+        admin_session_status_url=safe_public_url_for("sup_admin_session.status") or "",
+    )
 
 
 def _history_response(document_id, version_uuid, attachment):
@@ -365,6 +378,50 @@ def preview_history(document_id, version_uuid):
 @document_template_bp.get("/documents/<document_id>/history/<version_uuid>/download")
 def download_history(document_id, version_uuid):
     return _history_response(document_id, version_uuid, True)
+
+
+@document_template_bp.post("/documents/<document_id>/history/<version_uuid>/delete")
+def delete_history(document_id, version_uuid):
+    if not csrf_form_is_valid():
+        return make_response(
+            "Действие отклонено: обновите страницу и повторите попытку.", 403
+        )
+    if not is_sup_admin_authenticated():
+        return jsonify({
+            "success": False,
+            "requires_admin_login": True,
+            "error": "Требуется административный вход.",
+        }), 403
+    csrf_error = csrf_protect_request()
+    if csrf_error is not None:
+        return csrf_error
+    document = _resolved_or_404(document_id)
+    try:
+        with document_lock(document.document_id):
+            version = get_history_version(document.document_id, version_uuid)
+            append_audit_event(
+                actor=DOCUMENT_TEMPLATE_ACTOR,
+                action="history_delete",
+                document_id=document.document_id,
+                relative_target=document.relative_path,
+                version_uuid=version_uuid,
+                sha256=version.get("sha256"),
+                source_filename=version.get("source_filename") or document.filename,
+                result="deleted",
+            )
+            delete_history_version(document.document_id, version_uuid)
+    except ValueError:
+        abort(400)
+    except CandidateNotFound:
+        abort(404)
+    except HistoryPreviewDenied:
+        return make_response("Историческую версию нельзя удалить безопасно.", 423)
+    except (FileLockTimeoutError, OSError):
+        return make_response("Историческая версия временно заблокирована безопасным восстановлением.", 423)
+    return jsonify({
+        "success": True,
+        "redirect": public_url_for("document_templates.document_history", document_id=document_id),
+    })
 
 
 @document_template_bp.post("/documents/<document_id>/history/<version_uuid>/rollback")

@@ -155,8 +155,11 @@ class SupShellContractTests(unittest.TestCase):
             "directoryEmployeeList",
             "modalBackdrop",
             "competencyModalBackdrop",
+            "dtcHistoryRetentionLimit",
+            "gigachatEnabled",
         ):
             self.assertIn(f'id="{element_id}"', text)
+        self.assertIn("Хранить версий истории на шаблон", text)
 
     def test_template_has_no_legacy_shell_or_inline_business_assets(self):
         source = TEMPLATE.read_text(encoding="utf-8")
@@ -213,6 +216,10 @@ class SupJavascriptContractTests(unittest.TestCase):
         self.assertIn("Math.min(60000", script)
         self.assertIn('body: JSON.stringify({ mode })', script)
         self.assertIn('JSON.stringify({ revision: state.revision, config: collectConfig() })', script)
+        self.assertIn("document_template_center", script)
+        self.assertIn("history_retention_limit", script)
+        self.assertIn("dtcHistoryRetentionLimit", script)
+        self.assertIn("config.integrations.gigachat.enabled", script)
         for key in ("expected_revision", "expected_etag", "employees", "directory_etag", "settings_revision", "settings_etag", "competency"):
             self.assertIn(key, script)
         for query_key in ('params.get("tab")', 'params.get("view")', 'params.get("token")'):

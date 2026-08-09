@@ -51,6 +51,7 @@ class DutyPresentationConfigTests(unittest.TestCase):
         self.assertEqual(3_600_000, dashboard["settings"]["page_reload_ms"])
         self.assertEqual(1_000, dashboard["settings"]["approval_delay_ms"])
         self.assertEqual(15_000, assignment["settings"]["poll_interval_ms"])
+        self.assertTrue(assignment["settings"]["gigachat_enabled"])
         self.assertEqual("/dashboard/refresh", dashboard["urls"]["refresh"])
         self.assertEqual("/dashboard/release-monitor/assignment-center/data", assignment["urls"]["data"])
         self.assertEqual({"SUP-1": {}}, dashboard["data"]["hidden_tasks"])
@@ -116,6 +117,8 @@ class DutyTemplateContractTests(unittest.TestCase):
         self.assertIn("releaseAssignmentCenterNotifications", assignment)
         self.assertIn("config.urls.reviewer", assignment)
         self.assertIn("window.initOplotAssignmentCenter", assignment)
+        self.assertIn("GIGACHAT_ENABLED", assignment)
+        self.assertIn("Ручное назначение остаётся доступно", assignment)
         self.assertNotIn("BASE_PATH", assignment)
         self.assertIn("window.initOplotDutySchedule", schedule)
         self.assertIn("availableScheduleMonths", schedule)
@@ -224,6 +227,18 @@ class DutyRouteSmokeTests(unittest.TestCase):
         text = response.get_data(as_text=True)
         self.assertIn("Некорректный месяц", text)
         self.assertNotRegex(text, r">\s*(Сохранить|Опубликовать)\s*<")
+
+    def test_assignment_center_renders_disabled_ai_without_disabling_manual_workflow(self):
+        with (
+            mock.patch("routes.dashboard_routes.is_maintenance_enabled", return_value=False),
+            mock.patch("routes.dashboard_routes.is_gigachat_enabled", return_value=False),
+        ):
+            response = self.client.get("/dashboard/release-monitor/assignment-center")
+        self.assertEqual(200, response.status_code)
+        text = response.get_data(as_text=True)
+        self.assertIn('"gigachat_enabled": false', text)
+        self.assertIn('id="assignmentAiBtn"', text)
+        self.assertIn('id="assignmentReleaseList"', text)
 
 
 if __name__ == "__main__":

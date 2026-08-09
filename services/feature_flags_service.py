@@ -98,6 +98,14 @@ DEFAULT_FEATURE_FLAGS = {
     "release_monitor": {
         "prefixes": copy.deepcopy(DEFAULT_RELEASE_PREFIX_CONFIGS),
     },
+    "document_template_center": {
+        "history_retention_limit": 2,
+    },
+    "integrations": {
+        "gigachat": {
+            "enabled": True,
+        },
+    },
     "modules": {
         "va_schedule_manager": {
             "enabled": False,
@@ -134,6 +142,20 @@ def _normalize_non_negative_int(value: Any, default: int) -> int:
     except (TypeError, ValueError):
         return default
     return normalized if normalized >= 0 else default
+
+
+def _normalize_bounded_int(value: Any, default: int, *, minimum: int, maximum: int) -> int:
+    if isinstance(value, bool):
+        return default
+    try:
+        normalized = int(value)
+    except (TypeError, ValueError):
+        return default
+    if normalized < minimum:
+        return minimum
+    if normalized > maximum:
+        return maximum
+    return normalized
 
 
 def _normalize_employee_recipients(value: Any, *, enabled_only: bool) -> Dict[str, List[str]]:
@@ -417,6 +439,23 @@ def _normalize_flags(payload: Any) -> Dict[str, Dict[str, Any]]:
             release_monitor.get("prefixes")
         )
 
+    document_template_center = payload.get("document_template_center")
+    if isinstance(document_template_center, dict):
+        normalized["document_template_center"]["history_retention_limit"] = (
+            _normalize_bounded_int(
+                document_template_center.get("history_retention_limit"),
+                DEFAULT_FEATURE_FLAGS["document_template_center"]["history_retention_limit"],
+                minimum=1,
+                maximum=30,
+            )
+        )
+
+    integrations = payload.get("integrations")
+    if isinstance(integrations, dict):
+        gigachat = integrations.get("gigachat")
+        if isinstance(gigachat, dict) and isinstance(gigachat.get("enabled"), bool):
+            normalized["integrations"]["gigachat"]["enabled"] = gigachat["enabled"]
+
     modules = payload.get("modules")
     if isinstance(modules, dict):
         for module_name, defaults in DEFAULT_FEATURE_FLAGS["modules"].items():
@@ -511,6 +550,12 @@ def is_module_enabled(name: str, *, default: bool = False) -> bool:
         if isinstance(enabled, bool):
             return enabled
     return default
+
+
+def is_gigachat_enabled() -> bool:
+    flags = get_feature_flags()
+    value = ((flags.get("integrations") or {}).get("gigachat") or {}).get("enabled")
+    return value if isinstance(value, bool) else True
 
 
 def get_automation_config(name: str) -> Any:

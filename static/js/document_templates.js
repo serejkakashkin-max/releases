@@ -3,6 +3,8 @@
 
   var activeController = null;
   var modalInstance = null;
+  var historyDeleteModalInstance = null;
+  var pendingHistoryDeleteButton = null;
   var initialized = false;
   var previewGeneration = 0;
   var PLACEHOLDER_PATH = "word/media/oplot-external-image-placeholder.png";
@@ -191,6 +193,163 @@
     }
   }
 
+  function tablerModalApi() {
+    return window.tabler && (window.tabler.Modal || (window.tabler.bootstrap && window.tabler.bootstrap.Modal));
+  }
+
+  function getDtcCsrfToken() {
+    var token = document.getElementById("dtc-history-csrf-token");
+    if (token && token.value) {
+      return token.value;
+    }
+    var field = document.querySelector('input[name="_csrf_token"]');
+    return field ? field.value : "";
+  }
+
+  function getSupCsrfToken() {
+    try {
+      return window.sessionStorage.getItem("sup_admin_csrf_token") || "";
+    } catch (_error) {
+      return "";
+    }
+  }
+
+  function setSupCsrfToken(value) {
+    try {
+      window.sessionStorage.setItem("sup_admin_csrf_token", value || "");
+    } catch (_error) {
+      // Session storage can be unavailable in hardened browsers; the next request will fail closed.
+    }
+  }
+
+  function parseJsonResponse(response) {
+    return response.json().catch(function () {
+      return {};
+    }).then(function (payload) {
+      return { response: response, payload: payload };
+    });
+  }
+
+  function requestHistoryDelete(button) {
+    var formData = new FormData();
+    var csrfToken = getDtcCsrfToken();
+    var supCsrfToken = getSupCsrfToken();
+    formData.append("_csrf_token", csrfToken);
+    var headers = new Headers({ "Accept": "application/json" });
+    if (supCsrfToken) {
+      headers.set("X-CSRF-Token", supCsrfToken);
+    }
+    return fetch(button.dataset.deleteUrl, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: headers,
+      body: formData
+    }).then(parseJsonResponse);
+  }
+
+  function historyDeleteConfirmation(button) {
+    var version = button.dataset.versionSha ? "\n\nВерсия: " + button.dataset.versionSha : "";
+    return window.confirm(
+      "Удалить эту версию из истории?\n\n" +
+      "Backup-файл будет полностью удалён.\n" +
+      "Текущий шаблон не изменится.\n" +
+      "Восстановить удалённую версию будет невозможно." +
+      version
+    );
+  }
+
+  function openHistoryDeleteAdminModal(button, message) {
+    var modal = document.getElementById("history-delete-admin-modal");
+    var input = document.getElementById("history-delete-admin-token");
+    var error = document.getElementById("history-delete-admin-error");
+    var Modal = tablerModalApi();
+    if (!modal || !input || !Modal) {
+      showError("Административный вход сейчас недоступен.");
+      return;
+    }
+    pendingHistoryDeleteButton = button;
+    if (error) {
+      error.textContent = message || "";
+      error.hidden = !message;
+    }
+    input.value = "";
+    historyDeleteModalInstance = Modal.getOrCreateInstance(modal);
+    historyDeleteModalInstance.show();
+    window.setTimeout(function () {
+      input.focus();
+    }, 120);
+  }
+
+  function completeHistoryDelete(button) {
+    button.disabled = true;
+    button.classList.add("is-loading");
+    requestHistoryDelete(button).then(function (result) {
+      if (result.response.ok && result.payload.success !== false) {
+        window.location.assign(result.payload.redirect || window.location.href);
+        return;
+      }
+      if (result.response.status === 403 && result.payload.requires_admin_login) {
+        button.disabled = false;
+        button.classList.remove("is-loading");
+        openHistoryDeleteAdminModal(button, result.payload.error || "Требуется административный вход.");
+        return;
+      }
+      throw new Error(result.payload.error || "Не удалось удалить версию из истории.");
+    }).catch(function (error) {
+      button.disabled = false;
+      button.classList.remove("is-loading");
+      showError(error && error.message ? error.message : "Не удалось удалить версию из истории.");
+    });
+  }
+
+  function submitHistoryDeleteAdminLogin(form) {
+    var button = pendingHistoryDeleteButton;
+    var input = document.getElementById("history-delete-admin-token");
+    var error = document.getElementById("history-delete-admin-error");
+    var submit = form.querySelector('button[type="submit"]');
+    if (!button || !input) {
+      return;
+    }
+    if (error) {
+      error.hidden = true;
+      error.textContent = "";
+    }
+    if (submit) {
+      submit.disabled = true;
+      submit.classList.add("is-loading");
+    }
+    fetch(button.dataset.adminLoginUrl, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ token: input.value || "" })
+    }).then(parseJsonResponse).then(function (result) {
+      if (!result.response.ok || result.payload.success === false) {
+        throw new Error(result.payload.error || "Административный вход не выполнен.");
+      }
+      setSupCsrfToken(result.payload.csrf_token || "");
+      if (historyDeleteModalInstance) {
+        historyDeleteModalInstance.hide();
+      }
+      completeHistoryDelete(button);
+    }).catch(function (loginError) {
+      if (error) {
+        error.textContent = loginError && loginError.message ? loginError.message : "Неверный SUP token.";
+        error.hidden = false;
+      } else {
+        showError(loginError && loginError.message ? loginError.message : "Неверный SUP token.");
+      }
+    }).finally(function () {
+      if (submit) {
+        submit.disabled = false;
+        submit.classList.remove("is-loading");
+      }
+    });
+  }
+
   function openPreview(button) {
     var view = elements();
     var Modal = window.tabler && (window.tabler.Modal || (window.tabler.bootstrap && window.tabler.bootstrap.Modal));
@@ -354,9 +513,21 @@
           document.getElementById("rollback-version-date").textContent = rollbackButton.dataset.versionDate || "";
         }
       }
+      var deleteButton = event.target.closest(".js-history-delete");
+      if (deleteButton) {
+        event.preventDefault();
+        if (historyDeleteConfirmation(deleteButton)) {
+          completeHistoryDelete(deleteButton);
+        }
+      }
     });
     document.addEventListener("submit", function (event) {
       var form = event.target;
+      if (form && form.id === "history-delete-admin-form") {
+        event.preventDefault();
+        submitHistoryDeleteAdminLogin(form);
+        return;
+      }
       if (form.dataset.confirm && !window.confirm(form.dataset.confirm)) {
         event.preventDefault();
         return;

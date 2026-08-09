@@ -429,6 +429,23 @@
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 12px;
     }
+    .oplot-sup-admin .sup-dtc-tools-card {
+      margin-top: 12px;
+      border-color: rgba(34, 211, 238, 0.38);
+      background:
+        radial-gradient(circle at 0% 0%, rgba(34, 211, 238, 0.12), transparent 42%),
+        rgba(10, 36, 61, 0.7);
+    }
+    .oplot-sup-admin .sup-dtc-retention-row {
+      align-items: end;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(6, 21, 38, 0.42);
+    }
+    .oplot-sup-admin .sup-dtc-retention-row input {
+      max-width: 180px;
+    }
     .oplot-sup-admin .switch {
       position: relative;
       width: 44px;

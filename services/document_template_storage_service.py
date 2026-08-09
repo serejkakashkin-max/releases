@@ -14,6 +14,7 @@ from flask import current_app
 
 from services.cross_process_file_lock import CrossProcessFileLock
 from services.document_template_runtime_service import atomic_write_bytes, atomic_write_json, read_json
+from services.feature_flags_service import get_feature_flags
 from services.runtime_paths import runtime_path
 
 
@@ -24,6 +25,9 @@ UUID_REPR_LENGTH = 36
 RECOVERY_CANDIDATE_STATES = {"publishing", "publish_failed"}
 TERMINAL_CANDIDATE_STATES = {"published", "cancelled", "expired", "recovered", "conflict"}
 RECOVERY_HISTORY_STATES = {"prepared", "publishing", "publish_failed"}
+DEFAULT_HISTORY_RETENTION_LIMIT = 2
+MIN_HISTORY_RETENTION_LIMIT = 1
+MAX_HISTORY_RETENTION_LIMIT = 30
 
 
 class CandidateNotFound(LookupError):
@@ -307,14 +311,38 @@ def list_history(document_id: str) -> list[dict[str, Any]]:
     return result
 
 
-def prune_history(document_id: str, keep: int = 30) -> None:
-    eligible = [
-        item for item in list_history(document_id)
-        if item.get("state") == "committed"
+def history_version_deletable(item: dict[str, Any]) -> bool:
+    return (
+        item.get("state") == "committed"
         and not item.get("audit_pending")
         and not item.get("recovery_blocking")
+    )
+
+
+def history_retention_limit() -> int:
+    try:
+        config = get_feature_flags().get("document_template_center") or {}
+        value = int(config.get("history_retention_limit", DEFAULT_HISTORY_RETENTION_LIMIT))
+    except (TypeError, ValueError):
+        value = DEFAULT_HISTORY_RETENTION_LIMIT
+    return max(MIN_HISTORY_RETENTION_LIMIT, min(MAX_HISTORY_RETENTION_LIMIT, value))
+
+
+def delete_history_version(document_id: str, version_uuid: str) -> dict[str, Any]:
+    item = get_history_version(document_id, version_uuid)
+    if not history_version_deletable(item):
+        raise HistoryPreviewDenied("Historical version cannot be deleted safely")
+    shutil.rmtree(history_directory(document_id, version_uuid))
+    return item
+
+
+def prune_history(document_id: str, keep: int | None = None) -> None:
+    limit = history_retention_limit() if keep is None else keep
+    eligible = [
+        item for item in list_history(document_id)
+        if history_version_deletable(item)
     ]
-    for item in eligible[max(0, keep):]:
+    for item in eligible[max(0, limit):]:
         shutil.rmtree(history_directory(document_id, item["version_uuid"]), ignore_errors=True)
 
 

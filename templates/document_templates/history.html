@@ -15,6 +15,7 @@
 {% block page_actions %}<a class="btn btn-ghost-secondary" href="{{ public_url_for('document_templates.index') }}">К каталогу</a>{% endblock %}
 {% block content %}
 <div class="oplot-history">
+  <input type="hidden" id="dtc-history-csrf-token" value="{{ csrf_token }}">
   <div class="oplot-history-item is-active"><span class="oplot-history-dot"></span><div class="card"><div class="card-body"><span class="badge bg-green-lt">Активная версия</span><h3 class="mt-2">Сейчас используется</h3><code>{{ document.sha256_short }}</code></div></div></div>
   {% for version in versions %}
   {% set version_available = version.state == 'committed' and not version.recovery_blocking and not version.audit_pending %}
@@ -27,6 +28,11 @@
         <button class="btn btn-outline-primary btn-sm js-document-preview" data-preview-url="{{ public_url_for('document_templates.preview_history', document_id=document.document_id, version_uuid=version.version_uuid) }}" data-document-name="{{ document.filename }}" data-preview-source="Историческая версия">Просмотреть</button>
         <a class="btn btn-outline-secondary btn-sm" href="{{ public_url_for('document_templates.download_history', document_id=document.document_id, version_uuid=version.version_uuid) }}">Скачать</a>
         <button class="btn btn-warning btn-sm js-rollback-open" type="button" data-bs-toggle="modal" data-bs-target="#rollback-confirm-modal" data-rollback-url="{{ public_url_for('document_templates.rollback_history', document_id=document.document_id, version_uuid=version.version_uuid) }}" data-version-sha="{{ version.sha256[:12] }}" data-version-actor="{{ version.actor }}" data-version-date="{{ version.created_at_display }}">Восстановить</button>
+        {% if admin_session_configured %}
+        <button class="btn btn-outline-danger btn-sm js-history-delete" type="button" data-delete-url="{{ public_url_for('document_templates.delete_history', document_id=document.document_id, version_uuid=version.version_uuid) }}" data-admin-login-url="{{ admin_session_login_url }}" data-admin-status-url="{{ admin_session_status_url }}" data-version-sha="{{ version.sha256[:12] }}" data-document-name="{{ document.filename }}">Удалить из истории</button>
+        {% else %}
+        <button class="btn btn-outline-danger btn-sm" type="button" disabled title="Удаление истории требует настроенной административной session">Удалить из истории</button>
+        {% endif %}
         {% else %}<span class="oplot-history-unavailable">Просмотр и восстановление этой версии заблокированы безопасной проверкой.</span>{% endif %}
       </div>
     </div></div></div>
@@ -41,6 +47,26 @@
     <div class="modal-body"><div class="oplot-publish-summary"><div><span>Сейчас активна</span><code>{{ document.sha256_short }}</code></div><div><span>Будет восстановлена</span><code id="rollback-version-sha"></code></div><div><span>Версию изменил</span><strong id="rollback-version-actor"></strong></div><div><span>Дата версии</span><strong id="rollback-version-date"></strong></div></div><div class="alert alert-warning">Текущая версия не исчезнет: она будет сохранена в истории как отдельная точка восстановления.</div><input type="hidden" name="_csrf_token" value="{{ csrf_token }}"><input type="hidden" name="expected_active_sha" value="{{ document.sha256 }}"><label class="form-label" for="rollback-reason">Причина восстановления</label><textarea class="form-control" id="rollback-reason" name="reason" minlength="3" maxlength="500" rows="3" required placeholder="Почему требуется вернуться к этой версии"></textarea></div>
     <div class="modal-footer"><button class="btn btn-ghost-secondary" type="button" data-bs-dismiss="modal">Отмена</button><button class="btn btn-warning btn-lg" type="submit">Восстановить с сохранением текущей</button></div>
   </form></div></div></div>
+  <div class="modal modal-blur fade" id="history-delete-admin-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-md modal-dialog-centered">
+      <div class="modal-content">
+        <form id="history-delete-admin-form">
+          <div class="modal-header">
+            <div><div class="page-pretitle">Административный доступ</div><h3 class="modal-title">Подтвердите доступ администратора</h3></div>
+            <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+          </div>
+          <div class="modal-body">
+            <p class="text-secondary">Введите SUP admin token. После успешного входа версия будет удалена из истории.</p>
+            <div class="alert alert-warning oplot-history-delete-warning">Backup-файл будет полностью удалён. Текущий шаблон не изменится. Восстановить удалённую версию будет невозможно.</div>
+            <div class="alert alert-danger" id="history-delete-admin-error" hidden></div>
+            <label class="form-label" for="history-delete-admin-token">SUP admin token</label>
+            <input class="form-control" id="history-delete-admin-token" name="token" type="password" autocomplete="current-password" required>
+          </div>
+          <div class="modal-footer"><button class="btn btn-ghost-secondary" type="button" data-bs-dismiss="modal">Отмена</button><button class="btn btn-danger" type="submit">Войти и удалить</button></div>
+        </form>
+      </div>
+    </div>
+  </div>
 {% endblock %}
 {% block vendor_scripts %}
   <script defer src="{{ public_url_for('static', filename='vendor/htmx/2.0.10/htmx.min.js') }}"></script>

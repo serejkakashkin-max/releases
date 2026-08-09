@@ -54,6 +54,12 @@ def csrf_is_valid() -> bool:
     return bool(expected and supplied and hmac.compare_digest(expected, supplied))
 
 
+def csrf_form_is_valid() -> bool:
+    expected = _valid_token(request.cookies.get(CSRF_COOKIE_NAME))
+    supplied = _valid_token(request.form.get("_csrf_token"))
+    return bool(expected and supplied and hmac.compare_digest(expected, supplied))
+
+
 def apply_csrf_cookie(response):
     token = getattr(g, _G_TOKEN, "")
     if token and getattr(g, _G_SET_COOKIE, False):

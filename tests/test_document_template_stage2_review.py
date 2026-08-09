@@ -43,9 +43,12 @@ from services.document_template_storage_service import (
     candidate_file,
     cleanup_candidates,
     create_history_version,
+    delete_history_version,
     get_candidate,
     get_history_version,
     history_directory,
+    HistoryPreviewDenied,
+    history_retention_limit,
     list_history,
     prune_history,
     sha256_bytes,
@@ -235,19 +238,32 @@ class Stage2ReviewWorkflowTests(unittest.TestCase):
             cleanup_candidates(now=time.time())
             self.assertFalse(candidate_directory(expired["candidate_uuid"]).exists())
 
-    def test_history_pruning_keeps_recovery_versions_and_thirty_committed(self):
+    def test_history_retention_defaults_to_two_and_preserves_recovery_versions(self):
         with self.app.app_context():
             committed = []
-            for index in range(32):
+            for index in range(4):
                 payload = f"committed-{index}".encode()
                 committed.append(create_history_version(self.document_id, payload, {"created_at": f"2030-01-{index % 28 + 1:02d}T00:00:00+00:00", "updated_at": utc_now(), "state": "committed", "sha256": sha256_bytes(payload)}))
             prepared = create_history_version(self.document_id, b"prepared", {"created_at": utc_now(), "updated_at": utc_now(), "state": "prepared", "sha256": sha256_bytes(b"prepared")})
             failed = create_history_version(self.document_id, b"failed", {"created_at": utc_now(), "updated_at": utc_now(), "state": "publish_failed", "sha256": sha256_bytes(b"failed")})
-            prune_history(self.document_id, keep=30)
+            self.assertEqual(2, history_retention_limit())
+            prune_history(self.document_id)
             versions = list_history(self.document_id)
-            self.assertEqual(30, sum(item["state"] == "committed" for item in versions))
+            self.assertEqual(2, sum(item["state"] == "committed" for item in versions))
             self.assertTrue(history_directory(self.document_id, prepared["version_uuid"]).exists())
             self.assertTrue(history_directory(self.document_id, failed["version_uuid"]).exists())
+
+    def test_manual_history_delete_only_allows_safe_committed_versions(self):
+        with self.app.app_context():
+            committed_payload = b"committed-delete"
+            committed = create_history_version(self.document_id, committed_payload, {"created_at": utc_now(), "updated_at": utc_now(), "state": "committed", "sha256": sha256_bytes(committed_payload)})
+            prepared = create_history_version(self.document_id, b"prepared", {"created_at": utc_now(), "updated_at": utc_now(), "state": "prepared", "sha256": sha256_bytes(b"prepared")})
+            deleted = delete_history_version(self.document_id, committed["version_uuid"])
+            self.assertEqual(committed["version_uuid"], deleted["version_uuid"])
+            self.assertFalse(history_directory(self.document_id, committed["version_uuid"]).exists())
+            with self.assertRaises(HistoryPreviewDenied):
+                delete_history_version(self.document_id, prepared["version_uuid"])
+            self.assertTrue(history_directory(self.document_id, prepared["version_uuid"]).exists())
 
     def test_attempt_audit_failure_prevents_publish_and_rollback_replace(self):
         with self.app.app_context():

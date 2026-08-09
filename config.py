@@ -19,7 +19,6 @@ COUNTERS_FILE = SCRIPT_DIR / "data" / "counters.json"
 
 # Создаем необходимые папки
 Path(LOG_FILE).parent.mkdir(parents=True, exist_ok=True)
-CERT_PATH.mkdir(parents=True, exist_ok=True)
 COUNTERS_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 # --- Константы ---

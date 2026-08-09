@@ -8281,22 +8281,26 @@ def get_release_monitor_week_responsible_recommendations():
     }
 
     try:
-        from services.gigachat_service import GIGA_HELPER
+        from services.gigachat_service import (
+            GIGA_HELPER,
+            GigaChatDisabledError,
+            GigaChatUnavailableError,
+        )
     except Exception as exc:
         logging.warning("Release week control: failed to import GigaChat helper: %s", exc)
         return {
             "control": control,
             "recommendations": [],
             "source": "unavailable",
-            "message": f"GigaChat недоступен: {exc}",
+            "message": "GigaChat временно недоступен.",
         }
 
-    if not getattr(GIGA_HELPER, "client", None):
+    if not GIGA_HELPER.is_enabled():
         return {
             "control": control,
             "recommendations": [],
-            "source": "unavailable",
-            "message": "GigaChat недоступен или не инициализирован.",
+            "source": "disabled",
+            "message": "AI-рекомендации отключены администратором. Ручное назначение доступно.",
         }
 
     prompt = f"""
@@ -8341,16 +8345,30 @@ reserve_candidates конкретного релиза уже включены �
 """
 
     try:
-        response = GIGA_HELPER.client.chat(prompt)
+        response = GIGA_HELPER.chat(prompt)
         content = response.choices[0].message.content
         parsed = _extract_json_object(content)
+    except GigaChatDisabledError:
+        return {
+            "control": control,
+            "recommendations": [],
+            "source": "disabled",
+            "message": "AI-рекомендации отключены администратором. Ручное назначение доступно.",
+        }
+    except GigaChatUnavailableError:
+        return {
+            "control": control,
+            "recommendations": [],
+            "source": "unavailable",
+            "message": "GigaChat временно недоступен. Ручное назначение доступно.",
+        }
     except Exception as exc:
         logging.warning("Release week control: GigaChat recommendation failed: %s", exc)
         return {
             "control": control,
             "recommendations": [],
             "source": "error",
-            "message": f"Ошибка GigaChat: {exc}",
+            "message": "Не удалось получить AI-рекомендации. Ручное назначение доступно.",
         }
 
     raw_recommendations = parsed.get("recommendations") if isinstance(parsed, dict) else []

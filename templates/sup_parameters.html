@@ -535,6 +535,20 @@
             <p class="muted">Закрытые административные инструменты. Ссылки не добавляются на публичную главную страницу.</p>
           </div>
           <div class="card-body stack">
+            <div class="notice compact">
+              <strong>GigaChat</strong>
+              <span>Опциональная AI-интеграция Oplot. При отключении локальные сценарии продолжают работать.</span>
+            </div>
+            <div class="toggle-line">
+              <div>
+                <strong>Использовать GigaChat</strong>
+                <p class="muted">Отключает новые обращения к SDK, сертификатам и сети. Доступность сервиса проверяется отдельно при первом реальном вызове.</p>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="gigachatEnabled" data-dirty-field>
+                <span></span>
+              </label>
+            </div>
             <div class="notice compact" id="vaScheduleManagerStatusBox">
               <strong>Графики дежурств</strong>
               <span id="vaScheduleManagerStatusText">Статус не получен.</span>
@@ -560,6 +574,17 @@
               <button type="button" class="button" id="loginAdminSessionBtn">Войти в admin-session</button>
             </div>
             <p class="muted">Включение или отключение маршрутов Schedule Manager применяется после перезапуска Flask.</p>
+            <div class="notice compact sup-dtc-tools-card">
+              <strong>Центр шаблонов</strong>
+              <span>Настройки истории DOCX-шаблонов.</span>
+            </div>
+            <div class="field-row sup-dtc-retention-row">
+              <label>
+                <span>Хранить версий истории на шаблон</span>
+                <input type="number" id="dtcHistoryRetentionLimit" min="1" max="30" step="1" data-dirty-field>
+              </label>
+              <p class="muted">Активный DOCX не считается историей. Recovery-записи не удаляются автоматически.</p>
+            </div>
           </div>
         </section>
       </section>

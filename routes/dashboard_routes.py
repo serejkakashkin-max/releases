@@ -43,7 +43,7 @@ from services.release_monitor_service import (
 )
 from services.report_service import save_report_to_disk
 from services.release_report_service import get_release_report_service
-from services.feature_flags_service import is_maintenance_enabled
+from services.feature_flags_service import is_gigachat_enabled, is_maintenance_enabled
 from services.release_monitor_email_service import get_unassigned_email_status
 from services.sms_service import get_sms_profile_availability
 from routes.release_routes import (
@@ -64,7 +64,6 @@ from services.duty_ui_service import (
     build_assignment_center_ui_config,
     build_duty_dashboard_ui_config,
 )
-
 BASE_PATH = os.getenv("BASE_PATH", "")
 
 dashboard_bp = Blueprint('dashboard', __name__)
@@ -467,7 +466,9 @@ def release_monitor_assignment_center_page():
             maintenance_enabled=is_maintenance_enabled("release_monitor"),
             maintenance_scope="release_monitor",
             maintenance_title="Центр назначений на обслуживании",
-            assignment_center_ui_config=build_assignment_center_ui_config(),
+            assignment_center_ui_config=build_assignment_center_ui_config(
+                gigachat_enabled=is_gigachat_enabled()
+            ),
         )
     except Exception as e:
         logging.exception("Ошибка открытия Центра назначений")

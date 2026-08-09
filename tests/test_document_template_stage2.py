@@ -19,15 +19,18 @@ from tests._support import PROJECT_ROOT, prepare_config_import
 prepare_config_import()
 
 from routes.document_template_routes import document_template_bp
+from routes.sup_admin_session_routes import sup_admin_session_bp
 from services.document_template_candidate_service import validate_staged_candidate
 from services.document_template_csrf_service import (
     CSRF_COOKIE_NAME, DOCUMENT_TEMPLATE_ACTOR, csrf_cookie_path,
 )
 from services.document_template_read_service import build_document_whitelist
 from services.document_template_storage_service import (
-    get_candidate, list_candidates, list_history, update_candidate,
+    create_history_version, get_candidate, history_directory, list_candidates,
+    list_history, sha256_bytes, update_candidate,
     write_uploaded_candidate,
 )
+import services.sup_admin_auth_service as sup_admin_auth_service
 from services.document_template_publish_service import publish_candidate, recover_stale_operations, rollback_version
 from services.document_template_read_service import resolve_document
 from services.oplot_ui_service import register_oplot_ui
@@ -69,6 +72,7 @@ def build_app(root: Path, runtime: Path, *, secret=SECRET, enabled=None) -> Flas
     app.add_url_rule("/release-monitor", endpoint="dashboard.release_monitor_page", view_func=lambda: "monitor")
     app.add_url_rule("/mpr", endpoint="mpr.mpr_page", view_func=lambda: "mpr")
     app.register_blueprint(document_template_bp)
+    app.register_blueprint(sup_admin_session_bp)
     register_oplot_ui(app)
     return app
 
@@ -177,6 +181,22 @@ class Stage2WorkflowTests(unittest.TestCase):
             )
         return candidate["candidate_uuid"]
 
+    def _create_committed_history_version(self, payload=b"history"):
+        with self.app.app_context():
+            return create_history_version(
+                self.document_id,
+                payload,
+                {
+                    "created_at": "2030-01-01T00:00:00+00:00",
+                    "updated_at": "2030-01-01T00:00:00+00:00",
+                    "state": "committed",
+                    "action": "publish_previous",
+                    "actor": DOCUMENT_TEMPLATE_ACTOR,
+                    "sha256": sha256_bytes(payload),
+                    "source_filename": "history.docx",
+                },
+            )
+
     def test_upload_automatically_validates_publishes_and_preserves_history(self):
         upload = self._upload()
         self.assertEqual(303, upload.status_code)
@@ -201,6 +221,64 @@ class Stage2WorkflowTests(unittest.TestCase):
         rolled = self.client.post(f"/dashboard/release-monitor/document-templates/documents/{self.document_id}/history/{versions[0]['version_uuid']}/rollback", data={"_csrf_token": self.csrf, "reason": "Возвращаем проверенный вариант", "expected_active_sha": metadata["candidate_sha"]})
         self.assertEqual(303, rolled.status_code, rolled.get_data(as_text=True))
         self.assertEqual(self.original, self.active_path.read_bytes())
+
+    def test_history_delete_requires_dtc_csrf_and_sup_admin_session(self):
+        version = self._create_committed_history_version()
+        url = f"/dashboard/release-monitor/document-templates/documents/{self.document_id}/history/{version['version_uuid']}/delete"
+        missing_dtc = self.client.post(url, headers={"Accept": "application/json"})
+        self.assertEqual(403, missing_dtc.status_code)
+        missing_admin = self.client.post(url, data={"_csrf_token": self.csrf}, headers={"Accept": "application/json"})
+        self.assertEqual(403, missing_admin.status_code)
+        self.assertTrue(missing_admin.get_json()["requires_admin_login"])
+        with self.app.app_context():
+            self.assertTrue(history_directory(self.document_id, version["version_uuid"]).exists())
+
+    def test_history_delete_with_sup_admin_session_removes_disk_and_audits(self):
+        version = self._create_committed_history_version(b"delete-me")
+        url = f"/dashboard/release-monitor/document-templates/documents/{self.document_id}/history/{version['version_uuid']}/delete"
+        secret = "stage2-admin-session-secret-0123456789"
+        with mock.patch.dict(sup_admin_auth_service.TOKENS, {"sup_admin_token": "stage2-token", "sup_admin_session_secret": secret}, clear=False):
+            login = self.client.post("/admin/session/login", json={"token": "stage2-token"})
+            self.assertEqual(200, login.status_code, login.get_data(as_text=True))
+            csrf = login.get_json()["csrf_token"]
+            no_sup_csrf = self.client.post(url, data={"_csrf_token": self.csrf}, headers={"Accept": "application/json"})
+            self.assertEqual(403, no_sup_csrf.status_code)
+            response = self.client.post(url, data={"_csrf_token": self.csrf}, headers={"Accept": "application/json", "X-CSRF-Token": csrf})
+        self.assertEqual(200, response.status_code, response.get_data(as_text=True))
+        with self.app.app_context():
+            self.assertFalse(history_directory(self.document_id, version["version_uuid"]).exists())
+        self.assertEqual(404, self.client.get(f"/dashboard/release-monitor/document-templates/documents/{self.document_id}/history/{version['version_uuid']}/preview").status_code)
+        self.assertEqual(self.original, self.active_path.read_bytes())
+        audit_text = (Path(self.temp.name) / "runtime/data/document_template_center/audit/events.jsonl").read_text(encoding="utf-8")
+        event = json.loads(audit_text.splitlines()[-1])
+        self.assertEqual("history_delete", event["action"])
+        self.assertEqual(version["version_uuid"], event["version_uuid"])
+        self.assertEqual("deleted", event["result"])
+
+    def test_history_delete_rejects_recovery_sensitive_versions(self):
+        with self.app.app_context():
+            version = create_history_version(
+                self.document_id,
+                b"blocked",
+                {
+                    "created_at": "2030-01-01T00:00:00+00:00",
+                    "updated_at": "2030-01-01T00:00:00+00:00",
+                    "state": "committed",
+                    "sha256": sha256_bytes(b"blocked"),
+                    "recovery_blocking": True,
+                },
+            )
+        secret = "stage2-admin-session-secret-0123456789"
+        with mock.patch.dict(sup_admin_auth_service.TOKENS, {"sup_admin_token": "stage2-token", "sup_admin_session_secret": secret}, clear=False):
+            csrf = self.client.post("/admin/session/login", json={"token": "stage2-token"}).get_json()["csrf_token"]
+            response = self.client.post(
+                f"/dashboard/release-monitor/document-templates/documents/{self.document_id}/history/{version['version_uuid']}/delete",
+                data={"_csrf_token": self.csrf},
+                headers={"Accept": "application/json", "X-CSRF-Token": csrf},
+            )
+        self.assertEqual(423, response.status_code)
+        with self.app.app_context():
+            self.assertTrue(history_directory(self.document_id, version["version_uuid"]).exists())
 
     def test_multiple_candidates_become_conflicted_after_publish(self):
         first = self._upload_and_validate()

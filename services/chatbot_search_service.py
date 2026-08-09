@@ -133,7 +133,7 @@ class ChatbotSearchService:
         local_result = self._parse_local(user_message)
         
         # Если ГигаЧат доступен, используем его для уточнения
-        if self.giga_helper.client:
+        if self.giga_helper.is_enabled():
             try:
                 enhanced_result = self._parse_with_gigachat(user_message, local_result)
                 if enhanced_result:
@@ -247,7 +247,7 @@ class ChatbotSearchService:
 Ответ только JSON, без дополнительного текста."""
 
         try:
-            response = self.giga_helper.client.chat(prompt)
+            response = self.giga_helper.chat(prompt)
             content = response.choices[0].message.content
             
             # Извлекаем JSON из ответа

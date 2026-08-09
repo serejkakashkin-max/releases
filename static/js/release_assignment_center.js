@@ -27,6 +27,7 @@
         return;
     }
     const POLL_INTERVAL_MS = Number(config.settings?.poll_interval_ms) || 15000;
+    const GIGACHAT_ENABLED = config.settings?.gigachat_enabled !== false;
     const NORMAL_TITLE = 'Центр назначений';
     const SESSION_KEY = 'releaseAssignmentCenterNotifications';
 
@@ -546,8 +547,10 @@
         const availabilityKnown = payload?.availability_authoritative !== false;
         if (elements.scheduleWarning) elements.scheduleWarning.hidden = availabilityKnown;
         if (elements.aiBtn) {
-            elements.aiBtn.disabled = !availabilityKnown;
-            elements.aiBtn.title = availabilityKnown ? '' : 'Данные графика временно недоступны';
+            elements.aiBtn.disabled = !GIGACHAT_ENABLED || !availabilityKnown;
+            elements.aiBtn.title = !GIGACHAT_ENABLED
+                ? 'AI-рекомендации отключены администратором'
+                : availabilityKnown ? '' : 'Данные графика временно недоступны';
         }
         setConnection('online', `Онлайн · ${meta.generated_at || 'обновлено'}`);
         renderCockpit();
@@ -747,6 +750,13 @@
     }
 
     async function loadRecommendations() {
+        if (!GIGACHAT_ENABLED) {
+            elements.aiPanel.hidden = false;
+            elements.aiSummary.textContent = 'AI-рекомендации отключены администратором. Ручное назначение остаётся доступно.';
+            elements.aiList.innerHTML = '';
+            elements.aiBtn.disabled = true;
+            return;
+        }
         elements.aiBtn.disabled = true;
         elements.aiPanel.hidden = false;
         elements.aiSummary.textContent = 'GigaChat анализирует график, нагрузку и историю назначений...';
@@ -766,7 +776,7 @@
             elements.aiSummary.textContent = `Ошибка GigaChat: ${error.message}`;
             showToast(`GigaChat: ${error.message}`, 'error');
         } finally {
-            elements.aiBtn.disabled = false;
+            elements.aiBtn.disabled = !GIGACHAT_ENABLED;
         }
     }
 
@@ -837,6 +847,12 @@
         elements.refreshBtn.addEventListener('click', () => fetchControl(true));
         elements.aiBtn.addEventListener('click', loadRecommendations);
         elements.applyAllBtn.addEventListener('click', applyAllRecommendations);
+        if (!GIGACHAT_ENABLED) {
+            elements.aiBtn.disabled = true;
+            elements.aiBtn.title = 'AI-рекомендации отключены администратором';
+            elements.aiPanel.hidden = false;
+            elements.aiSummary.textContent = 'AI-рекомендации отключены администратором. Ручное назначение остаётся доступно.';
+        }
         fetchControl(true);
         startPolling();
     }

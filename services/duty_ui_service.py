@@ -45,7 +45,9 @@ def build_duty_dashboard_ui_config(
     }
 
 
-def build_assignment_center_ui_config(*, poll_interval_ms: int = 15_000) -> dict:
+def build_assignment_center_ui_config(
+    *, poll_interval_ms: int = 15_000, gigachat_enabled: bool = True
+) -> dict:
     """Builds endpoint-backed configuration without moving assignment logic."""
     return {
         "urls": {
@@ -55,5 +57,6 @@ def build_assignment_center_ui_config(*, poll_interval_ms: int = 15_000) -> dict
         },
         "settings": {
             "poll_interval_ms": int(poll_interval_ms),
+            "gigachat_enabled": bool(gigachat_enabled),
         },
     }
