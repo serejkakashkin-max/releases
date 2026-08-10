@@ -143,11 +143,7 @@ const releaseMonitorPollingDebugState = {
     maxFullRequestsInFlight: 0,
 };
 let releaseMonitorKnownRevision = '';
-let releaseMonitorDismissedRevision = '';
 let releaseMonitorGlobalRefreshing = false;
-let releaseUpdateBannerMeta = null;
-let releaseUpdateBannerTimer = null;
-const RELEASE_SCROLL_RESTORE_KEY = 'releaseMonitorScrollRestore';
 const RELEASE_SMS_DRAFT_KEY = 'releaseMonitorSmsDraft';
 const RELEASE_SMS_SCOPE_KEY = 'releaseMonitorSmsScope';
 const RELEASE_SMS_DRAFT_TTL_MS = 12 * 60 * 60 * 1000;
@@ -159,7 +155,6 @@ const RELEASE_WORK_MARK_ACTIVE_KEY = 'releaseMonitorWorkMarkActive';
 const RELEASE_WORK_MARK_AUTO_PARTICIPANTS_KEY = 'releaseMonitorWorkMarkAutoParticipants';
 const RELEASE_WORK_MARK_WEEK_KEY = 'releaseMonitorWorkMarkWeek';
 const RELEASE_WORK_MARK_AUTO_COLLAPSE_MS = 30000;
-let releaseScrollRestoreAttempted = false;
 let RELEASE_REVIEWER_OPTIONS = releaseConfigData.reviewer_options;
 let releaseResponsibleDirectoryOptions = [];
 let releaseEmployeeSelectionAvailable = Boolean(releaseConfigData.release_monitor_meta.employee_selection_available);
@@ -830,75 +825,6 @@ function isManualNumberingOverride(item) {
     );
 }
 
-function parseReleaseMonitorRevisionDate(meta = releaseMonitorMeta) {
-    const revision = String(meta?.data_revision || '').trim();
-    if (!/^\d+$/.test(revision)) {
-        return null;
-    }
-    const timestamp = Number(revision);
-    if (!Number.isFinite(timestamp) || timestamp <= 0) {
-        return null;
-    }
-    const dateValue = new Date(timestamp);
-    return Number.isNaN(dateValue.getTime()) ? null : dateValue;
-}
-
-function parseReleaseMonitorUpdatedAt(meta = releaseMonitorMeta) {
-    const revisionDate = parseReleaseMonitorRevisionDate(meta);
-    if (revisionDate) {
-        return revisionDate;
-    }
-    const value = String(meta?.view_updated_at || meta?.last_updated || '').trim();
-    if (/^\d{4}-\d{2}-\d{2}T/.test(value)) {
-        const isoDate = new Date(value);
-        if (!Number.isNaN(isoDate.getTime())) {
-            return isoDate;
-        }
-    }
-    const match = value.match(/^(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})(?::(\d{2}))?$/);
-    if (!match) {
-        return null;
-    }
-    return new Date(
-        Number(match[3]),
-        Number(match[2]) - 1,
-        Number(match[1]),
-        Number(match[4]),
-        Number(match[5]),
-        Number(match[6] || 0)
-    );
-}
-
-function getReleaseMonitorUpdateTime(meta = releaseMonitorMeta) {
-    const updatedAt = parseReleaseMonitorUpdatedAt(meta);
-    if (updatedAt) {
-        return `${String(updatedAt.getHours()).padStart(2, '0')}:${String(updatedAt.getMinutes()).padStart(2, '0')}`;
-    }
-    const value = String(meta?.view_updated_at || meta?.last_updated || '').trim();
-    const match = value.match(/(?:^|\s)(\d{2}:\d{2})(?::\d{2})?$/);
-    return match ? match[1] : '';
-}
-
-function formatReleaseUpdateAge(updatedAt) {
-    if (!updatedAt) {
-        return '';
-    }
-    const diffMs = Date.now() - updatedAt.getTime();
-    if (!Number.isFinite(diffMs) || diffMs < 0) {
-        return '';
-    }
-    const diffMinutes = Math.floor(diffMs / 60000);
-    if (diffMinutes < 1) {
-        return 'только что';
-    }
-    if (diffMinutes < 60) {
-        return `${diffMinutes} мин назад`;
-    }
-    const hours = Math.floor(diffMinutes / 60);
-    const minutes = diffMinutes % 60;
-    return minutes ? `${hours} ч ${minutes} мин назад` : `${hours} ч назад`;
-}
-
 function getReleaseMonitorShortTime(value) {
     const text = String(value || '').trim();
     const match = text.match(/\b(\d{2}):(\d{2})(?::(\d{2}))?\b/);
@@ -983,154 +909,6 @@ function updateReleaseAutoRefreshBadge(meta = releaseMonitorMeta) {
     badge.classList.add('is-paused');
     text.textContent = 'Авто: ожидает';
     badge.title = 'Тихое автообновление пока не выполнялось';
-}
-
-function updateReleaseUpdateBannerText() {
-    if (!releaseUpdateBannerMeta) {
-        return;
-    }
-    const timeText = getReleaseMonitorUpdateTime(releaseUpdateBannerMeta);
-    const ageText = formatReleaseUpdateAge(parseReleaseMonitorUpdatedAt(releaseUpdateBannerMeta));
-    const message = timeText && ageText
-        ? `Данные релизов обновились в ${timeText} (${ageText}). Обновите страницу.`
-        : (timeText
-            ? `Данные релизов обновились в ${timeText}. Обновите страницу.`
-            : 'Данные релизов обновились. Обновите страницу.');
-    ['releaseUpdateBannerText', 'releaseUpdateToastText'].forEach(id => {
-        const element = document.getElementById(id);
-        if (element) {
-            element.textContent = message;
-        }
-    });
-}
-
-function showReleaseUpdateToast(meta = releaseUpdateBannerMeta) {
-    const toast = document.getElementById('releaseUpdateToast');
-    if (!toast) {
-        return;
-    }
-    releaseUpdateBannerMeta = meta || {};
-    updateReleaseUpdateBannerText();
-    toast.classList.add('show');
-}
-
-function hideReleaseUpdateToast() {
-    const toast = document.getElementById('releaseUpdateToast');
-    if (toast) {
-        toast.classList.remove('show');
-    }
-}
-
-function getNearestVisibleReleaseRow() {
-    const rows = Array.from(document.querySelectorAll('#releaseMonitorBody tr.release-row[data-row-key]'));
-    const visibleRows = rows
-        .map(row => ({ row, rect: row.getBoundingClientRect() }))
-        .filter(entry => entry.rect.height > 0 && entry.rect.bottom > 0 && entry.rect.top < window.innerHeight);
-    if (!visibleRows.length) {
-        return null;
-    }
-    const anchor = Math.min(Math.max(window.innerHeight * 0.28, 130), window.innerHeight - 90);
-    return visibleRows.reduce((best, entry) => {
-        const distance = Math.abs(entry.rect.top - anchor);
-        if (!best || distance < best.distance) {
-            return { row: entry.row, rect: entry.rect, distance };
-        }
-        return best;
-    }, null);
-}
-
-function saveReleaseScrollRestoreState() {
-    try {
-        const nearest = getNearestVisibleReleaseRow();
-        const payload = {
-            pathname: window.location.pathname,
-            scrollY: Math.max(0, Math.round(window.scrollY || 0)),
-            rowKey: nearest?.row?.dataset?.rowKey || '',
-            rowTop: nearest ? Math.round(nearest.rect.top) : null,
-            timestamp: Date.now()
-        };
-        sessionStorage.setItem(RELEASE_SCROLL_RESTORE_KEY, JSON.stringify(payload));
-    } catch (error) {
-        console.warn('Release monitor scroll restore save failed:', error);
-    }
-}
-
-function restoreReleaseScrollPosition() {
-    if (releaseScrollRestoreAttempted) {
-        return;
-    }
-    releaseScrollRestoreAttempted = true;
-    let payload = null;
-    try {
-        const raw = sessionStorage.getItem(RELEASE_SCROLL_RESTORE_KEY);
-        if (!raw) {
-            return;
-        }
-        payload = JSON.parse(raw);
-        sessionStorage.removeItem(RELEASE_SCROLL_RESTORE_KEY);
-    } catch (error) {
-        console.warn('Release monitor scroll restore read failed:', error);
-        try {
-            sessionStorage.removeItem(RELEASE_SCROLL_RESTORE_KEY);
-        } catch (_) {}
-        return;
-    }
-    if (!payload || payload.pathname !== window.location.pathname) {
-        return;
-    }
-    if (Date.now() - Number(payload.timestamp || 0) > 10 * 60 * 1000) {
-        return;
-    }
-    const rowKey = String(payload.rowKey || '').trim();
-    if (rowKey) {
-        const targetRow = Array.from(document.querySelectorAll('#releaseMonitorBody tr.release-row[data-row-key]')).find(
-            row => row.dataset.rowKey === rowKey
-        );
-        if (targetRow) {
-            const rowRect = targetRow.getBoundingClientRect();
-            const preferredTop = Number.isFinite(Number(payload.rowTop)) ? Number(payload.rowTop) : 160;
-            const targetTop = rowRect.top + window.scrollY - Math.max(80, preferredTop);
-            window.scrollTo({ top: Math.max(0, Math.round(targetTop)), behavior: 'auto' });
-            return;
-        }
-    }
-    window.scrollTo({ top: Math.max(0, Number(payload.scrollY || 0)), behavior: 'auto' });
-}
-
-function reloadReleaseMonitorWithScrollRestore() {
-    saveReleaseScrollRestoreState();
-    location.reload();
-}
-
-function showReleaseUpdateBanner(meta = releaseMonitorMeta) {
-    const banner = document.getElementById('releaseUpdateBanner');
-    releaseUpdateBannerMeta = meta || {};
-    updateReleaseUpdateBannerText();
-    if (banner) {
-        banner.classList.add('show');
-    }
-    showReleaseUpdateToast(releaseUpdateBannerMeta);
-    if (!releaseUpdateBannerTimer) {
-        releaseUpdateBannerTimer = setInterval(updateReleaseUpdateBannerText, 60000);
-    }
-}
-
-function hideReleaseUpdateBanner() {
-    const banner = document.getElementById('releaseUpdateBanner');
-    if (banner) {
-        banner.classList.remove('show');
-    }
-    hideReleaseUpdateToast();
-    releaseUpdateBannerMeta = null;
-    if (releaseUpdateBannerTimer) {
-        clearInterval(releaseUpdateBannerTimer);
-        releaseUpdateBannerTimer = null;
-    }
-}
-
-function dismissReleaseUpdateBanner() {
-    releaseMonitorDismissedRevision = releaseMonitorKnownRevision;
-    hideReleaseUpdateBanner();
 }
 
 function setReleaseMonitorGlobalRefreshing(isRefreshing) {
@@ -2842,7 +2620,6 @@ function applyReleaseMonitorJiraSyncPatch(syncPatch) {
 
     if (syncPatch.data_revision) {
         releaseMonitorKnownRevision = String(syncPatch.data_revision);
-        releaseMonitorDismissedRevision = '';
     }
 
     if (patched) {
@@ -4780,7 +4557,6 @@ function renderReleaseMonitor(items, meta) {
     const renderedRevision = getReleaseMonitorRevision(releaseMonitorMeta);
     releaseMonitorKnownRevision = renderedRevision || releaseMonitorKnownRevision;
     releaseMonitorLastAppliedViewRevision = renderedRevision || releaseMonitorLastAppliedViewRevision;
-    hideReleaseUpdateBanner();
     updateReleaseAutoRefreshBadge(releaseMonitorMeta);
     ensureResponsibleHeaderFilter();
 
@@ -5842,7 +5618,6 @@ async function saveReleaseAssignmentOptimistic(releaseKey, patch, fieldGroup = '
         }
         if (data.data_revision) {
             releaseMonitorKnownRevision = String(data.data_revision);
-            releaseMonitorDismissedRevision = '';
         }
         const successPatch = buildReleaseAssignmentSuccessPatch(data);
         replaceReleaseAssignmentItem(rowKey, successPatch);
@@ -5952,7 +5727,6 @@ async function setReleaseManualColor(releaseKey, level) {
             releaseMonitorMeta = data.release_monitor_meta || releaseMonitorMeta;
             releaseMonitorKnownRevision = getReleaseMonitorRevision(releaseMonitorMeta) || releaseMonitorKnownRevision;
             updateReleaseAutoRefreshBadge(releaseMonitorMeta);
-            hideReleaseUpdateBanner();
             if (data.work_mark_cleanup_failed) {
                 alert('Цвет релиза сохранен, но метку смены не удалось очистить. Обновите страницу или очистите метку вручную.');
             }
@@ -6375,6 +6149,11 @@ async function loadReleaseMonitorFullStatus(targetRevision = '') {
 
     try {
         return await releaseMonitorFullStatusRequest;
+    } catch (error) {
+        if (normalizedRevision === releaseMonitorLastRequestedFullRevision) {
+            releaseMonitorLastRequestedFullRevision = '';
+        }
+        throw error;
     } finally {
         releaseMonitorPollingDebugState.fullRequestsInFlight = Math.max(
             0,
@@ -6418,29 +6197,18 @@ async function handleReleaseMonitorCompactStatus(data) {
     }
 
     const latestRevision = String(data.view_revision || '').trim();
-    const compactMeta = {
-        view_revision: latestRevision,
-        view_updated_at: data.updated_at || '',
-        last_updated: data.updated_at || '',
-    };
     if (
         latestRevision &&
         releaseMonitorKnownRevision &&
-        latestRevision !== releaseMonitorKnownRevision &&
-        latestRevision !== releaseMonitorDismissedRevision
+        latestRevision !== releaseMonitorKnownRevision
     ) {
-        releaseMonitorKnownRevision = latestRevision;
-        if (refreshStatus.state === 'completed') {
-            try {
-                await loadReleaseMonitorFullStatus(latestRevision);
-                return;
-            } catch (error) {
-                if (error.name !== 'AbortError') {
-                    console.error('Release monitor refresh result error:', error);
-                }
+        try {
+            await loadReleaseMonitorFullStatus(latestRevision);
+        } catch (error) {
+            if (error.name !== 'AbortError') {
+                console.error('Release monitor automatic synchronization error:', error);
             }
         }
-        showReleaseUpdateBanner(compactMeta);
     }
 }
 
@@ -6748,7 +6516,6 @@ function applyReleaseFilters() {
     updateReleaseScrollButtons();
     refreshReleaseOrderModeUi();
     setReleaseMonitorGlobalRefreshing(releaseMonitorGlobalRefreshing);
-    restoreReleaseScrollPosition();
 }
 
 Object.assign(window, {
@@ -6765,7 +6532,6 @@ Object.assign(window, {
     confirmReleaseSmsReview,
     copyReleaseSmsText,
     createReleaseZni,
-    dismissReleaseUpdateBanner,
     ensureReleaseReviewerOptions,
     generateReleaseSmsZip,
     handleReleaseFarFutureToggle,
@@ -6785,7 +6551,6 @@ Object.assign(window, {
     openReleaseManualOverrideModal,
     openReleaseSmsModal,
     openSmsTemplateEditor,
-    reloadReleaseMonitorWithScrollRestore,
     reloadSmsTemplateEditor,
     removeReleaseWorkMarkParticipant,
     removeResponsibleAssignment,

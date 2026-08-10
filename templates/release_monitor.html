@@ -311,26 +311,6 @@
                     </div>
                 </div>
 
-                <div id="releaseUpdateBanner" class="release-update-banner" role="status" aria-live="polite">
-                    <div id="releaseUpdateBannerText">&#1044;&#1072;&#1085;&#1085;&#1099;&#1077; &#1088;&#1077;&#1083;&#1080;&#1079;&#1086;&#1074; &#1086;&#1073;&#1085;&#1086;&#1074;&#1080;&#1083;&#1080;&#1089;&#1100;. &#1054;&#1073;&#1085;&#1086;&#1074;&#1080;&#1090;&#1077; &#1089;&#1090;&#1088;&#1072;&#1085;&#1080;&#1094;&#1091;.</div>
-                    <div class="release-update-banner-actions">
-                        <button type="button" onclick="reloadReleaseMonitorWithScrollRestore()">&#1054;&#1073;&#1085;&#1086;&#1074;&#1080;&#1090;&#1100;</button>
-                        <button type="button" onclick="dismissReleaseUpdateBanner()">&#1055;&#1086;&#1079;&#1078;&#1077;</button>
-                    </div>
-                </div>
-
-                <div id="releaseUpdateToast" class="release-update-toast" role="status" aria-live="polite">
-                    <div class="release-update-toast-title">
-                        <i class="bi bi-arrow-repeat"></i>
-                        <span>Обновление данных</span>
-                    </div>
-                    <div id="releaseUpdateToastText" class="release-update-toast-text">Данные релизов обновились. Обновите страницу.</div>
-                    <div class="release-update-toast-actions">
-                        <button type="button" class="primary" onclick="reloadReleaseMonitorWithScrollRestore()">Обновить</button>
-                        <button type="button" onclick="dismissReleaseUpdateBanner()">Позже</button>
-                    </div>
-                </div>
-
                 <div class="release-visible-counter">
                     Видимых релизов: <strong id="releaseVisibleCount">{{ release_monitor|length }}</strong>
                 </div>

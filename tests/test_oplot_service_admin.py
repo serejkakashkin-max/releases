@@ -212,6 +212,8 @@ class SupJavascriptContractTests(unittest.TestCase):
         self.assertNotIn("BASE_PATH", script)
         self.assertIn('headers.set("X-SUP-Admin-Token", getToken())', script)
         self.assertIn('headers.set("X-CSRF-Token", csrfToken)', script)
+        self.assertIn('getSupUrl("admin_session_status")', script)
+        self.assertIn("await ensureAdminSession();\n          const payload = await adminApi", script)
         self.assertIn("nextDelay = payload.refresh?.state === \"refreshing\" ? 2000 : 15000", script)
         self.assertIn("Math.min(60000", script)
         self.assertIn('body: JSON.stringify({ mode })', script)

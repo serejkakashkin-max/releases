@@ -230,6 +230,28 @@
     });
   }
 
+  function refreshSupAdminSession(button) {
+    var statusUrl = button && button.dataset ? button.dataset.adminStatusUrl : "";
+    if (!statusUrl) {
+      return Promise.resolve(false);
+    }
+    return fetch(statusUrl, {
+      method: "GET",
+      credentials: "same-origin",
+      headers: { "Accept": "application/json" }
+    }).then(parseJsonResponse).then(function (result) {
+      if (!result.response.ok || result.payload.success === false) {
+        throw new Error(result.payload.error || "Не удалось проверить административный вход.");
+      }
+      if (result.payload.authenticated && result.payload.csrf_token) {
+        setSupCsrfToken(result.payload.csrf_token);
+        return true;
+      }
+      setSupCsrfToken("");
+      return false;
+    });
+  }
+
   function requestHistoryDelete(button) {
     var formData = new FormData();
     var csrfToken = getDtcCsrfToken();
@@ -283,7 +305,18 @@
   function completeHistoryDelete(button) {
     button.disabled = true;
     button.classList.add("is-loading");
-    requestHistoryDelete(button).then(function (result) {
+    refreshSupAdminSession(button).then(function (authenticated) {
+      if (!authenticated) {
+        button.disabled = false;
+        button.classList.remove("is-loading");
+        openHistoryDeleteAdminModal(button, "Требуется административный вход.");
+        return null;
+      }
+      return requestHistoryDelete(button);
+    }).then(function (result) {
+      if (!result) {
+        return;
+      }
       if (result.response.ok && result.payload.success !== false) {
         window.location.assign(result.payload.redirect || window.location.href);
         return;

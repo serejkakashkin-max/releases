@@ -111,10 +111,27 @@ def _page_number() -> int:
 def _enrich_catalog(catalog: dict) -> None:
     for kit in catalog.get("kits", []):
         for document in kit.get("documents", []):
-            candidates = list_candidates(document["document_id"])
-            document["candidates"] = candidates[:3]
+            candidates = [
+                item for item in list_candidates(document["document_id"])
+                if item.get("state") not in {"published", "cancelled", "expired"}
+            ]
             document["candidate_count"] = len(candidates)
             document["status"] = candidates[0]["state"] if candidates else "active"
+
+
+def _enrich_history_versions(document_id: str, versions: list[dict]) -> None:
+    for version in versions:
+        if version.get("replacement_source_filename") or not version.get("candidate_uuid"):
+            continue
+        try:
+            candidate = get_candidate(
+                version["candidate_uuid"],
+                document_id=document_id,
+                allow_expired=True,
+            )
+        except (CandidateNotFound, ValueError, OSError):
+            continue
+        version["replacement_source_filename"] = candidate.get("source_filename", "")
 
 
 def _navigation_response(target: str, *, htmx_status: int = 200):
@@ -350,10 +367,12 @@ def cancel_candidate_route(document_id, candidate_uuid):
 @document_template_bp.get("/documents/<document_id>/history")
 def document_history(document_id):
     document = _resolved_or_404(document_id)
+    versions = list_history(document_id)
+    _enrich_history_versions(document_id, versions)
     return render_template(
         "document_templates/history.html",
         document=document.as_view_model(),
-        versions=list_history(document_id),
+        versions=versions,
         csrf_token=csrf_token(),
         admin_session_configured=is_admin_session_secret_configured(),
         admin_session_login_url=safe_public_url_for("sup_admin_session.login") or "",

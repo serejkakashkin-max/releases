@@ -217,6 +217,12 @@ class Stage2WorkflowTests(unittest.TestCase):
             versions = list_history(self.document_id)
         self.assertEqual(1, len(versions))
         self.assertEqual("Обновлено оформление", versions[0]["comment"])
+        self.assertEqual("Новая версия.docx", versions[0]["replacement_source_filename"])
+        history_page = self.client.get(
+            f"/dashboard/release-monitor/document-templates/documents/{self.document_id}/history"
+        ).get_data(as_text=True)
+        self.assertIn("Загружена новая версия:", history_page)
+        self.assertIn("Новая версия.docx", history_page)
         self.assertEqual(self.original, (Path(self.temp.name) / f"runtime/data/document_template_center/history/{self.document_id}/{versions[0]['version_uuid']}/document.docx").read_bytes())
         rolled = self.client.post(f"/dashboard/release-monitor/document-templates/documents/{self.document_id}/history/{versions[0]['version_uuid']}/rollback", data={"_csrf_token": self.csrf, "reason": "Возвращаем проверенный вариант", "expected_active_sha": metadata["candidate_sha"]})
         self.assertEqual(303, rolled.status_code, rolled.get_data(as_text=True))

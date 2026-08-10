@@ -31,7 +31,7 @@
         const node = document.getElementById("oplot-sup-admin-config");
         const parsed = JSON.parse(node?.textContent || "null");
         const required = [
-          "data", "save", "admin_session_login", "release_refresh_status",
+          "data", "save", "admin_session_login", "admin_session_status", "release_refresh_status",
           "release_refresh_start", "employee_directory", "employee_directory_save",
           "va_admin", "va_competencies", "release_monitor"
         ];
@@ -655,20 +655,43 @@
         input.value = String(state.config?.document_template_center?.history_retention_limit || 2);
       }
 
+      let adminSessionRequest = null;
+
       async function ensureAdminSession() {
-        const token = getToken();
-        if (!token) throw new Error("Введите SUP token.");
-        const response = await fetch(getSupUrl("admin_session_login"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token })
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || payload.success === false) {
-          throw new Error(payload.error || "Административный вход не выполнен.");
+        if (adminSessionRequest) return adminSessionRequest;
+        adminSessionRequest = (async () => {
+          const statusResponse = await fetch(getSupUrl("admin_session_status"), {
+            method: "GET",
+            credentials: "same-origin",
+            headers: { "Accept": "application/json" }
+          });
+          const statusPayload = await statusResponse.json().catch(() => ({}));
+          if (statusResponse.ok && statusPayload.authenticated && statusPayload.csrf_token) {
+            sessionStorage.setItem("sup_admin_csrf_token", statusPayload.csrf_token);
+            return statusPayload;
+          }
+
+          sessionStorage.removeItem("sup_admin_csrf_token");
+          const token = getToken();
+          if (!token) throw new Error("Введите SUP token.");
+          const response = await fetch(getSupUrl("admin_session_login"), {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Accept": "application/json", "Content-Type": "application/json" },
+            body: JSON.stringify({ token })
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok || payload.success === false || !payload.csrf_token) {
+            throw new Error(payload.error || "Административный вход не выполнен.");
+          }
+          sessionStorage.setItem("sup_admin_csrf_token", payload.csrf_token);
+          return payload;
+        })();
+        try {
+          return await adminSessionRequest;
+        } finally {
+          adminSessionRequest = null;
         }
-        sessionStorage.setItem("sup_admin_csrf_token", payload.csrf_token || "");
-        return payload;
       }
 
       async function adminApi(path, options = {}) {
@@ -840,6 +863,7 @@
         closeReleaseRefreshConfirmation();
         beginButtonAction(sourceButton, "Запуск...");
         try {
+          await ensureAdminSession();
           const payload = await adminApi(
             getSupUrl("release_refresh_start"),
             {
@@ -2120,10 +2144,11 @@
         closeVaMultiSelect();
         if (!document.querySelector(`[data-tab="${name}"]`)) name = "employees";
         state.activeTab = name;
-        if (name === "release-refresh" && sessionStorage.getItem("sup_admin_csrf_token")) {
-          startReleaseRefreshPolling({ immediate: true });
-        }
-        else stopReleaseRefreshPolling();
+        if (name === "release-refresh") {
+          ensureAdminSession()
+            .then(() => startReleaseRefreshPolling({ immediate: true }))
+            .catch((error) => setStatus(error.message, "error"));
+        } else stopReleaseRefreshPolling();
         document.querySelectorAll("[data-panel]").forEach((panel) => panel.classList.toggle("active", panel.dataset.panel === name));
         document.querySelectorAll("[data-tab]").forEach((button) => {
           const active = button.dataset.tab === name;
@@ -2661,6 +2686,9 @@
           await ensureAdminSession();
           setStatus("");
           finishButtonAction(button, { label: "Доступ открыт", disabled: false });
+          if (state.activeTab === "release-refresh") {
+            startReleaseRefreshPolling({ immediate: true });
+          }
         } catch (error) {
           setStatus(error.message, "error");
           finishButtonAction(button, { success: false, disabled: false });

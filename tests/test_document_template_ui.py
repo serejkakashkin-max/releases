@@ -81,6 +81,13 @@ class DocumentTemplateUiTests(unittest.TestCase):
         self.assertNotIn(">Опубликовать<", html)
         self.assertIn("Проверить и заменить", html)
         self.assertIn('id="oplot-dtc-variants-map"', html)
+        self.assertNotIn("oplot-candidate-links", html)
+        self.assertNotIn("результат проверки", html)
+
+    def test_catalog_does_not_present_published_candidates_as_new_versions(self):
+        route_source = (Path(__file__).parents[1] / "routes/document_template_routes.py").read_text(encoding="utf-8")
+        self.assertIn('{"published", "cancelled", "expired"}', route_source)
+        self.assertNotIn('document["candidates"]', route_source)
 
     def test_dtc_css_and_filter_script_keep_modal_and_variant_layout_stable(self):
         css = (Path(__file__).parents[1] / "static/css/document_templates.css").read_text(encoding="utf-8")
@@ -99,6 +106,12 @@ class DocumentTemplateUiTests(unittest.TestCase):
         self.assertIn("--oplot-dtc-table-head", css)
         self.assertIn("syncVariantFilter", script)
         self.assertIn('event.target.id === "category-filter"', script)
+        self.assertIn("function refreshSupAdminSession", script)
+        self.assertIn("button.dataset.adminStatusUrl", script)
+        self.assertLess(
+            script.index("refreshSupAdminSession(button)"),
+            script.index("requestHistoryDelete(button);", script.index("function completeHistoryDelete")),
+        )
 
     def test_csrf_form_cookie_identity_header_support_and_secure_policy(self):
         response = self.client.get("/dashboard/release-monitor/document-templates/")

@@ -35,7 +35,6 @@ PUBLIC_RELEASE_HANDLERS = (
     "confirmReleaseSmsReview",
     "copyReleaseSmsText",
     "createReleaseZni",
-    "dismissReleaseUpdateBanner",
     "ensureReleaseReviewerOptions",
     "generateReleaseSmsZip",
     "handleReleaseFarFutureToggle",
@@ -55,7 +54,6 @@ PUBLIC_RELEASE_HANDLERS = (
     "openReleaseManualOverrideModal",
     "openReleaseSmsModal",
     "openSmsTemplateEditor",
-    "reloadReleaseMonitorWithScrollRestore",
     "reloadSmsTemplateEditor",
     "removeReleaseWorkMarkParticipant",
     "removeResponsibleAssignment",
@@ -177,14 +175,14 @@ class ReleaseMonitorCharacterizationTests(unittest.TestCase):
             re.MULTILINE,
         )
         self.assertEqual(
-            311,
+            297,
             len([name for name in functions if name != "registerReleaseLifecycleListeners"]),
         )
         self.assertEqual(
-            79,
+            74,
             len(re.findall(r"^(?:let|const|var)\s+[A-Za-z_$][\w$]*", business, re.MULTILINE)),
         )
-        self.assertEqual(90, len(re.findall(r"\bon[a-z]+\s*=", source + external, re.IGNORECASE)))
+        self.assertEqual(86, len(re.findall(r"\bon[a-z]+\s*=", source + external, re.IGNORECASE)))
         for handler in PUBLIC_RELEASE_HANDLERS:
             with self.subTest(handler=handler):
                 self.assertRegex(business, rf"(?:async\s+)?function\s+{re.escape(handler)}\s*\(")
@@ -257,6 +255,28 @@ class ReleaseMonitorCharacterizationTests(unittest.TestCase):
         self.assertIn("dashboard.release_monitor_duty_schedule_page", (PROJECT_ROOT / "services" / "release_ui_service.py").read_text(encoding="utf-8"))
         self.assertRegex(source, r"window\.open\(getReleaseUrl\('current_week'\), '_blank'")
         self.assertRegex(source, r"window\.open\(getReleaseUrl\('assignment_center'\), '_blank'")
+
+    def test_revision_changes_are_applied_automatically_without_reload_banner(self):
+        source = RELEASE_JS_PATH.read_text(encoding="utf-8")
+        template = TEMPLATE_PATH.read_text(encoding="utf-8")
+        css = (PROJECT_ROOT / "static" / "css" / "oplot_release.css").read_text(encoding="utf-8")
+
+        self.assertIn("latestRevision !== releaseMonitorKnownRevision", source)
+        self.assertIn("await loadReleaseMonitorFullStatus(latestRevision)", source)
+        self.assertNotIn("refreshStatus.state === 'completed') {\n            try {\n                await loadReleaseMonitorFullStatus", source)
+        self.assertIn("releaseMonitorLastRequestedFullRevision = '';", source)
+        for legacy_hook in (
+            "releaseUpdateBanner",
+            "releaseUpdateToast",
+            "showReleaseUpdateBanner",
+            "dismissReleaseUpdateBanner",
+            "reloadReleaseMonitorWithScrollRestore",
+        ):
+            with self.subTest(legacy_hook=legacy_hook):
+                self.assertNotIn(legacy_hook, source)
+                self.assertNotIn(legacy_hook, template)
+        self.assertNotIn("release-update-banner", css)
+        self.assertNotIn("release-update-toast", css)
 
     def test_release_monitor_does_not_load_document_template_viewer_assets(self):
         response, _build_model, _maintenance = _render_release_monitor()

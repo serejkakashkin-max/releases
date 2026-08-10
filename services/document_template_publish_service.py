@@ -187,6 +187,7 @@ def publish_candidate(document, candidate_uuid: str, actor: str, *, failure_inje
             history = create_history_version(document.document_id, active_bytes, {
                 "created_at": utc_now(), "updated_at": utc_now(), "state": "prepared",
                 "source_filename": document.filename, "sha256": active_sha,
+                "replacement_source_filename": metadata.get("source_filename", ""),
                 "actor": actor, "action": "publish_previous", "comment": metadata.get("comment", ""),
                 "contract": build_contract(document.path), "candidate_uuid": candidate_uuid,
                 "operation_uuid": operation_uuid,
