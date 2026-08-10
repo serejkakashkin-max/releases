@@ -136,13 +136,6 @@ class DocumentTemplateReadServiceTests(unittest.TestCase):
             ["Другой BH (54321)", "Комплект PL (12345)"],
             all_categories["filter_options"]["variants"],
         )
-        by_ke = build_catalog_page(
-            self.root,
-            ke="12345",
-            variant="Комплект PL (12345)",
-        )
-        self.assertEqual(1, by_ke["summary"]["filtered_kits"])
-
     def test_category_variant_options_follow_actual_kit_directories(self):
         names = [
             "AEF Containers AI-Агент оркестратор рабочих мест ММБ(14290659)",

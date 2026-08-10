@@ -177,7 +177,7 @@ def index():
         template = "document_templates/_catalog_error.html" if _is_htmx_request() else "document_templates/vendor_error.html"
         response = make_response(render_template(template, catalog_error="Локальные компоненты интерфейса недоступны: " + ", ".join(vendor_status["problems"]), problems=vendor_status["problems"]), 503)
         response.headers.add("Vary", "HX-Request"); return response
-    filters = {"query": request.args.get("q", "").strip(), "category": request.args.get("category", "").strip(), "ke": request.args.get("ke", "").strip(), "variant": request.args.get("variant", "").strip(), "page": _page_number()}
+    filters = {"query": request.args.get("q", "").strip(), "category": request.args.get("category", "").strip(), "variant": request.args.get("variant", "").strip(), "page": _page_number()}
     try:
         catalog = build_catalog_page(_template_root(), **filters); _enrich_catalog(catalog)
         catalog["replacement_success"] = request.args.get("replacement") == "success"

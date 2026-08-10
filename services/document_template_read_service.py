@@ -361,7 +361,6 @@ def build_catalog_page(
     *,
     query: str = "",
     category: str = "",
-    ke: str = "",
     variant: str = "",
     page: int = 1,
     page_size: int = DEFAULT_PAGE_SIZE,
@@ -402,7 +401,6 @@ def build_catalog_page(
     ))
 
     categories = sorted({str(item["category"]) for item in kits if item["category"]}, key=_sort_key)
-    ke_values = sorted({str(item["ke"]) for item in kits if item["ke"]}, key=_sort_key)
     # The UI keeps the historical ``variant`` query key, but its choices are
     # the actual template-kit directories.  Parsed variant metadata is empty
     # for many supported categories (including AI_AGENTS), while release_full
@@ -434,7 +432,6 @@ def build_catalog_page(
     filtered = [
         item for item in kits
         if (not selected_category or item["category"] == selected_category)
-        and (not ke or item["ke"] == ke)
         and (not selected_variant or item["release_full"] == selected_variant)
         and _matches_query(item, normalized_query)
     ]
@@ -455,12 +452,10 @@ def build_catalog_page(
         "filters": {
             "q": str(query or "").strip(),
             "category": selected_category,
-            "ke": ke,
             "variant": selected_variant,
         },
         "filter_options": {
             "categories": categories,
-            "ke_values": ke_values,
             "variants": available_variants,
             "all_variants": variants,
             "variants_by_category": variants_by_category,

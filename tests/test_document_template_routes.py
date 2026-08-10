@@ -86,7 +86,6 @@ class DocumentTemplateRouteTests(unittest.TestCase):
         response = self.client.get("/dashboard/release-monitor/document-templates", query_string={
             "q": "Иной",
             "category": "OTHER",
-            "ke": "54321",
             "variant": "BH",
             "page": "1",
         })
@@ -95,6 +94,8 @@ class DocumentTemplateRouteTests(unittest.TestCase):
         self.assertIn("Другой BH (54321)", text)
         self.assertNotIn("Комплект PL (12345)</h3>", text)
         self.assertIn('value="Иной"', text)
+        self.assertNotIn('id="ke-filter"', text)
+        self.assertNotIn('name="ke"', text)
 
     def test_preview_and_download_headers_and_payload(self):
         preview = self.client.get(f"/dashboard/release-monitor/document-templates/documents/{self.document_id}/preview")

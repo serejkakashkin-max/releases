@@ -81,6 +81,8 @@ class DocumentTemplateUiTests(unittest.TestCase):
         self.assertNotIn(">Опубликовать<", html)
         self.assertIn("Проверить и заменить", html)
         self.assertIn('id="oplot-dtc-variants-map"', html)
+        self.assertNotIn('id="ke-filter"', html)
+        self.assertNotIn('name="ke"', html)
         self.assertNotIn("oplot-candidate-links", html)
         self.assertNotIn("результат проверки", html)
 
