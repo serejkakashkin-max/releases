@@ -14,6 +14,8 @@ from urllib.parse import unquote, urlsplit
 from docx import Document
 from lxml import etree
 
+from services.ai_planner_document_service import validate_ai_planner_template_structure
+
 
 MAX_ENTRIES = 2048
 MAX_UNCOMPRESSED = 100 * 1024 * 1024
@@ -364,6 +366,25 @@ def validate_candidate(active_path: Path, candidate_path: Path) -> dict[str, Any
             warnings.extend(ValidationFailure(**item) for item in contract.get("jira_warnings") or [])
         except Exception:
             errors.append(ValidationFailure("contract_read", "Не удалось проверить структуру служебных полей.", "structure"))
+    if not errors and "14061745" in active_path.parent.name:
+        try:
+            generator_errors = validate_ai_planner_template_structure(
+                Document(candidate_path), template_name=active_path.name
+            )
+            errors.extend(
+                ValidationFailure(
+                    "ai_planner_generator_contract",
+                    message,
+                    "generation",
+                )
+                for message in generator_errors
+            )
+        except Exception:
+            errors.append(ValidationFailure(
+                "ai_planner_generator_contract",
+                "Не удалось проверить базовые строки Planner/Builder для генерации документов.",
+                "generation",
+            ))
     return {
         "ok": not errors,
         "errors": [item.as_dict() for item in errors],
@@ -374,5 +395,6 @@ def validate_candidate(active_path: Path, candidate_path: Path) -> dict[str, Any
             "structure": not any(item.group == "structure" for item in errors),
             "placeholders": not any(item.group == "placeholders" for item in errors),
             "jira": not any(item.group == "jira" for item in errors),
+            "generation": not any(item.group == "generation" for item in errors),
         },
     }

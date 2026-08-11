@@ -16,6 +16,7 @@ from services.release_artifact_service import (
     is_ai_agent_release_context,
     select_distribution_artifact,
 )
+from services.release_build_service import resolve_ai_planner_builds
 
 
 VERSION_PATTERN = re.compile(r"[DP]-\d+(?:\.\d+){2}(?:-[A-Za-z0-9_]+)+")
@@ -243,15 +244,31 @@ def _build_release_snapshot(release_id, domain, issue_data):
     fields = issue_data.get("fields", {}) if isinstance(issue_data, dict) else {}
     summary = fields.get("summary", "")
     ai_agent_release_context = _build_ai_agent_release_context(fields, summary=summary)
+    template_sm_id = _extract_template_sm_id_from_fields(fields)
+    raw_distributives = []
+    for field_id in ("customfield_21710", "customfield_27011"):
+        raw_value = fields.get(field_id)
+        if isinstance(raw_value, list):
+            raw_distributives.extend(raw_value)
+        elif raw_value:
+            raw_distributives.append(raw_value)
+    special_builds = resolve_ai_planner_builds(raw_distributives, ke_id=template_sm_id)
+    release_builds = special_builds["builds"] if special_builds["applies"] else []
+    primary_build = release_builds[0] if release_builds else {}
     return {
         "release_id": release_id,
         "domain": domain,
         "summary": summary,
-        "template_sm_id": _extract_template_sm_id_from_fields(fields),
-        "release_version": _extract_release_version_from_fields(
-            fields,
-            release_context=ai_agent_release_context,
+        "template_sm_id": template_sm_id,
+        "release_version": (
+            primary_build.get("version") or ""
+            if special_builds["applies"]
+            else _extract_release_version_from_fields(fields, release_context=ai_agent_release_context)
         ),
+        "release_dist_url": primary_build.get("artifact_url") or "" if special_builds["applies"] else "",
+        "release_builds": release_builds,
+        "release_builds_ambiguous": bool(special_builds["ambiguous_components"]),
+        "release_builds_ambiguity": list(special_builds["ambiguous_components"]),
         "ke": _extract_distribution_ke_from_fields(
             fields,
             release_context=ai_agent_release_context,
@@ -272,6 +289,10 @@ def get_release_jira_snapshot(release_id, force_refresh=False):
             "summary": "",
             "template_sm_id": None,
             "release_version": "",
+            "release_dist_url": "",
+            "release_builds": [],
+            "release_builds_ambiguous": False,
+            "release_builds_ambiguity": [],
             "ke": "",
             "pob": "",
             "issues": [],
@@ -323,6 +344,10 @@ def get_release_jira_snapshot(release_id, force_refresh=False):
             "summary": "",
             "template_sm_id": None,
             "release_version": "",
+            "release_dist_url": "",
+            "release_builds": [],
+            "release_builds_ambiguous": False,
+            "release_builds_ambiguity": [],
             "ke": "",
             "pob": "",
             "issues": [],

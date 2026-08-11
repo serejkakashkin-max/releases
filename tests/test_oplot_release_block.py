@@ -175,7 +175,7 @@ class ReleaseMonitorCharacterizationTests(unittest.TestCase):
             re.MULTILINE,
         )
         self.assertEqual(
-            297,
+            298,
             len([name for name in functions if name != "registerReleaseLifecycleListeners"]),
         )
         self.assertEqual(

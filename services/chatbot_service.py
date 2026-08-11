@@ -2580,6 +2580,34 @@ Oplot умеет работать с рабочим столом дежурно�
             logging.debug("Release document previous version lookup failed for %s: %s", release_key, exc)
             return ""
 
+    def _get_release_doc_previous_build_versions(
+        self, row_key: str, release_key: str, builds: Optional[List[Dict]] = None
+    ) -> Dict[str, str]:
+        try:
+            from routes.release_routes import (
+                build_previous_release_version_index,
+                get_previous_build_versions_from_monitor_items,
+            )
+            snapshot = get_release_monitor_snapshot() or {}
+            items = snapshot.get("items") or []
+            if builds:
+                index = build_previous_release_version_index(items)
+                return {
+                    str(build.get("component") or "legacy"): index.resolve(
+                        row_key, release_key, str(build.get("component") or "legacy")
+                    )
+                    for build in builds
+                }
+            return {
+                str(component): str(version or "").strip()
+                for component, version in get_previous_build_versions_from_monitor_items(
+                    items, row_key, release_key
+                ).items()
+            }
+        except Exception as exc:
+            logging.debug("Release document component rollback lookup failed for %s: %s", release_key, exc)
+            return {}
+
     def _build_release_doc_preliminary_detection(self, item: Dict) -> Dict:
         try:
             from routes.release_routes import detect_release_template_from_values
@@ -2628,8 +2656,14 @@ Oplot умеет работать с рабочим столом дежурно�
             try:
                 from routes.release_routes import detect_release_template, release_uses_playbooks
                 from services.jira_service import get_release_jira_snapshot
+                from services.release_build_service import normalize_release_builds
 
                 jira_snapshot = get_release_jira_snapshot(release_key)
+                jira_builds = normalize_release_builds(jira_snapshot)
+                if jira_snapshot.get("release_builds_ambiguous"):
+                    raise ValueError(
+                        "В Jira найдено несколько активных версий одной сборки. Уточните дистрибутивы."
+                    )
                 detection = detect_release_template(release_key, jira_snapshot=jira_snapshot)
                 if detection.get("error"):
                     raise ValueError(detection["error"])
@@ -2665,6 +2699,16 @@ Oplot умеет работать с рабочим столом дежурно�
                     flow["release_version"] = jira_version
                 if jira_ke:
                     flow["ke"] = jira_ke
+                flow["release_builds"] = jira_builds
+                previous_build_versions = self._get_release_doc_previous_build_versions(
+                    row_key, release_key, jira_builds
+                )
+                if len(jira_builds) > 1:
+                    secondary_component = str(jira_builds[1].get("component") or "")
+                    if not flow.get("secondary_prev_version"):
+                        flow["secondary_prev_version"] = previous_build_versions.get(
+                            secondary_component, ""
+                        )
 
                 current_signature = self._template_signature(flow)
                 candidates = detection.get("candidates") or []
@@ -2834,6 +2878,11 @@ Oplot умеет работать с рабочим столом дежурно�
         oplot = get_effective_release_reviewer(item)
         checker = str(item.get("psi_checker") or "").strip()
         responsibles = self._normalize_responsible_candidates(item.get("psi_responsibles") or [])
+        from services.release_build_service import normalize_release_builds
+        release_builds = normalize_release_builds(item)
+        previous_build_versions = self._get_release_doc_previous_build_versions(
+            row_key, release_key, release_builds
+        )
 
         if not oplot:
             return {
@@ -2859,6 +2908,14 @@ Oplot умеет работать с рабочим столом дежурно�
                 "metadata": {"type": "release_document_flow", "state": "checker_requested", "release_key": release_key, "row_key": row_key, "rov_key": rov_key},
             }
 
+        if item.get("release_builds_ambiguous"):
+            return {
+                "text": "В Jira найдено несколько активных версий одной сборки. Уточните дистрибутивы перед формированием документов.",
+                "intent": "release_document_flow",
+                "suggestions": ["Открыть блок релизов", "Отмена"],
+                "metadata": {"type": "release_document_flow", "state": "ambiguous_builds", "release_key": release_key},
+            }
+
         try:
             detection = self._build_release_doc_preliminary_detection(item)
             preliminary_candidates = detection.get("candidates") or []
@@ -2882,6 +2939,12 @@ Oplot умеет работать с рабочим столом дежурно�
                 "release_url": str(item.get("release_url") or "").strip(),
                 "release_version": str(item.get("release_version") or "").strip(),
                 "prev_version": self._get_release_doc_previous_version(row_key, release_key),
+                "release_builds": release_builds,
+                "secondary_prev_version": (
+                    previous_build_versions.get(str(release_builds[1].get("component") or ""), "")
+                    if len(release_builds) > 1
+                    else ""
+                ),
                 "oplot": oplot,
                 "checker": checker,
                 "responsibles": responsibles,
@@ -3362,6 +3425,18 @@ Oplot умеет работать с рабочим столом дежурно�
             flow["prev_version"] = value
             return self._advance_release_doc_after_prev_version(session)
 
+        if state == "secondary_prev_version_requested":
+            value = message.strip()
+            if not value:
+                return {
+                    "text": "Предыдущая версия JS Business Plan Builder не должна быть пустой.",
+                    "intent": "release_document_flow",
+                    "suggestions": ["Отмена"],
+                    "metadata": {"type": "release_document_flow", "state": state},
+                }
+            flow["secondary_prev_version"] = value
+            return self._advance_release_doc_after_prev_version(session)
+
         if state == "playbooks_requested":
             flow["playbooks"] = self._parse_playbooks(message)
             return self._ask_release_doc_zni(session)
@@ -3398,6 +3473,15 @@ Oplot умеет работать с рабочим столом дежурно�
 
     def _advance_release_doc_after_prev_version(self, session: ChatContext) -> Dict:
         flow = session.active_release_flow or {}
+        if len(flow.get("release_builds") or []) > 1 and not str(flow.get("secondary_prev_version") or "").strip():
+            flow["state"] = "secondary_prev_version_requested"
+            session.active_release_flow = flow
+            return {
+                "text": "Не удалось автоматически определить предыдущую версию JS Business Plan Builder. Напиши её вручную.",
+                "intent": "release_document_flow",
+                "suggestions": ["Отмена"],
+                "metadata": {"type": "release_document_flow", "state": "secondary_prev_version_requested"},
+            }
         if flow.get("playbooks_required"):
             flow["state"] = "playbooks_requested"
             return {
@@ -3461,6 +3545,7 @@ Oplot умеет работать с рабочим столом дежурно�
                 release_id=release_key,
                 release_version=flow.get("release_version", ""),
                 prev_version=flow.get("prev_version", ""),
+                secondary_prev_version=flow.get("secondary_prev_version", ""),
                 oplot=flow.get("oplot", ""),
                 checker=flow.get("checker", ""),
                 instruction_link=flow.get("instruction_link", ""),

@@ -30,6 +30,8 @@ from services.release_template_catalog_service import (
     select_template_by_summary,
     template_requires_playbooks,
 )
+from services.release_build_service import normalize_release_builds
+from services.ai_planner_document_service import adapt_ai_planner_document
 
 BASE_PATH = os.getenv("BASE_PATH", "")
 
@@ -279,29 +281,35 @@ class PreviousReleaseVersionIndex:
                 self._by_release_key.setdefault(release_key, item)
 
             release_number = _safe_int(item.get("release_number"))
-            version = str(item.get("release_version") or "").strip()
-            if release_number is None or not version:
+            builds = normalize_release_builds(item)
+            if release_number is None or not builds:
                 continue
-            record = {
-                "item": item,
-                "number": release_number,
-                "version": version,
-                "release_key": release_key,
-                "rollback_group": _get_constructor_rollback_group(item),
-                "sort_key": (
-                    release_number or -1,
-                    release_key,
-                    row_key,
-                ),
-            }
-            ke_id = str(item.get("ke_id") or "").strip()
-            exact_year = _typed_lookup_key(item.get("year"))
-            numeric_year = _safe_int(item.get("year"))
-            if ke_id:
-                self._by_ke_exact_year[(ke_id, exact_year)].append(record)
-                if numeric_year is not None:
-                    self._by_ke_numeric_year[(ke_id, numeric_year)].append(record)
-            self._by_exact_year[exact_year].append(record)
+            for build_index, build in enumerate(builds):
+                version = str(build.get("version") or "").strip()
+                if not version:
+                    continue
+                record = {
+                    "item": item,
+                    "number": release_number,
+                    "version": version,
+                    "component": str(build.get("component") or "legacy").strip() or "legacy",
+                    "release_key": release_key,
+                    "rollback_group": _get_constructor_rollback_group(item),
+                    "sort_key": (
+                        release_number or -1,
+                        release_key,
+                        row_key,
+                        build_index,
+                    ),
+                }
+                ke_id = str(item.get("ke_id") or "").strip()
+                exact_year = _typed_lookup_key(item.get("year"))
+                numeric_year = _safe_int(item.get("year"))
+                if ke_id:
+                    self._by_ke_exact_year[(ke_id, exact_year)].append(record)
+                    if numeric_year is not None:
+                        self._by_ke_numeric_year[(ke_id, numeric_year)].append(record)
+                self._by_exact_year[exact_year].append(record)
 
         for index in (
             self._by_ke_exact_year,
@@ -317,6 +325,7 @@ class PreviousReleaseVersionIndex:
         current_number,
         current_release_key,
         rollback_group,
+        component="",
         *,
         require_lower_number=True,
     ):
@@ -327,10 +336,12 @@ class PreviousReleaseVersionIndex:
                 continue
             if rollback_group and record["rollback_group"] != rollback_group:
                 continue
+            if component and record.get("component") != component:
+                continue
             return record["version"]
         return ""
 
-    def resolve(self, row_key: str, release_id: str) -> str:
+    def resolve(self, row_key: str, release_id: str, component: str = "") -> str:
         normalized_row_key = str(row_key or "").strip()
         normalized_release_id = str(release_id or "").strip()
         current_item = self._by_row_key.get(normalized_row_key) if normalized_row_key else None
@@ -348,6 +359,9 @@ class PreviousReleaseVersionIndex:
         release_type = normalize_release_type(current_item.get("release_type"))
         is_reroll = release_type == "reroll" if release_type else bool(current_item.get("is_reroll"))
         rollback_group = _get_constructor_rollback_group(current_item)
+        current_builds = normalize_release_builds(current_item)
+        if not component and current_builds:
+            component = str(current_builds[0].get("component") or "legacy").strip() or "legacy"
 
         if current_number is not None and current_ke_id:
             version = self._best_candidate(
@@ -355,6 +369,7 @@ class PreviousReleaseVersionIndex:
                 current_number,
                 current_release_key,
                 rollback_group,
+                component,
             )
             if version:
                 return version
@@ -366,6 +381,7 @@ class PreviousReleaseVersionIndex:
                     current_number,
                     current_release_key,
                     rollback_group,
+                    component,
                     require_lower_number=False,
                 )
                 if version:
@@ -377,6 +393,7 @@ class PreviousReleaseVersionIndex:
                 current_number,
                 current_release_key,
                 rollback_group,
+                component,
             )
         return ""
 
@@ -389,9 +406,58 @@ def get_previous_version_from_monitor_items(items, row_key: str, release_id: str
     return build_previous_release_version_index(items).resolve(row_key, release_id)
 
 
+def get_previous_build_versions_from_monitor_items(items, row_key: str, release_id: str):
+    index = build_previous_release_version_index(items)
+    normalized_row_key = str(row_key or "").strip()
+    normalized_release_id = str(release_id or "").strip()
+    current_item = next(
+        (
+            item for item in items or []
+            if normalized_row_key
+            and str(item.get("row_key") or "").strip() == normalized_row_key
+        ),
+        None,
+    )
+    if current_item is None:
+        current_item = next(
+            (
+                item for item in items or []
+                if normalized_release_id
+                and str(item.get("release_key") or "").strip() == normalized_release_id
+            ),
+            None,
+        )
+    if not current_item:
+        return {}
+    return {
+        str(build.get("component") or "legacy"): index.resolve(
+            row_key, release_id, str(build.get("component") or "legacy")
+        )
+        for build in normalize_release_builds(current_item)
+    }
+
+
 def _get_previous_version_from_monitor_snapshot(row_key: str, release_id: str):
     snapshot = get_release_monitor_snapshot() or {}
     return get_previous_version_from_monitor_items(snapshot.get("items") or [], row_key, release_id)
+
+
+def _get_previous_build_versions_from_monitor_snapshot(
+    row_key: str, release_id: str, builds=None
+):
+    snapshot = get_release_monitor_snapshot() or {}
+    items = snapshot.get("items") or []
+    if builds:
+        index = build_previous_release_version_index(items)
+        return {
+            str(build.get("component") or "legacy"): index.resolve(
+                row_key, release_id, str(build.get("component") or "legacy")
+            )
+            for build in builds
+        }
+    return get_previous_build_versions_from_monitor_items(
+        items, row_key, release_id
+    )
 
 
 def _normalize_release_date(raw_date: str):
@@ -412,6 +478,7 @@ def _generate_release_zip_buffer(
     release_id: str,
     release_version: str = "",
     prev_version: str,
+    secondary_prev_version: str = "",
     oplot: str,
     checker: str,
     instruction_link: str,
@@ -437,11 +504,21 @@ def _generate_release_zip_buffer(
 
     snapshot = jira_snapshot or get_release_jira_snapshot(release_id)
     release_version = (snapshot.get("release_version") or release_version or "").strip()
+    release_builds = normalize_release_builds(snapshot)
+    if snapshot.get("release_builds_ambiguous"):
+        raise ValueError("В Jira найдено несколько версий одной сборки 14061745. Уточните дистрибутивы.")
     ke = (snapshot.get("ke") or ke or "").strip()
     jira_issues = list(snapshot.get("issues") or [])
     instruction_block = "Выполнить пункты инструкции по внедрению ИНСТРУКЦИЯ" if instruction_link else "Отсутствуют"
     pob = snapshot.get("pob") or ""
     playbooks_text = "\n".join(selected_playbooks)
+    previous_build_versions = {}
+    if release_builds:
+        primary_component = str(release_builds[0].get("component") or "legacy")
+        previous_build_versions[primary_component] = prev_version
+    if len(release_builds) > 1:
+        secondary_component = str(release_builds[1].get("component") or "")
+        previous_build_versions[secondary_component] = str(secondary_prev_version or "").strip()
 
     context = {
         "RELEASE_VERSION": release_version,
@@ -466,6 +543,12 @@ def _generate_release_zip_buffer(
 
         for path in template_files:
             doc = Document(path)
+            doc = adapt_ai_planner_document(
+                doc,
+                template_name=path.name,
+                release_builds=release_builds,
+                previous_versions=previous_build_versions,
+            )
             doc = replace_keys_in_doc(
                 doc,
                 context,
@@ -511,6 +594,7 @@ def release_monitor_init():
         else None
     )
     jira_version = jira_snapshot.get("release_version") or ""
+    jira_builds = normalize_release_builds(jira_snapshot)
     jira_ke = jira_snapshot.get("ke") or ""
     incoming_ke = (data.get("ke") or "").strip()
     missing_distribution_fields = []
@@ -518,6 +602,9 @@ def release_monitor_init():
         missing_distribution_fields.append("release_version")
     if not jira_ke:
         missing_distribution_fields.append("ke")
+    previous_build_versions = _get_previous_build_versions_from_monitor_snapshot(
+        row_key, release_id, jira_builds
+    )
     sync_patch = {}
     try:
         sync_patch = sync_release_monitor_jira_fields(
@@ -540,6 +627,9 @@ def release_monitor_init():
         "release_id": release_id,
         "detection": detection,
         "release_version": jira_version,
+        "release_builds": jira_builds,
+        "release_builds_ambiguous": bool(jira_snapshot.get("release_builds_ambiguous")),
+        "release_builds_ambiguity": list(jira_snapshot.get("release_builds_ambiguity") or []),
         "ke": (jira_ke or incoming_ke).strip(),
         "distribution_missing": bool(missing_distribution_fields),
         "missing_distribution_fields": missing_distribution_fields,
@@ -549,6 +639,7 @@ def release_monitor_init():
         "checker": (data.get("checker") or "").strip(),
         "date": (data.get("date") or "").strip(),
         "prev_version": _get_previous_version_from_monitor_snapshot(row_key, release_id),
+        "previous_build_versions": previous_build_versions,
         "sync_patch": sync_patch,
     })
 
@@ -559,6 +650,7 @@ def release_monitor_generate():
     release_id = (data.get("release_id") or "").strip()
     release_version = (data.get("release_version") or "").strip()
     prev_version = (data.get("prev_version") or "").strip()
+    secondary_prev_version = (data.get("secondary_prev_version") or "").strip()
     oplot = (data.get("oplot") or "").strip()
     checker = (data.get("checker") or "").strip()
     instruction_link = (data.get("instruction_link") or "").strip()
@@ -605,6 +697,7 @@ def release_monitor_generate():
             release_id=release_id,
             release_version=release_version,
             prev_version=prev_version,
+            secondary_prev_version=secondary_prev_version,
             oplot=oplot,
             checker=checker,
             instruction_link=instruction_link,

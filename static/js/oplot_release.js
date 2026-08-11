@@ -926,12 +926,45 @@ function setReleaseMonitorGlobalRefreshing(isRefreshing) {
     }
 }
 
+function getReleaseBuilds(item) {
+    if (Array.isArray(item?.release_builds) && item.release_builds.length) {
+        return item.release_builds.filter(build => build && String(build.version || '').trim());
+    }
+    if (!String(item?.release_version || '').trim()) {
+        return [];
+    }
+    return [{
+        component: 'legacy',
+        label: 'Сборка',
+        version: item.release_version,
+        artifact_url: item.release_dist_url || '',
+        dpm_url: '',
+    }];
+}
+
 function getReleaseNameHtml(item) {
     const lines = Array.isArray(item.release_name_lines) ? item.release_name_lines : [];
-    const buildLink = item.release_version
-        ? item.release_dist_url
-            ? `<div class="release-name-line">сборка: <a href="${escapeHtml(item.release_dist_url)}" target="_blank" class="release-key-link">${escapeHtml(item.release_version)}</a></div>`
-            : `<div class="release-name-line">сборка: ${escapeHtml(item.release_version)}</div>`
+    const builds = getReleaseBuilds(item);
+    const buildLink = builds.length
+        ? `<div class="release-builds" aria-label="Сборки релиза">
+            <span class="release-builds__title">${builds.length > 1 ? 'Сборки:' : 'Сборка:'}</span>
+            <div class="release-builds__list">
+                ${builds.map(build => {
+                    const label = builds.length > 1 && build.label
+                        ? `<span class="release-builds__label">${escapeHtml(build.label)}</span>`
+                        : '';
+                    const url = build.artifact_url || build.dpm_url || '';
+                    const version = escapeHtml(build.version || '');
+                    const value = url
+                        ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener" class="release-key-link">${version}</a>`
+                        : `<span>${version}</span>`;
+                    return `<div class="release-builds__item">${label}${value}</div>`;
+                }).join('')}
+            </div>
+            ${item.release_builds_ambiguous
+                ? '<div class="release-builds__warning" role="alert">Обнаружены неоднозначные версии сборок. Формирование документов заблокировано.</div>'
+                : ''}
+        </div>`
         : '';
     const weekBucket = ['next', 'future'].includes(item.week_bucket) ? item.week_bucket : '';
     const weekBadge = weekBucket && item.week_bucket_label
@@ -2153,6 +2186,10 @@ function buildReleaseDocumentInitialData(item) {
                 : null,
         playbooks: RELEASE_DOCUMENT_PLAYBOOKS,
         prev_version: detection?.prev_version || '',
+        release_builds: getReleaseBuilds(item),
+        release_builds_ambiguous: Boolean(item?.release_builds_ambiguous),
+        release_builds_ambiguity: Array.isArray(item?.release_builds_ambiguity) ? item.release_builds_ambiguity : [],
+        previous_build_versions: {},
         sync_patch: {},
     };
 }
@@ -2350,6 +2387,9 @@ function syncReleaseDocumentVisibleForm(state) {
     const prevInput = document.getElementById('releaseDocumentPrevVersion');
     if (prevInput) updateField('prev_version', (prevInput.value || '').trim());
 
+    const secondaryPrevInput = document.getElementById('releaseDocumentSecondaryPrevVersion');
+    if (secondaryPrevInput) updateField('secondary_prev_version', (secondaryPrevInput.value || '').trim());
+
     const instructionInput = document.getElementById('releaseDocumentInstructionLink');
     if (instructionInput) updateField('instruction_link', (instructionInput.value || '').trim());
 
@@ -2410,6 +2450,7 @@ function applyReleaseDocumentInitData(state, data) {
         ...data,
         playbooks: Array.isArray(data.playbooks) ? data.playbooks : RELEASE_DOCUMENT_PLAYBOOKS,
     };
+    state.releaseBuilds = Array.isArray(data.release_builds) ? data.release_builds : state.releaseBuilds;
 
     const hasTemplate = jiraDetection.found || (Array.isArray(jiraDetection.candidates) && jiraDetection.candidates.length);
     state.initStatus = hasTemplate ? 'ready' : 'error';
@@ -2428,6 +2469,15 @@ function applyReleaseDocumentInitData(state, data) {
     }
     if (!state.dirty.prev_version) {
         state.form.prev_version = data.prev_version || state.form.prev_version;
+    }
+    if (!state.dirty.secondary_prev_version && state.releaseBuilds.length > 1) {
+        const component = String(state.releaseBuilds[1]?.component || '');
+        state.form.secondary_prev_version = String(data.previous_build_versions?.[component] || '');
+    }
+
+    if (data.release_builds_ambiguous) {
+        state.initStatus = 'error';
+        state.initError = 'В Jira найдено несколько активных версий одной сборки. Уточните дистрибутивы перед формированием документов.';
     }
 
     state.jiraNotice = '';
@@ -2644,6 +2694,11 @@ function openReleaseDocumentWizard(releaseKey) {
         return;
     }
 
+    if (item.release_builds_ambiguous) {
+        alert('В Jira найдено несколько активных версий одной сборки. Уточните дистрибутивы перед формированием документов.');
+        return;
+    }
+
     const initRequestId = releaseDocumentInitSequence + 1;
     releaseDocumentInitSequence = initRequestId;
     const initialData = buildReleaseDocumentInitialData(item);
@@ -2670,12 +2725,14 @@ function openReleaseDocumentWizard(releaseKey) {
         userSelectedTemplate: false,
         jiraNotice: '',
         templateChoice: null,
+        releaseBuilds: getReleaseBuilds(item),
         steps: [],
         stepIndex: 0,
         form: {
             release_id: item.release_key || '',
             release_version: item.release_version || '',
             prev_version: initialData.prev_version || '',
+            secondary_prev_version: '',
             oplot: item.psi_owner || '',
             checker: item.psi_checker || '',
             instruction_link: '',
@@ -2883,6 +2940,16 @@ async function validateReleaseDocumentCurrentStep() {
         }
         state.form.prev_version = value;
         state.dirty.prev_version = true;
+        if (state.releaseBuilds.length > 1) {
+            const secondaryInput = document.getElementById('releaseDocumentSecondaryPrevVersion');
+            const secondaryValue = (secondaryInput?.value || '').trim();
+            if (!secondaryValue) {
+                alert('Укажите предыдущую версию JS Business Plan Builder.');
+                return false;
+            }
+            state.form.secondary_prev_version = secondaryValue;
+            state.dirty.secondary_prev_version = true;
+        }
         markReleaseDocumentStepCompleted(state, step.type);
         return syncReleaseDocumentZniForm(state);
     }
@@ -2978,13 +3045,27 @@ function getReleaseDocumentStepContent(state, step, stepNumber, totalSteps) {
             </div>
         `;
     } else if (step.type === 'prev_version') {
+        const dualCurrentVersions = state.releaseBuilds.length > 1 ? `
+            <div class="release-doc-build-summary" aria-label="Текущие сборки">
+                ${state.releaseBuilds.map(build => `
+                    <div><strong>${escapeHtml(build.label || 'Сборка')}:</strong> ${escapeHtml(build.version || '')}</div>
+                `).join('')}
+            </div>
+        ` : '';
+        const dualRollbackFields = state.releaseBuilds.length > 1 ? `
+            <label class="release-doc-field-label mt-3" for="releaseDocumentSecondaryPrevVersion">Предыдущая версия JS Business Plan Builder</label>
+            <input id="releaseDocumentSecondaryPrevVersion" type="text" class="form-control" value="${escapeHtml(state.form.secondary_prev_version || '')}" placeholder="Например: D-01.001.45.js-business-plan-builder">
+            <div class="release-doc-field-help">Версия определяется независимо от E2E Planner и остаётся доступной для ручной корректировки.</div>
+        ` : '';
         content += `
             <div class="release-doc-step-title">Предыдущая версия</div>
             <div class="release-doc-step-description">
                 Укажите версию дистрибутива отката.
             </div>
-            <label class="release-doc-field-label" for="releaseDocumentPrevVersion">Предыдущая версия</label>
+            ${dualCurrentVersions}
+            <label class="release-doc-field-label" for="releaseDocumentPrevVersion">${state.releaseBuilds.length > 1 ? 'Предыдущая версия E2E Planner' : 'Предыдущая версия'}</label>
             <input id="releaseDocumentPrevVersion" type="text" class="form-control" value="${escapeHtml(state.form.prev_version)}" placeholder="Например: D-01.00.00-285">
+            ${dualRollbackFields}
         `;
     } else if (step.type === 'instruction_link') {
         content += `
@@ -3150,6 +3231,7 @@ async function submitReleaseDocumentWizard() {
                 release_id: state.form.release_id,
                 release_version: state.form.release_version || state.item?.release_version || '',
                 prev_version: state.form.prev_version,
+                secondary_prev_version: state.form.secondary_prev_version || '',
                 oplot: state.form.oplot,
                 checker: state.form.checker,
                 instruction_link: state.form.instruction_link,

@@ -47,6 +47,7 @@ from services.release_artifact_service import (
     is_ai_agent_release_context,
     select_distribution_artifact,
 )
+from services.release_build_service import normalize_release_builds, resolve_ai_planner_builds
 from services.release_template_catalog_service import (
     build_runtime_template_catalog,
     is_ai_agents_template_category,
@@ -4002,7 +4003,7 @@ def _build_ai_agent_release_context(fields, resolved_fields, summary="", system_
     return context
 
 
-def _extract_release_dist(fields, resolved_fields, release_context=None):
+def _extract_release_dist_candidates(fields, resolved_fields):
     candidates = []
     for logical_name in ("release_distributive", "delta_release_distributive"):
         raw_dist = fields.get(resolved_fields[logical_name])
@@ -4010,6 +4011,11 @@ def _extract_release_dist(fields, resolved_fields, release_context=None):
             candidates.extend(item for item in raw_dist if item)
         elif raw_dist:
             candidates.append(raw_dist)
+    return candidates
+
+
+def _extract_release_dist(fields, resolved_fields, release_context=None):
+    candidates = _extract_release_dist_candidates(fields, resolved_fields)
     if candidates:
         if is_ai_agent_release_context(release_context):
             selected = select_distribution_artifact(
@@ -5071,13 +5077,25 @@ def _build_release_record(
         system_info_text=system_info_text,
         ke_object=ke_object,
     )
+    dist_candidates = _extract_release_dist_candidates(fields, resolved_fields)
+    special_builds = resolve_ai_planner_builds(dist_candidates, ke_id=ke_object.get("id"))
+    release_builds = special_builds["builds"] if special_builds["applies"] else []
     dist_item = _extract_release_dist(
         fields,
         resolved_fields,
         release_context=ai_agent_release_context,
     )
-    release_version = _extract_nested_version(dist_item)
-    release_dist_url = _extract_nested_dist_url(dist_item)
+    primary_build = release_builds[0] if release_builds else {}
+    release_version = (
+        primary_build.get("version") or ""
+        if special_builds["applies"]
+        else _extract_nested_version(dist_item)
+    )
+    release_dist_url = (
+        primary_build.get("artifact_url") or ""
+        if special_builds["applies"]
+        else _extract_nested_dist_url(dist_item)
+    )
     dist_ke_raw = extract_artifact_ke_id(dist_item)
     ke_distributive = _format_ke_id(dist_ke_raw)
 
@@ -5206,8 +5224,12 @@ def _build_release_record(
             "ke_id": ke_id,
             "release_version": release_version,
             "release_dist_url": release_dist_url,
+            "release_builds": release_builds,
+            "release_builds_ambiguous": bool(special_builds["ambiguous_components"]),
+            "release_builds_ambiguity": list(special_builds["ambiguous_components"]),
             "base_release_version": release_version,
             "base_release_dist_url": release_dist_url,
+            "base_release_builds": [dict(build) for build in release_builds],
             "rov_key": rov_key,
             "rov_url": rov_data.get("url", ""),
             "rov_status": rov_data.get("status", ""),
@@ -7542,6 +7564,32 @@ def start_release_monitor_refresh(mode="full", trigger="manual"):
         raise
 
 
+def _synchronize_release_build_contract(items):
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        builds = normalize_release_builds(item)
+        if builds:
+            primary = builds[0]
+            effective_version = str(item.get("release_version") or "").strip()
+            effective_url = str(item.get("release_dist_url") or "").strip()
+            if effective_version:
+                primary["version"] = effective_version
+            if effective_url:
+                primary["artifact_url"] = effective_url
+        item["release_builds"] = builds
+
+        base_item = {
+            "release_builds": item.get("base_release_builds"),
+            "release_version": item.get("base_release_version"),
+            "release_dist_url": item.get("base_release_dist_url"),
+        }
+        item["base_release_builds"] = normalize_release_builds(base_item)
+        item["release_builds_ambiguous"] = bool(item.get("release_builds_ambiguous"))
+        ambiguity = item.get("release_builds_ambiguity")
+        item["release_builds_ambiguity"] = list(ambiguity) if isinstance(ambiguity, list) else []
+
+
 def _normalize_release_payload(payload):
     if not isinstance(payload, dict):
         return _build_empty_release_monitor_payload()
@@ -7574,6 +7622,7 @@ def _normalize_release_payload(payload):
         _apply_release_attempt_outcomes(normalized_items)
         _apply_zni_assignments(normalized_items)
         _apply_manual_release_overrides(normalized_items, payload.get("manual_overrides") or {})
+        _synchronize_release_build_contract(normalized_items)
         _apply_template_system_classification(normalized_items)
         _apply_work_marks(normalized_items)
         _apply_manual_duplicate_reconciliation(normalized_items)
