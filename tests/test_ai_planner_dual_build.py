@@ -8,7 +8,10 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
 
-from routes.release_routes import get_previous_build_versions_from_monitor_items
+from routes.release_routes import (
+    detect_release_template_from_values,
+    get_previous_build_versions_from_monitor_items,
+)
 from services.ai_planner_document_service import (
     BUILDER_DPM_URL,
     PRIMARY_DPM_URL,
@@ -88,6 +91,25 @@ def _hyperlink_targets(document):
 
 
 class ReleaseBuildNormalizationTests(unittest.TestCase):
+    def test_template_detection_normalizes_distributive_ke_forms(self):
+        entry = {
+            "category": "AI_AGENTS",
+            "release_clean": "AEF Containers AI-Planner E2E",
+            "release_full": "AEF Containers AI-Planner E2E(14061745)",
+            "variant": "",
+            "requires_playbooks": False,
+        }
+        context = {"entries": [entry], "by_ke": {"14061745": [entry]}}
+        for raw_ke in ("14061745", "CI14061745", "140-617-45"):
+            with self.subTest(raw_ke=raw_ke):
+                detection = detect_release_template_from_values(
+                    raw_ke,
+                    "AI Planner",
+                    catalog_context=context,
+                )
+                self.assertTrue(detection["found"])
+                self.assertEqual("14061745", detection["template_sm_id"])
+
     def test_builder_then_planner_is_normalized_to_planner_then_builder(self):
         result = resolve_ai_planner_builds([BUILDER, PLANNER], ke_id="14061745")
         self.assertTrue(result["applies"])
@@ -282,6 +304,8 @@ class ReleaseMonitorFrontendContractTests(unittest.TestCase):
     def test_table_and_wizard_expose_dual_build_contract(self):
         source = Path("static/js/oplot_release.js").read_text(encoding="utf-8")
         self.assertIn("release-builds__list", source)
+        self.assertNotIn('class="release-builds__label"', source)
+        self.assertIn("requiresLiveBuildDetection", source)
         self.assertIn("releaseDocumentSecondaryPrevVersion", source)
         self.assertIn("secondary_prev_version: state.form.secondary_prev_version", source)
         self.assertIn("release_builds_ambiguous", source)

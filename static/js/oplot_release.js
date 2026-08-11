@@ -950,15 +950,12 @@ function getReleaseNameHtml(item) {
             <span class="release-builds__title">${builds.length > 1 ? 'Сборки:' : 'Сборка:'}</span>
             <div class="release-builds__list">
                 ${builds.map(build => {
-                    const label = builds.length > 1 && build.label
-                        ? `<span class="release-builds__label">${escapeHtml(build.label)}</span>`
-                        : '';
                     const url = build.artifact_url || build.dpm_url || '';
                     const version = escapeHtml(build.version || '');
                     const value = url
                         ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener" class="release-key-link">${version}</a>`
                         : `<span>${version}</span>`;
-                    return `<div class="release-builds__item">${label}${value}</div>`;
+                    return `<div class="release-builds__item">${value}</div>`;
                 }).join('')}
             </div>
             ${item.release_builds_ambiguous
@@ -2163,7 +2160,11 @@ function getReleaseDocumentTemplateHint(item) {
 function isReleaseDocumentTemplateMissingByTable(item, detection) {
     const releaseKe = String(item?.ke_id || '').trim();
     const candidates = Array.isArray(detection?.candidates) ? detection.candidates : [];
-    return Boolean(releaseKe && !detection?.found && !candidates.length);
+    const releaseKeDigits = releaseKe.replace(/\D/g, '').replace(/^0+/, '');
+    // This special build contract is resolved authoritatively by live init.
+    // A stale server-rendered hint must not block the Jira/catalog lookup.
+    const requiresLiveBuildDetection = releaseKeDigits === '14061745';
+    return Boolean(releaseKe && !requiresLiveBuildDetection && !detection?.found && !candidates.length);
 }
 
 function getReleaseDocumentTemplateNotFoundMessage(item) {

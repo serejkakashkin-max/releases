@@ -1680,12 +1680,6 @@ html[data-theme="dark"] .oplot-release .release-doc-modal select option {
             overflow-wrap: anywhere;
         }
 
-        .oplot-release .release-builds__label {
-            flex: 0 0 auto;
-            color: var(--text-muted);
-            font-weight: 700;
-        }
-
         .oplot-release .release-builds__warning {
             grid-column: 1 / -1;
             color: var(--warning);

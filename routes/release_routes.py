@@ -114,6 +114,13 @@ def build_release_template_detection_context() -> dict:
 def detect_release_template_from_values(sm_id: str, summary: str = "", *, catalog_context=None):
     """Определяет шаблон по уже известным КЭ релиза и summary без запроса в Jira."""
     sm_id = (sm_id or "").strip()
+    # Release Monitor may persist a KE as bare digits or in distributive form
+    # (CI14061745 / 140-617-45), while catalog keys are canonical bare digits.
+    # Normalize only values that are unambiguously numeric KEs so unrelated
+    # legacy template identifiers keep their existing behavior.
+    if re.fullmatch(r"(?:CI)?[\d\s-]+", sm_id, flags=re.IGNORECASE):
+        digits = re.sub(r"\D", "", sm_id)
+        sm_id = (digits.lstrip("0") or "0") if digits else ""
     summary = summary or ""
     result = {"found": False, "candidates": [], "template_sm_id": sm_id}
 
