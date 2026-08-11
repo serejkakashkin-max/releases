@@ -60,6 +60,7 @@ from services.duty_schedule_provider_registry import (
 )
 from services.release_monitor_view_revision import get_release_monitor_view_state
 from services.release_ui_service import build_release_navigation, build_release_ui_config
+from services.release_build_service import normalize_release_builds
 from services.duty_ui_service import (
     build_assignment_center_ui_config,
     build_duty_dashboard_ui_config,
@@ -95,8 +96,21 @@ def _build_release_monitor_template_hints(items):
             logging.debug("Не удалось подготовить подсказку шаблона для %s: %s", row_key or release_key, exc)
             detection = {"found": False, "candidates": []}
 
-        prev_version = previous_version_index.resolve(row_key, release_key)
-        detection["prev_version"] = prev_version
+        builds = normalize_release_builds(item)
+        previous_build_versions = {
+            str(build.get("component") or "legacy"): previous_version_index.resolve(
+                row_key,
+                release_key,
+                str(build.get("component") or "legacy"),
+            )
+            for build in builds
+        }
+        primary_component = str(builds[0].get("component") or "legacy") if builds else "legacy"
+        detection["prev_version"] = (
+            previous_build_versions.get(primary_component)
+            or previous_version_index.resolve(row_key, release_key)
+        )
+        detection["previous_build_versions"] = previous_build_versions
 
         if detection.get("found") or detection.get("candidates"):
             if row_key:

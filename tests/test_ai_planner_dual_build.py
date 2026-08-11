@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from io import BytesIO
 from pathlib import Path
+from unittest import mock
 
 from docx import Document
 from docx.oxml import OxmlElement
@@ -12,6 +13,7 @@ from routes.release_routes import (
     detect_release_template_from_values,
     get_previous_build_versions_from_monitor_items,
 )
+from routes.dashboard_routes import _build_release_monitor_template_hints
 from services.ai_planner_document_service import (
     BUILDER_DPM_URL,
     PRIMARY_DPM_URL,
@@ -178,6 +180,40 @@ class ReleaseBuildNormalizationTests(unittest.TestCase):
 
 
 class ComponentRollbackLookupTests(unittest.TestCase):
+    def test_page_hint_contains_both_previous_versions_before_jira_init(self):
+        builds = resolve_ai_planner_builds([PLANNER, BUILDER], ke_id="14061745")["builds"]
+        previous = {
+            "row_key": "AIGAS-1200::1", "release_key": "AIGAS-1200", "release_number": 4,
+            "year": 2026, "ke_id": "14061745", "release_type": "planned",
+            "release_builds": builds,
+        }
+        current = {
+            "row_key": "AIGAS-1235::1", "release_key": "AIGAS-1235", "release_number": 5,
+            "year": 2026, "ke_id": "14061745", "release_type": "planned",
+            "release_builds": [
+                {**builds[0], "version": "D-01.001.47.e2e-planner"},
+                {**builds[1], "version": "D-01.001.48.js-business-plan-builder"},
+            ],
+        }
+        detection = {
+            "found": True,
+            "category": "AI_AGENTS",
+            "release_clean": "Planner",
+            "release_full": "Planner(14061745)",
+        }
+        with mock.patch(
+            "routes.dashboard_routes.build_release_template_detection_context",
+            return_value={"entries": [], "by_ke": {}},
+        ), mock.patch(
+            "routes.dashboard_routes.detect_release_template_from_values",
+            return_value=detection,
+        ):
+            hints = _build_release_monitor_template_hints([previous, current])
+
+        previous_versions = hints[current["row_key"]]["previous_build_versions"]
+        self.assertEqual(PLANNER["version"], previous_versions["e2e_planner"])
+        self.assertEqual(BUILDER["version"], previous_versions["business_plan_builder"])
+
     def test_previous_versions_are_resolved_per_component(self):
         previous_planner = {
             "row_key": "AIGAS-1199::1", "release_key": "AIGAS-1199", "release_number": 3,
@@ -306,6 +342,8 @@ class ReleaseMonitorFrontendContractTests(unittest.TestCase):
         self.assertIn("release-builds__list", source)
         self.assertNotIn('class="release-builds__label"', source)
         self.assertIn("requiresLiveBuildDetection", source)
+        self.assertNotIn("release-doc-build-summary", source)
+        self.assertIn("detection?.previous_build_versions || {}", source)
         self.assertIn("releaseDocumentSecondaryPrevVersion", source)
         self.assertIn("secondary_prev_version: state.form.secondary_prev_version", source)
         self.assertIn("release_builds_ambiguous", source)

@@ -2190,7 +2190,7 @@ function buildReleaseDocumentInitialData(item) {
         release_builds: getReleaseBuilds(item),
         release_builds_ambiguous: Boolean(item?.release_builds_ambiguous),
         release_builds_ambiguity: Array.isArray(item?.release_builds_ambiguity) ? item.release_builds_ambiguity : [],
-        previous_build_versions: {},
+        previous_build_versions: detection?.previous_build_versions || {},
         sync_patch: {},
     };
 }
@@ -2733,7 +2733,9 @@ function openReleaseDocumentWizard(releaseKey) {
             release_id: item.release_key || '',
             release_version: item.release_version || '',
             prev_version: initialData.prev_version || '',
-            secondary_prev_version: '',
+            secondary_prev_version: initialData.release_builds.length > 1
+                ? String(initialData.previous_build_versions?.[initialData.release_builds[1]?.component] || '')
+                : '',
             oplot: item.psi_owner || '',
             checker: item.psi_checker || '',
             instruction_link: '',
@@ -3046,13 +3048,6 @@ function getReleaseDocumentStepContent(state, step, stepNumber, totalSteps) {
             </div>
         `;
     } else if (step.type === 'prev_version') {
-        const dualCurrentVersions = state.releaseBuilds.length > 1 ? `
-            <div class="release-doc-build-summary" aria-label="Текущие сборки">
-                ${state.releaseBuilds.map(build => `
-                    <div><strong>${escapeHtml(build.label || 'Сборка')}:</strong> ${escapeHtml(build.version || '')}</div>
-                `).join('')}
-            </div>
-        ` : '';
         const dualRollbackFields = state.releaseBuilds.length > 1 ? `
             <label class="release-doc-field-label mt-3" for="releaseDocumentSecondaryPrevVersion">Предыдущая версия JS Business Plan Builder</label>
             <input id="releaseDocumentSecondaryPrevVersion" type="text" class="form-control" value="${escapeHtml(state.form.secondary_prev_version || '')}" placeholder="Например: D-01.001.45.js-business-plan-builder">
@@ -3063,7 +3058,6 @@ function getReleaseDocumentStepContent(state, step, stepNumber, totalSteps) {
             <div class="release-doc-step-description">
                 Укажите версию дистрибутива отката.
             </div>
-            ${dualCurrentVersions}
             <label class="release-doc-field-label" for="releaseDocumentPrevVersion">${state.releaseBuilds.length > 1 ? 'Предыдущая версия E2E Planner' : 'Предыдущая версия'}</label>
             <input id="releaseDocumentPrevVersion" type="text" class="form-control" value="${escapeHtml(state.form.prev_version)}" placeholder="Например: D-01.00.00-285">
             ${dualRollbackFields}

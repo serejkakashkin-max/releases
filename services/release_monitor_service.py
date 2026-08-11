@@ -2973,13 +2973,12 @@ def _candidate_availability_for_release_date(candidate_groups, release_date):
 
 def _apply_release_status_consistency(items):
     final_status = _normalize_text(FINAL_RELEASE_STATUS)
-    cancelled_status = _normalize_text(CANCELLED_RELEASE_STATUS)
     pre_final_statuses = {_normalize_text(status) for status in PRE_FINAL_RELEASE_STATUSES}
 
     for item in items:
         normalized_status = _normalize_text(item.get("release_status"))
         is_final_status = normalized_status == final_status
-        is_cancelled_status = normalized_status == cancelled_status
+        is_cancelled_status = _is_cancelled_rov_status(item.get("release_status"))
 
         if is_final_status:
             if _apply_active_reroll_schedule_state(item):
@@ -3106,6 +3105,23 @@ def _apply_release_attempt_outcomes(items):
         if row_key not in deferred_keys:
             item["is_deferred_attempt"] = False
             item["is_deferred_resolved"] = False
+            continue
+
+        # Cancellation is a terminal unsuccessful result, not an active
+        # overdue attempt.  Keep the deferred marker as evidence that work was
+        # performed, but never let persisted attempt state reopen the row as
+        # overdue or alter its numbering contract.
+        if item.get("is_cancelled"):
+            item["is_deferred_attempt"] = True
+            item["is_deferred_resolved"] = True
+            item["is_final"] = False
+            item["is_non_final"] = False
+            item["is_pre_final"] = False
+            item["is_ready_for_prom"] = False
+            item["is_overdue"] = False
+            item["is_today"] = False
+            item["days_overdue"] = 0
+            item["row_state"] = "cancelled"
             continue
 
         release_key = str(item.get("release_key") or "").strip()
@@ -5100,7 +5116,7 @@ def _build_release_record(
     ke_distributive = _format_ke_id(dist_ke_raw)
 
     normalized_status = _normalize_text(status_name)
-    is_cancelled = normalized_status == _normalize_text(CANCELLED_RELEASE_STATUS)
+    is_cancelled = _is_cancelled_rov_status(status_name)
     is_final = normalized_status == _normalize_text(FINAL_RELEASE_STATUS)
     is_ready_for_prom = normalized_status == _normalize_text(READY_FOR_PROM_STATUS)
     is_non_final = not is_final and not is_cancelled

@@ -2808,17 +2808,6 @@ html[data-theme="dark"] .oplot-release .release-doc-modal select option {
             color: var(--text-primary);
         }
 
-        .oplot-release .release-doc-build-summary {
-            display: grid;
-            gap: 0.35rem;
-            margin: 0 0 1rem;
-            padding: 0.75rem 0.85rem;
-            border: 1px solid color-mix(in srgb, var(--primary) 32%, transparent);
-            border-radius: var(--oplot-radius-md);
-            background: color-mix(in srgb, var(--primary) 8%, var(--oplot-surface));
-            overflow-wrap: anywhere;
-        }
-
         .oplot-release .release-doc-field-help {
             margin-top: 0.45rem;
             color: var(--text-muted);
