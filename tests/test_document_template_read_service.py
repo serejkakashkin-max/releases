@@ -172,6 +172,39 @@ class DocumentTemplateReadServiceTests(unittest.TestCase):
         self.assertEqual(2, beyond["pagination"]["page"])
         self.assertEqual(second["kits"], beyond["kits"])
 
+    def test_recent_change_windows_filter_whole_kits_and_mark_only_recent_documents(self):
+        now_ns = 1_800_000_000_000_000_000
+        day_ns = 24 * 60 * 60 * 1_000_000_000
+        ages = {
+            "Недавний (10001)": 2,
+            "За неделю (10002)": 5,
+            "За месяц (10003)": 20,
+            "Старый (10004)": 40,
+        }
+        for name, age_days in ages.items():
+            directory = self.make_kit(category="CAT", name=name)
+            document = next(directory.glob("*.docx"))
+            modified_ns = now_ns - age_days * day_ns
+            os.utime(document, ns=(modified_ns, modified_ns))
+        clear_template_catalog_cache()
+
+        recent = build_catalog_page(self.root, changed_within="3", now_ns=now_ns)
+        weekly = build_catalog_page(self.root, changed_within="7", now_ns=now_ns)
+        monthly = build_catalog_page(self.root, changed_within="30", now_ns=now_ns)
+        invalid = build_catalog_page(self.root, changed_within="365", now_ns=now_ns)
+
+        self.assertEqual(["Недавний (10001)"], [kit["release_full"] for kit in recent["kits"]])
+        self.assertEqual(2, weekly["summary"]["filtered_kits"])
+        self.assertEqual(3, monthly["summary"]["filtered_kits"])
+        self.assertEqual(4, invalid["summary"]["filtered_kits"])
+        self.assertEqual("3", recent["filters"]["changed_within"])
+        self.assertEqual("", invalid["filters"]["changed_within"])
+        self.assertTrue(recent["kits"][0]["has_recent_changes"])
+        self.assertTrue(recent["kits"][0]["documents"][0]["is_recently_modified"])
+        weekly_old = next(kit for kit in weekly["kits"] if kit["release_full"] == "За неделю (10002)")
+        self.assertFalse(weekly_old["has_recent_changes"])
+        self.assertFalse(weekly_old["documents"][0]["is_recently_modified"])
+
 
 if __name__ == "__main__":
     unittest.main()

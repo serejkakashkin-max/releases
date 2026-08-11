@@ -101,9 +101,14 @@ html[data-theme="dark"] .oplot-dtc {
 
 .oplot-dtc .template-kit-card { overflow: hidden; }
 .oplot-dtc .template-kit-card { border-color: var(--oplot-dtc-line); background: var(--oplot-dtc-panel); box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent), 0 16px 38px var(--oplot-dtc-shadow); }
+.oplot-dtc .template-kit-card--recent { border-color: color-mix(in srgb, var(--oplot-dtc-cyan) 54%, var(--oplot-dtc-line)); }
 .oplot-dtc .template-kit-card .card-header { align-items: flex-start; gap: var(--oplot-space-4); padding: 16px 18px; border-bottom: 1px solid var(--oplot-dtc-line); background: var(--oplot-dtc-panel-strong); }
 .oplot-dtc .template-kit-card .card-title { color: var(--oplot-text); overflow-wrap: anywhere; }
 .oplot-dtc .template-kit-card code { color: inherit; white-space: nowrap; }
+.oplot-dtc .oplot-dtc-recent-kit-badge,
+.oplot-dtc .oplot-dtc-recent-change { display: inline-flex; align-items: center; width: fit-content; border: 1px solid color-mix(in srgb, var(--oplot-dtc-cyan) 38%, var(--oplot-border)); border-radius: 999px; color: color-mix(in srgb, var(--oplot-dtc-cyan) 78%, var(--oplot-text)); background: color-mix(in srgb, var(--oplot-dtc-cyan) 12%, var(--oplot-surface)); font-size: .68rem; font-weight: 750; line-height: 1.25; }
+.oplot-dtc .oplot-dtc-recent-kit-badge { min-height: 22px; padding: 3px 8px; }
+.oplot-dtc .oplot-dtc-recent-change { margin-top: 4px; padding: 2px 7px; }
 .oplot-dtc .oplot-dtc-table-wrap { max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; }
 .oplot-dtc .oplot-document-table { min-width: 1060px; margin: 0; }
 .oplot-dtc .oplot-document-table thead { background: var(--oplot-dtc-table-head); }
@@ -111,6 +116,9 @@ html[data-theme="dark"] .oplot-dtc {
 .oplot-dtc .oplot-document-table td { padding-top: 11px; padding-bottom: 11px; border-bottom-color: color-mix(in srgb, var(--oplot-border) 72%, transparent); vertical-align: middle; }
 .oplot-dtc .oplot-document-table tbody tr { transition: background-color .14s ease; }
 .oplot-dtc .oplot-document-table tbody tr:hover { background: color-mix(in srgb, var(--oplot-primary) 7%, transparent); }
+.oplot-dtc .oplot-document-table .oplot-document-row--recent > td { background: color-mix(in srgb, var(--oplot-dtc-cyan) 7%, transparent); }
+.oplot-dtc .oplot-document-table .oplot-document-row--recent > td:first-child { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--oplot-dtc-cyan) 82%, var(--oplot-primary)); }
+.oplot-dtc .oplot-document-table .oplot-document-row--recent:hover > td { background: color-mix(in srgb, var(--oplot-dtc-cyan) 11%, transparent); }
 .oplot-dtc .oplot-document-name { max-width: 520px; color: var(--oplot-text); font-weight: 680; overflow-wrap: anywhere; }
 .oplot-dtc .oplot-actions { display: flex; justify-content: flex-end; align-items: center; gap: 6px; white-space: nowrap; }
 .oplot-dtc .oplot-candidate-links { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; font-size: .75rem; }
@@ -261,4 +269,5 @@ html:has(> body.oplot-dtc) {
 @media (prefers-reduced-motion: reduce) {
   .oplot-dtc .oplot-file-drop { transition: none; }
   .oplot-dtc .oplot-file-drop:hover { transform: none; }
+  .oplot-dtc .oplot-document-table tbody tr { transition: none; }
 }

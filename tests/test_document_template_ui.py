@@ -110,6 +110,9 @@ class DocumentTemplateUiTests(unittest.TestCase):
         self.assertIn('event.target.id === "category-filter"', script)
         self.assertIn("function refreshSupAdminSession", script)
         self.assertIn("button.dataset.adminStatusUrl", script)
+        self.assertIn(".oplot-dtc .template-kit-card--recent", css)
+        self.assertIn(".oplot-dtc .oplot-document-table .oplot-document-row--recent > td", css)
+        self.assertIn(".oplot-dtc .oplot-dtc-recent-change", css)
         self.assertLess(
             script.index("refreshSupAdminSession(button)"),
             script.index("requestHistoryDelete(button);", script.index("function completeHistoryDelete")),

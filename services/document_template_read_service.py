@@ -20,6 +20,8 @@ from services.release_template_catalog_service import build_runtime_template_cat
 
 DOCUMENT_ID_RE = re.compile(r"^dt1_[0-9a-f]{64}$")
 DEFAULT_PAGE_SIZE = 12
+RECENT_DOCUMENT_DAYS = 3
+CATALOG_CHANGE_WINDOWS = (3, 7, 30)
 _READ_CACHE: "OrderedDict[str, tuple[float, tuple, Dict[str, ResolvedDocument]]]" = OrderedDict()
 _PATH_CACHE: "OrderedDict[str, tuple[float, Dict[str, str]]]" = OrderedDict()
 _CACHE_LOCK = threading.RLock()
@@ -362,9 +364,27 @@ def build_catalog_page(
     query: str = "",
     category: str = "",
     variant: str = "",
+    changed_within: str = "",
     page: int = 1,
     page_size: int = DEFAULT_PAGE_SIZE,
+    now_ns: int | None = None,
 ) -> Dict[str, object]:
+    current_ns = int(now_ns if now_ns is not None else time.time_ns())
+    try:
+        requested_change_window = int(changed_within) if str(changed_within).strip() else 0
+    except (TypeError, ValueError):
+        requested_change_window = 0
+    selected_change_window = (
+        requested_change_window
+        if requested_change_window in CATALOG_CHANGE_WINDOWS
+        else 0
+    )
+    recent_threshold_ns = current_ns - RECENT_DOCUMENT_DAYS * 24 * 60 * 60 * 1_000_000_000
+    filter_threshold_ns = (
+        current_ns - selected_change_window * 24 * 60 * 60 * 1_000_000_000
+        if selected_change_window
+        else 0
+    )
     whitelist = build_document_whitelist(root)
     documents_by_directory: Dict[str, List[ResolvedDocument]] = {}
     for document in whitelist.values():
@@ -383,6 +403,15 @@ def build_catalog_page(
         )
         if not documents:
             continue
+        latest_modified_ns = max(item.modified_ns for item in documents)
+        document_models = []
+        for document in documents:
+            model = document.as_view_model()
+            model["is_recently_modified"] = document.modified_ns > recent_threshold_ns
+            document_models.append(model)
+        recent_document_count = sum(
+            1 for document in document_models if document["is_recently_modified"]
+        )
         kits.append({
             "category": str(entry.get("category") or ""),
             "release_clean": str(entry.get("release_clean") or ""),
@@ -390,8 +419,11 @@ def build_catalog_page(
             "ke": str(entry.get("ke") or ""),
             "variant": str(entry.get("variant") or ""),
             "doc_count": len(documents),
-            "modified_at": _format_timestamp(max(item.modified_ns for item in documents)),
-            "documents": [item.as_view_model() for item in documents],
+            "modified_at": _format_timestamp(latest_modified_ns),
+            "latest_modified_ns": latest_modified_ns,
+            "recent_document_count": recent_document_count,
+            "has_recent_changes": recent_document_count > 0,
+            "documents": document_models,
         })
 
     kits.sort(key=lambda item: (
@@ -433,6 +465,7 @@ def build_catalog_page(
         item for item in kits
         if (not selected_category or item["category"] == selected_category)
         and (not selected_variant or item["release_full"] == selected_variant)
+        and (not filter_threshold_ns or item["latest_modified_ns"] > filter_threshold_ns)
         and _matches_query(item, normalized_query)
     ]
 
@@ -453,12 +486,14 @@ def build_catalog_page(
             "q": str(query or "").strip(),
             "category": selected_category,
             "variant": selected_variant,
+            "changed_within": str(selected_change_window) if selected_change_window else "",
         },
         "filter_options": {
             "categories": categories,
             "variants": available_variants,
             "all_variants": variants,
             "variants_by_category": variants_by_category,
+            "change_windows": CATALOG_CHANGE_WINDOWS,
         },
         "kits": page_items,
         "pagination": {

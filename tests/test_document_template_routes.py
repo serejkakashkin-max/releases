@@ -97,6 +97,21 @@ class DocumentTemplateRouteTests(unittest.TestCase):
         self.assertNotIn('id="ke-filter"', text)
         self.assertNotIn('name="ke"', text)
 
+    def test_recent_change_filter_is_rendered_and_preserved_in_htmx_catalog(self):
+        response = self.client.get(
+            "/dashboard/release-monitor/document-templates",
+            query_string={"changed_within": "7"},
+            headers={"HX-Request": "true"},
+        )
+        text = response.get_data(as_text=True)
+        self.assertEqual(200, response.status_code)
+        self.assertIn('id="changed-within-filter"', text)
+        self.assertIn('name="changed_within"', text)
+        self.assertRegex(text, r'<option value="7" selected>За последние 7 дней</option>')
+        self.assertIn("Обновлён недавно", text)
+        self.assertIn("Менее 3 дней", text)
+        self.assertIn("oplot-document-row--recent", text)
+
     def test_preview_and_download_headers_and_payload(self):
         preview = self.client.get(f"/dashboard/release-monitor/document-templates/documents/{self.document_id}/preview")
         download = self.client.get(f"/dashboard/release-monitor/document-templates/documents/{self.document_id}/download")
