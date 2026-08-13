@@ -1909,7 +1909,7 @@
             const payload = await adminApi(
               getSupUrlTemplate("va_employee_settings", employeeId),
               {
-                method: "PUT",
+                method: "POST",
                 body: JSON.stringify({
                   directory_etag: state.va.directory.etag,
                   settings_revision: state.va.settings.revision,

@@ -15,8 +15,12 @@ class ScheduleRepository:
         data = self.store.load()
         if data is None:
             return None
+        snapshot = ScheduleSnapshot.from_dict(data)
+        from VA.schedule_manager.integrations.employee_directory_adapter import (
+            project_schedule_snapshot_to_current_directory,
+        )
 
-        return ScheduleSnapshot.from_dict(data)
+        return project_schedule_snapshot_to_current_directory(snapshot)
 
     def save(self, snapshot: ScheduleSnapshot) -> None:
         self.store.save(snapshot.to_dict())

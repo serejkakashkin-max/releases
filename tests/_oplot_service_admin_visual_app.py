@@ -47,7 +47,7 @@ def create_visual_app() -> Flask:
         ("/sup-parameters/employee-directory", "employee_directory_data", ["GET"]),
         ("/sup-parameters/employee-directory/save", "employee_directory_save", ["POST"]),
         ("/sup-parameters/va-schedule-manager", "va_schedule_manager_admin_data", ["GET"]),
-        ("/sup-parameters/va-schedule-manager/employees/<employee_id>/settings", "va_employee_settings_save", ["PUT"]),
+        ("/sup-parameters/va-schedule-manager/employees/<employee_id>/settings", "va_employee_settings_save", ["POST", "PUT"]),
         ("/sup-parameters/va-schedule-manager/competencies", "va_competency_add", ["POST"]),
         ("/sup-parameters/va-schedule-manager/competencies/<code>", "va_competency_update", ["PATCH"]),
     )

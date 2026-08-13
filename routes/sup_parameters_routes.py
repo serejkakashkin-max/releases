@@ -302,8 +302,9 @@ def va_schedule_manager_admin_data():
         ), 500
 
 
-@sup_parameters_bp.put(
-    "/sup-parameters/va-schedule-manager/employees/<employee_id>/settings"
+@sup_parameters_bp.route(
+    "/sup-parameters/va-schedule-manager/employees/<employee_id>/settings",
+    methods=["POST", "PUT"],
 )
 def va_employee_settings_save(employee_id: str):
     auth_error = require_sup_admin_request()

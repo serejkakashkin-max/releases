@@ -224,6 +224,7 @@ class SupJavascriptContractTests(unittest.TestCase):
         self.assertIn("config.integrations.gigachat.enabled", script)
         for key in ("expected_revision", "expected_etag", "employees", "directory_etag", "settings_revision", "settings_etag", "competency"):
             self.assertIn(key, script)
+        self.assertIn('method: "POST"', script)
         for query_key in ('params.get("tab")', 'params.get("view")', 'params.get("token")'):
             self.assertIn(query_key, script)
 
@@ -304,6 +305,55 @@ class SupAuthContractTests(unittest.TestCase):
             )
         self.assertEqual(403, response.status_code)
         self.assertIn("CSRF", response.get_data(as_text=True))
+
+    def test_va_employee_settings_accepts_proxy_safe_post_and_legacy_put(self):
+        request_payload = {
+            "directory_etag": "directory-etag",
+            "settings_revision": 3,
+            "settings_etag": "settings-etag",
+            "settings": {
+                "status": "active",
+                "role": "member",
+                "competencies": ["novice"],
+                "overtime_ready": False,
+            },
+        }
+        response_payload = {
+            "success": True,
+            "settings": {"revision": 4, "etag": "next-settings-etag"},
+        }
+        for method in ("post", "put"):
+            repository = mock.Mock()
+            with (
+                mock.patch(
+                    "routes.sup_parameters_routes.require_sup_admin_request",
+                    return_value=None,
+                ),
+                mock.patch(
+                    "routes.sup_parameters_routes.csrf_protect_request",
+                    return_value=None,
+                ),
+                mock.patch(
+                    "routes.sup_parameters_routes.EmployeeSettingsRepository",
+                    return_value=repository,
+                ),
+                mock.patch(
+                    "routes.sup_parameters_routes.build_va_schedule_manager_admin_data",
+                    return_value=response_payload,
+                ),
+            ):
+                response = getattr(self.client, method)(
+                    "/admin/sup-parameters/va-schedule-manager/employees/user/settings",
+                    json=request_payload,
+                )
+            self.assertEqual(200, response.status_code, method)
+            repository.save_employee_settings.assert_called_once_with(
+                "user",
+                request_payload["settings"],
+                expected_revision=3,
+                expected_etag="settings-etag",
+                expected_directory_etag="directory-etag",
+            )
 
 
 if __name__ == "__main__":

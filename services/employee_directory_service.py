@@ -377,11 +377,14 @@ def resolve_historical_va_employee(
         return IdentityResolution("unresolved")
     matches = []
     for employee in _all_employees(context):
-        current_values = {normalize_text(employee.get("full_name")).casefold()}
+        current_values = {
+            normalize_text(employee.get("full_name")).casefold(),
+            normalize_text(employee.get("release_name")).casefold(),
+        }
         alias_values = {
             normalize_text(alias.get("value")).casefold()
             for alias in employee.get("aliases") or []
-            if alias.get("type") in {"full", "schedule", "va"}
+            if alias.get("type") in {"full", "release", "schedule", "va"}
         }
         source_values = {
             normalize_text(source_ref.partition("va:employees:")[2]).casefold()
@@ -423,14 +426,26 @@ def get_va_schedule_display_name(
     )
     if not current:
         return ""
-    for alias_type in ("schedule", "va"):
-        for alias in current["aliases"]:
-            if alias["type"] == alias_type and alias["value"]:
-                return alias["value"]
-    for source_ref in current["source_refs"]:
-        if source_ref.startswith("va:employees:"):
-            return source_ref.partition("va:employees:")[2]
-    return current["full_name"]
+    return normalize_text(current.get("release_name")) or normalize_text(
+        current.get("full_name")
+    )
+
+
+def get_va_schedule_current_display_name(
+    employee: Dict[str, Any],
+    context: EmployeeDirectoryRuntimeContext,
+) -> str:
+    """Return the current directory-owned name for schedule projections."""
+    employee_id = str(employee.get("employee_id") or "")
+    current = next(
+        (item for item in _all_employees(context) if item["employee_id"] == employee_id),
+        None,
+    )
+    if not current:
+        return ""
+    return normalize_text(current.get("release_name")) or normalize_text(
+        current.get("full_name")
+    )
 
 
 def _match_identity(

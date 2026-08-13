@@ -35,6 +35,13 @@ def _signature(path: Path) -> Tuple[int, int] | None:
         return None
 
 
+def _employee_directory_signature() -> tuple[str, int | None, str]:
+    from services.employee_directory_service import load_employee_directory_context
+
+    context = load_employee_directory_context()
+    return context.status, context.revision, context.etag
+
+
 def _canonical_bytes(value: object) -> bytes:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
@@ -76,7 +83,7 @@ class ReleaseMonitorDutyProvider:
         return copy.deepcopy(self._load()["status"])
 
     def get_revision_component(self) -> dict:
-        signatures = (_signature(self.schedule_file), _signature(self.shifts_file))
+        signatures = self._source_signatures()
         with self._cache_lock:
             if self._cache is not None and signatures == self._cache_signature:
                 return self._revision_component_from_status(self._cache["status"], signatures)
@@ -130,13 +137,13 @@ class ReleaseMonitorDutyProvider:
         }
 
     def _load(self) -> dict:
-        signatures = (_signature(self.schedule_file), _signature(self.shifts_file))
+        signatures = self._source_signatures()
         with self._cache_lock:
             if self._cache is not None and signatures == self._cache_signature:
                 return copy.deepcopy(self._cache)
 
             state = self._stable_read()
-            self._cache_signature = (_signature(self.schedule_file), _signature(self.shifts_file))
+            self._cache_signature = self._source_signatures()
             self._cache = state
             self._revision_cache_signature = self._cache_signature
             self._revision_cache = self._revision_component_from_status(
@@ -148,19 +155,26 @@ class ReleaseMonitorDutyProvider:
     def _stable_read(self) -> dict:
         source_results = self._stable_read_results()
         if source_results is not None:
-            schedule_result, shifts_result, _signatures = source_results
-            return self._build_state(schedule_result, shifts_result)
+            schedule_result, shifts_result, signatures = source_results
+            return self._build_state(schedule_result, shifts_result, signatures)
         return self._unavailable_state("unstable_source")
+
+    def _source_signatures(self):
+        return (
+            _signature(self.schedule_file),
+            _signature(self.shifts_file),
+            _employee_directory_signature(),
+        )
 
     def _stable_read_results(self):
         for _attempt in range(2):
-            before = (_signature(self.schedule_file), _signature(self.shifts_file))
+            before = self._source_signatures()
             schedule_result = self.schedule_store.load_diagnostic(allow_backup_preview=True)
             shifts_result = self.shifts_store.load_diagnostic(
                 allow_backup_preview=False,
                 allow_legacy_current=True,
             )
-            after = (_signature(self.schedule_file), _signature(self.shifts_file))
+            after = self._source_signatures()
             if before == after:
                 return schedule_result, shifts_result, after
         return None
@@ -173,6 +187,11 @@ class ReleaseMonitorDutyProvider:
         return {
             "schedule": serialize(signatures[0]),
             "shifts": serialize(signatures[1]),
+            "employee_directory": {
+                "status": signatures[2][0],
+                "revision": signatures[2][1],
+                "etag": signatures[2][2],
+            },
         }
 
     def _revision_component_from_status(self, status: dict, signatures) -> dict:
@@ -230,6 +249,7 @@ class ReleaseMonitorDutyProvider:
             "schedule": schedule_result.get("payload"),
             "effective_shifts": shifts,
             "mapping_rules": MAPPING_RULES,
+            "employee_directory": self._signature_payload(signatures)["employee_directory"],
         }
         authoritative = source_status == "current_valid"
         warnings = shift_warnings + schedule_warnings
@@ -243,7 +263,7 @@ class ReleaseMonitorDutyProvider:
         }
         return self._revision_component_from_status(status, signatures)
 
-    def _build_state(self, schedule_result: dict, shifts_result: dict) -> dict:
+    def _build_state(self, schedule_result: dict, shifts_result: dict, signatures) -> dict:
         source_status = str(schedule_result.get("status") or "current_invalid")
         status_map = {
             "current_missing": "missing_schedule",
@@ -270,6 +290,7 @@ class ReleaseMonitorDutyProvider:
             "schedule": schedule_result.get("payload"),
             "effective_shifts": shifts,
             "mapping_rules": MAPPING_RULES,
+            "employee_directory": self._signature_payload(signatures)["employee_directory"],
         }
         revision = "sha256:" + hashlib.sha256(_canonical_bytes(revision_payload)).hexdigest()
         authoritative = source_status == "current_valid"
@@ -496,6 +517,7 @@ class ReleaseMonitorDutyProvider:
 
     def _project(self, months: List[dict], shifts: List[dict], lookup: Dict[str, str], revision: str, authoritative: bool):
         from services.employee_directory_service import (
+            get_va_schedule_current_display_name,
             load_employee_directory_context,
             resolve_historical_va_employee,
         )
@@ -526,6 +548,12 @@ class ReleaseMonitorDutyProvider:
                 matched = ""
                 match_status = resolution.status if resolution is not None else "unmapped"
                 employee = resolution.employee if resolution is not None else None
+                display_name = row["employee_name"]
+                if resolution is not None and resolution.status == "resolved" and employee:
+                    display_name = (
+                        get_va_schedule_current_display_name(employee, directory_context)
+                        or display_name
+                    )
                 release_membership = (
                     ((employee or {}).get("memberships") or {}).get("release_monitor") or {}
                 )
@@ -572,7 +600,7 @@ class ReleaseMonitorDutyProvider:
                                 "reason": reason,
                             }
                 display_rows.append({
-                    "employee_name": row["employee_name"],
+                    "employee_name": display_name,
                     "hours": row.get("hours"),
                     "assignments": display_assignments,
                     "warning": "duplicate_employee_row" if row.get("ambiguous") else "",
