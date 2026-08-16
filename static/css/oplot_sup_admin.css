@@ -1759,6 +1759,53 @@ html[data-theme="light"] .oplot-sup-admin .inline-status {
   color: #526a83;
 }
 
+.oplot-sup-admin input:not([type="checkbox"]):not([type="radio"]),
+.oplot-sup-admin select,
+.oplot-sup-admin textarea,
+.oplot-sup-admin .va-multi-select-toggle {
+  background: #061a2c;
+  border-color: rgba(86, 142, 201, .46);
+  color: #f2f7ff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .045),
+    0 0 0 1px rgba(34, 116, 205, .06);
+}
+
+.oplot-sup-admin input:not([type="checkbox"]):not([type="radio"]):hover,
+.oplot-sup-admin select:hover,
+.oplot-sup-admin textarea:hover,
+.oplot-sup-admin .va-multi-select-toggle:hover {
+  border-color: rgba(101, 166, 232, .58);
+}
+
+.oplot-sup-admin input:not([type="checkbox"]):not([type="radio"]):focus,
+.oplot-sup-admin select:focus,
+.oplot-sup-admin textarea:focus,
+.oplot-sup-admin .va-multi-select.open .va-multi-select-toggle {
+  background: #071f35;
+  border-color: rgba(113, 183, 255, .74);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .055),
+    0 0 0 3px rgba(54, 154, 228, .16);
+}
+
+html[data-theme="light"] .oplot-sup-admin input:not([type="checkbox"]):not([type="radio"]),
+html[data-theme="light"] .oplot-sup-admin select,
+html[data-theme="light"] .oplot-sup-admin textarea,
+html[data-theme="light"] .oplot-sup-admin .va-multi-select-toggle {
+  background: #ffffff;
+  border-color: rgba(68, 128, 188, .50);
+  color: #172d46;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9);
+}
+
+html[data-theme="light"] .oplot-sup-admin .va-competency-chip {
+  border-color: rgba(31, 111, 190, .42);
+  background: #d8ebff;
+  color: #174b78;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .72);
+}
+
 /* Access gate: a centered, self-contained entry point without changing auth hooks. */
 .oplot-sup-admin:has(#tokenBox:not(.hidden)) #statusBox {
   width: min(100%, 720px);

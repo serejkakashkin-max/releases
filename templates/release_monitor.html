@@ -104,26 +104,50 @@
         <div class="release-monitor-section" id="releaseMonitorSection">
             <div class="release-monitor-content">
                 <div class="release-monitor-summary">
-                    <div class="release-summary-card">
+                    <button
+                        type="button"
+                        class="release-summary-card"
+                        data-release-summary-filter="all"
+                        aria-pressed="true"
+                        aria-label="Показать все релизы выбранного года"
+                    >
                         <div class="release-summary-label">Всего за год</div>
                         <div class="release-summary-value" id="releaseSummaryTotal">0</div>
                         <div class="release-summary-note">все релизы выбранного года</div>
-                    </div>
-                    <div class="release-summary-card overdue">
+                    </button>
+                    <button
+                        type="button"
+                        class="release-summary-card overdue"
+                        data-release-summary-filter="overdue"
+                        aria-pressed="false"
+                        aria-label="Показать просроченные по РОВ релизы"
+                    >
                         <div class="release-summary-label">Просрочены</div>
                         <div class="release-summary-value" id="releaseSummaryOverdue">0</div>
                         <div class="release-summary-note">РОВ завершился, а статус не финальный</div>
-                    </div>
-                    <div class="release-summary-card today">
+                    </button>
+                    <button
+                        type="button"
+                        class="release-summary-card today"
+                        data-release-summary-filter="non_final"
+                        aria-pressed="false"
+                        aria-label="Показать релизы не в финальном статусе"
+                    >
                         <div class="release-summary-label">Не в финальном статусе</div>
                         <div class="release-summary-value" id="releaseSummaryNonFinal">0</div>
                         <div class="release-summary-note">релизы без статусов Установлен на ПРОМ и Отменено</div>
-                    </div>
-                    <div class="release-summary-card pre-final">
+                    </button>
+                    <button
+                        type="button"
+                        class="release-summary-card pre-final"
+                        data-release-summary-filter="pre_final"
+                        aria-pressed="false"
+                        aria-label="Показать релизы на шаге Установка на ПРОМ"
+                    >
                         <div class="release-summary-label">Установка на ПРОМ</div>
                         <div class="release-summary-value" id="releaseSummaryPreFinal">0</div>
                         <div class="release-summary-note">релизы на завершающем шаге перед финалом</div>
-                    </div>
+                    </button>
                 </div>
 
                 <div class="release-resource-links" aria-label="Полезные ссылки">
@@ -221,6 +245,8 @@
                         <option value="all">Все релизы года</option>
                         <option value="week">Релизы текущей недели</option>
                         <option value="overdue">Просроченные по РОВ</option>
+                        <option value="non_final">Не в финальном статусе</option>
+                        <option value="pre_final">Установка на ПРОМ</option>
                         <option value="today">На сегодня</option>
                         <option value="final">Установлен на ПРОМ</option>
                         <option value="cancelled">Отменено</option>
@@ -360,7 +386,6 @@
                     <div id="releaseDocumentModalBody"></div>
                 </div>
                 <div class="modal-footer">
-                    <div class="release-doc-footer-note" id="releaseDocumentFooterNote">Используются те же шаблоны и правила, что и в основном генераторе.</div>
                     <button type="button" class="btn btn-outline-secondary" id="releaseDocumentPrevBtn">Назад</button>
                     <button type="button" class="btn btn-primary" id="releaseDocumentNextBtn">Далее</button>
                 </div>

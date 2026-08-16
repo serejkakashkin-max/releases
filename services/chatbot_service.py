@@ -39,7 +39,6 @@ from services.release_monitor_service import (
 from services.release_report_service import get_release_report_service
 from services.release_monitor_duty_overlay import get_effective_release_reviewer
 from services.rov_statistics_service import generate_rov_statistics_excel
-from services.release_monitor_backup_service import create_release_monitor_cache_backup
 from services.psi_jenkins_service import find_psi_jenkins_instructions_by_ke
 
 
@@ -209,17 +208,6 @@ class DashboardChatBot:
         """
         try:
             session = self.get_or_create_session(session_id)
-
-            cache_backup_response = self._handle_release_monitor_cache_backup_command(message)
-            if cache_backup_response:
-                session.add_message('user', message, cache_backup_response.get('intent', 'release_monitor_cache_backup'))
-                session.add_message('assistant', cache_backup_response['text'], metadata=cache_backup_response.get('metadata', {}))
-                return {
-                    'text': cache_backup_response['text'],
-                    'intent': cache_backup_response.get('intent', 'release_monitor_cache_backup'),
-                    'suggestions': cache_backup_response.get('suggestions', []),
-                    'metadata': cache_backup_response.get('metadata', {})
-                }
 
             clarification_response = self._handle_clarification_reply(session, message, dashboard_context)
             if clarification_response:
@@ -1226,56 +1214,6 @@ Oplot умеет работать с рабочим столом дежурно�
             marker in normalized
             for marker in ("не созда", "не надо", "без зни", "друг", "свою", "свой", "измен", "не использу")
         )
-
-    def _is_release_monitor_cache_backup_request(self, message: str) -> bool:
-        normalized = self._normalize_command_text(message)
-        if not normalized:
-            return False
-        has_cache = any(marker in normalized for marker in ("кэш", "кеш", "cache"))
-        has_backup_action = any(
-            marker in normalized
-            for marker in ("скачай", "скачать", "backup", "бэкап", "беккап", "резервная копия", "резервн")
-        )
-        has_release_context = any(
-            marker in normalized
-            for marker in ("релиз", "release monitor", "блок релиз", "кэш", "кеш", "cache")
-        )
-        return has_cache and has_backup_action and has_release_context
-
-    def _handle_release_monitor_cache_backup_command(self, message: str) -> Optional[Dict]:
-        if not self._is_release_monitor_cache_backup_request(message):
-            return None
-
-        try:
-            result = create_release_monitor_cache_backup()
-            download_url = f"/dashboard/api/chat/release-monitor-cache/download/{result['backup_id']}"
-            missing = int(result.get("missing_count") or 0)
-            missing_text = f"\nОтсутствующих файлов: {missing}" if missing else ""
-            return {
-                "text": (
-                    "Backup кэша Блока релизов готов.\n"
-                    f"Файлов в архиве: {result.get('files_count', 0)}{missing_text}\n\n"
-                    f"[Скачать ZIP]({download_url})\n\n"
-                    "Ссылка временная: старые backup-архивы удаляются через 1 час."
-                ),
-                "intent": "release_monitor_cache_backup",
-                "suggestions": [],
-                "metadata": {
-                    "type": "release_monitor_cache_backup",
-                    "backup_id": result.get("backup_id"),
-                    "download_url": download_url,
-                    "files_count": result.get("files_count", 0),
-                    "missing_count": missing,
-                },
-            }
-        except Exception as exc:
-            logging.error("Release monitor cache backup failed: %s", exc, exc_info=True)
-            return {
-                "text": f"Не удалось сформировать backup кэша Блока релизов: {exc}",
-                "intent": "release_monitor_cache_backup",
-                "suggestions": [],
-                "metadata": {"type": "release_monitor_cache_backup", "error": str(exc)},
-            }
 
     def _parse_playbooks(self, message: str) -> List[str]:
         if any(marker in self._normalize_command_text(message) for marker in ("без плейбук", "плейбуки не нужны", "нет плейбук")):

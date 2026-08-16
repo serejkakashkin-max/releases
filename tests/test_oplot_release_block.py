@@ -20,6 +20,8 @@ from services.release_ui_service import build_release_navigation
 
 TEMPLATE_PATH = PROJECT_ROOT / "templates" / "release_monitor.html"
 RELEASE_JS_PATH = PROJECT_ROOT / "static" / "js" / "oplot_release.js"
+CHATBOT_ROUTE_PATH = PROJECT_ROOT / "routes" / "chatbot_routes.py"
+CHATBOT_SERVICE_PATH = PROJECT_ROOT / "services" / "chatbot_service.py"
 
 PUBLIC_RELEASE_HANDLERS = (
     "addReleaseWorkMarkParticipantFromPicker",
@@ -116,6 +118,35 @@ class _ReleaseMarkupParser(HTMLParser):
         if tag == "th" and self._in_header:
             self.headers.append(" ".join(self._header_parts))
             self._in_header = False
+
+
+class ReleaseMonitorCacheExportRemovalTests(unittest.TestCase):
+    def test_chatbot_has_no_release_monitor_cache_export_contract(self):
+        from routes.chatbot_routes import chatbot_bp
+
+        app = Flask(__name__)
+        app.config.update(TESTING=True, SECRET_KEY="chatbot-cache-export-removal")
+        app.register_blueprint(chatbot_bp)
+
+        rules = {rule.rule for rule in app.url_map.iter_rules()}
+        route_source = CHATBOT_ROUTE_PATH.read_text(encoding="utf-8")
+        service_source = CHATBOT_SERVICE_PATH.read_text(encoding="utf-8")
+
+        self.assertNotIn(
+            "/dashboard/api/chat/release-monitor-cache/download/<backup_id>",
+            rules,
+        )
+        self.assertEqual(
+            404,
+            app.test_client().get(
+                "/dashboard/api/chat/release-monitor-cache/download/rmcache_test"
+            ).status_code,
+        )
+        self.assertNotIn("release_monitor_backup_service", route_source)
+        self.assertNotIn("release_monitor_backup_service", service_source)
+        self.assertNotIn("release_monitor_cache_backup", service_source)
+        self.assertNotIn("create_release_monitor_cache_backup", service_source)
+        self.assertFalse((PROJECT_ROOT / "services" / "release_monitor_backup_service.py").exists())
 
 
 def _build_app(*, legacy_templates_flag=None, include_document_templates: bool = True) -> Flask:
@@ -234,6 +265,21 @@ class ReleaseMonitorCharacterizationTests(unittest.TestCase):
             "ke_id", "release_version", "ke", "release_dist_url", "zni_key",
         ):
             self.assertIn(f"name: '{field_name}'", script)
+
+    def test_summary_cards_use_the_existing_view_filter_contract(self):
+        response, _build_model, _maintenance = _render_release_monitor()
+        markup = response.get_data(as_text=True)
+        script = RELEASE_JS_PATH.read_text(encoding="utf-8")
+
+        for value in ("all", "overdue", "non_final", "pre_final"):
+            with self.subTest(value=value):
+                self.assertIn(f'data-release-summary-filter="{value}"', markup)
+        self.assertIn('<option value="non_final">Не в финальном статусе</option>', markup)
+        self.assertIn('<option value="pre_final">Установка на ПРОМ</option>', markup)
+        self.assertIn("currentReleaseViewFilter === 'non_final' && item.is_non_final", script)
+        self.assertIn("currentReleaseViewFilter === 'pre_final' && item.is_pre_final", script)
+        self.assertIn("currentReleaseViewFilter === requestedFilter", script)
+        self.assertIn("card.setAttribute('aria-pressed', isActive ? 'true' : 'false')", script)
 
     def test_action_methods_polling_and_existing_transitions_are_stable(self):
         source = RELEASE_JS_PATH.read_text(encoding="utf-8")

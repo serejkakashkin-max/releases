@@ -304,11 +304,38 @@
         }
 
         .oplot-release .release-summary-card {
+            width: 100%;
+            appearance: none;
             background: var(--release-soft-bg);
             border: 1px solid var(--border-color);
             border-radius: 12px;
             padding: 0.54rem 0.68rem;
             min-height: 62px;
+            color: inherit;
+            font: inherit;
+            text-align: left;
+            cursor: pointer;
+            transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+        }
+
+        .oplot-release .release-summary-card:hover {
+            border-color: color-mix(in srgb, var(--release-stat-accent) 66%, var(--border-color));
+        }
+
+        .oplot-release .release-summary-card:active {
+            transform: translateY(1px);
+        }
+
+        .oplot-release .release-summary-card:focus-visible {
+            outline: 2px solid var(--oplot-focus-ring, #62a8ff);
+            outline-offset: 2px;
+        }
+
+        .oplot-release .release-summary-card.is-active {
+            border-color: color-mix(in srgb, var(--release-stat-accent) 82%, var(--border-color));
+            box-shadow:
+                inset 0 0 0 1px color-mix(in srgb, var(--release-stat-accent) 32%, transparent),
+                0 0 18px color-mix(in srgb, var(--release-stat-accent) 16%, transparent);
         }
 
         .oplot-release .release-summary-label {
@@ -2682,6 +2709,21 @@ html[data-theme="dark"] .oplot-release .release-doc-modal select option {
             background: linear-gradient(135deg, var(--bg-card) 0%, var(--bg-secondary) 100%);
         }
 
+        .oplot-release .release-doc-modal .modal-footer {
+            display: flex;
+            justify-content: space-between;
+            gap: 0.75rem;
+            padding: 0.72rem 1.35rem;
+        }
+
+        .oplot-release .release-doc-modal .modal-footer .btn {
+            min-height: 38px;
+        }
+
+        .oplot-release .release-doc-modal .modal-footer .btn-primary {
+            margin-left: auto;
+        }
+
         html[data-theme="dark"] .oplot-release .release-doc-modal .btn-close {
             filter: invert(1) grayscale(100%) brightness(200%);
         }
@@ -2858,7 +2900,21 @@ html[data-theme="dark"] .oplot-release .release-doc-modal .form-select:focus {
         }
 
         html[data-theme="dark"] .oplot-release .release-doc-modal input[type="date"]::-webkit-calendar-picker-indicator {
-            filter: invert(1) opacity(0.72);
+            width: 1.25rem;
+            height: 1.25rem;
+            padding: 0.16rem;
+            border-radius: 6px;
+            background-color: rgba(96, 165, 250, 0.16);
+            box-shadow: 0 0 0 1px rgba(147, 197, 253, 0.34);
+            filter: invert(1) brightness(1.28) saturate(1.05) opacity(0.92);
+            cursor: pointer;
+        }
+
+        html[data-theme="dark"] .oplot-release .release-doc-modal input[type="date"]:hover::-webkit-calendar-picker-indicator,
+html[data-theme="dark"] .oplot-release .release-doc-modal input[type="date"]:focus::-webkit-calendar-picker-indicator {
+            background-color: rgba(96, 165, 250, 0.24);
+            box-shadow: 0 0 0 1px rgba(147, 197, 253, 0.54);
+            filter: invert(1) brightness(1.42) saturate(1.1) opacity(1);
         }
 
         .oplot-release .release-manual-grid {
@@ -3063,6 +3119,36 @@ html[data-theme="dark"] .oplot-release .release-doc-modal .form-select:focus {
             margin-top: 0.45rem;
         }
 
+        .oplot-release .release-doc-modal .form-check-input {
+            width: 1.08rem;
+            height: 1.08rem;
+            margin-top: 0.12rem;
+            border: 1px solid rgba(96, 165, 250, 0.58);
+            background-color: color-mix(in srgb, var(--bg-primary) 62%, #ffffff 8%);
+            box-shadow:
+                inset 0 1px 0 rgba(255, 255, 255, 0.08),
+                0 0 0 1px rgba(96, 165, 250, 0.12);
+            accent-color: var(--accent-primary);
+        }
+
+        .oplot-release .release-doc-modal .form-check-input:checked {
+            border-color: var(--accent-primary);
+            background-color: var(--accent-primary);
+        }
+
+        .oplot-release .release-doc-modal .form-check-input:focus {
+            border-color: rgba(147, 197, 253, 0.9);
+            box-shadow: 0 0 0 0.18rem rgba(59, 130, 246, 0.24);
+        }
+
+        html[data-theme="dark"] .oplot-release .release-doc-modal .form-check-input {
+            border-color: rgba(147, 197, 253, 0.64);
+            background-color: #0b1728;
+            box-shadow:
+                inset 0 1px 0 rgba(255, 255, 255, 0.06),
+                0 0 0 1px rgba(96, 165, 250, 0.18);
+        }
+
         .oplot-release .release-doc-playbook-mode {
             display: inline-flex;
             align-items: center;
@@ -3147,12 +3233,6 @@ html[data-theme="dark"] .oplot-release .release-doc-modal .form-select:focus {
             color: var(--text-primary);
             padding: 1rem;
             line-height: 1.55;
-        }
-
-        .oplot-release .release-doc-footer-note {
-            color: var(--text-muted);
-            font-size: 0.82rem;
-            margin-right: auto;
         }
 
         .oplot-release .empty-state-small {

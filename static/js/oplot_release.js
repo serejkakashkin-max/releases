@@ -6524,6 +6524,8 @@ function applyReleaseFilters() {
             currentReleaseViewFilter === 'all' ||
             (currentReleaseViewFilter === 'week' && isReleaseInCurrentWeek(item) && !item.is_cancelled) ||
             (currentReleaseViewFilter === 'overdue' && item.is_overdue) ||
+            (currentReleaseViewFilter === 'non_final' && item.is_non_final) ||
+            (currentReleaseViewFilter === 'pre_final' && item.is_pre_final) ||
             (currentReleaseViewFilter === 'today' && isReleaseStartingToday(item)) ||
             (currentReleaseViewFilter === 'final' && item.is_final) ||
             (currentReleaseViewFilter === 'cancelled' && item.is_cancelled)
@@ -6569,6 +6571,11 @@ function applyReleaseFilters() {
     document.getElementById('releaseSummaryOverdue').textContent = yearSummary.overdue || 0;
     document.getElementById('releaseSummaryNonFinal').textContent = yearSummary.non_final || 0;
     document.getElementById('releaseSummaryPreFinal').textContent = yearSummary.pre_final || 0;
+    document.querySelectorAll('[data-release-summary-filter]').forEach(card => {
+        const isActive = card.dataset.releaseSummaryFilter === currentReleaseViewFilter;
+        card.classList.toggle('is-active', isActive);
+        card.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
     updateReleaseStatusFilterOptions(yearItems);
     updateReleaseWorkMarkFilterOptions(yearItems);
     recomputeReleaseWorkMarkChips(filteredItems);
@@ -6674,6 +6681,18 @@ function initOplotReleasePage() {
     }
     releasePageInitializationState = 'initialized';
     registerReleaseLifecycleListeners();
+    root.querySelectorAll('[data-release-summary-filter]').forEach(card => {
+        card.addEventListener('click', () => {
+            const requestedFilter = card.dataset.releaseSummaryFilter || 'all';
+            const nextFilter = requestedFilter !== 'all' && currentReleaseViewFilter === requestedFilter
+                ? 'all'
+                : requestedFilter;
+            const viewSelect = document.getElementById('releaseViewFilter');
+            if (viewSelect) viewSelect.value = nextFilter;
+            currentReleaseViewFilter = nextFilter;
+            applyReleaseFilters();
+        });
+    });
     syncReleaseEmployeeDirectoryProjection(releaseConfigData.release_monitor_meta);
     if (new URLSearchParams(window.location.search).get('debug_polling') === '1') window.__releaseMonitorPollingDebug = releaseMonitorPollingDebugSnapshot;
     window.dashboardData = {
