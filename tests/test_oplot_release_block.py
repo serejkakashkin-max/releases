@@ -4,6 +4,7 @@ import json
 import re
 import os
 import unittest
+from datetime import date, datetime
 from html.parser import HTMLParser
 from unittest import mock
 
@@ -16,6 +17,7 @@ prepare_config_import()
 from routes.dashboard_routes import dashboard_bp
 from services.oplot_ui_service import build_oplot_navigation, register_oplot_ui
 from services.release_ui_service import build_release_navigation
+from services import release_monitor_service
 
 
 TEMPLATE_PATH = PROJECT_ROOT / "templates" / "release_monitor.html"
@@ -147,6 +149,67 @@ class ReleaseMonitorCacheExportRemovalTests(unittest.TestCase):
         self.assertNotIn("release_monitor_cache_backup", service_source)
         self.assertNotIn("create_release_monitor_cache_backup", service_source)
         self.assertFalse((PROJECT_ROOT / "services" / "release_monitor_backup_service.py").exists())
+
+
+class AssignmentCenterAvailabilityDateTests(unittest.TestCase):
+    @staticmethod
+    def _candidate_groups():
+        return {
+            "available": [],
+            "reserve": [],
+            "excluded": [],
+            "status": "ready",
+            "authoritative": True,
+        }
+
+    def _collect_target_dates(self, items, *, reference_dt):
+        snapshot = {
+            "items": items,
+            "meta": {"employee_selection_available": True},
+        }
+        with mock.patch.object(
+            release_monitor_service,
+            "_collect_week_candidate_availability",
+            return_value=self._candidate_groups(),
+        ) as collect:
+            release_monitor_service.get_release_monitor_week_control(
+                snapshot=snapshot,
+                reference_dt=reference_dt,
+            )
+        return collect.call_args.kwargs["target_dates"]
+
+    def test_empty_assignment_queue_uses_current_day(self):
+        reference_dt = datetime(2026, 8, 13, 12, 0, 0)
+
+        target_dates = self._collect_target_dates([], reference_dt=reference_dt)
+
+        self.assertEqual({date(2026, 8, 13)}, target_dates)
+
+    def test_assigned_release_does_not_replace_current_day_reference(self):
+        reference_dt = datetime(2026, 8, 13, 12, 0, 0)
+        target_dates = self._collect_target_dates(
+            [{
+                "release_key": "REL-ASSIGNED",
+                "deployment_start_iso": "2026-08-14T21:15:00",
+                "psi_responsibles": ["Сотрудник"],
+            }],
+            reference_dt=reference_dt,
+        )
+
+        self.assertEqual({date(2026, 8, 13)}, target_dates)
+
+    def test_unassigned_release_uses_its_release_date(self):
+        reference_dt = datetime(2026, 8, 13, 12, 0, 0)
+        target_dates = self._collect_target_dates(
+            [{
+                "release_key": "REL-UNASSIGNED",
+                "deployment_start_iso": "2026-08-14T21:15:00",
+                "psi_responsibles": [],
+            }],
+            reference_dt=reference_dt,
+        )
+
+        self.assertEqual({date(2026, 8, 14)}, target_dates)
 
 
 def _build_app(*, legacy_templates_flag=None, include_document_templates: bool = True) -> Flask:

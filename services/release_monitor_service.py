@@ -7779,11 +7779,12 @@ def get_release_monitor_reviewer_options():
     return list(_get_oplot_values())
 
 
-def get_release_monitor_week_control(snapshot=None):
+def get_release_monitor_week_control(snapshot=None, *, reference_dt=None):
     snapshot = snapshot if isinstance(snapshot, dict) else (get_release_monitor_snapshot() or {})
     items = snapshot.get("items", []) if isinstance(snapshot, dict) else []
     snapshot_meta = snapshot.get("meta") or {}
-    week_start, week_end = _get_current_week_bounds()
+    reference_dt = reference_dt or datetime.now()
+    week_start, week_end = _get_current_week_bounds(reference_dt)
 
     week_items = [
         item for item in items
@@ -7799,11 +7800,10 @@ def get_release_monitor_week_control(snapshot=None):
         if _get_release_start_date(item)
     }
     if not assignment_dates:
-        assignment_dates = {
-            _get_release_start_date(item)
-            for item in week_items
-            if _get_release_start_date(item)
-        }
+        # With no releases awaiting assignment, the people panel is a view of
+        # today's team availability. Assigned releases elsewhere in the week
+        # must not move that reference date away from the current day.
+        assignment_dates = {reference_dt.date()}
     if not snapshot_meta.get("employee_selection_available", True):
         candidate_groups = {
             "available": [],
