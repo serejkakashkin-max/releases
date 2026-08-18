@@ -21,6 +21,120 @@ JIRA_DOMAIN_CONFIGS = {
     },
 }
 
+EMAIL_JIRA_ROUTES_CONTRACT_VERSION = 1
+
+STANDARD_EMAIL_JIRA_ROUTES = [
+    {
+        "enabled": True,
+        "name": "EMRM",
+        "target_system": "jira",
+        "subject_triggers": ["EMRM"],
+        "spaces": [],
+        "jira_projects": ["EMRM"],
+        "jira_domain": "sberbank",
+        "jira_issue_type": "Task",
+        "jira_issue_type_id": "3",
+        "jira_epic_name_field": "",
+        "jira_epic_link": {
+            "field_id": "customfield_10006",
+            "key": "EMRM-40162",
+        },
+        "jira_priority": "Minor",
+        "jira_labels": ["FromChannel"],
+        "jira_team": {
+            "field_id": "customfield_11902",
+            "value_id": "6651",
+            "name": "[\u0424\u043e\u043a\u0443\u0441] ForREST",
+        },
+        "suit": "task",
+        "priority": "low",
+        "summary_template": "{subject}",
+    },
+    {
+        "enabled": True,
+        "name": "CLM",
+        "target_system": "jira",
+        "subject_triggers": ["CLM"],
+        "spaces": [],
+        "jira_projects": ["SMECLM"],
+        "jira_domain": "sberbank",
+        "jira_issue_type": "Story",
+        "jira_issue_type_id": "10001",
+        "jira_epic_name_field": "",
+        "jira_epic_link": {"field_id": "", "key": ""},
+        "jira_priority": "Minor",
+        "jira_labels": [],
+        "jira_team": {"field_id": "", "value_id": "", "name": ""},
+        "suit": "task",
+        "priority": "low",
+        "summary_template": "{subject}",
+    },
+    {
+        "enabled": True,
+        "name": "AIST",
+        "target_system": "jira",
+        "subject_triggers": ["AIST", "\u0410\u0418\u0421\u0422"],
+        "spaces": [],
+        "jira_projects": ["SMECSC"],
+        "jira_domain": "delta",
+        "jira_issue_type": "Story",
+        "jira_issue_type_id": "21",
+        "jira_epic_name_field": "",
+        "jira_epic_link": {"field_id": "", "key": ""},
+        "jira_priority": "Minor",
+        "jira_labels": [],
+        "jira_team": {
+            "field_id": "customfield_12000",
+            "value_id": "12011",
+            "name": "[\u0410\u0438\u0441\u0442] Thunder",
+        },
+        "suit": "task",
+        "priority": "low",
+        "summary_template": "{subject}",
+    },
+]
+
+
+def _email_jira_route_identities(route: Any) -> set:
+    if not isinstance(route, dict):
+        return set()
+    if str(route.get("target_system") or "").strip().lower() != "jira":
+        return set()
+    domain = str(route.get("jira_domain") or "sberbank").strip().lower()
+    projects = route.get("jira_projects")
+    if not isinstance(projects, list):
+        projects = route.get("spaces") if isinstance(route.get("spaces"), list) else []
+    return {
+        (domain, str(project or "").strip().upper())
+        for project in projects
+        if str(project or "").strip()
+    }
+
+
+def ensure_standard_email_jira_routes(
+    routes: Any,
+    *,
+    source_version: Any = 0,
+) -> tuple[List[Dict[str, Any]], int]:
+    """Add new built-in routes once while preserving later admin edits/removals."""
+    normalized_routes = copy.deepcopy(routes) if isinstance(routes, list) else []
+    try:
+        version = int(source_version)
+    except (TypeError, ValueError):
+        version = 0
+    if version >= EMAIL_JIRA_ROUTES_CONTRACT_VERSION:
+        return normalized_routes, EMAIL_JIRA_ROUTES_CONTRACT_VERSION
+
+    identities = set()
+    for route in normalized_routes:
+        identities.update(_email_jira_route_identities(route))
+    for standard_route in STANDARD_EMAIL_JIRA_ROUTES:
+        standard_identities = _email_jira_route_identities(standard_route)
+        if identities.isdisjoint(standard_identities):
+            normalized_routes.append(copy.deepcopy(standard_route))
+            identities.update(standard_identities)
+    return normalized_routes, EMAIL_JIRA_ROUTES_CONTRACT_VERSION
+
 DEFAULT_RELEASE_PREFIX_CONFIGS = [
     {
         "prefix": "EMRM",
@@ -92,7 +206,8 @@ DEFAULT_FEATURE_FLAGS = {
             "max_pending_per_cycle": 10,
             "body_max_chars": 6000,
             "technical_mailboxes": [],
-            "routes": [],
+            "routes_contract_version": EMAIL_JIRA_ROUTES_CONTRACT_VERSION,
+            "routes": copy.deepcopy(STANDARD_EMAIL_JIRA_ROUTES),
         },
     },
     "release_monitor": {
@@ -332,7 +447,10 @@ def _normalize_email_to_sbertrack_config(value: Any) -> Dict[str, Any]:
                 "summary_template": summary_template or "{subject}",
             }
         )
-    target["routes"] = routes
+    target["routes"], target["routes_contract_version"] = ensure_standard_email_jira_routes(
+        routes,
+        source_version=source.get("routes_contract_version"),
+    )
     return target
 
 

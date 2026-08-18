@@ -12,9 +12,11 @@ from uuid import uuid4
 from services.feature_flags_service import (
     DEFAULT_FEATURE_FLAGS,
     DEFAULT_RELEASE_PREFIX_CONFIGS,
+    EMAIL_JIRA_ROUTES_CONTRACT_VERSION,
     FEATURE_FLAGS_FILE,
     JIRA_DOMAIN_CONFIGS,
     PREFIX_PATTERN,
+    ensure_standard_email_jira_routes,
     is_module_enabled,
     reload_feature_flags,
 )
@@ -238,6 +240,10 @@ def _admin_email_to_sbertrack(raw_value: Any) -> Dict[str, Any]:
                 "summary_template": summary_template,
             }
         )
+    routes, routes_contract_version = ensure_standard_email_jira_routes(
+        routes,
+        source_version=source.get("routes_contract_version"),
+    )
     return {
         "enabled": _coerce_bool(source.get("enabled"), defaults["enabled"]),
         "dry_run": _coerce_bool(source.get("dry_run"), defaults["dry_run"]),
@@ -261,6 +267,7 @@ def _admin_email_to_sbertrack(raw_value: Any) -> Dict[str, Any]:
             email.lower()
             for email in _normalize_string_list(source.get("technical_mailboxes"))
         ],
+        "routes_contract_version": routes_contract_version,
         "routes": routes,
     }
 
@@ -864,6 +871,7 @@ def _validate_managed_config(raw_config: Any) -> Dict[str, Any]:
             }
         )
     email_to_sbertrack_target["routes"] = normalized_routes
+    email_to_sbertrack_target["routes_contract_version"] = EMAIL_JIRA_ROUTES_CONTRACT_VERSION
 
     raw_sbertrack_users = raw_config.get("sbertrack_users")
     user_rows = (
