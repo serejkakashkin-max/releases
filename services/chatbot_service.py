@@ -256,6 +256,16 @@ class DashboardChatBot:
                     'metadata': release_agent_response.get('metadata', {})
                 }
 
+            release_monitor_lookup = self._handle_release_monitor_key_lookup(message)
+            if release_monitor_lookup:
+                session.add_message('user', message, release_monitor_lookup.get('intent'))
+                session.add_message(
+                    'assistant',
+                    release_monitor_lookup['text'],
+                    metadata=release_monitor_lookup.get('metadata', {}),
+                )
+                return release_monitor_lookup
+
             local_intent = self.intent_classifier.classify(message)
             resolved_intent, normalized_message, ai_plan = self._resolve_intent_and_message(
                 message,
@@ -850,6 +860,136 @@ Oplot умеет работать с рабочим столом дежурно�
             }
 
         return None
+
+    def _extract_standalone_jira_key(self, message: str) -> str:
+        """Return a Jira key only when it is the complete user message."""
+        value = str(message or "").strip()
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*-\d+", value):
+            return ""
+        return value.upper()
+
+    def _format_release_monitor_issue_link(self, key: str, url: str) -> str:
+        key = str(key or "").strip().upper()
+        url = str(url or "").strip()
+        if url and re.fullmatch(r"https?://[^\s<>()]+", url, re.IGNORECASE):
+            return f"[{key}]({url})"
+        return f"`{key}`"
+
+    def _format_release_monitor_deployment_dates(self, item: Dict) -> str:
+        start = str(item.get("deployment_start") or "").strip()
+        end = str(item.get("deployment_end") or "").strip()
+        if start and end and start != end:
+            return f"период внедрения: {start} — {end}"
+        if start or end:
+            return f"дата внедрения: {start or end}"
+        return "дата внедрения не указана"
+
+    def _handle_release_monitor_key_lookup(self, message: str) -> Optional[Dict]:
+        """Resolve a standalone Jira key exclusively from the Release Monitor snapshot."""
+        query_key = self._extract_standalone_jira_key(message)
+        if not query_key:
+            return None
+
+        snapshot = get_release_monitor_snapshot() or {}
+        items = snapshot.get("items", []) if isinstance(snapshot, dict) else []
+        items = [item for item in items if isinstance(item, dict)]
+        release_rows = [
+            item
+            for item in items
+            if str(item.get("release_key") or "").strip().upper() == query_key
+        ]
+        rov_rows = [
+            item
+            for item in items
+            if str(item.get("rov_key") or "").strip().upper() == query_key
+        ]
+
+        if release_rows:
+            release_url = next(
+                (str(item.get("release_url") or "").strip() for item in release_rows if item.get("release_url")),
+                "",
+            )
+            lines = [
+                f"Нашёл релиз {self._format_release_monitor_issue_link(query_key, release_url)} "
+                "в таблице Блока релизов."
+            ]
+            related = []
+            seen = set()
+            for item in release_rows:
+                rov_key = str(item.get("rov_key") or "").strip().upper()
+                if not rov_key:
+                    continue
+                identity = (
+                    rov_key,
+                    str(item.get("deployment_start") or "").strip(),
+                    str(item.get("deployment_end") or "").strip(),
+                )
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                related.append(
+                    f"- {self._format_release_monitor_issue_link(rov_key, item.get('rov_url'))} — "
+                    f"{self._format_release_monitor_deployment_dates(item)}"
+                )
+            if related:
+                lines.extend(["", "Связанные РОВ:", *related])
+            else:
+                lines.extend(["", "Связанные РОВ в таблице не указаны."])
+            query_type = "release"
+            match_count = len(release_rows)
+        elif rov_rows:
+            rov_url = next(
+                (str(item.get("rov_url") or "").strip() for item in rov_rows if item.get("rov_url")),
+                "",
+            )
+            lines = [
+                f"Нашёл РОВ {self._format_release_monitor_issue_link(query_key, rov_url)} "
+                "в таблице Блока релизов."
+            ]
+            related = []
+            seen = set()
+            for item in rov_rows:
+                release_key = str(item.get("release_key") or "").strip().upper()
+                if not release_key:
+                    continue
+                identity = (
+                    release_key,
+                    str(item.get("deployment_start") or "").strip(),
+                    str(item.get("deployment_end") or "").strip(),
+                )
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                related.append(
+                    f"- {self._format_release_monitor_issue_link(release_key, item.get('release_url'))} — "
+                    f"{self._format_release_monitor_deployment_dates(item)}"
+                )
+            if related:
+                lines.extend(["", "Связанные релизы:", *related])
+            else:
+                lines.extend(["", "Связанные релизы в таблице не указаны."])
+            query_type = "rov"
+            match_count = len(rov_rows)
+        else:
+            lines = [
+                f"Номер `{query_key}` не найден в текущей таблице Блока релизов. "
+                "Проверь номер или обнови таблицу релизов."
+            ]
+            query_type = "not_found"
+            match_count = 0
+
+        return {
+            "text": "\n".join(lines),
+            "intent": "release_monitor_key_lookup",
+            "suggestions": ["Открыть блок релизов"],
+            "metadata": {
+                "type": "release_monitor_key_lookup",
+                "source": "release_monitor_snapshot",
+                "query_key": query_key,
+                "query_type": query_type,
+                "matched_rows": match_count,
+            },
+        }
 
     def _normalize_command_text(self, value: str) -> str:
         return re.sub(r"\s+", " ", str(value or "").strip().lower().replace("ё", "е"))
