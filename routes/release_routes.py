@@ -77,6 +77,28 @@ def _catalog_template_payload(candidate: dict) -> dict:
     }
 
 
+def _template_directory_has_documents(category: str, release_full: str) -> bool:
+    """Confirm that a cached/catalog template still exists on disk.
+
+    The legacy RELEASE_STRUCTURE/ID_MAP maps are built at process startup. A
+    kit may later be removed through the Document Template Center, so neither
+    those maps nor a short-lived catalog cache may be treated as proof that the
+    active template directory still exists.
+    """
+    category = str(category or "").strip()
+    release_full = str(release_full or "").strip()
+    if not category or not release_full:
+        return False
+    directory = DOC_TEMPLATES_ROOT / category / release_full
+    try:
+        return directory.is_dir() and any(
+            path.is_file() and path.suffix.lower() == ".docx"
+            for path in directory.iterdir()
+        )
+    except OSError:
+        return False
+
+
 def _legacy_template_payload(
     category: str,
     release_clean: str,
@@ -130,6 +152,14 @@ def detect_release_template_from_values(sm_id: str, summary: str = "", *, catalo
     else:
         catalog_candidates = list((catalog_context.get("by_ke") or {}).get(sm_id) or [])
         catalog_entries = list(catalog_context.get("entries") or [])
+    catalog_candidates = [
+        candidate
+        for candidate in catalog_candidates
+        if _template_directory_has_documents(
+            candidate.get("category", ""),
+            candidate.get("release_full", ""),
+        )
+    ]
     if catalog_candidates:
         if len(catalog_candidates) == 1:
             return {**_catalog_template_payload(catalog_candidates[0]), "template_sm_id": sm_id}
@@ -158,7 +188,7 @@ def detect_release_template_from_values(sm_id: str, summary: str = "", *, catalo
         if len(candidates) == 1:
             category, release_name_clean = candidates[0]
             for clean, full in RELEASE_STRUCTURE.get(category, []):
-                if clean == release_name_clean:
+                if clean == release_name_clean and _template_directory_has_documents(category, full):
                     return {
                         **_legacy_template_payload(
                             category,
@@ -188,7 +218,7 @@ def detect_release_template_from_values(sm_id: str, summary: str = "", *, catalo
             if selected:
                 category, release_name_clean = selected
                 for clean, full in RELEASE_STRUCTURE.get(category, []):
-                    if clean == release_name_clean:
+                    if clean == release_name_clean and _template_directory_has_documents(category, full):
                         return {
                             **_legacy_template_payload(
                                 category,
@@ -202,7 +232,7 @@ def detect_release_template_from_values(sm_id: str, summary: str = "", *, catalo
             candidates_list = []
             for cand_category, cand_release_clean in candidates:
                 for clean, full in RELEASE_STRUCTURE.get(cand_category, []):
-                    if clean == cand_release_clean:
+                    if clean == cand_release_clean and _template_directory_has_documents(cand_category, full):
                         candidates_list.append({
                             "category": cand_category,
                             "release_clean": cand_release_clean,
@@ -503,11 +533,11 @@ def _generate_release_zip_buffer(
     t, tt = _normalize_release_date(date_str)
     template_dir = DOC_TEMPLATES_ROOT / category / release_full
     if not template_dir.exists():
-        raise ValueError(f"Директория с шаблонами не найдена: {template_dir}")
+        raise ValueError("Шаблоны документов для выбранного типа релиза не найдены.")
 
     template_files = list(template_dir.glob("*.docx"))
     if not template_files:
-        raise ValueError(f"Шаблоны не найдены в директории: {template_dir}")
+        raise ValueError("Шаблоны документов для выбранного типа релиза не найдены.")
 
     snapshot = jira_snapshot or get_release_jira_snapshot(release_id)
     release_version = (snapshot.get("release_version") or release_version or "").strip()

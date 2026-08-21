@@ -450,6 +450,10 @@
                   <span>Dry-run: задачи не создаются</span>
                 </label>
               </div>
+              <label class="switch-line">
+                <span class="switch"><input type="checkbox" id="sbertrackReplyNotificationsEnabled" data-dirty-field><span></span></span>
+                <span>Отправлять автору и получателям копии подтверждение со ссылкой на созданную задачу</span>
+              </label>
               <div class="field-row">
                 <div>
                   <label for="sbertrackPollIntervalInput">Интервал проверки, сек</label>
@@ -482,7 +486,7 @@
           <section class="card">
             <div class="card-header">
               <h2>Правила маршрутизации</h2>
-              <p class="muted">Одно письмо может создать задачи в нескольких пространствах. Триггеры ищутся только в теме.</p>
+              <p class="muted">Одно письмо создаёт не более одной задачи. При нескольких совпадениях применяется первое включённое правило; триггеры ищутся только в теме.</p>
             </div>
             <div class="card-body stack">
               <button type="button" class="primary" id="addSbertrackRouteBtn">Добавить правило</button>
@@ -631,6 +635,9 @@
                 <span>Последняя проверка</span><strong id="diagSbertrackCheckedAt">-</strong>
                 <span>Последний UID</span><strong id="diagSbertrackUid">0</strong>
                 <span>Pending</span><strong id="diagSbertrackPending">0</strong>
+                <span>Ответы pending</span><strong id="diagSbertrackReplyPending">0</strong>
+                <span>Последний ответ</span><strong id="diagSbertrackReplySentAt">-</strong>
+                <span>Ошибка ответа</span><strong id="diagSbertrackReplyError">-</strong>
                 <span>Dry-run matches</span><strong id="diagSbertrackDryRun">0</strong>
                 <span>Создано задач</span><strong id="diagSbertrackCreated">0</strong>
                 <span>Последний результат</span><strong id="diagSbertrackResult">-</strong>

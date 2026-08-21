@@ -5,6 +5,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest import mock
 
 from docx import Document
 from flask import Flask
@@ -13,12 +14,19 @@ from tests._support import PROJECT_ROOT, prepare_config_import
 
 prepare_config_import()
 
+from routes import release_routes
 from routes.document_template_routes import document_template_bp
 from routes.sup_admin_session_routes import sup_admin_session_bp
 from services.document_template_csrf_service import CSRF_COOKIE_NAME
 from services.document_template_creation_service import kit_id_for_relative_dir
 from services.document_template_read_service import build_document_whitelist
-from services.document_template_storage_service import write_uploaded_candidate
+from services.document_template_storage_service import (
+    cache_root,
+    candidate_directory,
+    create_history_version,
+    data_root,
+    write_uploaded_candidate,
+)
 from services.oplot_ui_service import register_oplot_ui
 from services.release_template_catalog_service import clear_template_catalog_cache
 
@@ -355,6 +363,86 @@ class DocumentTemplateCreationTests(unittest.TestCase):
         self.assertEqual(200, deleted.status_code)
         self.assertTrue(deleted.get_json()["success"])
         self.assertFalse((self.root / "PLATFORM" / "Base Kit PL (10001)").exists())
+
+    def test_deleted_kit_is_not_resurrected_by_stale_release_catalog(self):
+        kit_id = kit_id_for_relative_dir("PLATFORM/Base Kit PL (10001)")
+        stale_entry = {
+            "category": "PLATFORM",
+            "release_clean": "Base Kit PL",
+            "release_full": "Base Kit PL (10001)",
+            "ke": "10001",
+            "variant": "PL",
+            "requires_playbooks": False,
+        }
+        deleted = self.client.post(
+            f"/dashboard/release-monitor/document-templates/kits/{kit_id}/delete",
+            data={"_csrf_token": self.csrf, "confirmation": "Base Kit PL (10001)"},
+            headers={"Accept": "application/json"},
+        )
+        self.assertEqual(200, deleted.status_code)
+
+        with (
+            mock.patch.object(release_routes, "DOC_TEMPLATES_ROOT", self.root),
+            mock.patch.object(release_routes, "find_template_entries_by_ke", return_value=[stale_entry]),
+            mock.patch.object(release_routes, "ID_MAP", {"10001": [("PLATFORM", "Base Kit PL")]}),
+            mock.patch.object(
+                release_routes,
+                "RELEASE_STRUCTURE",
+                {"PLATFORM": [("Base Kit PL", "Base Kit PL (10001)")]},
+            ),
+        ):
+            detection = release_routes.detect_release_template_from_values("10001", "Base Kit PL")
+
+        self.assertFalse(detection["found"])
+        self.assertEqual([], detection["candidates"])
+
+    def test_delete_kit_cascades_history_candidates_and_creation_drafts(self):
+        kit_path = self.root / "PLATFORM" / "Base Kit PL (10001)"
+        document = next(
+            item
+            for item in build_document_whitelist(self.root).values()
+            if item.relative_directory.casefold() == "platform/base kit pl (10001)"
+        )
+        kit_id = kit_id_for_relative_dir("PLATFORM/Base Kit PL (10001)")
+        with self.app.app_context():
+            candidate = write_uploaded_candidate(
+                io.BytesIO(self.active_payload),
+                document_id=document.document_id,
+                source_filename="new.docx",
+                active_filename=document.filename,
+                active_sha=document.sha256,
+                uploaded_by="tester",
+                comment="active draft",
+            )
+            history = create_history_version(
+                document.document_id,
+                self.active_payload,
+                {
+                    "state": "committed",
+                    "sha256": document.sha256,
+                    "created_at": "2026-08-21T10:00:00+00:00",
+                },
+            )
+            creation_uuid = "11111111-1111-4111-8111-111111111111"
+            creation_dir = cache_root() / "creation-drafts" / creation_uuid
+            creation_dir.mkdir(parents=True)
+            (creation_dir / "metadata.json").write_text(
+                '{"draft_uuid":"' + creation_uuid + '","target_kit_id":"' + kit_id + '"}',
+                encoding="utf-8",
+            )
+
+        deleted = self.client.post(
+            f"/dashboard/release-monitor/document-templates/kits/{kit_id}/delete",
+            data={"_csrf_token": self.csrf, "confirmation": "Base Kit PL (10001)"},
+            headers={"Accept": "application/json"},
+        )
+
+        self.assertEqual(200, deleted.status_code)
+        self.assertFalse(kit_path.exists())
+        with self.app.app_context():
+            self.assertFalse(candidate_directory(candidate["candidate_uuid"]).exists())
+            self.assertFalse((data_root() / "history" / document.document_id / history["version_uuid"]).exists())
+            self.assertFalse(creation_dir.exists())
 
     def test_guide_contains_public_placeholder_reference(self):
         response = self.client.get("/dashboard/release-monitor/document-templates/guide")

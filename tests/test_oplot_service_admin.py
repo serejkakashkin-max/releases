@@ -157,6 +157,10 @@ class SupShellContractTests(unittest.TestCase):
             "competencyModalBackdrop",
             "dtcHistoryRetentionLimit",
             "gigachatEnabled",
+            "sbertrackReplyNotificationsEnabled",
+            "diagSbertrackReplyPending",
+            "diagSbertrackReplySentAt",
+            "diagSbertrackReplyError",
         ):
             self.assertIn(f'id="{element_id}"', text)
         self.assertIn("Хранить версий истории на шаблон", text)
@@ -222,6 +226,8 @@ class SupJavascriptContractTests(unittest.TestCase):
         self.assertIn("history_retention_limit", script)
         self.assertIn("dtcHistoryRetentionLimit", script)
         self.assertIn("config.integrations.gigachat.enabled", script)
+        self.assertIn("reply_notifications_enabled", script)
+        self.assertIn("sbertrackReplyNotificationsEnabled", script)
         for key in ("expected_revision", "expected_etag", "employees", "directory_etag", "settings_revision", "settings_etag", "competency"):
             self.assertIn(key, script)
         self.assertIn('method: "POST"', script)

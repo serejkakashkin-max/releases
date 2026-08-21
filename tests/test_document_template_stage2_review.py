@@ -81,9 +81,7 @@ def _set_candidate_metadata(candidate_uuid: str, **updates):
 def _make_invalid_contract(path: Path) -> bytes:
     make_template(path, heading="Invalid contract")
     document = Document(path)
-    for paragraph in document.paragraphs:
-        if "DATE" in paragraph.text:
-            paragraph.text = paragraph.text.replace("DATE", "15.01.2030")
+    document.sections[0].header.paragraphs[0].text = "DATE"
     document.save(path)
     return path.read_bytes()
 
@@ -396,6 +394,32 @@ class Stage2ReviewWorkflowTests(unittest.TestCase):
 
 
 class ContractAndGenerationReviewTests(unittest.TestCase):
+    def test_supported_placeholder_changes_do_not_require_exact_active_contract(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            active = root / "active.docx"
+            candidate = root / "candidate.docx"
+
+            active_document = Document()
+            active_document.add_paragraph("Версия RELEASE_VERSION")
+            active_table = active_document.add_table(rows=1, cols=1)
+            active_table.cell(0, 0).text = "Дата DATE"
+            active_document.save(active)
+
+            candidate_document = Document()
+            candidate_document.add_paragraph("Дата DATE")
+            candidate_table = candidate_document.add_table(rows=1, cols=1)
+            candidate_table.cell(0, 0).text = "Дежурный OPLOT"
+            candidate_document.save(candidate)
+
+            errors, contract = compare_contract(active, candidate)
+            self.assertEqual([], errors)
+            self.assertEqual({"DATE": 1, "OPLOT": 1}, contract["placeholders"])
+
+            output, generation_errors = generate_synthetic_document(candidate, root / "test.docx")
+            self.assertEqual([], generation_errors)
+            self.assertIsNotNone(output)
+
     def test_split_runs_table_placeholders_instruction_and_unsupported_parts(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

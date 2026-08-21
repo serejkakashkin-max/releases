@@ -414,6 +414,12 @@
       return;
     }
     pendingDeleteButton = button;
+    var warning = document.getElementById("dtc-delete-warning");
+    if (warning) {
+      warning.textContent = button.dataset.deleteKind === "комплект"
+        ? "Комплект будет удалён полностью вместе со всеми документами, историей версий и незавершёнными новыми версиями."
+        : "Файл будет удалён полностью. История, активные новые версии и последний документ комплекта блокируют удаление отдельного файла.";
+    }
     document.getElementById("dtc-delete-required-name").textContent = button.dataset.confirmName || "";
     document.getElementById("dtc-delete-confirmation").value = "";
     document.getElementById("dtc-delete-error").hidden = true;

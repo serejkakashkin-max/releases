@@ -331,10 +331,12 @@ def compare_contract(active_path: Path, candidate_path: Path) -> tuple[list[Vali
     active = build_contract(active_path)
     candidate = build_contract(candidate_path)
     errors: list[ValidationFailure] = []
-    if active["placeholders"] != candidate["placeholders"]:
-        errors.append(ValidationFailure("placeholder_multiset", "Служебные поля должны совпадать с действующим шаблоном.", "placeholders"))
-    if active["areas"] != candidate["areas"]:
-        errors.append(ValidationFailure("placeholder_area", "Служебное поле перемещено в неподдерживаемую область документа.", "placeholders"))
+    # A template revision may intentionally add, remove or move supported
+    # placeholders between ordinary paragraphs and table cells. Requiring an
+    # exact match with the active document made legitimate edits impossible
+    # even though both locations are handled by the generator. Safety is
+    # enforced below against actually unsupported areas and then by synthetic
+    # generation of the complete candidate.
     if candidate["areas"].get("unsupported"):
         errors.append(ValidationFailure("placeholder_unsupported_area", "Служебные поля в колонтитулах и специальных областях не поддерживаются.", "placeholders"))
     if candidate.get("damaged_placeholders"):

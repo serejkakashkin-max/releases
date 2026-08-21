@@ -24,6 +24,8 @@ from services.document_template_storage_service import (
     MAX_UPLOAD_BYTES,
     CandidateUploadTooLarge,
     cache_root,
+    candidate_directory,
+    data_root,
     list_candidates,
     list_history,
     utc_now,
@@ -507,18 +509,43 @@ def kit_can_be_deleted(kit: dict[str, Any], root: Path) -> tuple[bool, str, list
     documents = [item for item in whitelist.values() if item.relative_directory.casefold() == str(kit["relative_dir"]).casefold()]
     if not documents:
         return False, "Комплект не содержит доступных документов.", []
-    for document in documents:
-        allowed, reason = document_can_be_deleted(document)
-        if not allowed:
-            return False, reason, documents
     return True, "", documents
 
 
+def _remove_runtime_tree(path: Path) -> None:
+    if path.is_symlink():
+        path.unlink(missing_ok=True)
+    elif path.exists():
+        shutil.rmtree(path)
+
+
+def _creation_drafts_for_kit(kit_id: str) -> list[Path]:
+    root = cache_root() / "creation-drafts"
+    if not root.is_dir():
+        return []
+    result: list[Path] = []
+    for metadata_path in root.glob("*/metadata.json"):
+        metadata = read_json(metadata_path, missing=None)
+        if isinstance(metadata, dict) and metadata.get("target_kit_id") == kit_id:
+            result.append(metadata_path.parent)
+    return result
+
+
 def delete_active_kit(kit: dict[str, Any], root: Path) -> None:
-    allowed, reason, _documents = kit_can_be_deleted(kit, root)
+    allowed, reason, documents = kit_can_be_deleted(kit, root)
     if not allowed:
         raise CreationDraftConflict(reason)
     with _kit_lock(kit["kit_id"]):
+        # Deleting a complete kit is intentionally cascading: history and
+        # unfinished replacements cannot be useful once their active files no
+        # longer exist. Remove the visible kit first, then its opaque runtime
+        # records so a partially cleaned operation never leaves active DOCX.
         shutil.rmtree(Path(kit["path"]))
+        for document in documents:
+            for candidate in list_candidates(document.document_id, allow_expired=True):
+                _remove_runtime_tree(candidate_directory(str(candidate["candidate_uuid"])))
+            _remove_runtime_tree(data_root() / "history" / document.document_id)
+        for draft_directory in _creation_drafts_for_kit(str(kit["kit_id"])):
+            _remove_runtime_tree(draft_directory)
     clear_template_catalog_cache()
     clear_document_template_read_cache(root)

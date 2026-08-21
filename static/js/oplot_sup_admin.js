@@ -321,6 +321,7 @@
         responsible.employee_recipients = Array.isArray(responsible.employee_recipients) ? responsible.employee_recipients : [];
         responsible.weekly_digest_recipients = Array.isArray(responsible.weekly_digest_recipients) ? responsible.weekly_digest_recipients : [];
         const sbertrack = config.automation.email_to_sbertrack;
+        sbertrack.reply_notifications_enabled = sbertrack.reply_notifications_enabled !== false;
         sbertrack.technical_mailboxes = Array.isArray(sbertrack.technical_mailboxes) ? sbertrack.technical_mailboxes : [];
         sbertrack.routes = Array.isArray(sbertrack.routes) ? sbertrack.routes : [];
         config.release_monitor = config.release_monitor || {};
@@ -361,6 +362,7 @@
         const sbertrack = config.automation.email_to_sbertrack;
         sbertrack.enabled = $("sbertrackEnabled").checked;
         sbertrack.dry_run = $("sbertrackDryRun").checked;
+        sbertrack.reply_notifications_enabled = $("sbertrackReplyNotificationsEnabled").checked;
         sbertrack.poll_interval_seconds = Number($("sbertrackPollIntervalInput").value || 0);
         sbertrack.lookback_limit = Number($("sbertrackLookbackInput").value || 0);
         sbertrack.max_pending_per_cycle = Number($("sbertrackPendingInput").value || 0);
@@ -468,6 +470,7 @@
         const sbertrack = automation.email_to_sbertrack || {};
         $("sbertrackEnabled").checked = Boolean(sbertrack.enabled);
         $("sbertrackDryRun").checked = sbertrack.dry_run !== false;
+        $("sbertrackReplyNotificationsEnabled").checked = sbertrack.reply_notifications_enabled !== false;
         $("sbertrackPollIntervalInput").value = sbertrack.poll_interval_seconds ?? 300;
         $("sbertrackLookbackInput").value = sbertrack.lookback_limit ?? 20;
         $("sbertrackPendingInput").value = sbertrack.max_pending_per_cycle ?? 10;
@@ -2016,13 +2019,16 @@
         $("diagSbertrackCheckedAt").textContent = status.last_checked_at || "-";
         $("diagSbertrackUid").textContent = String(status.last_checked_uid || 0);
         $("diagSbertrackPending").textContent = String(status.pending_count || 0);
+        $("diagSbertrackReplyPending").textContent = String(status.reply_pending_count || 0);
+        $("diagSbertrackReplySentAt").textContent = status.last_reply_sent_at || "-";
+        $("diagSbertrackReplyError").textContent = status.last_reply_error || "-";
         $("diagSbertrackDryRun").textContent = String(status.dry_run_match_count || 0);
         $("diagSbertrackCreated").textContent = String(status.created_count || 0);
         $("diagSbertrackResult").textContent = status.last_result || "-";
         $("diagSbertrackError").textContent = status.last_error || "-";
         const statusBox = $("sbertrackRuntimeStatus");
-        statusBox.textContent = `Email → SberTrack: ${modeText}. UID: ${status.last_checked_uid || 0}; pending: ${status.pending_count || 0}; dry-run matches: ${status.dry_run_match_count || 0}.`;
-        statusBox.className = `status ${status.last_error ? "error" : mode === "active" ? "success" : ""}`.trim();
+        statusBox.textContent = `Email → SberTrack: ${modeText}. UID: ${status.last_checked_uid || 0}; pending: ${status.pending_count || 0}; ответы pending: ${status.reply_pending_count || 0}; dry-run matches: ${status.dry_run_match_count || 0}.`;
+        statusBox.className = `status ${status.last_error || status.last_reply_error ? "error" : mode === "active" ? "success" : ""}`.trim();
       }
 
       function employeeMatches(row) {

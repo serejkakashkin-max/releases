@@ -288,6 +288,21 @@ html:has(> body.oplot-dtc) {
 .oplot-dtc .oplot-dtc-catalog-actions p { margin: 0; }
 .oplot-dtc .oplot-dtc-catalog-actions p { color: var(--oplot-muted); }
 .oplot-dtc .oplot-dtc-kit-tools { display: grid; justify-items: end; gap: .75rem; }
+.oplot-dtc #kit-create-modal .modal-content > form {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: calc(100dvh - 2rem);
+}
+.oplot-dtc #kit-create-modal .modal-header,
+.oplot-dtc #kit-create-modal .modal-footer { flex: 0 0 auto; }
+.oplot-dtc #kit-create-modal .modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+}
 .oplot-dtc .oplot-dtc-wizard-steps {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

@@ -247,6 +247,10 @@ def _admin_email_to_sbertrack(raw_value: Any) -> Dict[str, Any]:
     return {
         "enabled": _coerce_bool(source.get("enabled"), defaults["enabled"]),
         "dry_run": _coerce_bool(source.get("dry_run"), defaults["dry_run"]),
+        "reply_notifications_enabled": _coerce_bool(
+            source.get("reply_notifications_enabled"),
+            defaults["reply_notifications_enabled"],
+        ),
         "poll_interval_seconds": _normalize_int(
             source.get("poll_interval_seconds"),
             defaults["poll_interval_seconds"],
@@ -710,12 +714,16 @@ def _validate_managed_config(raw_config: Any) -> Dict[str, Any]:
     responsible_target["employee_recipients"] = employee_map
 
     email_to_sbertrack_target = normalized["automation"]["email_to_sbertrack"]
-    for key in ("enabled", "dry_run"):
+    for key in ("enabled", "dry_run", "reply_notifications_enabled"):
         if not isinstance(email_to_sbertrack.get(key), bool):
             errors.append(f"Email в†’ SberTrack/{key}: Р·РЅР°С‡РµРЅРёРµ РґРѕР»Р¶РЅРѕ Р±С‹С‚СЊ true РёР»Рё false")
     email_to_sbertrack_target["enabled"] = _coerce_bool(email_to_sbertrack.get("enabled"))
     email_to_sbertrack_target["dry_run"] = _coerce_bool(
         email_to_sbertrack.get("dry_run"),
+        True,
+    )
+    email_to_sbertrack_target["reply_notifications_enabled"] = _coerce_bool(
+        email_to_sbertrack.get("reply_notifications_enabled"),
         True,
     )
     email_to_sbertrack_target["poll_interval_seconds"] = _validate_non_negative_int(
@@ -1121,6 +1129,16 @@ def _save_sup_parameters_locked(managed_config: Any, expected_revision: str) -> 
         GIGA_HELPER.sync_runtime_state()
     except Exception as exc:
         logging.warning("Не удалось синхронизировать runtime GigaChat: %s", exc)
+    try:
+        from services.email_to_sbertrack_service import (
+            sync_email_reply_notification_state,
+        )
+
+        sync_email_reply_notification_state()
+    except Exception as exc:
+        logging.warning(
+            "Не удалось синхронизировать очередь почтовых подтверждений: %s", exc
+        )
     return get_sup_parameters_data()
 
 

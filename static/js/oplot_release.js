@@ -3143,6 +3143,13 @@ function renderReleaseDocumentWizardStep() {
         return;
     }
 
+    if (state.initStatus === 'error') {
+        setReleaseDocumentModalError(
+            state.initError || getReleaseDocumentTemplateNotFoundMessage(state.item)
+        );
+        return;
+    }
+
     const step = state.steps[state.stepIndex];
     if (!step) {
         setReleaseDocumentModalError('Не удалось определить шаги мастера формирования.');

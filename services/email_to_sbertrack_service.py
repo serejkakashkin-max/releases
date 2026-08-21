@@ -6,17 +6,18 @@ import json
 import logging
 import os
 import re
+import smtplib
 import ssl
 import threading
 import time
 import base64
 from datetime import datetime, timedelta, timezone
 from email.header import decode_header, make_header
-from email.message import Message
+from email.message import EmailMessage, Message
 from email.utils import getaddresses, parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from uuid import uuid4
@@ -39,7 +40,9 @@ DESCRIPTION_BODY_FALLBACK_LIMIT = 6000
 MAX_STORED_KEYS = 2000
 MAX_DRY_RUN_MATCHES = 500
 MAX_MESSAGE_AGE = timedelta(hours=24)
+MAX_REPLY_FAILURES = 200
 WORKFLOW_STATUS_NEW = {"command": "NEW"}
+_RFC_MESSAGE_ID_RE = re.compile(r"^<[^<>\s\r\n]+>$")
 
 # RFC thread headers are the authoritative reply signal.  The subject prefixes
 # cover mail clients/gateways that strip those headers before delivery.
@@ -59,12 +62,14 @@ class EmailToSberTrackError(RuntimeError):
 
 def _default_state() -> Dict[str, Any]:
     return {
-        "version": 1,
+        "version": 2,
         "last_checked_uid": 0,
         "processed_message_ids": [],
         "created_keys": {},
         "pending": {},
         "dry_run_matches": {},
+        "reply_outbox": {},
+        "reply_failures": {},
         "last_checked_at": "",
         "last_success_at": "",
         "last_result": "idle",
@@ -72,6 +77,9 @@ def _default_state() -> Dict[str, Any]:
         "last_created_count": 0,
         "last_dry_run_count": 0,
         "last_pending_count": 0,
+        "last_reply_sent_at": "",
+        "last_reply_sent_count": 0,
+        "last_reply_error": "",
         "last_uid_seen": 0,
     }
 
@@ -83,6 +91,7 @@ def _read_state() -> Dict[str, Any]:
         if isinstance(payload, dict):
             state = _default_state()
             state.update(payload)
+            state["version"] = 2
             state["created_keys"] = (
                 state.get("created_keys") if isinstance(state.get("created_keys"), dict) else {}
             )
@@ -90,6 +99,16 @@ def _read_state() -> Dict[str, Any]:
             state["dry_run_matches"] = (
                 state.get("dry_run_matches")
                 if isinstance(state.get("dry_run_matches"), dict)
+                else {}
+            )
+            state["reply_outbox"] = (
+                state.get("reply_outbox")
+                if isinstance(state.get("reply_outbox"), dict)
+                else {}
+            )
+            state["reply_failures"] = (
+                state.get("reply_failures")
+                if isinstance(state.get("reply_failures"), dict)
                 else {}
             )
             state["processed_message_ids"] = (
@@ -150,6 +169,15 @@ def _trim_state(state: Dict[str, Any]) -> None:
             reverse=True,
         )
         state["dry_run_matches"] = dict(ordered[:MAX_DRY_RUN_MATCHES])
+
+    failures = state.get("reply_failures") if isinstance(state.get("reply_failures"), dict) else {}
+    if len(failures) > MAX_REPLY_FAILURES:
+        ordered = sorted(
+            failures.items(),
+            key=lambda item: str((item[1] or {}).get("failed_at") or ""),
+            reverse=True,
+        )
+        state["reply_failures"] = dict(ordered[:MAX_REPLY_FAILURES])
 
 
 def _acquire_file_lock() -> bool:
@@ -286,6 +314,9 @@ def _automation_settings() -> Dict[str, Any]:
     return {
         "enabled": _as_bool(config.get("enabled"), False),
         "dry_run": _as_bool(config.get("dry_run"), True),
+        "reply_notifications_enabled": _as_bool(
+            config.get("reply_notifications_enabled"), True
+        ),
         "poll_interval_seconds": _non_negative_int(
             config.get("poll_interval_seconds"), 300
         ),
@@ -545,10 +576,13 @@ def _parse_email_message(uid: int, raw_bytes: bytes, body_limit: int) -> Dict[st
     date = _message_date(message.get("Date"))
     body, truncated = _message_body(message, body_limit)
     message_id = _stable_message_id(message, uid, subject, from_rows, date)
+    raw_message_id = str(message.get("Message-ID") or message.get("Message-Id") or "").strip()
+    thread_message_id = raw_message_id if _RFC_MESSAGE_ID_RE.fullmatch(raw_message_id) else ""
     reply_reason = _reply_reason(message, subject)
     return {
         "uid": uid,
         "message_id": message_id,
+        "thread_message_id": thread_message_id,
         "subject": subject,
         "from": from_rows,
         "to": to_rows,
@@ -759,12 +793,17 @@ def _match_messages(
     user_map = get_sbertrack_users_config()
     created = state.get("created_keys") if isinstance(state.get("created_keys"), dict) else {}
     pending = state.get("pending") if isinstance(state.get("pending"), dict) else {}
+    processed_message_ids = {
+        str(value or "") for value in (state.get("processed_message_ids") or [])
+    }
     matches = []
     for message_data in messages:
         if _is_reply_message_data(message_data):
             continue
+        if str(message_data.get("message_id") or "") in processed_message_ids:
+            continue
         subject = str(message_data.get("subject") or "")
-        matched_destinations = set()
+        message_matched = False
         assigned_to, candidates = _resolve_assignee(
             message_data.get("to") or [],
             settings.get("technical_mailboxes") or [],
@@ -777,15 +816,6 @@ def _match_messages(
                 normalized_space = str(space or "").strip()
                 if not normalized_space:
                     continue
-                destination_key = "|".join(
-                    (
-                        str(route.get("target_system") or "sbertrack").strip().lower(),
-                        str(route.get("jira_domain") or "").strip().lower(),
-                        normalized_space.lower(),
-                    )
-                )
-                if destination_key in matched_destinations:
-                    continue
                 event = _event_from_match(
                     message_data,
                     route,
@@ -795,10 +825,13 @@ def _match_messages(
                 )
                 event["description"] = _build_description(event)
                 if event["dedupe_key"] in created or event["dedupe_key"] in pending:
-                    matched_destinations.add(destination_key)
-                    continue
+                    message_matched = True
+                    break
                 matches.append(event)
-                matched_destinations.add(destination_key)
+                message_matched = True
+                break
+            if message_matched:
+                break
     return matches
 
 
@@ -892,10 +925,288 @@ def _create_task(event: Dict[str, Any], sbertrack_settings: Dict[str, Any]) -> D
     return _create_sbertrack_task(event, sbertrack_settings)
 
 
+def _smtp_settings() -> Dict[str, Any]:
+    return {
+        "host": str(os.getenv("MAIL_SMTP_HOST") or TOKENS.get("mail_smtp_host") or "").strip(),
+        "port": _non_negative_int(
+            os.getenv("MAIL_SMTP_PORT") or TOKENS.get("mail_smtp_port"), 587
+        ) or 587,
+        "username": str(
+            os.getenv("MAIL_USERNAME") or TOKENS.get("mail_username") or ""
+        ).strip(),
+        "password": str(os.getenv("MAIL_PASSWORD") or TOKENS.get("mail_password") or ""),
+        "sender": str(os.getenv("MAIL_FROM") or TOKENS.get("mail_from") or "").strip(),
+        "ssl_verify": _as_bool(
+            os.getenv("MAIL_SSL_VERIFY"),
+            default=_as_bool(TOKENS.get("mail_ssl_verify"), default=False),
+        ),
+    }
+
+
+def _valid_email_address(value: Any) -> str:
+    address = str(value or "").strip().lower()
+    if (
+        not address
+        or any(char in address for char in "\r\n")
+        or address.count("@") != 1
+        or any(char.isspace() for char in address)
+    ):
+        return ""
+    local, domain = address.rsplit("@", 1)
+    return address if local and "." in domain.strip(".") else ""
+
+
+def _reply_recipients(
+    mail: Dict[str, Any],
+    automation_settings: Dict[str, Any],
+    smtp_settings: Dict[str, Any],
+) -> Tuple[List[str], List[str]]:
+    excluded = {
+        _valid_email_address(value)
+        for value in (
+            list(automation_settings.get("technical_mailboxes") or [])
+            + [smtp_settings.get("sender"), smtp_settings.get("username")]
+        )
+    }
+    excluded.discard("")
+    seen = set(excluded)
+
+    def collect(rows: Iterable[Dict[str, str]]) -> List[str]:
+        result = []
+        for row in rows or []:
+            address = _valid_email_address((row or {}).get("email"))
+            if address and address not in seen:
+                seen.add(address)
+                result.append(address)
+        return result
+
+    return collect(mail.get("from") or []), collect(mail.get("cc") or [])
+
+
+def _safe_task_url(value: Any) -> str:
+    url = str(value or "").strip()
+    parsed = urlparse(url)
+    return url if parsed.scheme in {"http", "https"} and parsed.netloc else ""
+
+
+def _queue_reply_notification(
+    state: Dict[str, Any],
+    event: Dict[str, Any],
+    result: Dict[str, Any],
+    automation_settings: Dict[str, Any],
+) -> None:
+    if not automation_settings.get("reply_notifications_enabled"):
+        return
+    task_key = str(result.get("task_key") or "").strip()
+    task_url = _safe_task_url(result.get("task_url"))
+    if not task_key or not task_url:
+        state["last_reply_error"] = (
+            "Задача создана, но API не вернул корректный номер или ссылку для ответного письма."
+        )
+        return
+    mail = event.get("mail") if isinstance(event.get("mail"), dict) else {}
+    smtp_settings = _smtp_settings()
+    to_recipients, cc_recipients = _reply_recipients(
+        mail, automation_settings, smtp_settings
+    )
+    if not to_recipients and not cc_recipients:
+        state["last_reply_error"] = (
+            "Задача создана, но в исходном письме нет допустимого адреса для ответа."
+        )
+        return
+    route = event.get("route") if isinstance(event.get("route"), dict) else {}
+    notification_key = str(event.get("dedupe_key") or "")
+    state.setdefault("reply_outbox", {})[notification_key] = {
+        "queued_at": _format_timestamp(),
+        "attempts": 0,
+        "last_error": "",
+        "to": to_recipients,
+        "cc": cc_recipients,
+        "subject": str(mail.get("subject") or "").replace("\r", " ").replace("\n", " ").strip(),
+        "thread_message_id": str(mail.get("thread_message_id") or ""),
+        "task_key": task_key,
+        "task_url": task_url,
+        "target_system": str(route.get("target_system") or "sbertrack").lower(),
+        "space": str(event.get("space") or "").strip(),
+        "created_at": str(result.get("created_at") or _format_timestamp()),
+    }
+
+
+def _reply_message(notification: Dict[str, Any], sender: str) -> EmailMessage:
+    task_key = str(notification.get("task_key") or "").strip()
+    task_url = _safe_task_url(notification.get("task_url"))
+    if not task_key or not task_url:
+        raise EmailToSberTrackError("В очереди ответа отсутствует корректная ссылка на задачу.")
+    original_subject = (
+        str(notification.get("subject") or "")
+        .replace("\r", " ")
+        .replace("\n", " ")
+        .strip()
+        or "письмо без темы"
+    )
+    subject = f"Re: {original_subject}"[:998]
+    target_system = str(notification.get("target_system") or "sbertrack").lower()
+    system_label = "Jira" if target_system == "jira" else "SberTrack"
+    space = str(notification.get("space") or "").strip() or "—"
+    created_at = str(notification.get("created_at") or "").strip() or "—"
+    safe_key = html.escape(task_key)
+    safe_url = html.escape(task_url, quote=True)
+    safe_subject = html.escape(original_subject)
+    safe_space = html.escape(space)
+    safe_created_at = html.escape(created_at)
+    text_body = "\n".join(
+        (
+            "Задача создана",
+            "",
+            f"Номер: {task_key}",
+            f"Ссылка: {task_url}",
+            f"Система: {system_label}",
+            f"Проект / пространство: {space}",
+            f"Тема исходного письма: {original_subject}",
+            f"Создана: {created_at}",
+            "",
+            "Это автоматический ответ Oplot. Дальнейшие ответы в этой цепочке не создают новые задачи.",
+        )
+    )
+    html_body = f"""<!doctype html>
+<html lang="ru"><body style="margin:0;background:#f3f7fb;font-family:Arial,sans-serif;color:#10243e;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f3f7fb;padding:24px 12px;"><tr><td align="center">
+<table role="presentation" width="620" cellspacing="0" cellpadding="0" style="width:100%;max-width:620px;background:#ffffff;border:1px solid #c9d9eb;border-radius:14px;overflow:hidden;box-shadow:0 12px 32px rgba(20,63,110,.12);">
+<tr><td style="padding:18px 24px;background:#0b2340;color:#8fc9ff;font-size:13px;font-weight:700;letter-spacing:.08em;">OPLOT · АВТОМАТИЗАЦИЯ ОБРАЩЕНИЙ</td></tr>
+<tr><td style="padding:26px 24px;">
+<div style="display:inline-block;padding:6px 10px;border-radius:999px;background:#e4f8ef;color:#08784d;font-size:12px;font-weight:700;">ЗАДАЧА СОЗДАНА</div>
+<h1 style="margin:14px 0 8px;font-size:25px;line-height:1.25;color:#10243e;">{safe_key}</h1>
+<p style="margin:0 0 20px;color:#52677f;font-size:15px;line-height:1.55;">Oplot обработал исходное письмо и зарегистрировал задачу в {system_label}.</p>
+<a href="{safe_url}" style="display:inline-block;padding:12px 20px;border-radius:8px;background:#2574c9;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;">Открыть задачу</a>
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:24px;border-collapse:collapse;font-size:14px;">
+<tr><td style="padding:9px 0;color:#71839a;width:180px;border-bottom:1px solid #e4ecf5;">Система</td><td style="padding:9px 0;font-weight:700;border-bottom:1px solid #e4ecf5;">{system_label}</td></tr>
+<tr><td style="padding:9px 0;color:#71839a;border-bottom:1px solid #e4ecf5;">Проект / пространство</td><td style="padding:9px 0;font-weight:700;border-bottom:1px solid #e4ecf5;">{safe_space}</td></tr>
+<tr><td style="padding:9px 0;color:#71839a;border-bottom:1px solid #e4ecf5;">Исходная тема</td><td style="padding:9px 0;border-bottom:1px solid #e4ecf5;">{safe_subject}</td></tr>
+<tr><td style="padding:9px 0;color:#71839a;">Создана</td><td style="padding:9px 0;">{safe_created_at}</td></tr>
+</table>
+</td></tr>
+<tr><td style="padding:16px 24px;background:#edf4fb;color:#657990;font-size:12px;line-height:1.5;">Это автоматический ответ Oplot. Дальнейшие ответы в этой цепочке не создают новые задачи.</td></tr>
+</table></td></tr></table></body></html>"""
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = sender
+    to_recipients = list(notification.get("to") or [])
+    cc_recipients = list(notification.get("cc") or [])
+    if to_recipients:
+        message["To"] = ", ".join(to_recipients)
+    if cc_recipients:
+        message["Cc"] = ", ".join(cc_recipients)
+    thread_message_id = str(notification.get("thread_message_id") or "")
+    if _RFC_MESSAGE_ID_RE.fullmatch(thread_message_id):
+        message["In-Reply-To"] = thread_message_id
+        message["References"] = thread_message_id
+    deterministic_source = f"{thread_message_id}|{task_key}".encode("utf-8")
+    digest = hashlib.sha256(deterministic_source).hexdigest()[:32]
+    message["Message-ID"] = f"<oplot-task-{digest}@oplot.local>"
+    message["Auto-Submitted"] = "auto-replied"
+    message["X-Auto-Response-Suppress"] = "All"
+    message.set_content(text_body)
+    message.add_alternative(html_body, subtype="html")
+    return message
+
+
+def _send_reply_notification(notification: Dict[str, Any]) -> None:
+    settings = _smtp_settings()
+    missing = [key for key in ("host", "username", "password", "sender") if not settings.get(key)]
+    if missing:
+        raise EmailToSberTrackError("Не заполнены SMTP-настройки: " + ", ".join(missing))
+    if not 1 <= int(settings["port"]) <= 65535:
+        raise EmailToSberTrackError("Указан некорректный SMTP-порт.")
+    if _valid_email_address(settings["sender"]) != settings["sender"].lower():
+        raise EmailToSberTrackError("Указан некорректный адрес отправителя SMTP.")
+    recipients = list(notification.get("to") or []) + list(notification.get("cc") or [])
+    if not recipients:
+        raise EmailToSberTrackError("Для ответного письма не найден получатель.")
+    message = _reply_message(notification, settings["sender"])
+    context = ssl.create_default_context() if settings.get("ssl_verify") else ssl._create_unverified_context()
+    if not settings.get("ssl_verify"):
+        logging.warning("Email to SberTrack: SMTP certificate verification is disabled")
+    try:
+        with smtplib.SMTP(settings["host"], settings["port"], timeout=30) as server:
+            server.ehlo()
+            server.starttls(context=context)
+            server.ehlo()
+            server.login(settings["username"], settings["password"])
+            server.send_message(message, from_addr=settings["sender"], to_addrs=recipients)
+    except (smtplib.SMTPException, OSError, ssl.SSLError) as exc:
+        raise EmailToSberTrackError(
+            f"Не удалось отправить подтверждение через SMTP: {type(exc).__name__}."
+        ) from exc
+
+
+def _process_reply_outbox(state: Dict[str, Any], settings: Dict[str, Any]) -> int:
+    outbox = state.get("reply_outbox") if isinstance(state.get("reply_outbox"), dict) else {}
+    if not settings.get("reply_notifications_enabled"):
+        outbox.clear()
+        state["reply_outbox"] = outbox
+        state["last_reply_error"] = ""
+        return 0
+    sent = 0
+    now = datetime.now(timezone.utc)
+    for notification_key, notification in list(outbox.items())[: settings["max_pending_per_cycle"]]:
+        queued_at = str((notification or {}).get("queued_at") or "")
+        try:
+            queued = datetime.fromisoformat(queued_at.replace("Z", "+00:00"))
+            if queued.tzinfo is None:
+                queued = queued.replace(tzinfo=timezone.utc)
+        except (TypeError, ValueError):
+            queued = now
+        if now - queued.astimezone(timezone.utc) > MAX_MESSAGE_AGE:
+            failed = dict(notification or {})
+            failed["failed_at"] = _format_timestamp()
+            failed["last_error"] = "Истёк 24-часовой срок отправки подтверждения."
+            state.setdefault("reply_failures", {})[notification_key] = failed
+            state["last_reply_error"] = failed["last_error"]
+            outbox.pop(notification_key, None)
+            continue
+        try:
+            _send_reply_notification(notification)
+            outbox.pop(notification_key, None)
+            state["last_reply_sent_at"] = _format_timestamp()
+            state["last_reply_error"] = ""
+            sent += 1
+        except Exception as exc:
+            notification["attempts"] = int(notification.get("attempts") or 0) + 1
+            notification["last_attempt_at"] = _format_timestamp()
+            notification["last_error"] = str(exc)
+            outbox[notification_key] = notification
+            state["last_reply_error"] = str(exc)
+            break
+    state["reply_outbox"] = outbox
+    return sent
+
+
+def sync_email_reply_notification_state() -> None:
+    """Apply the notification toggle without running IMAP or task creation."""
+    settings = _automation_settings()
+    if settings.get("reply_notifications_enabled"):
+        return
+    with _process_lock:
+        if not _acquire_file_lock():
+            logging.warning(
+                "Email to SberTrack: reply outbox was not cleared because the state is locked."
+            )
+            return
+        try:
+            state = _read_state()
+            if state.get("reply_outbox"):
+                state["reply_outbox"] = {}
+                state["last_reply_error"] = ""
+                _write_state(state)
+        finally:
+            _release_file_lock()
+
+
 def _retry_pending(
     state: Dict[str, Any],
     settings: Dict[str, Any],
     sbertrack_settings: Dict[str, Any],
+    checkpoint=None,
 ) -> int:
     pending = state.get("pending") if isinstance(state.get("pending"), dict) else {}
     if not pending:
@@ -915,8 +1226,12 @@ def _retry_pending(
         try:
             result = _create_task(event, sbertrack_settings)
             state.setdefault("created_keys", {})[dedupe_key] = result
+            _queue_reply_notification(state, event, result, settings)
             state.setdefault("processed_message_ids", []).append(str(event.get("message_id") or ""))
             pending.pop(dedupe_key, None)
+            state["pending"] = pending
+            if checkpoint is not None:
+                checkpoint(state)
             created_count += 1
         except Exception as exc:
             event["last_error"] = str(exc)
@@ -983,11 +1298,17 @@ def run_email_to_sbertrack_cycle() -> Dict[str, Any]:
         state.setdefault("dry_run_matches", {})
         created_count = 0
         dry_run_count = 0
+        reply_sent_count = 0
         sbertrack_settings = _sbertrack_settings()
 
         if not settings["dry_run"]:
             _process_dry_run_matches_when_live(state, settings)
-            created_count += _retry_pending(state, settings, sbertrack_settings)
+            created_count += _retry_pending(
+                state, settings, sbertrack_settings, checkpoint=_write_state
+            )
+            reply_sent_count += _process_reply_outbox(state, settings)
+        elif not settings.get("reply_notifications_enabled"):
+            _process_reply_outbox(state, settings)
 
         imap_settings = _imap_settings()
         technical_mailboxes = set(settings.get("technical_mailboxes") or [])
@@ -1014,7 +1335,10 @@ def run_email_to_sbertrack_cycle() -> Dict[str, Any]:
             for event in matches:
                 if event["dedupe_key"] not in pending and event["dedupe_key"] not in state["created_keys"]:
                     pending[event["dedupe_key"]] = event
-            created_count += _retry_pending(state, settings, sbertrack_settings)
+            created_count += _retry_pending(
+                state, settings, sbertrack_settings, checkpoint=_write_state
+            )
+            reply_sent_count += _process_reply_outbox(state, settings)
             state["last_result"] = "ok"
 
         if last_seen_uid:
@@ -1023,6 +1347,7 @@ def run_email_to_sbertrack_cycle() -> Dict[str, Any]:
         state["last_created_count"] = created_count
         state["last_dry_run_count"] = dry_run_count
         state["last_pending_count"] = len(state.get("pending") or {})
+        state["last_reply_sent_count"] = reply_sent_count
         state["last_success_at"] = _format_timestamp()
         _write_state(state)
         return state
@@ -1060,6 +1385,12 @@ def get_email_to_sbertrack_status() -> Dict[str, Any]:
         "created_count": len(state.get("created_keys") or {}),
         "last_created_count": int(state.get("last_created_count") or 0),
         "last_dry_run_count": int(state.get("last_dry_run_count") or 0),
+        "reply_notifications_enabled": settings["reply_notifications_enabled"],
+        "reply_pending_count": len(state.get("reply_outbox") or {}),
+        "reply_failure_count": len(state.get("reply_failures") or {}),
+        "last_reply_sent_at": state.get("last_reply_sent_at") or "",
+        "last_reply_sent_count": int(state.get("last_reply_sent_count") or 0),
+        "last_reply_error": state.get("last_reply_error") or "",
         "last_result": state.get("last_result") or "",
         "last_error": state.get("last_error") or "",
     }

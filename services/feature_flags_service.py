@@ -201,6 +201,7 @@ DEFAULT_FEATURE_FLAGS = {
         "email_to_sbertrack": {
             "enabled": False,
             "dry_run": True,
+            "reply_notifications_enabled": True,
             "poll_interval_seconds": 300,
             "lookback_limit": 20,
             "max_pending_per_cycle": 10,
@@ -338,6 +339,8 @@ def _normalize_email_to_sbertrack_config(value: Any) -> Dict[str, Any]:
         target["enabled"] = source["enabled"]
     if isinstance(source.get("dry_run"), bool):
         target["dry_run"] = source["dry_run"]
+    if isinstance(source.get("reply_notifications_enabled"), bool):
+        target["reply_notifications_enabled"] = source["reply_notifications_enabled"]
     target["poll_interval_seconds"] = _normalize_non_negative_int(
         source.get("poll_interval_seconds"),
         target["poll_interval_seconds"],

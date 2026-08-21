@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import tempfile
 import unittest
 from datetime import datetime, timezone
 from email.header import Header
+from pathlib import Path
 from unittest import mock
 
 from tests._support import prepare_config_import
@@ -12,8 +14,13 @@ prepare_config_import()
 
 from services.email_to_jira_service import create_email_jira_task
 from services.email_to_sbertrack_service import (
+    _default_state,
     _match_messages,
     _parse_email_message,
+    _process_reply_outbox,
+    _queue_reply_notification,
+    _read_state,
+    _reply_message,
     _retry_pending,
 )
 from services.feature_flags_service import DEFAULT_FEATURE_FLAGS, _normalize_email_to_sbertrack_config
@@ -68,6 +75,16 @@ class StandardEmailJiraRouteTests(unittest.TestCase):
             {"routes_contract_version": 1, "routes": [_existing_emrm_route()]}
         )
         self.assertEqual(["EMRM"], [route["name"] for route in config["routes"]])
+
+    def test_reply_notifications_default_on_and_can_be_disabled(self):
+        self.assertTrue(
+            _normalize_email_to_sbertrack_config({})["reply_notifications_enabled"]
+        )
+        self.assertFalse(
+            _normalize_email_to_sbertrack_config(
+                {"reply_notifications_enabled": False}
+            )["reply_notifications_enabled"]
+        )
 
 
 class EmailJiraPayloadTests(unittest.TestCase):
@@ -174,6 +191,59 @@ class EmailReplySuppressionTests(unittest.TestCase):
         self.assertFalse(message["is_reply"])
         self.assertEqual(1, len(matches))
 
+    def test_only_first_matching_rule_and_destination_are_used(self):
+        message = _parse_email_message(1, self._raw_message("CLM AIST: новая задача"), 6000)
+        settings = self._settings()
+        settings["routes"] = [
+            {
+                **settings["routes"][0],
+                "name": "FIRST",
+                "subject_triggers": ["CLM"],
+                "spaces": ["FIRST", "SECOND"],
+            },
+            {
+                **settings["routes"][0],
+                "name": "LATER",
+                "subject_triggers": ["AIST"],
+                "spaces": ["LATER"],
+            },
+        ]
+
+        with mock.patch(
+            "services.email_to_sbertrack_service.get_sbertrack_users_config",
+            return_value={},
+        ):
+            matches = _match_messages([message], settings, _default_state())
+
+        self.assertEqual(1, len(matches))
+        self.assertEqual("FIRST", matches[0]["route"]["name"])
+        self.assertEqual("FIRST", matches[0]["space"])
+
+    def test_first_rule_limit_is_applied_per_message_not_per_cycle(self):
+        messages = [
+            _parse_email_message(1, self._raw_message("CLM: первая задача"), 6000),
+            _parse_email_message(2, self._raw_message("CLM: вторая задача"), 6000),
+        ]
+        messages[1]["message_id"] = "<second-message@example.test>"
+        with mock.patch(
+            "services.email_to_sbertrack_service.get_sbertrack_users_config",
+            return_value={},
+        ):
+            matches = _match_messages(messages, self._settings(), _default_state())
+
+        self.assertEqual(2, len(matches))
+        self.assertNotEqual(matches[0]["dedupe_key"], matches[1]["dedupe_key"])
+
+    def test_processed_message_stays_deduplicated_after_rule_reordering(self):
+        message = _parse_email_message(1, self._raw_message("CLM: новая задача"), 6000)
+        state = _default_state()
+        state["processed_message_ids"] = [message["message_id"]]
+        with mock.patch(
+            "services.email_to_sbertrack_service.get_sbertrack_users_config",
+            return_value={},
+        ):
+            self.assertEqual([], _match_messages([message], self._settings(), state))
+
     def test_in_reply_to_blocks_route_even_without_re_prefix(self):
         message = _parse_email_message(
             2,
@@ -236,6 +306,160 @@ class EmailReplySuppressionTests(unittest.TestCase):
         self.assertEqual(0, created)
         self.assertEqual({}, state["pending"])
         create_task.assert_not_called()
+
+
+class EmailTaskReplyNotificationTests(unittest.TestCase):
+    @staticmethod
+    def _event():
+        return {
+            "dedupe_key": "event-1",
+            "message_id": "<source@example.test>",
+            "mail": {
+                "subject": "CLM: <опасная> тема",
+                "date": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "thread_message_id": "<source@example.test>",
+                "from": [{"name": "Автор", "email": "author@example.test"}],
+                "cc": [
+                    {"name": "Копия", "email": "copy@example.test"},
+                    {"name": "Дубль", "email": "AUTHOR@example.test"},
+                    {"name": "Техящик", "email": "automation@example.test"},
+                ],
+            },
+            "route": {"target_system": "jira"},
+            "space": "SMECLM",
+        }
+
+    @staticmethod
+    def _settings(enabled=True):
+        return {
+            "reply_notifications_enabled": enabled,
+            "technical_mailboxes": ["automation@example.test"],
+            "max_pending_per_cycle": 10,
+        }
+
+    @staticmethod
+    def _smtp_settings():
+        return {
+            "host": "smtp.example.test",
+            "port": 587,
+            "username": "automation@example.test",
+            "password": "secret",
+            "sender": "automation@example.test",
+            "ssl_verify": True,
+        }
+
+    def test_reply_is_threaded_multipart_and_escapes_user_text(self):
+        state = _default_state()
+        with mock.patch(
+            "services.email_to_sbertrack_service._smtp_settings",
+            return_value=self._smtp_settings(),
+        ):
+            _queue_reply_notification(
+                state,
+                self._event(),
+                {
+                    "task_key": "SMECLM-40000",
+                    "task_url": "https://jira.example.test/browse/SMECLM-40000",
+                    "created_at": "2026-08-21T12:00:00+03:00",
+                },
+                self._settings(),
+            )
+
+        notification = state["reply_outbox"]["event-1"]
+        self.assertEqual(["author@example.test"], notification["to"])
+        self.assertEqual(["copy@example.test"], notification["cc"])
+        message = _reply_message(notification, "automation@example.test")
+        self.assertEqual("Re: CLM: <опасная> тема", message["Subject"])
+        self.assertEqual("<source@example.test>", message["In-Reply-To"])
+        self.assertEqual("<source@example.test>", message["References"])
+        self.assertEqual("auto-replied", message["Auto-Submitted"])
+        self.assertEqual("All", message["X-Auto-Response-Suppress"])
+        self.assertTrue(message.is_multipart())
+        self.assertIn("SMECLM-40000", message.get_body(preferencelist=("plain",)).get_content())
+        html_body = message.get_body(preferencelist=("html",)).get_content()
+        self.assertIn("CLM: &lt;опасная&gt; тема", html_body)
+        self.assertNotIn("CLM: <опасная> тема", html_body)
+
+    def test_smtp_failure_retries_only_reply_not_task_creation(self):
+        event = self._event()
+        state = _default_state()
+        state["pending"] = {event["dedupe_key"]: event}
+        result = {
+            "task_key": "SMECLM-40001",
+            "task_url": "https://jira.example.test/browse/SMECLM-40001",
+        }
+        checkpoints = []
+        with (
+            mock.patch(
+                "services.email_to_sbertrack_service._create_task", return_value=result
+            ) as create_task,
+            mock.patch(
+                "services.email_to_sbertrack_service._smtp_settings",
+                return_value=self._smtp_settings(),
+            ),
+        ):
+            created = _retry_pending(
+                state,
+                self._settings(),
+                {},
+                checkpoint=lambda payload: checkpoints.append(dict(payload)),
+            )
+
+        self.assertEqual(1, created)
+        self.assertEqual({}, state["pending"])
+        self.assertIn("event-1", state["created_keys"])
+        self.assertIn("event-1", state["reply_outbox"])
+        self.assertEqual(1, len(checkpoints))
+
+        with mock.patch(
+            "services.email_to_sbertrack_service._send_reply_notification",
+            side_effect=RuntimeError("smtp unavailable"),
+        ):
+            self.assertEqual(0, _process_reply_outbox(state, self._settings()))
+        self.assertIn("event-1", state["reply_outbox"])
+
+        self.assertEqual(0, _retry_pending(state, self._settings(), {}))
+        create_task.assert_called_once()
+        with mock.patch(
+            "services.email_to_sbertrack_service._send_reply_notification"
+        ) as send_reply:
+            self.assertEqual(1, _process_reply_outbox(state, self._settings()))
+        send_reply.assert_called_once()
+        self.assertEqual({}, state["reply_outbox"])
+
+    def test_disabled_notifications_cancel_existing_outbox(self):
+        state = _default_state()
+        state["reply_outbox"] = {"event-1": {"task_key": "SMECLM-1"}}
+        self.assertEqual(0, _process_reply_outbox(state, self._settings(False)))
+        self.assertEqual({}, state["reply_outbox"])
+
+    def test_invalid_task_url_scheme_is_not_queued(self):
+        state = _default_state()
+        with mock.patch(
+            "services.email_to_sbertrack_service._smtp_settings",
+            return_value=self._smtp_settings(),
+        ):
+            _queue_reply_notification(
+                state,
+                self._event(),
+                {"task_key": "SMECLM-2", "task_url": "javascript:alert(1)"},
+                self._settings(),
+            )
+        self.assertEqual({}, state["reply_outbox"])
+        self.assertIn("корректный номер или ссылку", state["last_reply_error"])
+
+    def test_legacy_state_is_loaded_as_version_two(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "state.json"
+            path.write_text(
+                json.dumps({"version": 1, "created_keys": {"old": {"task_key": "X-1"}}}),
+                encoding="utf-8",
+            )
+            with mock.patch("services.email_to_sbertrack_service.STATE_FILE", path):
+                state = _read_state()
+        self.assertEqual(2, state["version"])
+        self.assertEqual("X-1", state["created_keys"]["old"]["task_key"])
+        self.assertEqual({}, state["reply_outbox"])
 
 
 if __name__ == "__main__":
