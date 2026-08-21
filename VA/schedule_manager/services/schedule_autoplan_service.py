@@ -18,6 +18,7 @@ from VA.schedule_manager.services.autoplan.planner import MonthPlanner, PlannerD
 from VA.schedule_manager.services.autoplan.rules import EmployeeRuleSet
 from VA.schedule_manager.services.autoplan.scoring import CandidateScorer
 from VA.schedule_manager.services.autoplan_contract import AUTOPLAN_CONTRACT
+from VA.schedule_manager.services.newcomer_history import collect_newcomer_shift_codes
 from VA.schedule_manager.services.duty_rules import HOLIDAY_WORK_CODE, MOSCOW_DUTY_SHIFTS, KHABAROVSK_SHIFTS, WEEKEND_CODES
 from VA.schedule_manager.services.schedule_month_service import ScheduleMonthService
 from VA.schedule_manager.services.schedule_service import ScheduleService
@@ -29,6 +30,7 @@ LOAD_SHIFT_CODES = set(AUTOPLAN_CONTRACT.load_shift_codes)
 EVENING_SHIFT_CODES = set(AUTOPLAN_CONTRACT.evening_shift_codes)
 CONTINUED_WEEK_SHIFT_CODES = set(AUTOPLAN_CONTRACT.weekday_shift_codes)
 DUTY_SHIFT_CODES = set(AUTOPLAN_CONTRACT.weekday_shift_codes)
+NEWCOMER_TRAINEE_SHIFT_CODES = frozenset(AUTOPLAN_CONTRACT.newcomer_trainee_shift_codes)
 
 
 class ScheduleAutoplanValidationError(Exception):
@@ -75,6 +77,7 @@ class ScheduleAutoplanService:
             EVENING_SHIFT_CODES,
             KHABAROVSK_SHIFTS,
             HOLIDAY_WORK_CODE,
+            NEWCOMER_TRAINEE_SHIFT_CODES,
         )
 
     def availability(self, sheet_name: str) -> ScheduleAutoplanAvailability:
@@ -123,6 +126,7 @@ class ScheduleAutoplanService:
                 self.shift_service.list_shifts(),
                 employees.values(),
                 newcomer_allowed_shift_codes=newcomer_shift_history,
+                newcomer_trainee_shift_codes=NEWCOMER_TRAINEE_SHIFT_CODES,
             ),
             self._previous_month_grid(planned),
         )
@@ -446,28 +450,13 @@ class ScheduleAutoplanService:
         return load
 
     def _historical_shift_codes(self, grid: ScheduleGrid) -> Dict[str, Set[str]]:
-        snapshot = self.schedule_service.get_current()
-        if snapshot is None:
-            return {}
-        target_index = grid.year * 12 + grid.month
-        shift_codes: Dict[str, Set[str]] = {}
-        for month in snapshot.month_schedules:
-            try:
-                month_index = int(month["year"]) * 12 + int(month["month"])
-            except (KeyError, TypeError, ValueError):
-                continue
-            if month_index >= target_index:
-                continue
-            try:
-                history_grid = snapshot.get_month_grid(str(month["sheet_name"]))
-            except KeyError:
-                continue
-            for row in history_grid.employees:
-                for code in row.assignments.values():
-                    normalized = self._normalize_load_code(code)
-                    if normalized in LOAD_SHIFT_CODES:
-                        shift_codes.setdefault(row.employee_name, set()).add(normalized)
-        return shift_codes
+        return collect_newcomer_shift_codes(
+            self.schedule_service.get_current(),
+            grid,
+            self._normalize_load_code,
+            LOAD_SHIFT_CODES,
+            include_current_month=True,
+        )
 
     def _continued_week_assignments(self, grid: ScheduleGrid, week_days: List) -> Dict[str, str]:
         if not grid.days or not week_days:
@@ -550,7 +539,7 @@ class ScheduleAutoplanService:
     def _newcomer_reasons(self, shift_code: str, location: str) -> List[str]:
         if shift_code not in DUTY_SHIFT_CODES:
             return []
-        return ["Новичок выбирался только на смены, которые уже были у него в прошлых периодах"]
+        return ["Новичок допускается к резервным сменам ДР/ВР сразу; к остальным дежурным сменам и ВХ — только если такая смена уже была у него в графике, включая текущий месяц"]
 
     def _evening_reasons(self, shift_code: str) -> List[str]:
         if shift_code not in EVENING_SHIFT_CODES:

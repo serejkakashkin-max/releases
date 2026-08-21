@@ -47,6 +47,7 @@ class CandidateGenerator:
         evening_shift_codes: Set[str],
         khabarovsk_shifts: Set[str],
         holiday_work_code: str,
+        newcomer_trainee_shift_codes: Set[str] = frozenset(),
     ) -> None:
         self.scorer = scorer
         self.is_manager = is_manager
@@ -57,6 +58,7 @@ class CandidateGenerator:
         self.evening_shift_codes = evening_shift_codes
         self.khabarovsk_shifts = khabarovsk_shifts
         self.holiday_work_code = holiday_work_code
+        self.newcomer_trainee_shift_codes = newcomer_trainee_shift_codes
 
     def weekday_candidates(self, request: WeekdayCandidateRequest) -> List[str]:
         candidates = []
@@ -72,6 +74,7 @@ class CandidateGenerator:
                 continue
             if (
                 self.is_newcomer(employee)
+                and request.shift_code not in self.newcomer_trainee_shift_codes
                 and request.shift_code not in request.newcomer_shift_history.get(row.employee_name, set())
             ):
                 continue

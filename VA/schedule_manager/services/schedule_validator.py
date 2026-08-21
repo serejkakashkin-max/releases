@@ -45,6 +45,7 @@ class ScheduleValidationRules:
     mpr_coordinator_names: Set[str]
     newcomer_names: Set[str]
     newcomer_allowed_shift_codes: Dict[str, Set[str]]
+    newcomer_trainee_shift_codes: Set[str]
     overtime_ready_employee_names: Set[str]
     day_primary_shift_code: str
     evening_shift_codes: Set[str]
@@ -69,6 +70,7 @@ def build_validation_rules(
     shifts: Optional[Iterable[ShiftDefinition]] = None,
     employees: Optional[Iterable[Employee]] = None,
     newcomer_allowed_shift_codes: Optional[Dict[str, Set[str]]] = None,
+    newcomer_trainee_shift_codes: Optional[Set[str]] = None,
 ) -> ScheduleValidationRules:
     shift_list = list(shifts) if shifts is not None else ShiftService(ShiftRepository()).list_shifts()
     employee_list = list(employees) if employees is not None else ManagedEmployeeRepository().load_all()
@@ -107,6 +109,7 @@ def build_validation_rules(
         mpr_coordinator_names=employee_groups["mpr"],
         newcomer_names=employee_groups["newcomers"],
         newcomer_allowed_shift_codes=newcomer_allowed_shift_codes or {},
+        newcomer_trainee_shift_codes=newcomer_trainee_shift_codes or set(),
         overtime_ready_employee_names=employee_groups["overtime_ready"],
         day_primary_shift_code=day_primary_shift_code,
         evening_shift_codes=_evening_shift_codes(shift_list),
@@ -473,7 +476,7 @@ def _employee_groups(employees: Iterable[Employee]) -> Dict[str, Set[str]]:
 
 
 def _newcomer_can_work_shift(employee_name: str, code: str, rules: ScheduleValidationRules) -> bool:
-    return code in rules.newcomer_allowed_shift_codes.get(employee_name, set())
+    return code in rules.newcomer_trainee_shift_codes or code in rules.newcomer_allowed_shift_codes.get(employee_name, set())
 
 
 def _evening_shift_codes(shifts: Iterable[ShiftDefinition]) -> Set[str]:

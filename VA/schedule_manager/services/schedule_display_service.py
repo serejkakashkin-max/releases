@@ -2,6 +2,10 @@ from typing import Optional
 
 from VA.schedule_manager.services.schedule_service import ScheduleService
 from VA.schedule_manager.services.schedule_validator import build_validation_rules, validate_schedule
+from VA.schedule_manager.services.autoplan_contract import AUTOPLAN_CONTRACT
+from VA.schedule_manager.services.newcomer_history import collect_newcomer_shift_codes
+
+LOAD_SHIFT_CODES = set(AUTOPLAN_CONTRACT.load_shift_codes)
 from VA.schedule_manager.services.shift_service import ShiftService
 from VA.schedule_manager.services.autoplan_hint_service import (
     build_autoplan_hints,
@@ -105,7 +109,7 @@ class ScheduleDisplayService:
                 )
                 schedule_violations = validate_schedule(
                     schedule_grid,
-                    build_validation_rules(self.shift_service.list_shifts()),
+                    self._validation_rules(snapshot, schedule_grid),
                     self._previous_grid(snapshot, selected_year, selected_month),
                 )
             except KeyError as exc:
@@ -132,6 +136,20 @@ class ScheduleDisplayService:
             "autoplan_stop_cells": build_autoplan_stop_cells(autoplan_artifact),
             "validation_stop_cells": self._validation_stop_cells(schedule_violations),
         }
+
+    def _validation_rules(self, snapshot, grid):
+        def normalize_code(value):
+            code = " ".join(str(value or "").strip().split())
+            lookup = self.shift_service.lookup()
+            shift = lookup.get(code) or lookup.get(code.lower())
+            return shift.code if shift else code
+
+        history = collect_newcomer_shift_codes(snapshot, grid, normalize_code, LOAD_SHIFT_CODES)
+        return build_validation_rules(
+            self.shift_service.list_shifts(),
+            newcomer_allowed_shift_codes=history,
+            newcomer_trainee_shift_codes=set(AUTOPLAN_CONTRACT.newcomer_trainee_shift_codes),
+        )
 
     def _empty_context(self, schedule_source: str) -> dict:
         return {

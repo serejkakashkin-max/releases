@@ -19,6 +19,7 @@ class AutoplanContract:
     weekend_excluded_shift_codes: Tuple[str, ...]
     required_weekday_shift_codes: Tuple[str, ...]
     optional_weekday_shift_codes: Tuple[str, ...]
+    newcomer_trainee_shift_codes: Tuple[str, ...]
     load_shift_codes: Tuple[str, ...]
     evening_shift_codes: Tuple[str, ...]
     holiday_work_code: str
@@ -33,6 +34,7 @@ AUTOPLAN_CONTRACT = AutoplanContract(
     weekend_excluded_shift_codes=("ХД", "ДД", "ДР", "ВД", "ВР", "ХР", "8"),
     required_weekday_shift_codes=("ХД", "ДД", "ДР", "ВД", "ВР"),
     optional_weekday_shift_codes=("ХР",),
+    newcomer_trainee_shift_codes=("ДР", "ВР"),
     load_shift_codes=("ХД", "ХР", "ДД", "ДР", "ВД", "ВР", "ВХ"),
     evening_shift_codes=("ВД", "ВР"),
     holiday_work_code="ВХ",
@@ -102,7 +104,7 @@ AUTOPLAN_CONTRACT = AutoplanContract(
             "employee.newcomer-history",
             "Новичок",
             "mandatory",
-            "Новичок назначается в ДД, ДР, ВД, ВР и ВХ только если в прошлых сохраненных периодах уже выполнял такой же код смены.",
+            "Новичок сразу допускается к ДР/ВР; к остальным дежурным сменам и ВХ — только если такая смена уже была у него в графике, включая текущий месяц.",
         ),
         AutoplanRule(
             "employee.week-availability",
