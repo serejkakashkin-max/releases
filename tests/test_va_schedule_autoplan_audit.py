@@ -59,4 +59,5 @@ def test_autoplan_audit_builds_artifact_with_reasons_and_stop_cells():
     assert artifact["violation_count"] == 1
     assert artifact["assignment_explanations"] == [{"employee_name": "Фисан К.Ю."}]
     assert artifact["stop_cells"] == [{"employee_name": "Кашкин С.Н.", "day": 4}]
+    assert artifact["capacity_diagnostics"] == {}
     assert any("Нагрузка недельных дежурств считалась блоками" in reason for reason in artifact["reasons"])

@@ -240,6 +240,31 @@ def _project_autoplan_names(value: Dict[str, Any], name_map: Dict[str, str]) -> 
         explanations.append(item)
     if "assignment_explanations" in value:
         projected["assignment_explanations"] = explanations
+    capacity = value.get("capacity_diagnostics")
+    if isinstance(capacity, dict):
+        projected_capacity = dict(capacity)
+        assignments = []
+        for raw in capacity.get("overloaded_assignments") or []:
+            if not isinstance(raw, dict):
+                assignments.append(raw)
+                continue
+            item = dict(raw)
+            name = str(item.get("employee_name") or "")
+            item["employee_name"] = name_map.get(name, name)
+            others = []
+            for raw_other in item.get("other_candidates") or []:
+                if not isinstance(raw_other, dict):
+                    others.append(raw_other)
+                    continue
+                other = dict(raw_other)
+                other_name = str(other.get("name") or "")
+                other["name"] = name_map.get(other_name, other_name)
+                others.append(other)
+            item["other_candidates"] = others
+            assignments.append(item)
+        if "overloaded_assignments" in capacity:
+            projected_capacity["overloaded_assignments"] = assignments
+        projected["capacity_diagnostics"] = projected_capacity
     return projected
 
 

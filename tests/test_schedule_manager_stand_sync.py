@@ -82,10 +82,58 @@ def test_normalized_legacy_artifact_keeps_a_nonempty_short_hint():
 
     explanation = artifact["assignment_explanations"][0]
     assert explanation["short_reason"] == ""
+    assert artifact["capacity_diagnostics"] == {}
     assert autoplan_hint_text(explanation) == (
         "Автоплан: Дневной дежурный (ДД), 1–5 числа. "
         "Смену поставил автопланировщик; подробности — у руководителя."
     )
+
+
+def test_normalized_capacity_diagnostics_filters_unknown_names():
+    artifact = normalize_autoplan_artifact(
+        {
+            "source": "autoplanner",
+            "year": 2026,
+            "month": 9,
+            "capacity_diagnostics": {
+                "warnings": ["На неделе 1-5 доступных дежурных 2."],
+                "overloaded_assignments": [
+                    {
+                        "employee_name": "Сотрудник С.С.",
+                        "shift_code": "ДД",
+                        "period": "1-5 числа",
+                        "blocks_before": 2,
+                        "candidate_count": 1,
+                        "historical_load": 4,
+                        "other_candidates": [
+                            {"name": "Чужой", "historical_load": 99},
+                            {"name": "Сотрудник С.С.", "current_month_blocks": 1},
+                        ],
+                    },
+                    {"employee_name": "Чужой", "shift_code": "ВД"},
+                ],
+            },
+        },
+        year=2026,
+        month=9,
+        employee_names=["Сотрудник С.С."],
+        valid_days=[1, 2, 3, 4, 5],
+    )
+
+    assert artifact["capacity_diagnostics"] == {
+        "warnings": ["На неделе 1-5 доступных дежурных 2."],
+        "overloaded_assignments": [
+            {
+                "employee_name": "Сотрудник С.С.",
+                "shift_code": "ДД",
+                "period": "1-5 числа",
+                "blocks_before": 2,
+                "candidate_count": 1,
+                "historical_load": 4,
+                "other_candidates": [{"name": "Сотрудник С.С.", "current_month_blocks": 1}],
+            }
+        ],
+    }
 
 
 def test_short_reason_is_escaped_and_precedes_the_full_reason_in_template():

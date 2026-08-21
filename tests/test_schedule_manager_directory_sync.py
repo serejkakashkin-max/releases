@@ -108,6 +108,16 @@ class ScheduleManagerDirectorySyncTests(unittest.TestCase):
                             "assignment_explanations": [
                                 {"employee_name": "Кашин Р. В.", "days": [1]}
                             ],
+                            "capacity_diagnostics": {
+                                "warnings": ["Диагностика вместимости."],
+                                "overloaded_assignments": [
+                                    {
+                                        "employee_name": "Кашин Р. В.",
+                                        "shift_code": "ВД",
+                                        "other_candidates": [{"name": "Кашин Р. В."}],
+                                    }
+                                ],
+                            },
                         },
                         "grid": {
                             "title": "Август 2026",
@@ -144,6 +154,15 @@ class ScheduleManagerDirectorySyncTests(unittest.TestCase):
             projected.get_month_metadata("Август 2026", "autoplan")[
                 "assignment_explanations"
             ][0]["employee_name"],
+        )
+        diagnostics = projected.get_month_metadata("Август 2026", "autoplan")[
+            "capacity_diagnostics"
+        ]
+        self.assertEqual(
+            "Квашин Р. В.", diagnostics["overloaded_assignments"][0]["employee_name"]
+        )
+        self.assertEqual(
+            "Квашин Р. В.", diagnostics["overloaded_assignments"][0]["other_candidates"][0]["name"]
         )
         self.assertEqual(
             "Кашин Р. В.", snapshot.get_month_grid("Август 2026").employees[0].employee_name

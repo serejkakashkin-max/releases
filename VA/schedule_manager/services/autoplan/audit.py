@@ -39,6 +39,7 @@ class AutoplanAuditBuilder:
         violation_count: int,
         assignment_explanations: List[dict],
         stop_cells: List[dict] = None,
+        capacity_diagnostics: dict = None,
     ) -> dict:
         return {
             "source": "autoplanner",
@@ -73,4 +74,5 @@ class AutoplanAuditBuilder:
             "month": grid.month,
             "assignment_explanations": assignment_explanations,
             "stop_cells": stop_cells or [],
+            "capacity_diagnostics": capacity_diagnostics or {},
         }

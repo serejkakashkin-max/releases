@@ -4,6 +4,7 @@ from typing import Callable, Dict, List, Optional, Set
 from VA.schedule_manager.models.employee import Employee
 from VA.schedule_manager.models.schedule_grid import ScheduleGrid, ScheduleRow
 from VA.schedule_manager.services.autoplan.audit import AutoplanAuditBuilder
+from VA.schedule_manager.services.autoplan.capacity import DutyCapacityDiagnostics
 from VA.schedule_manager.services.autoplan.candidates import CandidateGenerator
 from VA.schedule_manager.services.autoplan.context import PlanningContext
 from VA.schedule_manager.services.autoplan.rules import EmployeeRuleSet
@@ -11,6 +12,7 @@ from VA.schedule_manager.services.autoplan.rules import EmployeeRuleSet
 
 @dataclass(frozen=True)
 class PlannerDependencies:
+    duty_capacity: DutyCapacityDiagnostics
     audit_builder: AutoplanAuditBuilder
     candidate_generator: CandidateGenerator
     employee_rules: EmployeeRuleSet
@@ -58,7 +60,9 @@ class MonthPlanner:
         stop_cells: List[dict] = []
 
         for week_days in deps.week_groups(grid):
-            self._progress(progress, f"Планирую неделю {deps.days_period([day.day for day in week_days])}.")
+            period = deps.days_period([day.day for day in week_days])
+            deps.duty_capacity.start_week(period)
+            self._progress(progress, f"Планирую неделю {period}.")
             week_day_numbers = [day.day for day in week_days]
             nonworking_day_numbers = [
                 day.day
@@ -86,6 +90,7 @@ class MonthPlanner:
             )
 
             if not workday_numbers:
+                deps.duty_capacity.finish_week()
                 continue
 
             current_week_evening: Set[str] = set()
@@ -119,6 +124,7 @@ class MonthPlanner:
                             headline="Эту смену на неделю за вами закрепили вручную — автопланировщик только дозаполнил пустые дни недели.",
                         )
                     )
+                deps.duty_capacity.note_existing_block(employee_name, shift_code)
                 self._register_weekday_assignment(
                     context,
                     employee_name,
@@ -183,6 +189,7 @@ class MonthPlanner:
 
             previous_week_evening = current_week_evening
             previous_week_shift_workers = current_week_shift_workers
+            deps.duty_capacity.finish_week()
 
         rows = [
             ScheduleRow(row.employee_name, deps.calculate_hours(assignments[row.employee_name]), assignments[row.employee_name])
@@ -325,6 +332,7 @@ class MonthPlanner:
                 context.counters[employee_name] += 1
             applied_continued_shift_codes.add(shift_code)
             if filled_days:
+                deps.duty_capacity.note_existing_block(employee_name, shift_code)
                 self._register_weekday_assignment(
                     context,
                     employee_name,
@@ -369,6 +377,7 @@ class MonthPlanner:
         employee_name = candidates[0] if candidates else ""
         if not employee_name:
             return
+        deps.duty_capacity.note_shift_candidates(shift_code, candidates)
         filled_days = deps.fill_days(
             context.assignments[employee_name],
             workday_numbers,
@@ -406,6 +415,13 @@ class MonthPlanner:
                 reasons,
                 headline=f"Смену на неделю распределяли между {len(candidates)} подходящими сотрудниками — у вас одна из самых низких нагрузок за этот и три предыдущих месяца.",
             )
+        )
+        deps.duty_capacity.note_planned_assignment(
+            employee_name,
+            shift_code,
+            candidates,
+            context.current_month_duty_blocks.get(employee_name, 0),
+            context.counters.get(employee_name, 0),
         )
         self._register_weekday_assignment(
             context,

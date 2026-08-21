@@ -8,6 +8,7 @@ from VA.schedule_manager.repositories.managed_employee_repository import Managed
 from VA.schedule_manager.repositories.schedule_repository import ScheduleRepository
 from VA.schedule_manager.repositories.shift_repository import ShiftRepository
 from VA.schedule_manager.services.autoplan.audit import AutoplanAuditBuilder
+from VA.schedule_manager.services.autoplan.capacity import DutyCapacityDiagnostics
 from VA.schedule_manager.services.autoplan.candidates import (
     CandidateGenerator,
     HolidayCandidateRequest,
@@ -16,7 +17,7 @@ from VA.schedule_manager.services.autoplan.candidates import (
 from VA.schedule_manager.services.autoplan.context import PlanningContext
 from VA.schedule_manager.services.autoplan.planner import MonthPlanner, PlannerDependencies
 from VA.schedule_manager.services.autoplan.rules import EmployeeRuleSet
-from VA.schedule_manager.services.autoplan.scoring import CandidateScorer
+from VA.schedule_manager.services.autoplan.scoring import CandidateScorer, ScoringPolicy
 from VA.schedule_manager.services.autoplan_contract import AUTOPLAN_CONTRACT
 from VA.schedule_manager.services.newcomer_history import collect_newcomer_shift_codes
 from VA.schedule_manager.services.duty_rules import HOLIDAY_WORK_CODE, MOSCOW_DUTY_SHIFTS, KHABAROVSK_SHIFTS, WEEKEND_CODES
@@ -117,7 +118,10 @@ class ScheduleAutoplanService:
         employees = {employee.name: employee for employee in self.employee_repository.load_all()}
         self._progress(progress, "Анализирую нагрузку и смены за три предыдущих месяца.")
         newcomer_shift_history = self._historical_shift_codes(grid)
-        planned, assignment_explanations, stop_cells = self._plan_grid(grid, employees, progress=progress)
+        duty_capacity = DutyCapacityDiagnostics(ScoringPolicy().preferred_month_duty_blocks)
+        planned, assignment_explanations, stop_cells = self._plan_grid(
+            grid, employees, progress=progress, duty_capacity=duty_capacity
+        )
 
         self._progress(progress, "Запускаю проверку правил сформированного графика.")
         violations = validate_schedule(
@@ -131,7 +135,10 @@ class ScheduleAutoplanService:
             self._previous_month_grid(planned),
         )
         assigned_cells_count = self._assigned_cells_count(grid, planned)
-        artifact = self.audit_builder.build_artifact(planned, assigned_cells_count, len(violations), assignment_explanations, stop_cells)
+        artifact = self.audit_builder.build_artifact(
+            planned, assigned_cells_count, len(violations), assignment_explanations,
+            stop_cells, duty_capacity.build()
+        )
         self._progress(progress, "Сохраняю график и пояснения автопланировщика.")
         self.schedule_service.save_month_grid(
             sheet_name,
@@ -162,7 +169,9 @@ class ScheduleAutoplanService:
         grid: ScheduleGrid,
         employees: Dict[str, Employee],
         progress: Optional[Callable[[str], None]] = None,
+        duty_capacity: DutyCapacityDiagnostics = None,
     ) -> tuple[ScheduleGrid, List[dict], List[dict]]:
+        duty_capacity = duty_capacity or DutyCapacityDiagnostics(ScoringPolicy().preferred_month_duty_blocks)
         context = PlanningContext.build(
             grid,
             employees,
@@ -177,6 +186,7 @@ class ScheduleAutoplanService:
 
         planner = MonthPlanner(
             PlannerDependencies(
+                duty_capacity=duty_capacity,
                 audit_builder=self.audit_builder,
                 candidate_generator=self.candidate_generator,
                 employee_rules=self.employee_rules,

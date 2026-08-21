@@ -108,6 +108,54 @@ def normalize_autoplan_artifact(
         if len(reasons) >= 50:
             break
 
+    capacity_diagnostics = {}
+    raw_capacity = value.get("capacity_diagnostics")
+    if isinstance(raw_capacity, dict):
+        overloaded_assignments = []
+        raw_overloaded = raw_capacity.get("overloaded_assignments")
+        if isinstance(raw_overloaded, list):
+            for raw in raw_overloaded[:200]:
+                if not isinstance(raw, dict):
+                    continue
+                employee_name = _clean_text(raw.get("employee_name"), 300)
+                if not employee_name or employee_name not in employees:
+                    continue
+                other_candidates = []
+                raw_others = raw.get("other_candidates")
+                if isinstance(raw_others, list):
+                    for other in raw_others:
+                        if not isinstance(other, dict):
+                            continue
+                        name = _clean_text(other.get("name"), 300)
+                        if not name or name not in employees:
+                            continue
+                        item = {"name": name}
+                        if "historical_load" in other:
+                            item["historical_load"] = _non_negative_int(other.get("historical_load"))
+                        if "current_month_blocks" in other:
+                            item["current_month_blocks"] = _non_negative_int(other.get("current_month_blocks"))
+                        other_candidates.append(item)
+                        if len(other_candidates) >= 5:
+                            break
+                overloaded_assignments.append({
+                    "employee_name": employee_name,
+                    "shift_code": _clean_text(raw.get("shift_code"), 80),
+                    "period": _clean_text(raw.get("period"), 200),
+                    "blocks_before": _non_negative_int(raw.get("blocks_before")),
+                    "candidate_count": _non_negative_int(raw.get("candidate_count")),
+                    "historical_load": _non_negative_int(raw.get("historical_load")),
+                    "other_candidates": other_candidates,
+                })
+        warnings = []
+        raw_warnings = raw_capacity.get("warnings")
+        if isinstance(raw_warnings, list):
+            for raw_warning in raw_warnings[:60]:
+                warning = _clean_text(raw_warning, 1200)
+                if warning:
+                    warnings.append(warning)
+        if overloaded_assignments or warnings:
+            capacity_diagnostics = {"overloaded_assignments": overloaded_assignments, "warnings": warnings}
+
     return {
         "source": "autoplanner",
         "created_at": _clean_text(value.get("created_at"), 80),
@@ -120,6 +168,7 @@ def normalize_autoplan_artifact(
         "month": artifact_month,
         "assignment_explanations": explanations,
         "stop_cells": stop_cells,
+        "capacity_diagnostics": capacity_diagnostics,
     }
 
 

@@ -252,6 +252,24 @@
           {% else %}
             <span data-violation-badge>{{ status_badge("Проверено", "success") }}</span>
           {% endif %}
+          {% if autoplan_artifact.capacity_diagnostics and (autoplan_artifact.capacity_diagnostics.warnings or autoplan_artifact.capacity_diagnostics.overloaded_assignments) %}
+            <details class="autoplan-details">
+              <summary>Почему кто-то получил третий блок</summary>
+              {% if autoplan_artifact.capacity_diagnostics.warnings %}
+                <ul>{% for warning in autoplan_artifact.capacity_diagnostics.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>
+              {% endif %}
+              <div class="autoplan-explanations">
+                {% for assignment in autoplan_artifact.capacity_diagnostics.overloaded_assignments %}
+                  <article>
+                    <strong>{{ assignment.shift_code }} · {{ assignment.employee_name }}</strong>
+                    <span>{{ assignment.period }}</span>
+                    <small>Блоков до назначения: {{ assignment.blocks_before }} · кандидатов: {{ assignment.candidate_count }} · историческая нагрузка: {{ assignment.historical_load }}</small>
+                    {% if assignment.other_candidates %}<p>Другие кандидаты: {% for candidate in assignment.other_candidates %}{{ candidate.name }}{% if not loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+                  </article>
+                {% endfor %}
+              </div>
+            </details>
+          {% endif %}
         </div>
       </div>
 
