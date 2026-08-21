@@ -109,6 +109,141 @@
     });
   }
 
+  function setupUserMessages() {
+    document.querySelectorAll('[data-message-layer]').forEach((layer) => {
+      function closeLayer() {
+        document.removeEventListener('click', closeOnOutsideClick);
+        layer.remove();
+      }
+
+      function removeFrame(frame) {
+        if (!frame || !frame.parentElement) {
+          return;
+        }
+        frame.remove();
+        if (!layer.querySelector('[data-message-frame]')) {
+          closeLayer();
+        }
+      }
+
+      function closeOnOutsideClick(event) {
+        if (!layer.parentElement || event.target.closest('[data-message-frame]')) {
+          return;
+        }
+        closeLayer();
+      }
+
+      layer.addEventListener('click', (event) => {
+        if (event.target === layer) {
+          closeLayer();
+          return;
+        }
+        const close = event.target.closest('[data-message-close]');
+        if (close) {
+          removeFrame(close.closest('[data-message-frame]'));
+        }
+      });
+      document.addEventListener('click', closeOnOutsideClick);
+
+      layer.querySelectorAll('[data-message-frame]').forEach((frame) => {
+        if (!['success', 'info'].includes(frame.dataset.messageKind || '')) {
+          return;
+        }
+        window.setTimeout(() => removeFrame(frame), 10000);
+      });
+    });
+  }
+
+  function appendAutoplanLog(log, step) {
+    const item = document.createElement('li');
+    item.className = step.status === 'error' ? 'is-error' : 'is-done';
+    const time = document.createElement('span');
+    time.className = 'autoplan-progress-time';
+    time.textContent = step.created_at || '';
+    const message = document.createElement('span');
+    message.textContent = step.message || '';
+    item.append(time, message);
+    log.append(item);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function setAutoplanFormBusy(form, busy) {
+    form.querySelectorAll('button, input, select, textarea').forEach((control) => {
+      control.disabled = busy;
+    });
+    form.querySelectorAll('a').forEach((link) => {
+      link.classList.toggle('is-disabled', busy);
+      link.setAttribute('aria-disabled', busy ? 'true' : 'false');
+    });
+  }
+
+  function setupAutoplanProgressForms() {
+    document.querySelectorAll('[data-autoplan-form]').forEach((form) => {
+      const progress = form.querySelector('[data-autoplan-progress]');
+      const status = form.querySelector('[data-autoplan-progress-status]');
+      const log = form.querySelector('[data-autoplan-progress-log]');
+      if (!progress || !status || !log || !form.dataset.autoplanApiUrl || !form.dataset.autoplanStatusUrlTemplate) {
+        return;
+      }
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const data = Object.fromEntries(new FormData(form).entries());
+        progress.hidden = false;
+        log.replaceChildren();
+        status.textContent = 'Запускаю задачу...';
+        setAutoplanFormBusy(form, true);
+        appendAutoplanLog(log, { created_at: '', message: 'Отправляю запрос на автопланирование.' });
+
+        try {
+          const response = await fetch(form.dataset.autoplanApiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+          });
+          const payload = await response.json();
+          if (!response.ok || !payload.ok) {
+            throw new Error(payload.error && payload.error.message ? payload.error.message : 'Не удалось запустить автопланирование.');
+          }
+
+          const jobId = payload.data.job_id;
+          const statusUrl = form.dataset.autoplanStatusUrlTemplate.replace('__JOB_ID__', encodeURIComponent(jobId));
+          let renderedSteps = 0;
+          const poll = async () => {
+            const statusResponse = await fetch(statusUrl, { cache: 'no-store' });
+            const statusPayload = await statusResponse.json();
+            if (!statusResponse.ok || !statusPayload.ok) {
+              throw new Error(statusPayload.error && statusPayload.error.message ? statusPayload.error.message : 'Не удалось получить статус автоплана.');
+            }
+            const job = statusPayload.data;
+            const steps = Array.isArray(job.steps) ? job.steps : [];
+            steps.slice(renderedSteps).forEach((step) => appendAutoplanLog(log, step));
+            renderedSteps = steps.length;
+            if (job.status === 'done') {
+              status.textContent = 'Готово. Обновляю график...';
+              window.setTimeout(() => {
+                window.location.assign(job.redirect_url || window.location.href);
+              }, 700);
+              return;
+            }
+            if (job.status === 'error') {
+              status.textContent = 'Автопланирование остановлено.';
+              setAutoplanFormBusy(form, false);
+              return;
+            }
+            status.textContent = 'Выполняю расчет...';
+            window.setTimeout(poll, 900);
+          };
+          window.setTimeout(poll, 400);
+        } catch (error) {
+          status.textContent = 'Ошибка запуска.';
+          appendAutoplanLog(log, { created_at: '', message: error.message || 'Не удалось выполнить автопланирование.', status: 'error' });
+          setAutoplanFormBusy(form, false);
+        }
+      });
+    });
+  }
+
   function parseJsonScript(container, selector) {
     const node = container.querySelector(selector);
     if (!node) {
@@ -151,7 +286,7 @@
     const count = Number(schedule.violation_count || 0);
     if (badge) {
       const badgeNode = document.createElement('span');
-      badgeNode.className = count ? 'badge badge-warning' : 'badge badge-success';
+      badgeNode.className = count ? 'va-badge va-badge-warning' : 'va-badge va-badge-success';
       badgeNode.textContent = count ? `Нарушений: ${count}` : 'Проверено';
       badge.replaceChildren(badgeNode);
     }
@@ -172,6 +307,29 @@
     });
   }
 
+  function updateValidationStopCells(editor, schedule) {
+    editor.querySelectorAll('[data-validation-stop-cell]').forEach((cell) => {
+      cell.classList.remove('autoplan-stop-cell');
+      delete cell.dataset.validationStopCell;
+      delete cell.dataset.autoplanStop;
+      cell.removeAttribute('title');
+    });
+    (schedule.violations || []).forEach((violation) => {
+      if (!violation.employee_name || !String(violation.message || '').includes('Переходящая смена')) {
+        return;
+      }
+      const selector = `[data-schedule-cell][data-employee-name="${cssEscape(violation.employee_name)}"][data-day="${cssEscape(violation.day)}"]`;
+      const cell = editor.querySelector(selector);
+      if (!cell) {
+        return;
+      }
+      cell.classList.add('autoplan-stop-cell');
+      cell.dataset.validationStopCell = 'true';
+      cell.dataset.autoplanStop = violation.message;
+      cell.title = violation.message;
+    });
+  }
+
   function clearAutoplanArtifact(editor, data) {
     if (!data || !data.autoplan_artifact_cleared) {
       return;
@@ -180,6 +338,14 @@
     if (artifact) {
       artifact.remove();
     }
+    editor.querySelectorAll('[data-autoplan-stop]').forEach((cell) => {
+      if (cell.dataset.validationStopCell === 'true') {
+        return;
+      }
+      cell.classList.remove('autoplan-stop-cell');
+      delete cell.dataset.autoplanStop;
+      cell.removeAttribute('title');
+    });
   }
 
   function applyCellPayload(cell, payload) {
@@ -213,6 +379,7 @@
     }
     updateViolationView(editor, payload.schedule || {});
     clearAutoplanArtifact(editor, payload);
+    updateValidationStopCells(editor, payload.schedule || {});
   }
 
   function findScheduleCell(editor, employeeName, day) {
@@ -236,6 +403,7 @@
     });
     updateViolationView(editor, data.schedule || {});
     clearAutoplanArtifact(editor, data);
+    updateValidationStopCells(editor, data.schedule || {});
   }
 
   async function readJsonResponse(response) {
@@ -270,13 +438,78 @@
     }
   }
 
-  async function saveScheduleCell(editor, cell, select, original) {
+  function isHolidayShift(options, code) {
+    const selected = options.find((shift) => shift.code === code);
+    if (!selected) {
+      return false;
+    }
+    const values = [selected.code, selected.display_code, selected.name]
+      .filter(Boolean)
+      .map((value) => String(value).trim().toLowerCase());
+    return values.includes('п') || values.includes('праздник');
+  }
+
+  function productionCalendarWarningText(targetCells, days) {
+    const byDay = new Map((days || []).map((day) => [Number(day.day), day]));
+    const selectedDays = Array.from(new Set(targetCells.map((cell) => Number(cell.day))))
+      .filter(Boolean)
+      .sort((left, right) => left - right);
+    if (!selectedDays.length) {
+      return 'Производственный календарь: дату не удалось определить.';
+    }
+    return selectedDays.map((dayNumber) => {
+      const day = byDay.get(dayNumber);
+      if (!day) {
+        return `${dayNumber} число: нет данных производственного календаря.`;
+      }
+      if (day.calendar_warning) {
+        return `${dayNumber} число: производственный календарь не проверен (${day.calendar_warning}).`;
+      }
+      const source = day.calendar_source ? ` (${day.calendar_source})` : '';
+      if (day.is_production_holiday) {
+        return `${dayNumber} число: праздничный день по производственному календарю${source}.`;
+      }
+      return `${dayNumber} число: не праздничный день по производственному календарю${source}.`;
+    }).join('\n');
+  }
+
+  function confirmHolidayFill(targetCells, days) {
+    const selectedDayNumbers = Array.from(new Set(targetCells.map((cell) => Number(cell.day))))
+      .filter(Boolean)
+      .sort((left, right) => left - right);
+    const dayText = selectedDayNumbers.length === 1
+      ? `${selectedDayNumbers[0]} число`
+      : `${selectedDayNumbers.join(', ')} числа`;
+    const calendarText = productionCalendarWarningText(targetCells, days);
+    const firstConfirmed = window.confirm(
+      `Внимание: "Праздник" применяется не к одной ячейке, а ко всей дате (${dayText}) для всех сотрудников.\n\n${calendarText}\n\nПродолжить?`
+    );
+    if (!firstConfirmed) {
+      return false;
+    }
+    return window.confirm(
+      'Повторное подтверждение: все смены в выбранной дате будут заменены на "Праздник". Это может очистить уже заполненный график. Точно применить?'
+    );
+  }
+
+  async function saveScheduleCell(editor, cell, select, original, options, days) {
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 10000);
     const selectedCode = select.value;
     const targetCells = cell.dataset.selected === 'true'
       ? selectedCellPayload(editor)
       : [{ employee_name: cell.dataset.employeeName, day: Number(cell.dataset.day) }];
+    const holidayConfirmed = isHolidayShift(options, selectedCode);
+    if (holidayConfirmed && !confirmHolidayFill(targetCells, days)) {
+      window.clearTimeout(timeout);
+      restoreScheduleCell(cell, original);
+      if (editor.activeCellEditor && editor.activeCellEditor.cell === cell) {
+        delete editor.activeCellEditor;
+      }
+      setScheduleStatus(editor, 'Праздник не применен.', 'warning');
+      cell.focus({ preventScroll: true });
+      return;
+    }
     cell.dataset.saving = 'true';
     select.disabled = true;
     setScheduleStatus(editor, targetCells.length > 1 ? 'Сохраняю выделенные ячейки...' : 'Сохраняю изменение...', 'loading');
@@ -289,13 +522,15 @@
           ? JSON.stringify({
               sheet_name: editor.dataset.sheetName,
               cells: targetCells,
-              shift_code: selectedCode
+              shift_code: selectedCode,
+              holiday_confirmed: holidayConfirmed
             })
           : JSON.stringify({
               sheet_name: editor.dataset.sheetName,
               employee_name: cell.dataset.employeeName,
               day: Number(cell.dataset.day),
-              shift_code: selectedCode
+              shift_code: selectedCode,
+              holiday_confirmed: holidayConfirmed
             }),
         signal: controller.signal
       });
@@ -477,6 +712,7 @@
         appendScheduleRow(editor, options, days, payload.data.row);
         updateViolationView(editor, payload.data.schedule || {});
         clearAutoplanArtifact(editor, payload.data);
+        updateValidationStopCells(editor, payload.data.schedule || {});
         if (employeeSelect && employeeSelect.selectedIndex >= 0) {
           employeeSelect.remove(employeeSelect.selectedIndex);
         }
@@ -526,6 +762,7 @@
       }
       updateViolationView(editor, payload.data.schedule || {});
       clearAutoplanArtifact(editor, payload.data);
+      updateValidationStopCells(editor, payload.data.schedule || {});
       setScheduleStatus(editor, 'Сотрудник удален из текущего месяца.', 'success');
     } catch (error) {
       button.disabled = false;
@@ -736,7 +973,7 @@
     });
   }
 
-  function openScheduleCellEditor(editor, cell, options) {
+  function openScheduleCellEditor(editor, cell, options, days) {
     if (cell.dataset.saving === 'true' || cell.querySelector('select')) {
       return;
     }
@@ -774,7 +1011,7 @@
         }
       }, 0);
     });
-    select.addEventListener('change', () => saveScheduleCell(editor, cell, select, original));
+    select.addEventListener('change', () => saveScheduleCell(editor, cell, select, original, options, days));
   }
 
   function setupScheduleEditor(editor) {
@@ -817,7 +1054,7 @@
       if (selectedCells(editor).length && cell.dataset.selected !== 'true') {
         clearScheduleSelection(editor);
       }
-      openScheduleCellEditor(editor, cell, options);
+      openScheduleCellEditor(editor, cell, options, days);
     });
     editor.addEventListener('keydown', (event) => {
       const cell = event.target.closest('[data-schedule-cell]');
@@ -825,7 +1062,7 @@
         return;
       }
       event.preventDefault();
-      openScheduleCellEditor(editor, cell, options);
+      openScheduleCellEditor(editor, cell, options, days);
     });
     setupAddEmployeeModal(editor, options, days);
     setupBulkFill(editor);
@@ -843,6 +1080,8 @@
     restoreFocusAfterModalClose();
     setupBackdropClose();
     setupAutoSubmitForms();
+    setupUserMessages();
+    setupAutoplanProgressForms();
     document.querySelectorAll('[data-modal]').forEach(setupModal);
     document.querySelectorAll('[data-schedule-editor]').forEach(setupScheduleEditor);
     setupInlineToggle(

@@ -6,7 +6,11 @@ from VA.schedule_manager.models.schedule_grid import ScheduleGrid
 from VA.schedule_manager.models.shift import ShiftDefinition
 from VA.schedule_manager.repositories.managed_employee_repository import ManagedEmployeeRepository
 from VA.schedule_manager.repositories.shift_repository import ShiftRepository
-from VA.schedule_manager.services.competency_service import COMPETENCY_MANAGER, COMPETENCY_MPR_COORDINATOR
+from VA.schedule_manager.services.competency_service import (
+    COMPETENCY_MANAGER,
+    COMPETENCY_MPR_COORDINATOR,
+    COMPETENCY_NEWCOMER,
+)
 from VA.schedule_manager.services.duty_rules import (
     DUTY_SHIFTS,
     HOLIDAY_WORK_CODE,
@@ -39,6 +43,8 @@ class ScheduleValidationRules:
     moscow_employee_names: Set[str]
     khabarovsk_employee_names: Set[str]
     mpr_coordinator_names: Set[str]
+    newcomer_names: Set[str]
+    newcomer_allowed_shift_codes: Dict[str, Set[str]]
     overtime_ready_employee_names: Set[str]
     day_primary_shift_code: str
     evening_shift_codes: Set[str]
@@ -62,6 +68,7 @@ class ScheduleValidationRules:
 def build_validation_rules(
     shifts: Optional[Iterable[ShiftDefinition]] = None,
     employees: Optional[Iterable[Employee]] = None,
+    newcomer_allowed_shift_codes: Optional[Dict[str, Set[str]]] = None,
 ) -> ScheduleValidationRules:
     shift_list = list(shifts) if shifts is not None else ShiftService(ShiftRepository()).list_shifts()
     employee_list = list(employees) if employees is not None else ManagedEmployeeRepository().load_all()
@@ -98,6 +105,8 @@ def build_validation_rules(
         moscow_employee_names=employee_groups["moscow"],
         khabarovsk_employee_names=employee_groups["khabarovsk"],
         mpr_coordinator_names=employee_groups["mpr"],
+        newcomer_names=employee_groups["newcomers"],
+        newcomer_allowed_shift_codes=newcomer_allowed_shift_codes or {},
         overtime_ready_employee_names=employee_groups["overtime_ready"],
         day_primary_shift_code=day_primary_shift_code,
         evening_shift_codes=_evening_shift_codes(shift_list),
@@ -223,6 +232,15 @@ def _validate_holiday_work_employee(
     code: str,
     rules: ScheduleValidationRules,
 ) -> List[ScheduleViolation]:
+    if employee_name in rules.newcomer_names and not _newcomer_can_work_shift(employee_name, code, rules):
+        return [
+            ScheduleViolation(
+                day,
+                code,
+                employee_name,
+                "Новичка нельзя назначать в дежурные смены и ВХ.",
+            )
+        ]
     if (
         employee_name in rules.moscow_employee_names
         and employee_name in rules.overtime_ready_employee_names
@@ -263,23 +281,46 @@ def _validate_transition_week(
         return []
 
     violations: List[ScheduleViolation] = []
+    stopped_shifts: Set[str] = set()
     for schedule_day in first_week_days:
         assignments_by_shift = _assignments_by_shift(grid, schedule_day.day, rules)
         if _is_holiday(assignments_by_shift, rules):
             continue
         for shift_code, expected_employee in continued.items():
             current_workers = assignments_by_shift.get(shift_code, [])
-            if current_workers == [expected_employee]:
+            expected_code = _employee_day_code(grid, expected_employee, schedule_day.day, rules)
+            if shift_code not in stopped_shifts and current_workers == [expected_employee]:
+                continue
+            if shift_code not in stopped_shifts and expected_code in {"", rules.weekend_mark}:
+                violations.append(
+                    ScheduleViolation(
+                        day=schedule_day.day,
+                        shift=shift_code,
+                        employee_name=expected_employee,
+                        message=f"Переходящая смена {shift_code} должна продолжаться сотрудником {expected_employee} из предыдущего месяца.",
+                    )
+                )
+                continue
+
+            stopped_shifts.add(shift_code)
+            if len(current_workers) == 1:
                 continue
             violations.append(
                 ScheduleViolation(
                     day=schedule_day.day,
                     shift=shift_code,
                     employee_name=expected_employee,
-                    message=f"Переходящая смена {shift_code} должна продолжаться сотрудником {expected_employee} из предыдущего месяца.",
+                    message=f"Переходящая смена {shift_code} остановлена у {expected_employee}; рабочий день нужно распределить вручную.",
                 )
             )
     return violations
+
+
+def _employee_day_code(grid: ScheduleGrid, employee_name: str, day: int, rules: ScheduleValidationRules) -> str:
+    for row in grid.employees:
+        if row.employee_name == employee_name:
+            return rules.canonical_code(row.assignments.get(day, ""))
+    return ""
 
 
 def _previous_week_assignments(
@@ -324,10 +365,27 @@ def _validate_employee_restrictions(
                         "ВХ можно назначать только активному московскому сотруднику с признаком готовности к сверхурочке.",
                     )
                 )
+            if row.employee_name in rules.newcomer_names and not _newcomer_can_work_shift(row.employee_name, code, rules):
+                violations.append(
+                    ScheduleViolation(
+                        day,
+                        code,
+                        row.employee_name,
+                        "Новичка нельзя назначать в дежурные смены и ВХ.",
+                    )
+                )
 
         if row.employee_name in rules.manager_names and code != "8":
             violations.append(
                 ScheduleViolation(day, code, row.employee_name, "Руководитель может быть только в смене 8.")
+            )
+        if (
+            row.employee_name in rules.newcomer_names
+            and code in rules.continued_week_shift_codes
+            and not _newcomer_can_work_shift(row.employee_name, code, rules)
+        ):
+            violations.append(
+                ScheduleViolation(day, code, row.employee_name, "Новичка нельзя назначать в дежурные смены и ВХ.")
             )
         if row.employee_name in rules.moscow_employee_names and code in rules.khabarovsk_restricted_shifts:
             violations.append(
@@ -385,7 +443,14 @@ def _validate_mpr_restrictions(grid: ScheduleGrid, day: int, rules: ScheduleVali
 
 
 def _employee_groups(employees: Iterable[Employee]) -> Dict[str, Set[str]]:
-    groups = {"managers": set(), "moscow": set(), "khabarovsk": set(), "mpr": set(), "overtime_ready": set()}
+    groups = {
+        "managers": set(),
+        "moscow": set(),
+        "khabarovsk": set(),
+        "mpr": set(),
+        "newcomers": set(),
+        "overtime_ready": set(),
+    }
     for employee in employees:
         if employee.status != "active":
             continue
@@ -396,6 +461,8 @@ def _employee_groups(employees: Iterable[Employee]) -> Dict[str, Set[str]]:
             groups["managers"].add(employee.name)
         if COMPETENCY_MPR_COORDINATOR in competencies:
             groups["mpr"].add(employee.name)
+        if COMPETENCY_NEWCOMER in competencies:
+            groups["newcomers"].add(employee.name)
         if employee.overtime_ready:
             groups["overtime_ready"].add(employee.name)
         if employee.location == "moscow":
@@ -403,6 +470,10 @@ def _employee_groups(employees: Iterable[Employee]) -> Dict[str, Set[str]]:
         if employee.location == "khabarovsk":
             groups["khabarovsk"].add(employee.name)
     return groups
+
+
+def _newcomer_can_work_shift(employee_name: str, code: str, rules: ScheduleValidationRules) -> bool:
+    return code in rules.newcomer_allowed_shift_codes.get(employee_name, set())
 
 
 def _evening_shift_codes(shifts: Iterable[ShiftDefinition]) -> Set[str]:

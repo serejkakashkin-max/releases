@@ -1,32 +1,14 @@
-<!doctype html>
+{% extends "layouts/oplot_base.html" %}
 {% from "va_schedule_manager/components/user_messages.html" import render_user_messages %}
-<html lang="ru">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="csrf-token" content="{{ va_admin_csrf_token }}">
-    <title>{% block title %}График дежурств{% endblock %}</title>
-    <link rel="stylesheet" href="{{ va_url_for('va_schedule_manager.static', filename='va_schedule_manager/style.css') }}?v=20260714-30">
-    {% block head_extra %}{% endblock %}
-  </head>
-  <body>
-    {{ render_user_messages(user_messages) }}
-    <main class="layout {% block layout_class %}{% endblock %}">
-      <header class="app-header">
-        <div>
-          <nav class="va-breadcrumb" aria-label="breadcrumb">
-            <a href="{{ va_admin_panel_url }}">СУП-параметры</a>
-            <span>/</span>
-            <span>Инструменты</span>
-            <span>/</span>
-            <strong>Графики дежурств</strong>
-          </nav>
-          <h1>{% block page_title %}График дежурств{% endblock %}</h1>
-          <p>{% block page_subtitle %}Система управления графиком дежурств сотрудников{% endblock %}</p>
-        </div>
-        {% block header_actions %}{% endblock %}
-      </header>
 
+{% block styles %}
+  <meta name="csrf-token" content="{{ va_admin_csrf_token }}">
+  <link rel="stylesheet" href="{{ va_url_for('va_schedule_manager.static', filename='va_schedule_manager/style.css') }}?v=20260821-1">
+{% endblock %}
+
+{% block content %}
+  <div class="va-sm">
+    {{ render_user_messages(user_messages) }}
       <nav class="top-nav" aria-label="Основная навигация">
         <a class="{% if active_page == 'schedule' %}active{% endif %}" href="{{ va_url_for('va_schedule_manager.web.index') }}">График</a>
         <a href="{{ va_url_for('sup_parameters.sup_parameters_page', tab='employees', view='employees') }}">Сотрудники</a>
@@ -36,10 +18,17 @@
         <a class="top-nav-docs {% if active_page == 'docs' %}active{% endif %}" href="{{ va_url_for('va_schedule_manager.web.docs_index') }}">Документация</a>
       </nav>
 
-      {% block content %}{% endblock %}
-    </main>
+    {% block va_body %}{% endblock %}
+  </div>
+{% endblock %}
 
+{% block overlays %}
+  <div class="va-sm">
     {% block dialogs %}{% endblock %}
+  </div>
+{% endblock %}
+
+{% block scripts %}
     <script>
       (function () {
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || "";
@@ -68,7 +57,5 @@
         });
       })();
     </script>
-    <script src="{{ va_url_for('va_schedule_manager.static', filename='va_schedule_manager/app.js') }}?v=20260714-30"></script>
-    {% block scripts %}{% endblock %}
-  </body>
-</html>
+    <script src="{{ va_url_for('va_schedule_manager.static', filename='va_schedule_manager/app.js') }}?v=20260821-1"></script>
+{% endblock %}

@@ -3,11 +3,10 @@
 {% set active_page = "shifts" %}
 
 {% block title %}Настройки · Смены{% endblock %}
-{% block layout_class %}shifts-page{% endblock %}
-{% block page_title %}Настройки АС{% endblock %}
-{% block page_subtitle %}Управление сменами{% endblock %}
+{% set oplot_page_title = 'Настройки АС' %}
+{% set oplot_page_description = 'Управление сменами' %}
 
-{% block content %}
+{% block va_body %}
   <section class="panel page-control-panel">
     {% call section_header("Настройка смен", "Цвет, подпись, часы и часовой пояс сразу используются в графике.") %}
         <a class="button button-light button-compact" href="{{ va_url_for('va_schedule_manager.settings.shifts') }}">Обновить</a>

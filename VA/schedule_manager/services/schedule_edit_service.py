@@ -3,6 +3,10 @@ from typing import List, Optional
 
 from VA.schedule_manager.models.schedule_grid import ScheduleGrid, ScheduleRow
 from VA.schedule_manager.services.employee_service import EmployeeService
+from VA.schedule_manager.services.employee_identity import (
+    build_directory_order_index,
+    employee_identity_matches,
+)
 from VA.schedule_manager.services.schedule_service import ScheduleService
 from VA.schedule_manager.services.schedule_validator import build_validation_rules, validate_schedule
 from VA.schedule_manager.services.shift_service import ShiftService
@@ -74,7 +78,14 @@ class ScheduleEditService:
     def apply_edits(self, grid: ScheduleGrid, workbook_id: str, sheet_name: str) -> ScheduleGrid:
         return self._recalculate_grid_hours(grid)
 
-    def update_cell(self, sheet_name: str, employee_name: str, day: int, shift_code: str) -> ScheduleCellUpdate:
+    def update_cell(
+        self,
+        sheet_name: str,
+        employee_name: str,
+        day: int,
+        shift_code: str,
+        holiday_confirmed: bool = False,
+    ) -> ScheduleCellUpdate:
         snapshot = self.schedule_service.get_current()
         if snapshot is None:
             raise ScheduleEditValidationError("Сначала загрузите Excel-файл.")
@@ -94,6 +105,10 @@ class ScheduleEditService:
             raise ScheduleEditValidationError("Сотрудник не найден в графике.")
 
         if self._is_holiday_shift(shift_code):
+            if not holiday_confirmed:
+                raise ScheduleEditValidationError(
+                    "Праздник применяется ко всей дате. Подтвердите изменение."
+                )
             grid = self._fill_days(base_grid, {day}, shift_code)
         else:
             grid = self._update_grid_cell(base_grid, employee_name, day, shift_code)
@@ -149,7 +164,11 @@ class ScheduleEditService:
             grid = snapshot.get_month_grid(sheet_name)
         except KeyError as exc:
             raise ScheduleEditValidationError("Лист графика не найден.") from exc
-        if any(row.employee_name == employee_name for row in grid.employees):
+        order_index = build_directory_order_index(self.employee_service)
+        if any(
+            employee_identity_matches(row.employee_name, employee_name, order_index)
+            for row in grid.employees
+        ):
             raise ScheduleEditValidationError("Сотрудник уже есть в текущем графике.")
 
         assignments = self._default_assignments(grid, fill_mode)
@@ -238,7 +257,13 @@ class ScheduleEditService:
             autoplan_artifact_cleared=autoplan_artifact_cleared,
         )
 
-    def bulk_fill(self, sheet_name: str, cells: List[dict], shift_code: str) -> ScheduleBulkFill:
+    def bulk_fill(
+        self,
+        sheet_name: str,
+        cells: List[dict],
+        shift_code: str,
+        holiday_confirmed: bool = False,
+    ) -> ScheduleBulkFill:
         snapshot = self.schedule_service.get_current()
         if snapshot is None:
             raise ScheduleEditValidationError("Сначала загрузите Excel-файл.")
@@ -269,6 +294,10 @@ class ScheduleEditService:
 
         applied_to_full_days = self._is_holiday_shift(shift_code)
         if applied_to_full_days:
+            if not holiday_confirmed:
+                raise ScheduleEditValidationError(
+                    "Праздник применяется ко всей дате. Подтвердите изменение."
+                )
             target_days = {cell["day"] for cell in normalized_cells}
             updated_grid = self._fill_days(grid, target_days, shift_code)
         else:

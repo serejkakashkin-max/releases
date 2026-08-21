@@ -69,6 +69,33 @@ def normalize_autoplan_artifact(
         if len(explanations) >= 5000:
             break
 
+    stop_cells = []
+    raw_stop_cells = value.get("stop_cells")
+    if not isinstance(raw_stop_cells, list):
+        raw_stop_cells = []
+    for raw in raw_stop_cells:
+        if not isinstance(raw, dict):
+            continue
+        employee_name = _clean_text(raw.get("employee_name"), 300)
+        if not employee_name or employee_name not in employees:
+            continue
+        try:
+            day = int(raw.get("day"))
+        except (TypeError, ValueError):
+            continue
+        if day not in days:
+            continue
+        stop_cells.append(
+            {
+                "employee_name": employee_name,
+                "day": day,
+                "shift_code": _clean_text(raw.get("shift_code"), 80),
+                "message": _clean_text(raw.get("message"), 1200),
+            }
+        )
+        if len(stop_cells) >= 500:
+            break
+
     reasons = []
     raw_reasons = value.get("reasons")
     if not isinstance(raw_reasons, list):
@@ -91,6 +118,7 @@ def normalize_autoplan_artifact(
         "year": artifact_year,
         "month": artifact_month,
         "assignment_explanations": explanations,
+        "stop_cells": stop_cells,
     }
 
 
@@ -115,6 +143,25 @@ def build_autoplan_hints(artifact: Any) -> dict:
                 continue
             hints[f"{employee_name}|{day}"] = text
     return hints
+
+
+def build_autoplan_stop_cells(artifact: Any) -> dict:
+    if not isinstance(artifact, dict):
+        return {}
+    cells = {}
+    for stop_cell in artifact.get("stop_cells") or []:
+        if not isinstance(stop_cell, dict):
+            continue
+        employee_name = str(stop_cell.get("employee_name") or "").strip()
+        if not employee_name:
+            continue
+        try:
+            day = int(stop_cell.get("day"))
+        except (TypeError, ValueError):
+            continue
+        message = str(stop_cell.get("message") or "").strip()
+        cells[f"{employee_name}|{day}"] = message
+    return cells
 
 
 def autoplan_hint_text(explanation: dict) -> str:

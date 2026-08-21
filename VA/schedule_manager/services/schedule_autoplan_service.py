@@ -1,13 +1,23 @@
 from dataclasses import dataclass
-from datetime import datetime, timedelta
-from typing import Dict, List, Set
+from datetime import timedelta
+from typing import Callable, Dict, List, Optional, Set
 
 from VA.schedule_manager.models.employee import Employee
-from VA.schedule_manager.models.schedule_grid import ScheduleGrid, ScheduleRow
+from VA.schedule_manager.models.schedule_grid import ScheduleGrid
 from VA.schedule_manager.repositories.managed_employee_repository import ManagedEmployeeRepository
 from VA.schedule_manager.repositories.schedule_repository import ScheduleRepository
 from VA.schedule_manager.repositories.shift_repository import ShiftRepository
-from VA.schedule_manager.services.competency_service import COMPETENCY_MANAGER, COMPETENCY_MPR_COORDINATOR, COMPETENCY_NEWCOMER
+from VA.schedule_manager.services.autoplan.audit import AutoplanAuditBuilder
+from VA.schedule_manager.services.autoplan.candidates import (
+    CandidateGenerator,
+    HolidayCandidateRequest,
+    WeekdayCandidateRequest,
+)
+from VA.schedule_manager.services.autoplan.context import PlanningContext
+from VA.schedule_manager.services.autoplan.planner import MonthPlanner, PlannerDependencies
+from VA.schedule_manager.services.autoplan.rules import EmployeeRuleSet
+from VA.schedule_manager.services.autoplan.scoring import CandidateScorer
+from VA.schedule_manager.services.autoplan_contract import AUTOPLAN_CONTRACT
 from VA.schedule_manager.services.duty_rules import HOLIDAY_WORK_CODE, MOSCOW_DUTY_SHIFTS, KHABAROVSK_SHIFTS, WEEKEND_CODES
 from VA.schedule_manager.services.schedule_month_service import ScheduleMonthService
 from VA.schedule_manager.services.schedule_service import ScheduleService
@@ -15,13 +25,10 @@ from VA.schedule_manager.services.schedule_validator import build_validation_rul
 from VA.schedule_manager.services.shift_service import ShiftService
 
 
-LOAD_SHIFT_CODES = {"ХД", "ХР", "ДД", "ДР", "ВД", "ВР", "ВХ"}
-EVENING_SHIFT_CODES = {"ВД", "ВР"}
-CONTINUED_WEEK_SHIFT_CODES = {"ХД", "ХР", "ДД", "ДР", "ВД", "ВР"}
-PRIMARY_DUTY_BY_LOCATION = {
-    "moscow": {"ДД", "ВД"},
-    "khabarovsk": {"ХД"},
-}
+LOAD_SHIFT_CODES = set(AUTOPLAN_CONTRACT.load_shift_codes)
+EVENING_SHIFT_CODES = set(AUTOPLAN_CONTRACT.evening_shift_codes)
+CONTINUED_WEEK_SHIFT_CODES = set(AUTOPLAN_CONTRACT.weekday_shift_codes)
+DUTY_SHIFT_CODES = set(AUTOPLAN_CONTRACT.weekday_shift_codes)
 
 
 class ScheduleAutoplanValidationError(Exception):
@@ -55,6 +62,20 @@ class ScheduleAutoplanService:
         self.employee_repository = employee_repository
         self.shift_service = shift_service or ShiftService(ShiftRepository())
         self.month_service = month_service
+        self.candidate_scorer = CandidateScorer()
+        self.employee_rules = EmployeeRuleSet()
+        self.audit_builder = AutoplanAuditBuilder(self._shift_name)
+        self.candidate_generator = CandidateGenerator(
+            self.candidate_scorer,
+            self.employee_rules.is_manager,
+            self.employee_rules.is_newcomer,
+            self.employee_rules.is_mpr_coordinator,
+            self.employee_rules.evening_mpr_priority,
+            self.employee_rules.holiday_work_manager_priority,
+            EVENING_SHIFT_CODES,
+            KHABAROVSK_SHIFTS,
+            HOLIDAY_WORK_CODE,
+        )
 
     def availability(self, sheet_name: str) -> ScheduleAutoplanAvailability:
         try:
@@ -72,25 +93,42 @@ class ScheduleAutoplanService:
             return ScheduleAutoplanAvailability(False, "No active employees for planning.")
         return ScheduleAutoplanAvailability(True)
 
-    def autoplan(self, sheet_name: str, vacations_confirmed: bool = False) -> ScheduleAutoplanResult:
+    def autoplan(
+        self,
+        sheet_name: str,
+        vacations_confirmed: bool = False,
+        progress: Optional[Callable[[str], None]] = None,
+    ) -> ScheduleAutoplanResult:
+        self._progress(progress, "Проверяю подтверждение отпусков и праздничных дней.")
         if not vacations_confirmed:
             raise ScheduleAutoplanValidationError("Подтвердите, что все отпуска внесены на планируемый месяц.")
 
+        self._progress(progress, "Проверяю доступность графика и справочника сотрудников.")
         availability = self.availability(sheet_name)
         if not availability.can_autoplan:
             raise ScheduleAutoplanValidationError(availability.reason)
 
+        self._progress(progress, "Загружаю текущий график из данных АС.")
         grid = self.schedule_service.get_month_grid(sheet_name)
+        self._progress(progress, "Загружаю сотрудников, смены и компетенции.")
         employees = {employee.name: employee for employee in self.employee_repository.load_all()}
-        planned, assignment_explanations = self._plan_grid(grid, employees)
+        self._progress(progress, "Анализирую нагрузку и смены за три предыдущих месяца.")
+        newcomer_shift_history = self._historical_shift_codes(grid)
+        planned, assignment_explanations, stop_cells = self._plan_grid(grid, employees, progress=progress)
 
+        self._progress(progress, "Запускаю проверку правил сформированного графика.")
         violations = validate_schedule(
             planned,
-            build_validation_rules(self.shift_service.list_shifts(), employees.values()),
+            build_validation_rules(
+                self.shift_service.list_shifts(),
+                employees.values(),
+                newcomer_allowed_shift_codes=newcomer_shift_history,
+            ),
             self._previous_month_grid(planned),
         )
         assigned_cells_count = self._assigned_cells_count(grid, planned)
-        artifact = self._build_artifact(planned, assigned_cells_count, len(violations), assignment_explanations)
+        artifact = self.audit_builder.build_artifact(planned, assigned_cells_count, len(violations), assignment_explanations, stop_cells)
+        self._progress(progress, "Сохраняю график и пояснения автопланировщика.")
         self.schedule_service.save_month_grid(
             sheet_name,
             planned,
@@ -111,277 +149,53 @@ class ScheduleAutoplanService:
             )
         return self.month_service
 
-    def _plan_grid(self, grid: ScheduleGrid, employees: Dict[str, Employee]) -> tuple[ScheduleGrid, List[dict]]:
-        assignments = {row.employee_name: dict(row.assignments) for row in grid.employees}
-        historical_load = self._historical_load(grid)
-        holiday_work_history = self._historical_holiday_work_load(grid)
-        counters: Dict[str, int] = {row.employee_name: historical_load.get(row.employee_name, 0) for row in grid.employees}
-        holiday_work_counters: Dict[str, int] = {
-            row.employee_name: holiday_work_history.get(row.employee_name, 0)
-            for row in grid.employees
-        }
-        current_month_holiday_work_counts: Dict[str, int] = {row.employee_name: 0 for row in grid.employees}
-        current_month_duty_blocks: Dict[str, int] = {row.employee_name: 0 for row in grid.employees}
-        monthly_shift_usage: Dict[str, Set[str]] = {row.employee_name: set() for row in grid.employees}
+    def _progress(self, progress: Optional[Callable[[str], None]], message: str) -> None:
+        if progress is not None:
+            progress(message)
+
+    def _plan_grid(
+        self,
+        grid: ScheduleGrid,
+        employees: Dict[str, Employee],
+        progress: Optional[Callable[[str], None]] = None,
+    ) -> tuple[ScheduleGrid, List[dict], List[dict]]:
+        context = PlanningContext.build(
+            grid,
+            employees,
+            self._historical_load(grid),
+            self._historical_holiday_work_load(grid),
+            self._historical_shift_codes(grid),
+        )
         previous_week_evening: Set[str] = self._previous_week_evening_from_history(grid)
-        assignment_explanations: List[dict] = []
 
-        for week_days in self._week_groups(grid):
-            week_day_numbers = [day.day for day in week_days]
-            nonworking_day_numbers = [
-                day.day
-                for day in week_days
-                if day.weekday.lower() in WEEKEND_CODES or self._is_holiday_day(assignments, day.day)
-            ]
-            workday_numbers = [
-                day.day
-                for day in week_days
-                if day.weekday.lower() not in WEEKEND_CODES and not self._is_holiday_day(assignments, day.day)
-            ]
+        if grid.days and min(day.date for day in grid.days).weekday() != 0:
+            self._progress(progress, "Месяц начинается не с понедельника: проверяю хвост недели в предыдущем графике.")
 
-            unavailable = {
-                employee_name
-                for employee_name, row_assignments in assignments.items()
-                if any(self._is_absence(row_assignments.get(day, "")) for day in week_day_numbers)
-            }
-            week_assigned: Set[str] = set()
-            for nonworking_day in nonworking_day_numbers:
-                existing_nonworking_workers = self._existing_shift_workers(assignments, nonworking_day, HOLIDAY_WORK_CODE)
-                if existing_nonworking_workers:
-                    employee_name = existing_nonworking_workers[0]
-                    counters[employee_name] = counters.get(employee_name, 0) + 1
-                    holiday_work_counters[employee_name] = holiday_work_counters.get(employee_name, 0) + 1
-                    current_month_holiday_work_counts[employee_name] = current_month_holiday_work_counts.get(employee_name, 0) + 1
-                    current_month_duty_blocks[employee_name] = current_month_duty_blocks.get(employee_name, 0) + 1
-                    continue
-                candidates = self._holiday_candidates(
-                    grid,
-                    employees,
-                    holiday_work_counters,
-                    current_month_holiday_work_counts,
-                    unavailable,
-                )
-                employee_name = candidates[0] if candidates else ""
-                if employee_name:
-                    assignments[employee_name][nonworking_day] = HOLIDAY_WORK_CODE
-                    assignment_explanations.append(
-                        self._assignment_explanation(
-                            employee_name,
-                            HOLIDAY_WORK_CODE,
-                            f"{nonworking_day} число",
-                            [nonworking_day],
-                            candidates,
-                            counters.get(employee_name, 0),
-                            [
-                                "дата является выходным или праздничным днем",
-                                "на нерабочий день нужен один сотрудник в ВХ",
-                                "сотрудник активен, относится к Москве, готов к сверхурочке и не в отпуске на этой неделе",
-                                "выбран сотрудник с минимальным количеством ВХ в текущем месяце и за три предыдущих месяца",
-                                "руководитель допускается к ВХ только с наименьшим приоритетом",
-                            ],
-                        )
-                    )
-                    counters[employee_name] += 1
-                    holiday_work_counters[employee_name] += 1
-                    current_month_holiday_work_counts[employee_name] += 1
-                    current_month_duty_blocks[employee_name] += 1
-
-            if not workday_numbers:
-                continue
-
-            current_week_evening: Set[str] = set()
-            current_week_day_primary_mpr: Set[str] = set()
-            existing_week_assignments = self._existing_week_assignments(assignments, workday_numbers)
-            for shift_code, employee_name in existing_week_assignments.items():
-                if employee_name not in assignments:
-                    continue
-                filled_days = self._fill_days(assignments[employee_name], workday_numbers, shift_code)
-                if filled_days:
-                    assignment_explanations.append(
-                        self._assignment_explanation(
-                            employee_name,
-                            shift_code,
-                            self._days_period(filled_days),
-                            filled_days,
-                            [employee_name],
-                            counters.get(employee_name, 0),
-                            [
-                                "смена уже была начата вручную",
-                                "автопланировщик дозаполнил пустые дни этого недельного блока",
-                                "существующие ручные назначения не изменялись",
-                            ],
-                        )
-                    )
-                counters[employee_name] = counters.get(employee_name, 0) + self._shift_days_count(assignments[employee_name], workday_numbers, shift_code)
-                current_month_duty_blocks[employee_name] = current_month_duty_blocks.get(employee_name, 0) + 1
-                week_assigned.add(employee_name)
-                monthly_shift_usage.setdefault(employee_name, set()).add(shift_code)
-                if shift_code in EVENING_SHIFT_CODES:
-                    current_week_evening.add(employee_name)
-                if self._is_day_primary_mpr(employee_name, shift_code, employees):
-                    current_week_day_primary_mpr.add(employee_name)
-
-            continued_assignments = self._continued_week_assignments(grid, week_days)
-            for shift_code, employee_name in continued_assignments.items():
-                if shift_code in existing_week_assignments:
-                    continue
-                if employee_name not in assignments or employee_name in unavailable or employee_name in week_assigned:
-                    continue
-                filled_days = self._fill_days(assignments[employee_name], workday_numbers, shift_code)
-                assignment_explanations.append(
-                    self._assignment_explanation(
-                        employee_name,
-                        shift_code,
-                        self._days_period(filled_days),
-                        filled_days,
-                        [employee_name],
-                        counters.get(employee_name, 0),
-                        [
-                            "недельная смена началась в предыдущем месяце",
-                            "сотрудник продолжает тот же недельный блок в новом месяце",
-                            "автопланировщик не меняет исполнителя с 1 числа внутри продолжающейся недели",
-                        ],
-                    )
-                )
-                counters[employee_name] += len(filled_days)
-                current_month_duty_blocks[employee_name] += 1
-                week_assigned.add(employee_name)
-                monthly_shift_usage.setdefault(employee_name, set()).add(shift_code)
-                if shift_code in EVENING_SHIFT_CODES:
-                    current_week_evening.add(employee_name)
-                if self._is_day_primary_mpr(employee_name, shift_code, employees):
-                    current_week_day_primary_mpr.add(employee_name)
-
-            for shift_code in KHABAROVSK_SHIFTS:
-                if shift_code in existing_week_assignments or shift_code in continued_assignments:
-                    continue
-                candidates = self._employee_candidates(
-                    grid,
-                    employees,
-                    counters,
-                    unavailable,
-                    week_assigned,
-                    location="khabarovsk",
-                    allow_manager=False,
-                    shift_code=shift_code,
-                    monthly_shift_usage=monthly_shift_usage,
-                    previous_week_evening=previous_week_evening,
-                    current_week_evening=current_week_evening,
-                    current_week_day_primary_mpr=current_week_day_primary_mpr,
-                    current_month_duty_blocks=current_month_duty_blocks,
-                )
-                employee_name = candidates[0] if candidates else ""
-                if employee_name:
-                    filled_days = self._fill_days(assignments[employee_name], workday_numbers, shift_code)
-                    assignment_explanations.append(
-                        self._assignment_explanation(
-                            employee_name,
-                            shift_code,
-                            self._days_period(filled_days),
-                            filled_days,
-                            candidates,
-                            counters.get(employee_name, 0),
-                            [
-                                "смена относится к Хабаровску",
-                                "сотрудник активен и относится к локации Хабаровск",
-                                "на неделе у сотрудника нет отпуска",
-                                "сотрудник еще не назначен в другую дежурную смену этой недели",
-                                *self._newcomer_reasons(shift_code, "khabarovsk"),
-                                "выбран сотрудник с наименьшим количеством дежурных блоков в месяце и минимальной текущей нагрузкой среди доступных кандидатов",
-                            ],
-                        )
-                    )
-                    counters[employee_name] += len(filled_days)
-                    current_month_duty_blocks[employee_name] += 1
-                    week_assigned.add(employee_name)
-                    monthly_shift_usage.setdefault(employee_name, set()).add(shift_code)
-
-            for shift_code in self._moscow_shift_order(previous_week_evening):
-                if shift_code in existing_week_assignments or shift_code in continued_assignments:
-                    continue
-                candidates = self._employee_candidates(
-                    grid,
-                    employees,
-                    counters,
-                    unavailable,
-                    week_assigned,
-                    location="moscow",
-                    allow_manager=False,
-                    shift_code=shift_code,
-                    monthly_shift_usage=monthly_shift_usage,
-                    previous_week_evening=previous_week_evening,
-                    current_week_evening=current_week_evening,
-                    current_week_day_primary_mpr=current_week_day_primary_mpr,
-                    current_month_duty_blocks=current_month_duty_blocks,
-                )
-                employee_name = candidates[0] if candidates else ""
-                if employee_name:
-                    filled_days = self._fill_days(assignments[employee_name], workday_numbers, shift_code)
-                    assignment_explanations.append(
-                        self._assignment_explanation(
-                            employee_name,
-                            shift_code,
-                            self._days_period(filled_days),
-                            filled_days,
-                            candidates,
-                            counters.get(employee_name, 0),
-                            [
-                                "смена относится к Москве",
-                                "сотрудник активен и относится к локации Москва",
-                                "на неделе у сотрудника нет отпуска",
-                                "сотрудник не является руководителем",
-                                "сотрудник еще не назначен в другую дежурную смену этой недели",
-                                "приоритет отдавался сотрудникам, которые еще не были в этой смене в текущем месяце",
-                                *self._evening_reasons(shift_code),
-                                *self._newcomer_reasons(shift_code, "moscow"),
-                                "выбран сотрудник с наименьшим количеством дежурных блоков в месяце и минимальной текущей нагрузкой среди доступных кандидатов",
-                            ],
-                        )
-                    )
-                    counters[employee_name] += len(filled_days)
-                    current_month_duty_blocks[employee_name] += 1
-                    week_assigned.add(employee_name)
-                    monthly_shift_usage.setdefault(employee_name, set()).add(shift_code)
-                    if shift_code in EVENING_SHIFT_CODES:
-                        current_week_evening.add(employee_name)
-                    if self._is_day_primary_mpr(employee_name, shift_code, employees):
-                        current_week_day_primary_mpr.add(employee_name)
-
-            for row in grid.employees:
-                employee = employees.get(row.employee_name)
-                if employee is None or employee.location != "moscow":
-                    continue
-                if row.employee_name in week_assigned:
-                    continue
-                filled_days = []
-                for day in workday_numbers:
-                    if not assignments[row.employee_name].get(day):
-                        assignments[row.employee_name][day] = "8"
-                        filled_days.append(day)
-                if filled_days:
-                    assignment_explanations.append(
-                        self._assignment_explanation(
-                            row.employee_name,
-                            "8",
-                            self._days_period(filled_days),
-                            filled_days,
-                            [row.employee_name],
-                            counters.get(row.employee_name, 0),
-                            [
-                                "сотрудник активен и относится к Москве",
-                                "сотрудник не занят дежурной сменой на этой неделе",
-                                "основная смена 8 используется для свободных рабочих дней",
-                            ],
-                        )
-                    )
-
-            previous_week_evening = current_week_evening
-
-        rows = [
-            ScheduleRow(row.employee_name, self._calculate_hours(assignments[row.employee_name]), assignments[row.employee_name])
-            for row in grid.employees
-        ]
-        return ScheduleGrid(grid.title, grid.year, grid.month, grid.days, rows), assignment_explanations
+        planner = MonthPlanner(
+            PlannerDependencies(
+                audit_builder=self.audit_builder,
+                candidate_generator=self.candidate_generator,
+                employee_rules=self.employee_rules,
+                holiday_work_code=HOLIDAY_WORK_CODE,
+                khabarovsk_shifts=KHABAROVSK_SHIFTS,
+                evening_shift_codes=EVENING_SHIFT_CODES,
+                weekend_codes=WEEKEND_CODES,
+                week_groups=self._week_groups,
+                moscow_shift_order=self._moscow_shift_order,
+                is_holiday_day=self._is_holiday_day,
+                is_absence=self._is_absence,
+                existing_shift_workers=self._existing_shift_workers,
+                existing_week_assignments=self._existing_week_assignments,
+                continued_week_assignments=self._continued_week_assignments,
+                fill_days=self._fill_days,
+                fill_days_until_stop=self._fill_days_until_stop,
+                calculate_hours=self._calculate_hours,
+                days_period=self._days_period,
+                newcomer_reasons=self._newcomer_reasons,
+                evening_reasons=self._evening_reasons,
+            )
+        )
+        return planner.plan(context, previous_week_evening, progress)
 
     def _pick_employee(
         self,
@@ -398,6 +212,8 @@ class ScheduleAutoplanService:
         current_week_evening: Set[str] = None,
         current_week_day_primary_mpr: Set[str] = None,
         current_month_duty_blocks: Dict[str, int] = None,
+        newcomer_shift_history: Dict[str, Set[str]] = None,
+        previous_week_shift_workers: Dict[str, Set[str]] = None,
     ) -> str:
         candidates = self._employee_candidates(
             grid,
@@ -413,6 +229,8 @@ class ScheduleAutoplanService:
             current_week_evening,
             current_week_day_primary_mpr,
             current_month_duty_blocks,
+            newcomer_shift_history,
+            previous_week_shift_workers,
         )
         return candidates[0] if candidates else ""
 
@@ -431,52 +249,27 @@ class ScheduleAutoplanService:
         current_week_evening: Set[str] = None,
         current_week_day_primary_mpr: Set[str] = None,
         current_month_duty_blocks: Dict[str, int] = None,
+        newcomer_shift_history: Dict[str, Set[str]] = None,
+        previous_week_shift_workers: Dict[str, Set[str]] = None,
     ) -> List[str]:
-        monthly_shift_usage = monthly_shift_usage or {}
-        previous_week_evening = previous_week_evening or set()
-        current_week_evening = current_week_evening or set()
-        current_week_day_primary_mpr = current_week_day_primary_mpr or set()
-        current_month_duty_blocks = current_month_duty_blocks or {}
-        candidates = []
-        for row in grid.employees:
-            employee = employees.get(row.employee_name)
-            if employee is None or employee.status != "active":
-                continue
-            if employee.location != location:
-                continue
-            if row.employee_name in unavailable or row.employee_name in week_assigned:
-                continue
-            if not allow_manager and self._is_manager(employee):
-                continue
-            candidates.append(row.employee_name)
-        if location == "moscow" and shift_code:
-            without_same_shift = [
-                name for name in candidates if shift_code not in monthly_shift_usage.get(name, set())
-            ]
-            if without_same_shift:
-                candidates = without_same_shift
-        if shift_code in EVENING_SHIFT_CODES:
-            without_previous_evening = [name for name in candidates if name not in previous_week_evening]
-            if without_previous_evening:
-                candidates = without_previous_evening
-            if self._has_mpr_evening_employee(current_week_evening, employees):
-                candidates = [name for name in candidates if not self._is_mpr_coordinator(employees[name])]
-            if current_week_day_primary_mpr:
-                without_mpr = [name for name in candidates if not self._is_mpr_coordinator(employees[name])]
-                if without_mpr:
-                    candidates = without_mpr
-        if self._should_avoid_newcomers(shift_code, location, employees):
-            without_newcomers = [name for name in candidates if not self._is_newcomer(employees[name])]
-            if without_newcomers:
-                candidates = without_newcomers
-        return sorted(
-            candidates,
-            key=lambda name: (
-                current_month_duty_blocks.get(name, 0),
-                self._evening_mpr_priority(employees[name], shift_code),
-                counters.get(name, 0),
-                name,
-            ),
+        return self.candidate_generator.weekday_candidates(
+            WeekdayCandidateRequest(
+                grid=grid,
+                employees=employees,
+                counters=counters,
+                unavailable=unavailable,
+                week_assigned=week_assigned,
+                location=location,
+                allow_manager=allow_manager,
+                shift_code=shift_code,
+                monthly_shift_usage=monthly_shift_usage or {},
+                previous_week_evening=previous_week_evening or set(),
+                current_week_evening=current_week_evening or set(),
+                current_week_day_primary_mpr=current_week_day_primary_mpr or set(),
+                current_month_duty_blocks=current_month_duty_blocks or {},
+                newcomer_shift_history=newcomer_shift_history or {},
+                previous_week_shift_workers=previous_week_shift_workers or {},
+            )
         )
 
     def _pick_holiday_employee(
@@ -496,31 +289,21 @@ class ScheduleAutoplanService:
         holiday_work_counters: Dict[str, int],
         current_month_holiday_work_counts: Dict[str, int],
         unavailable: Set[str],
+        newcomer_shift_history: Dict[str, Set[str]] = None,
     ) -> List[str]:
-        candidates = []
-        for row in grid.employees:
-            employee = employees.get(row.employee_name)
-            if employee is None or employee.status != "active":
-                continue
-            if employee.location != "moscow":
-                continue
-            if row.employee_name in unavailable:
-                continue
-            if not employee.overtime_ready:
-                continue
-            candidates.append(row.employee_name)
-        return sorted(
-            candidates,
-            key=lambda name: (
-                current_month_holiday_work_counts.get(name, 0),
-                holiday_work_counters.get(name, 0),
-                self._holiday_work_manager_priority(employees[name]),
-                name,
-            ),
+        return self.candidate_generator.holiday_candidates(
+            HolidayCandidateRequest(
+                grid=grid,
+                employees=employees,
+                holiday_work_counters=holiday_work_counters,
+                current_month_holiday_work_counts=current_month_holiday_work_counts,
+                unavailable=unavailable,
+                newcomer_shift_history=newcomer_shift_history or {},
+            )
         )
 
     def _holiday_work_manager_priority(self, employee: Employee) -> int:
-        return 1 if self._is_manager(employee) else 0
+        return self.employee_rules.holiday_work_manager_priority(employee)
 
     def _existing_shift_workers(self, assignments: Dict[str, dict], day: int, shift_code: str) -> List[str]:
         workers = []
@@ -556,15 +339,38 @@ class ScheduleAutoplanService:
             return ("ВД", "ВР", "ДД", "ДР")
         return MOSCOW_DUTY_SHIFTS
 
-    def _fill_days(self, row_assignments: dict, days: List[int], shift_code: str) -> List[int]:
+    def _fill_days(
+        self,
+        row_assignments: dict,
+        days: List[int],
+        shift_code: str,
+        replace_default_shift: bool = False,
+    ) -> List[int]:
         filled_days = []
         for day in days:
             current_code = row_assignments.get(day, "")
-            if current_code or self._is_absence(current_code):
+            if current_code and not (
+                replace_default_shift and self._is_default_work_shift(current_code)
+            ):
                 continue
             row_assignments[day] = shift_code
             filled_days.append(day)
         return filled_days
+
+    def _fill_days_until_stop(
+        self,
+        row_assignments: dict,
+        days: List[int],
+        shift_code: str,
+    ) -> tuple[List[int], Optional[int], List[int]]:
+        filled_days: List[int] = []
+        for index, day in enumerate(days):
+            current_code = row_assignments.get(day, "")
+            if current_code and not self._is_default_work_shift(current_code):
+                return filled_days, day, days[index:]
+            row_assignments[day] = shift_code
+            filled_days.append(day)
+        return filled_days, None, []
 
     def _assigned_cells_count(self, before: ScheduleGrid, after: ScheduleGrid) -> int:
         before_by_name = {row.employee_name: row.assignments for row in before.employees}
@@ -581,7 +387,10 @@ class ScheduleAutoplanService:
         if snapshot is None:
             return {}
         target_index = grid.year * 12 + grid.month
-        previous_indexes = {target_index - offset for offset in range(1, 4)}
+        previous_indexes = {
+            target_index - offset
+            for offset in range(1, AUTOPLAN_CONTRACT.historical_load_months + 1)
+        }
         load: Dict[str, int] = {}
         for month in snapshot.month_schedules:
             try:
@@ -595,11 +404,16 @@ class ScheduleAutoplanService:
             except KeyError:
                 continue
             for row in history_grid.employees:
-                load[row.employee_name] = load.get(row.employee_name, 0) + sum(
-                    1
-                    for code in row.assignments.values()
-                    if self._normalize_load_code(code) in LOAD_SHIFT_CODES
-                )
+                blocks = set()
+                for schedule_day in history_grid.days:
+                    shift_code = self._normalize_load_code(row.assignments.get(schedule_day.day, ""))
+                    if shift_code not in LOAD_SHIFT_CODES:
+                        continue
+                    if shift_code == HOLIDAY_WORK_CODE:
+                        blocks.add((shift_code, schedule_day.date))
+                    else:
+                        blocks.add((shift_code, schedule_day.date.isocalendar()[:2]))
+                load[row.employee_name] = load.get(row.employee_name, 0) + len(blocks)
         return load
 
     def _historical_holiday_work_load(self, grid: ScheduleGrid) -> Dict[str, int]:
@@ -607,7 +421,10 @@ class ScheduleAutoplanService:
         if snapshot is None:
             return {}
         target_index = grid.year * 12 + grid.month
-        previous_indexes = {target_index - offset for offset in range(1, 4)}
+        previous_indexes = {
+            target_index - offset
+            for offset in range(1, AUTOPLAN_CONTRACT.historical_load_months + 1)
+        }
         load: Dict[str, int] = {}
         for month in snapshot.month_schedules:
             try:
@@ -627,6 +444,30 @@ class ScheduleAutoplanService:
                     if self._normalize_load_code(code) == HOLIDAY_WORK_CODE
                 )
         return load
+
+    def _historical_shift_codes(self, grid: ScheduleGrid) -> Dict[str, Set[str]]:
+        snapshot = self.schedule_service.get_current()
+        if snapshot is None:
+            return {}
+        target_index = grid.year * 12 + grid.month
+        shift_codes: Dict[str, Set[str]] = {}
+        for month in snapshot.month_schedules:
+            try:
+                month_index = int(month["year"]) * 12 + int(month["month"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if month_index >= target_index:
+                continue
+            try:
+                history_grid = snapshot.get_month_grid(str(month["sheet_name"]))
+            except KeyError:
+                continue
+            for row in history_grid.employees:
+                for code in row.assignments.values():
+                    normalized = self._normalize_load_code(code)
+                    if normalized in LOAD_SHIFT_CODES:
+                        shift_codes.setdefault(row.employee_name, set()).add(normalized)
+        return shift_codes
 
     def _continued_week_assignments(self, grid: ScheduleGrid, week_days: List) -> Dict[str, str]:
         if not grid.days or not week_days:
@@ -706,20 +547,10 @@ class ScheduleAutoplanService:
         shift = self.shift_service.lookup().get(code) or self.shift_service.lookup().get(code.lower())
         return shift.code if shift else code
 
-    def _should_avoid_newcomers(self, shift_code: str, location: str, employees: Dict[str, Employee]) -> bool:
-        if shift_code not in PRIMARY_DUTY_BY_LOCATION.get(location, set()):
-            return False
-        active_in_location = [
-            employee
-            for employee in employees.values()
-            if employee.status == "active" and employee.location == location and not self._is_manager(employee)
-        ]
-        return len(active_in_location) >= 2
-
     def _newcomer_reasons(self, shift_code: str, location: str) -> List[str]:
-        if shift_code not in PRIMARY_DUTY_BY_LOCATION.get(location, set()):
+        if shift_code not in DUTY_SHIFT_CODES:
             return []
-        return ["сотрудники с компетенцией Новичок не выбирались основным дежурным при наличии других сотрудников в локации"]
+        return ["Новичок выбирался только на смены, которые уже были у него в прошлых периодах"]
 
     def _evening_reasons(self, shift_code: str) -> List[str]:
         if shift_code not in EVENING_SHIFT_CODES:
@@ -732,9 +563,7 @@ class ScheduleAutoplanService:
         ]
 
     def _evening_mpr_priority(self, employee: Employee, shift_code: str) -> int:
-        if shift_code in EVENING_SHIFT_CODES and COMPETENCY_MPR_COORDINATOR in set(employee.competencies):
-            return 0
-        return 1
+        return self.employee_rules.evening_mpr_priority(employee, shift_code)
 
     def _has_mpr_evening_employee(self, employee_names: Set[str], employees: Dict[str, Employee]) -> bool:
         return any(
@@ -752,16 +581,15 @@ class ScheduleAutoplanService:
         load_before: int,
         reasons: List[str],
     ) -> dict:
-        return {
-            "employee_name": employee_name,
-            "shift_code": shift_code,
-            "shift_name": self._shift_name(shift_code),
-            "period": period,
-            "days": days,
-            "reason": "; ".join(reasons) + ".",
-            "candidate_count": len(candidates),
-            "load_before": load_before,
-        }
+        return self.audit_builder.assignment_explanation(
+            employee_name,
+            shift_code,
+            period,
+            days,
+            candidates,
+            load_before,
+            reasons,
+        )
 
     def _days_period(self, days: List[int]) -> str:
         if not days:
@@ -780,38 +608,15 @@ class ScheduleAutoplanService:
         assigned_cells_count: int,
         violation_count: int,
         assignment_explanations: List[dict],
+        stop_cells: List[dict] = None,
     ) -> dict:
-        return {
-            "source": "autoplanner",
-            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "title": "График сформирован автопланировщиком",
-            "summary": (
-                f"Автопланировщик заполнил {assigned_cells_count} ячеек по справочникам сотрудников, "
-                "смен и текущим правилам проверки графика, не изменяя уже внесенные назначения."
-            ),
-            "reasons": [
-                "Перед запуском пользователь подтвердил, что отпуска и праздничные дни на месяц внесены.",
-                "Уже начатые вручную недельные смены сохранялись и дозаполнялись тем же сотрудником.",
-                "Сотрудники с отпуском на неделе не назначались в дежурные смены этой недели.",
-                "Смены Москвы и Хабаровска назначались только сотрудникам соответствующей локации.",
-                "Если недельный блок начинался в предыдущем месяце, сотрудники продолжали свои смены в первой неполной неделе нового месяца.",
-                "Нагрузка кандидатов учитывала дежурные смены за три предыдущих месяца.",
-                "При выборе кандидатов сначала выравнивалось количество дежурных блоков в текущем месяце.",
-                "Московский сотрудник не назначался в одну и ту же дежурную смену более одного раза за месяц при наличии альтернатив.",
-                "Вечерние смены ВД/ВР не назначались сотруднику две недели подряд при наличии альтернатив, включая переход между месяцами.",
-                "При назначении ВД/ВР приоритет отдавался сотрудникам с компетенцией МПР-координатор, но не назначались два МПР-координатора одновременно.",
-                "Если МПР-координатор назначался в ДД, другой МПР-координатор не назначался в вечернюю смену этой же недели при наличии альтернатив.",
-                "Сотрудники с компетенцией Новичок не назначались основным дежурным, если в локации есть другие сотрудники.",
-                "Руководитель не назначался в дежурные смены и оставался доступен только для основной смены 8.",
-                "На каждый выходной или праздничный день назначался один ВХ с учетом готовности к сверхурочке, ВХ за три предыдущих месяца и ВХ в текущем месяце.",
-                "Руководитель допускался к ВХ только с наименьшим приоритетом.",
-                "После заполнения часы были пересчитаны, а график проверен стандартным валидатором.",
-            ],
-            "violation_count": violation_count,
-            "year": grid.year,
-            "month": grid.month,
-            "assignment_explanations": assignment_explanations,
-        }
+        return self.audit_builder.build_artifact(
+            grid,
+            assigned_cells_count,
+            violation_count,
+            assignment_explanations,
+            stop_cells,
+        )
 
     def _has_holidays(self, grid: ScheduleGrid) -> bool:
         return any(self._is_holiday(value) for row in grid.employees for value in row.assignments.values())
@@ -825,18 +630,20 @@ class ScheduleAutoplanService:
     def _is_absence(self, value: object) -> bool:
         return self._code_key(value) in {"о", "отпуск"}
 
+    def _is_default_work_shift(self, value: object) -> bool:
+        return self._code_key(value) == "8"
+
     def _is_manager(self, employee: Employee) -> bool:
-        return employee.role == "manager" or COMPETENCY_MANAGER in set(employee.competencies)
+        return self.employee_rules.is_manager(employee)
 
     def _is_newcomer(self, employee: Employee) -> bool:
-        return COMPETENCY_NEWCOMER in set(employee.competencies)
+        return self.employee_rules.is_newcomer(employee)
 
     def _is_mpr_coordinator(self, employee: Employee) -> bool:
-        return COMPETENCY_MPR_COORDINATOR in set(employee.competencies)
+        return self.employee_rules.is_mpr_coordinator(employee)
 
     def _is_day_primary_mpr(self, employee_name: str, shift_code: str, employees: Dict[str, Employee]) -> bool:
-        employee = employees.get(employee_name)
-        return shift_code == "ДД" and employee is not None and self._is_mpr_coordinator(employee)
+        return self.employee_rules.is_day_primary_mpr(employee_name, shift_code, employees)
 
     def _calculate_hours(self, assignments: dict) -> int:
         lookup = self.shift_service.lookup()

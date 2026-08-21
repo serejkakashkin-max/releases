@@ -519,6 +519,41 @@ https://www.consultant.ru/law/ref/calendar/proizvodstvennye/2027/
 
 Анализирует пример истории из `sample_data/june_2026_history.csv`.
 
+### POST `/api/schedule/autoplan`
+
+Запускает автопланирование месяца как фоновую задачу с журналом выполнения.
+
+Пример запроса:
+
+```json
+{
+  "sheet_name": "Сентябрь 2026",
+  "year": 2026,
+  "month": 9,
+  "vacations_confirmed": true
+}
+```
+
+Пример успешного ответа:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "job_id": "b5f0...",
+    "status": "running"
+  },
+  "error": null,
+  "meta": {}
+}
+```
+
+### GET `/api/schedule/autoplan/{job_id}`
+
+Возвращает состояние фоновой задачи автопланирования и список уже выполненных шагов.
+
+Когда задача завершена, ответ содержит `redirect_url` для перехода на обновленный график с итоговым сообщением.
+
 ### GET `/api/sample-july-validation`
 
 Проверяет пример июльского графика из `sample_data/july_2026_expected_weekends.csv`.

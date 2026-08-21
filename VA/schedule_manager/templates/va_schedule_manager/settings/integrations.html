@@ -3,10 +3,10 @@
 {% set active_page = "integrations" %}
 
 {% block title %}Настройки · Интеграции{% endblock %}
-{% block page_title %}Настройки АС{% endblock %}
-{% block page_subtitle %}Интеграции с внешними источниками{% endblock %}
+{% set oplot_page_title = 'Настройки АС' %}
+{% set oplot_page_description = 'Интеграции с внешними источниками' %}
 
-{% block content %}
+{% block va_body %}
   <section class="panel page-control-panel">
     {% call section_header("Производственный календарь", "Используется при создании новых графиков.") %}
       <a class="button button-light button-compact" href="{{ va_url_for('va_schedule_manager.settings.integrations') }}">Обновить</a>
