@@ -24,9 +24,21 @@ def test_autoplan_audit_builds_assignment_explanation():
         "period": "1-5 числа",
         "days": [1, 2, 3, 4, 5],
         "reason": "сотрудник доступен; нагрузка минимальна.",
+        "short_reason": "",
         "candidate_count": 2,
         "load_before": 7,
     }
+
+
+def test_autoplan_audit_assignment_explanation_accepts_headline():
+    audit = AutoplanAuditBuilder(lambda code: code)
+
+    explanation = audit.assignment_explanation(
+        "Фисан К.Ю.", "ДД", "1-5 числа", [1, 2, 3, 4, 5], [], 0, [],
+        headline="Смену поставил автопланировщик.",
+    )
+
+    assert explanation["short_reason"] == "Смену поставил автопланировщик."
 
 
 def test_autoplan_audit_builds_artifact_with_reasons_and_stop_cells():

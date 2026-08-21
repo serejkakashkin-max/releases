@@ -17,6 +17,8 @@ class AutoplanAuditBuilder:
         candidates: List[str],
         load_before: int,
         reasons: List[str],
+        *,
+        headline: str = "",
     ) -> dict:
         return {
             "employee_name": employee_name,
@@ -25,6 +27,7 @@ class AutoplanAuditBuilder:
             "period": period,
             "days": days,
             "reason": "; ".join(reasons) + ".",
+            "short_reason": headline,
             "candidate_count": len(candidates),
             "load_before": load_before,
         }

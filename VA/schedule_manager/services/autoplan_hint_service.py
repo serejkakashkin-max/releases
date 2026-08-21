@@ -60,6 +60,7 @@ def normalize_autoplan_artifact(
                 "period": _clean_text(raw.get("period"), 200),
                 "days": explanation_days,
                 "reason": _clean_text(raw.get("reason"), 1200),
+                "short_reason": _clean_text(raw.get("short_reason"), 400),
                 "candidate_count": _non_negative_int(
                     raw.get("candidate_count")
                 ),
@@ -165,6 +166,16 @@ def build_autoplan_stop_cells(artifact: Any) -> dict:
 
 
 def autoplan_hint_text(explanation: dict) -> str:
+    shift_code = str(explanation.get("shift_code") or "").strip()
+    shift_name = str(explanation.get("shift_name") or "").strip()
+    period = str(explanation.get("period") or "").strip()
+    short_reason = str(explanation.get("short_reason") or "").strip()
+    if not short_reason:
+        short_reason = "Смену поставил автопланировщик; подробности — у руководителя."
+    return f"Автоплан: {shift_name} ({shift_code}), {period}. {short_reason}"
+
+
+def autoplan_hint_full_text(explanation: dict) -> str:
     shift_code = str(explanation.get("shift_code") or "").strip()
     shift_name = str(explanation.get("shift_name") or "").strip()
     period = str(explanation.get("period") or "").strip()

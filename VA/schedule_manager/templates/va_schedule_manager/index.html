@@ -452,6 +452,7 @@
                   <article>
                     <strong>{{ explanation.shift_code }} · {{ explanation.employee_name }}</strong>
                     <span>{{ explanation.period }}{% if explanation.shift_name %} · {{ explanation.shift_name }}{% endif %}</span>
+                    {% if explanation.short_reason %}<strong>{{ explanation.short_reason }}</strong>{% endif %}
                     <p>{{ explanation.reason }}</p>
                     <small>Кандидатов: {{ explanation.candidate_count }} · нагрузка до назначения: {{ explanation.load_before }}</small>
                   </article>

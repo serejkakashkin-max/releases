@@ -8,6 +8,8 @@ from datetime import date
 from pathlib import Path
 from unittest.mock import patch
 
+from flask import Flask, render_template_string
+
 from tests._support import PROJECT_ROOT
 from VA.schedule_manager.models.employee import Employee
 from VA.schedule_manager.models.integration_settings import CalendarIntegrationSettings
@@ -16,6 +18,8 @@ from VA.schedule_manager.models.schedule_snapshot import ScheduleSnapshot, grid_
 from VA.schedule_manager.services import calendar_integration_service as calendar_module
 from VA.schedule_manager.services import schedule_display_service as display_module
 from VA.schedule_manager.services.autoplan_hint_service import (
+    autoplan_hint_full_text,
+    autoplan_hint_text,
     build_autoplan_stop_cells,
     normalize_autoplan_artifact,
 )
@@ -26,6 +30,103 @@ from VA.schedule_manager.services.schedule_edit_service import (
     ScheduleEditValidationError,
 )
 from VA.schedule_manager.services.schedule_month_service import ScheduleMonthService
+
+
+def test_autoplan_hint_text_uses_short_reason():
+    explanation = {
+        "shift_name": "Дневной дежурный",
+        "shift_code": "ДД",
+        "period": "1–5 числа",
+        "short_reason": "У вас одна из самых низких нагрузок.",
+        "reason": "полная трассировка",
+        "candidate_count": 5,
+        "load_before": 2,
+    }
+
+    assert autoplan_hint_text(explanation) == (
+        "Автоплан: Дневной дежурный (ДД), 1–5 числа. У вас одна из самых низких нагрузок."
+    )
+
+
+def test_autoplan_hint_text_uses_fallback_without_short_reason():
+    explanation = {"shift_name": "Дневной дежурный", "shift_code": "ДД", "period": "1–5 числа"}
+
+    assert autoplan_hint_text(explanation) == (
+        "Автоплан: Дневной дежурный (ДД), 1–5 числа. "
+        "Смену поставил автопланировщик; подробности — у руководителя."
+    )
+
+
+def test_normalized_legacy_artifact_keeps_a_nonempty_short_hint():
+    artifact = normalize_autoplan_artifact(
+        {
+            "source": "autoplanner",
+            "year": 2026,
+            "month": 9,
+            "assignment_explanations": [
+                {
+                    "employee_name": "Сотрудник С.С.",
+                    "shift_code": "ДД",
+                    "shift_name": "Дневной дежурный",
+                    "period": "1–5 числа",
+                    "days": [1, 2, 3, 4, 5],
+                    "reason": "Старая полная трассировка.",
+                }
+            ],
+        },
+        year=2026,
+        month=9,
+        employee_names=["Сотрудник С.С."],
+        valid_days=[1, 2, 3, 4, 5],
+    )
+
+    explanation = artifact["assignment_explanations"][0]
+    assert explanation["short_reason"] == ""
+    assert autoplan_hint_text(explanation) == (
+        "Автоплан: Дневной дежурный (ДД), 1–5 числа. "
+        "Смену поставил автопланировщик; подробности — у руководителя."
+    )
+
+
+def test_short_reason_is_escaped_and_precedes_the_full_reason_in_template():
+    template = (
+        PROJECT_ROOT / "VA/schedule_manager/templates/va_schedule_manager/index.html"
+    ).read_text(encoding="utf-8")
+    short_reason_line = "{% if explanation.short_reason %}<strong>{{ explanation.short_reason }}</strong>{% endif %}"
+
+    assert short_reason_line in template
+    assert template.index(short_reason_line) < template.index("<p>{{ explanation.reason }}</p>")
+    assert "{{ explanation.short_reason|safe }}" not in template
+
+    app = Flask(__name__)
+    with app.app_context():
+        rendered = render_template_string(
+            "{% if explanation.short_reason %}<strong>{{ explanation.short_reason }}</strong>{% endif %}",
+            explanation={"short_reason": 'Смена "ДД" <важная>'},
+        )
+        empty_rendered = render_template_string(
+            "{% if explanation.short_reason %}<strong>{{ explanation.short_reason }}</strong>{% endif %}",
+            explanation={"short_reason": ""},
+        )
+
+    assert rendered == "<strong>Смена &#34;ДД&#34; &lt;важная&gt;</strong>"
+    assert empty_rendered == ""
+
+
+def test_autoplan_hint_full_text_keeps_previous_hint_format():
+    explanation = {
+        "shift_name": "Дневной дежурный",
+        "shift_code": "ДД",
+        "period": "1–5 числа",
+        "reason": "полная трассировка",
+        "candidate_count": 5,
+        "load_before": 2,
+    }
+
+    assert autoplan_hint_full_text(explanation) == (
+        "Автоплан: ДД · Дневной дежурный 1–5 числа полная трассировка "
+        "Кандидатов: 5; нагрузка до назначения: 2."
+    )
 
 
 class _SettingsRepository:
