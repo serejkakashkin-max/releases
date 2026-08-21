@@ -118,7 +118,8 @@
             defaults: {},
             employees: {}
           },
-          competencies: { status: "missing", etag: "missing", items: [] }
+          competencies: { status: "missing", etag: "missing", items: [] },
+          newcomerAlerts: { status: "unavailable", items: [] }
         },
         vaDrafts: {},
         competencyModal: { code: "", mode: "add" },
@@ -1872,11 +1873,29 @@
         state.va = {
           directory: clone(payload.directory || {}),
           settings: clone(payload.settings || {}),
-          competencies: clone(payload.competencies || {})
+          competencies: clone(payload.competencies || {}),
+          newcomerAlerts: clone(payload.newcomer_alerts || { status: "unavailable", items: [] })
         };
         renderDirectoryEmployees();
         renderCompetencies();
+        renderNewcomerAlerts();
         showDirectoryView(state.directoryView);
+      }
+
+      function renderNewcomerAlerts() {
+        const banner = $("vaNewcomerAlerts");
+        const items = state.va.newcomerAlerts?.items || [];
+        if (!banner || state.va.newcomerAlerts?.status !== "available" || !items.length) {
+          if (banner) {
+            banner.style.display = "none";
+            banner.textContent = "";
+          }
+          return;
+        }
+        banner.style.display = "block";
+        banner.innerHTML = `<strong>Проверьте статус новичка:</strong><ul>${items.map((item) => `
+          <li><button type="button" class="link-button" data-newcomer-alert-employee="${escapeAttr(item.employee_id)}">Сотрудник ${escapeHtml(item.employee_name)} числится новичком уже ${escapeHtml(item.months_passed)} мес. — возможно, стоит снять статус</button></li>
+        `).join("")}</ul>`;
       }
 
       async function loadVaScheduleManagerData() {
@@ -2379,6 +2398,23 @@
           state.directory.filter = directoryFilter.dataset.directoryFilter;
           document.querySelectorAll("[data-directory-filter]").forEach((button) => button.classList.toggle("active", button === directoryFilter));
           applyDirectoryNavigationFilter();
+        }
+
+        const newcomerAlert = event.target.closest("[data-newcomer-alert-employee]");
+        if (newcomerAlert) {
+          const employeeId = newcomerAlert.dataset.newcomerAlertEmployee;
+          const index = (state.directory.employees || []).findIndex(
+            (employee) => String(employee.employee_id || "") === String(employeeId)
+          );
+          if (index < 0) {
+            setStatus("Сотрудник не найден в текущем справочнике.", "error");
+          } else {
+            showDirectoryView("employees");
+            state.directory.selectedIndex = index;
+            renderDirectoryEmployees();
+            document.querySelector(`[data-directory-employee="${index}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+          return;
         }
 
         const directoryEmployee = event.target.closest("[data-select-directory-employee]");

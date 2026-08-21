@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from datetime import date
 from typing import Any, Dict
 
 from services.employee_directory_service import (
@@ -19,6 +20,17 @@ from VA.schedule_manager.repositories.managed_employee_repository import (
     ManagedEmployeeRepository,
 )
 from VA.schedule_manager.services.competency_service import CompetencyService
+from VA.schedule_manager.repositories.schedule_repository import ScheduleRepository
+from VA.schedule_manager.repositories.shift_repository import ShiftRepository
+from VA.schedule_manager.services.newcomer_status_service import build_newcomer_alerts
+from VA.schedule_manager.services.schedule_service import ScheduleService
+from VA.schedule_manager.services.shift_service import ShiftService
+
+
+def _normalize_load_code(value: object, shift_lookup: dict) -> str:
+    code = " ".join(str(value or "").strip().split())
+    shift = shift_lookup.get(code) or shift_lookup.get(code.lower())
+    return shift.code if shift else code
 
 
 def build_va_schedule_manager_admin_data(
@@ -61,6 +73,22 @@ def build_va_schedule_manager_admin_data(
         CompetencyRepository(),
         ManagedEmployeeRepository(),
     )
+    if resolved.status != "available":
+        newcomer_alerts = {"status": "unavailable", "items": []}
+    else:
+        try:
+            schedule_service = ScheduleService(ScheduleRepository())
+            shift_service = ShiftService(ShiftRepository())
+            shift_lookup = shift_service.lookup()
+            newcomer_alerts = build_newcomer_alerts(
+                schedule_service.get_current(),
+                ManagedEmployeeRepository().load_all(),
+                lambda value: _normalize_load_code(value, shift_lookup),
+                date.today().year,
+                date.today().month,
+            )
+        except Exception:
+            newcomer_alerts = {"status": "unavailable", "items": []}
     return {
         "success": True,
         "directory": {
@@ -80,4 +108,5 @@ def build_va_schedule_manager_admin_data(
             "employees": employees,
         },
         "competencies": competency_service.admin_snapshot(),
+        "newcomer_alerts": newcomer_alerts,
     }
