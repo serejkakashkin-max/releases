@@ -17,6 +17,7 @@ from VA.schedule_manager.services.autoplan_hint_service import (
     build_autoplan_hints,
     normalize_autoplan_artifact,
 )
+from VA.schedule_manager.services.employee_identity import sorted_dict_rows_by_directory
 
 
 PROVIDER_CONTRACT = "provider-contract:v1"
@@ -648,7 +649,7 @@ class ReleaseMonitorDutyProvider:
                 "month": month["month"],
                 "label": month["label"],
                 "days": copy.deepcopy(month["days"]),
-                "employees": display_rows,
+                "employees": sorted_dict_rows_by_directory(display_rows),
                 "shifts": copy.deepcopy(shifts),
                 "autoplan_artifact": copy.deepcopy(
                     month.get("autoplan_artifact") or {}

@@ -60,6 +60,7 @@ def normalize_autoplan_artifact(
                 "period": _clean_text(raw.get("period"), 200),
                 "days": explanation_days,
                 "reason": _clean_text(raw.get("reason"), 1200),
+                "short_reason": _clean_text(raw.get("short_reason"), 400),
                 "candidate_count": _non_negative_int(
                     raw.get("candidate_count")
                 ),
@@ -67,6 +68,33 @@ def normalize_autoplan_artifact(
             }
         )
         if len(explanations) >= 5000:
+            break
+
+    stop_cells = []
+    raw_stop_cells = value.get("stop_cells")
+    if not isinstance(raw_stop_cells, list):
+        raw_stop_cells = []
+    for raw in raw_stop_cells:
+        if not isinstance(raw, dict):
+            continue
+        employee_name = _clean_text(raw.get("employee_name"), 300)
+        if not employee_name or employee_name not in employees:
+            continue
+        try:
+            day = int(raw.get("day"))
+        except (TypeError, ValueError):
+            continue
+        if day not in days:
+            continue
+        stop_cells.append(
+            {
+                "employee_name": employee_name,
+                "day": day,
+                "shift_code": _clean_text(raw.get("shift_code"), 80),
+                "message": _clean_text(raw.get("message"), 1200),
+            }
+        )
+        if len(stop_cells) >= 500:
             break
 
     reasons = []
@@ -80,6 +108,54 @@ def normalize_autoplan_artifact(
         if len(reasons) >= 50:
             break
 
+    capacity_diagnostics = {}
+    raw_capacity = value.get("capacity_diagnostics")
+    if isinstance(raw_capacity, dict):
+        overloaded_assignments = []
+        raw_overloaded = raw_capacity.get("overloaded_assignments")
+        if isinstance(raw_overloaded, list):
+            for raw in raw_overloaded[:200]:
+                if not isinstance(raw, dict):
+                    continue
+                employee_name = _clean_text(raw.get("employee_name"), 300)
+                if not employee_name or employee_name not in employees:
+                    continue
+                other_candidates = []
+                raw_others = raw.get("other_candidates")
+                if isinstance(raw_others, list):
+                    for other in raw_others:
+                        if not isinstance(other, dict):
+                            continue
+                        name = _clean_text(other.get("name"), 300)
+                        if not name or name not in employees:
+                            continue
+                        item = {"name": name}
+                        if "historical_load" in other:
+                            item["historical_load"] = _non_negative_int(other.get("historical_load"))
+                        if "current_month_blocks" in other:
+                            item["current_month_blocks"] = _non_negative_int(other.get("current_month_blocks"))
+                        other_candidates.append(item)
+                        if len(other_candidates) >= 5:
+                            break
+                overloaded_assignments.append({
+                    "employee_name": employee_name,
+                    "shift_code": _clean_text(raw.get("shift_code"), 80),
+                    "period": _clean_text(raw.get("period"), 200),
+                    "blocks_before": _non_negative_int(raw.get("blocks_before")),
+                    "candidate_count": _non_negative_int(raw.get("candidate_count")),
+                    "historical_load": _non_negative_int(raw.get("historical_load")),
+                    "other_candidates": other_candidates,
+                })
+        warnings = []
+        raw_warnings = raw_capacity.get("warnings")
+        if isinstance(raw_warnings, list):
+            for raw_warning in raw_warnings[:60]:
+                warning = _clean_text(raw_warning, 1200)
+                if warning:
+                    warnings.append(warning)
+        if overloaded_assignments or warnings:
+            capacity_diagnostics = {"overloaded_assignments": overloaded_assignments, "warnings": warnings}
+
     return {
         "source": "autoplanner",
         "created_at": _clean_text(value.get("created_at"), 80),
@@ -91,6 +167,8 @@ def normalize_autoplan_artifact(
         "year": artifact_year,
         "month": artifact_month,
         "assignment_explanations": explanations,
+        "stop_cells": stop_cells,
+        "capacity_diagnostics": capacity_diagnostics,
     }
 
 
@@ -117,7 +195,36 @@ def build_autoplan_hints(artifact: Any) -> dict:
     return hints
 
 
+def build_autoplan_stop_cells(artifact: Any) -> dict:
+    if not isinstance(artifact, dict):
+        return {}
+    cells = {}
+    for stop_cell in artifact.get("stop_cells") or []:
+        if not isinstance(stop_cell, dict):
+            continue
+        employee_name = str(stop_cell.get("employee_name") or "").strip()
+        if not employee_name:
+            continue
+        try:
+            day = int(stop_cell.get("day"))
+        except (TypeError, ValueError):
+            continue
+        message = str(stop_cell.get("message") or "").strip()
+        cells[f"{employee_name}|{day}"] = message
+    return cells
+
+
 def autoplan_hint_text(explanation: dict) -> str:
+    shift_code = str(explanation.get("shift_code") or "").strip()
+    shift_name = str(explanation.get("shift_name") or "").strip()
+    period = str(explanation.get("period") or "").strip()
+    short_reason = str(explanation.get("short_reason") or "").strip()
+    if not short_reason:
+        short_reason = "Смену поставил автопланировщик; подробности — у руководителя."
+    return f"Автоплан: {shift_name} ({shift_code}), {period}. {short_reason}"
+
+
+def autoplan_hint_full_text(explanation: dict) -> str:
     shift_code = str(explanation.get("shift_code") or "").strip()
     shift_name = str(explanation.get("shift_name") or "").strip()
     period = str(explanation.get("period") or "").strip()

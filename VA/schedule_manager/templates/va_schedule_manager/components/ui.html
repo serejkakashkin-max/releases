@@ -15,13 +15,13 @@
 {% endmacro %}
 
 {% macro status_badge(text, kind="success") %}
-  <span class="badge badge-{{ kind }}">{{ text }}</span>
+  <span class="va-badge va-badge-{{ kind }}">{{ text }}</span>
 {% endmacro %}
 
 {% macro modal(title, subtitle, close_href, title_id, class_name="", caller=None) %}
-  <div class="modal-backdrop" role="presentation" data-modal-backdrop data-close-href="{{ close_href }}">
-    <section class="modal-dialog {{ class_name }}" role="dialog" aria-modal="true" aria-labelledby="{{ title_id }}" tabindex="-1" data-modal>
-      <div class="modal-header">
+  <div class="va-modal-backdrop" role="presentation" data-modal-backdrop data-close-href="{{ close_href }}">
+    <section class="va-modal-dialog {{ class_name }}" role="dialog" aria-modal="true" aria-labelledby="{{ title_id }}" tabindex="-1" data-modal>
+      <div class="va-modal-header">
         <div>
           <h2 id="{{ title_id }}">{{ title }}</h2>
           {% if subtitle %}

@@ -4,10 +4,18 @@ import hashlib
 import os
 import re
 import subprocess
+import tempfile
 import unittest
+from datetime import date
+from pathlib import Path
 from unittest import mock
 
 from flask import Flask
+
+from VA.schedule_manager.models.employee import Employee
+from VA.schedule_manager.models.schedule_grid import ScheduleDay, ScheduleGrid, ScheduleRow
+from VA.schedule_manager.models.schedule_snapshot import ScheduleSnapshot, grid_to_dict
+from VA.schedule_manager.repositories.shift_repository import ShiftRepository
 
 from tests._support import PROJECT_ROOT, prepare_config_import
 
@@ -17,6 +25,7 @@ from routes.sup_admin_session_routes import sup_admin_session_bp
 from routes.sup_parameters_routes import sup_parameters_bp
 from services.oplot_ui_service import register_oplot_ui
 from services.sup_ui_service import build_sup_admin_ui_config
+from services.va_schedule_manager_admin_service import build_va_schedule_manager_admin_data
 
 
 TEMPLATE = PROJECT_ROOT / "templates" / "sup_parameters.html"
@@ -51,6 +60,165 @@ def build_app(*, with_schedule_manager: bool = False) -> Flask:
 
 
 class SupUiConfigTests(unittest.TestCase):
+    def test_va_admin_newcomer_alerts_are_unavailable_when_directory_is_unavailable(self):
+        """A partial VA backend must not show an alert without the directory."""
+        employee = Employee(
+            "Новичок Н.Н.",
+            employee_id="newcomer",
+            competencies=("newcomer",),
+        )
+        grid = ScheduleGrid(
+            "Январь 2026",
+            2026,
+            1,
+            [ScheduleDay(1, "чт", date(2026, 1, 1))],
+            [ScheduleRow(employee.name, 0, {1: "8"})],
+        )
+        snapshot = ScheduleSnapshot(
+            [employee], "", "", "", [{
+                "year": 2026, "month": 1, "sheet_name": grid.title,
+                "grid": grid_to_dict(grid),
+            }]
+        )
+        settings_snapshot = mock.Mock(
+            status="available", revision=1, etag="settings-etag",
+            payload={"migration": {"status": "not_required"}, "employees": {}},
+        )
+        unavailable_context = mock.Mock(
+            status="unavailable", revision=None, etag="", payload=None,
+        )
+        with (
+            mock.patch("services.va_schedule_manager_admin_service.EmployeeSettingsRepository") as settings_repo,
+            mock.patch("services.va_schedule_manager_admin_service.CompetencyService") as competency_service,
+            mock.patch("services.va_schedule_manager_admin_service.ManagedEmployeeRepository") as employee_repo,
+            mock.patch("services.va_schedule_manager_admin_service.ScheduleService") as schedule_service,
+            mock.patch("services.va_schedule_manager_admin_service.ShiftService") as shift_service,
+        ):
+            settings_repo.return_value.read.return_value = settings_snapshot
+            competency_service.return_value.admin_snapshot.return_value = {"status": "available", "items": []}
+            employee_repo.return_value.load_all.return_value = [employee]
+            schedule_service.return_value.get_current.return_value = snapshot
+            shift_service.return_value.lookup.return_value = {}
+            payload = build_va_schedule_manager_admin_data(unavailable_context)
+
+        self.assertEqual(
+            {"status": "unavailable", "items": []},
+            payload["newcomer_alerts"],
+        )
+        employee_repo.return_value.load_all.assert_not_called()
+        schedule_service.assert_not_called()
+        shift_service.assert_not_called()
+
+    def test_va_admin_newcomer_alerts_are_unavailable_for_non_available_directory_status(self):
+        settings_snapshot = mock.Mock(
+            status="available", revision=1, etag="settings-etag",
+            payload={"migration": {"status": "not_required"}, "employees": {}},
+        )
+        unavailable_context = mock.Mock(
+            status="degraded", revision=None, etag="", payload=None,
+        )
+        with (
+            mock.patch("services.va_schedule_manager_admin_service.EmployeeSettingsRepository") as settings_repo,
+            mock.patch("services.va_schedule_manager_admin_service.CompetencyService") as competency_service,
+            mock.patch("services.va_schedule_manager_admin_service.ManagedEmployeeRepository") as employee_repo,
+            mock.patch("services.va_schedule_manager_admin_service.ScheduleService") as schedule_service,
+            mock.patch("services.va_schedule_manager_admin_service.ShiftService") as shift_service,
+        ):
+            settings_repo.return_value.read.return_value = settings_snapshot
+            competency_service.return_value.admin_snapshot.return_value = {"status": "available", "items": []}
+            payload = build_va_schedule_manager_admin_data(unavailable_context)
+
+        self.assertEqual({"status": "unavailable", "items": []}, payload["newcomer_alerts"])
+        employee_repo.return_value.load_all.assert_not_called()
+        schedule_service.assert_not_called()
+        shift_service.assert_not_called()
+
+    def test_va_admin_newcomer_alerts_use_real_shift_service(self):
+        employee = Employee(
+            "Новичок Н.Н.",
+            employee_id="newcomer",
+            competencies=("newcomer",),
+        )
+        grid = ScheduleGrid(
+            "Январь 2026",
+            2026,
+            1,
+            [ScheduleDay(1, "чт", date(2026, 1, 1))],
+            [ScheduleRow(employee.name, 0, {1: "8"})],
+        )
+        snapshot = ScheduleSnapshot(
+            [employee],
+            "",
+            "",
+            "",
+            [{
+                "year": 2026,
+                "month": 1,
+                "sheet_name": grid.title,
+                "grid": grid_to_dict(grid),
+            }],
+        )
+        settings_snapshot = mock.Mock(
+            status="available",
+            revision=1,
+            etag="settings-etag",
+            payload={"migration": {"status": "not_required"}, "employees": {}},
+        )
+        context = mock.Mock(
+            status="available",
+            revision=2,
+            etag="directory-etag",
+            payload={"employees": []},
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            real_shift_repository = ShiftRepository(Path(temp_dir) / "shifts.json")
+            with (
+                mock.patch("services.va_schedule_manager_admin_service.EmployeeSettingsRepository") as settings_repo,
+                mock.patch("services.va_schedule_manager_admin_service.CompetencyService") as competency_service,
+                mock.patch("services.va_schedule_manager_admin_service.ManagedEmployeeRepository") as employee_repo,
+                mock.patch("services.va_schedule_manager_admin_service.ScheduleService") as schedule_service,
+                mock.patch(
+                    "services.va_schedule_manager_admin_service.ShiftRepository",
+                    return_value=real_shift_repository,
+                ),
+            ):
+                settings_repo.return_value.read.return_value = settings_snapshot
+                competency_service.return_value.admin_snapshot.return_value = {"status": "available", "items": []}
+                employee_repo.return_value.load_all.return_value = [employee]
+                schedule_service.return_value.get_current.return_value = snapshot
+                payload = build_va_schedule_manager_admin_data(context)
+
+        self.assertEqual("available", payload["newcomer_alerts"]["status"])
+        self.assertEqual(["newcomer"], [item["employee_id"] for item in payload["newcomer_alerts"]["items"]])
+
+    def test_va_admin_payload_keeps_existing_keys_and_adds_newcomer_alerts(self):
+        settings_snapshot = mock.Mock(
+            status="available",
+            revision=1,
+            etag="settings-etag",
+            payload={"migration": {"status": "not_required"}, "employees": {}},
+        )
+        context = mock.Mock(
+            status="available",
+            revision=2,
+            etag="directory-etag",
+            payload={"employees": []},
+        )
+        with (
+            mock.patch("services.va_schedule_manager_admin_service.EmployeeSettingsRepository") as settings_repo,
+            mock.patch("services.va_schedule_manager_admin_service.CompetencyService") as competency_service,
+            mock.patch("services.va_schedule_manager_admin_service.ManagedEmployeeRepository") as employee_repo,
+            mock.patch("services.va_schedule_manager_admin_service.ScheduleService") as schedule_service,
+            mock.patch("services.va_schedule_manager_admin_service.ShiftService") as shift_service,
+        ):
+            settings_repo.return_value.read.return_value = settings_snapshot
+            competency_service.return_value.admin_snapshot.return_value = {"status": "available", "items": []}
+            employee_repo.return_value.load_all.return_value = []
+            schedule_service.return_value.get_current.return_value = None
+            payload = build_va_schedule_manager_admin_data(context)
+        self.assertEqual({"status": "unavailable", "items": []}, payload["newcomer_alerts"])
+        self.assertEqual({"success", "directory", "settings", "competencies", "newcomer_alerts"}, set(payload))
+
     def test_prefix_safe_url_map_aliases_and_optional_schedule_manager(self):
         app = build_app(with_schedule_manager=True)
         cases = (

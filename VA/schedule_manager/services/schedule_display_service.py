@@ -2,13 +2,21 @@ from typing import Optional
 
 from VA.schedule_manager.services.schedule_service import ScheduleService
 from VA.schedule_manager.services.schedule_validator import build_validation_rules, validate_schedule
+from VA.schedule_manager.services.autoplan_contract import AUTOPLAN_CONTRACT
+from VA.schedule_manager.services.newcomer_history import collect_newcomer_shift_codes
+
+LOAD_SHIFT_CODES = set(AUTOPLAN_CONTRACT.load_shift_codes)
 from VA.schedule_manager.services.shift_service import ShiftService
 from VA.schedule_manager.services.autoplan_hint_service import (
     build_autoplan_hints,
+    build_autoplan_stop_cells,
     normalize_autoplan_artifact,
 )
 from VA.schedule_manager.repositories.managed_employee_repository import ManagedEmployeeRepository
+from VA.schedule_manager.repositories.integration_settings_repository import IntegrationSettingsRepository
+from VA.schedule_manager.services.calendar_integration_service import CalendarIntegrationService
 from VA.schedule_manager.services.employee_service import EmployeeService
+from VA.schedule_manager.services.employee_identity import sorted_rows_by_directory
 
 
 class ScheduleDisplayService:
@@ -101,7 +109,7 @@ class ScheduleDisplayService:
                 )
                 schedule_violations = validate_schedule(
                     schedule_grid,
-                    build_validation_rules(self.shift_service.list_shifts()),
+                    self._validation_rules(snapshot, schedule_grid),
                     self._previous_grid(snapshot, selected_year, selected_month),
                 )
             except KeyError as exc:
@@ -113,13 +121,7 @@ class ScheduleDisplayService:
         return {
             "schedule_grid": schedule_grid,
             "schedule_violations": schedule_violations,
-            "schedule_days_payload": [
-                {
-                    "day": day.day,
-                    "weekday": day.weekday,
-                }
-                for day in schedule_grid.days
-            ] if schedule_grid is not None else [],
+            "schedule_days_payload": self._schedule_days_payload(schedule_grid),
             "schedule_source": "Данные АС",
             "schedule_error": schedule_error,
             "workbook_path": None,
@@ -131,7 +133,23 @@ class ScheduleDisplayService:
             "selected_sheet_name": selected_option["sheet_name"] if selected_option is not None else None,
             "autoplan_artifact": autoplan_artifact,
             "autoplan_hints": build_autoplan_hints(autoplan_artifact),
+            "autoplan_stop_cells": build_autoplan_stop_cells(autoplan_artifact),
+            "validation_stop_cells": self._validation_stop_cells(schedule_violations),
         }
+
+    def _validation_rules(self, snapshot, grid):
+        def normalize_code(value):
+            code = " ".join(str(value or "").strip().split())
+            lookup = self.shift_service.lookup()
+            shift = lookup.get(code) or lookup.get(code.lower())
+            return shift.code if shift else code
+
+        history = collect_newcomer_shift_codes(snapshot, grid, normalize_code, LOAD_SHIFT_CODES)
+        return build_validation_rules(
+            self.shift_service.list_shifts(),
+            newcomer_allowed_shift_codes=history,
+            newcomer_trainee_shift_codes=set(AUTOPLAN_CONTRACT.newcomer_trainee_shift_codes),
+        )
 
     def _empty_context(self, schedule_source: str) -> dict:
         return {
@@ -149,7 +167,19 @@ class ScheduleDisplayService:
             "selected_sheet_name": None,
             "autoplan_artifact": {},
             "autoplan_hints": {},
+            "autoplan_stop_cells": {},
+            "validation_stop_cells": {},
         }
+
+    def _validation_stop_cells(self, violations: list) -> dict:
+        cells = {}
+        for violation in violations or []:
+            employee_name = getattr(violation, "employee_name", "") or ""
+            message = getattr(violation, "message", "") or ""
+            if not employee_name or "Переходящая смена" not in message:
+                continue
+            cells[f"{employee_name}|{violation.day}"] = message
+        return cells
 
     def _previous_grid(self, snapshot, year: int, month: int):
         target_index = int(year) * 12 + int(month)
@@ -166,27 +196,41 @@ class ScheduleDisplayService:
                 return None
         return None
 
+    def _schedule_days_payload(self, schedule_grid) -> list:
+        if schedule_grid is None:
+            return []
+
+        calendar_state = None
+        try:
+            calendar_state = CalendarIntegrationService(
+                IntegrationSettingsRepository()
+            ).load_calendar(schedule_grid.year, schedule_grid.month)
+        except Exception:
+            calendar_state = None
+
+        return [
+            {
+                "day": day.day,
+                "weekday": day.weekday,
+                "date": day.date.isoformat(),
+                "is_production_holiday": (
+                    bool(calendar_state and day.date in calendar_state.holidays)
+                ),
+                "calendar_source": calendar_state.source if calendar_state else "",
+                "calendar_warning": calendar_state.warning if calendar_state else "Не удалось проверить производственный календарь.",
+            }
+            for day in schedule_grid.days
+        ]
+
     def _sort_by_directory_order(self, grid):
         """Сортирует сотрудников по порядку из справочника."""
         if grid is None or not grid.employees:
             return grid
 
         try:
-            # Получаем активных сотрудников в порядке из справочника
-            directory_employees = [
-                emp.name
-                for emp in self.employee_service.list_employees()
-                if emp.status == "active"
-            ]
-
-            if not directory_employees:
-                return grid
-
-            # Сортируем по порядку из справочника
-            order_index = {name: idx for idx, name in enumerate(directory_employees)}
-            sorted_employees = sorted(
+            sorted_employees = sorted_rows_by_directory(
                 grid.employees,
-                key=lambda row: order_index.get(row.employee_name, len(order_index) + 1)
+                self.employee_service,
             )
 
             # Возвращаем новый грид с отсортированными сотрудниками

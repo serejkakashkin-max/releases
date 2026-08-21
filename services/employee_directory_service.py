@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -375,6 +376,7 @@ def resolve_historical_va_employee(
     needle = normalize_text(historical_name).casefold()
     if not needle:
         return IdentityResolution("unresolved")
+    compact_needle = _compact_identity_key(needle)
     matches = []
     for employee in _all_employees(context):
         current_values = {
@@ -391,6 +393,7 @@ def resolve_historical_va_employee(
             for source_ref in employee.get("source_refs") or []
             if source_ref.startswith("va:employees:")
         }
+        all_values = current_values | alias_values | source_values
         matched_by = ""
         if needle in current_values:
             matched_by = "current"
@@ -398,6 +401,12 @@ def resolve_historical_va_employee(
             matched_by = "alias"
         elif needle in source_values:
             matched_by = "source_ref"
+        elif compact_needle and compact_needle in {
+            _compact_identity_key(value) for value in all_values
+        }:
+            matched_by = "compact"
+        elif any(_person_name_compatible(needle, value) for value in all_values):
+            matched_by = "name_parts"
         if matched_by:
             matches.append((employee, matched_by))
     employee_ids = {employee["employee_id"] for employee, _ in matches}
@@ -489,6 +498,34 @@ def _match_identity(
 def _all_employees(context: EmployeeDirectoryRuntimeContext) -> List[Dict[str, Any]]:
     payload = context.payload or {}
     return list(payload.get("employees") or [])
+
+
+def _compact_identity_key(value: Any) -> str:
+    return re.sub(r"[^0-9a-zа-яё]", "", normalize_text(value).casefold())
+
+
+def _person_name_compatible(left: Any, right: Any) -> bool:
+    left_surname, left_initials = _person_name_parts(left)
+    right_surname, right_initials = _person_name_parts(right)
+    if not left_surname or left_surname != right_surname:
+        return False
+    if not left_initials or not right_initials:
+        return False
+    shortest = min(len(left_initials), len(right_initials))
+    return left_initials[:shortest] == right_initials[:shortest]
+
+
+def _person_name_parts(value: Any) -> tuple[str, tuple[str, ...]]:
+    tokens = [token for token in re.split(r"\s+", normalize_text(value)) if token]
+    if not tokens:
+        return "", ()
+    surname = _compact_identity_key(tokens[0])
+    initials = []
+    for token in tokens[1:]:
+        compact = _compact_identity_key(token)
+        if compact:
+            initials.append(compact[0])
+    return surname, tuple(initials)
 
 
 def _active_employees(context: EmployeeDirectoryRuntimeContext) -> List[Dict[str, Any]]:

@@ -1,0 +1,37 @@
+# .codex/config.toml — repo-scoped конфиг Codex CLI для этого продуктового
+# репозитория (schedule-manager-github).
+#
+# Появился 2026-08-20 как починка найденной дыры: команда MyTeam запускает
+# Codex-роли через `codex-role.sh ... --cd <этот каталог>` — а Codex CLI
+# ищет repo-scoped конфиг/хуки от каталога --cd, границей поиска служит
+# граница git-репозитория. MyTeam и этот репозиторий — два независимых
+# репозитория (соседние папки, не родитель/потомок), поэтому хук,
+# подключённый только в MyTeam/.codex/config.toml, сюда не долетал —
+# `dev-routine`/`dev-hard`/`qa` могли выполнить сырой `git fetch/pull/stash`
+# без технической блокировки (см. MyTeam/AGENTS.md → «Git»).
+#
+# Сам хук (единая логика) живёт в MyTeam — не дублируем, а зовём оттуда по
+# абсолютному пути. Это делает файл немного хрупким (переезд каталога
+# MyTeam на диске сломает путь), но альтернатива — дублировать логику хука
+# в двух репозиториях — хуже (см. пункт 3 плана: одна логика — одно место).
+#
+# ВАЖНО (разовая ручная настройка, см. MyTeam/AGENTS.md → «Разовая настройка
+# окружения»): чтобы Codex CLI реально стал доверять этому конкретному хуку
+# (а не только каталогу в целом), нужен один интерактивный запуск `codex`
+# из этого каталога, где вы подтвердите доверие хуку (`/hooks` либо запрос
+# на trust при первом обнаружении новых hooks.PreToolUse) — иначе Codex CLI
+# молча его проигнорирует. Без этого шага все прогоны через codex-role.sh
+# продолжают идти без технической git-блокировки, только с текстовым
+# запретом из AGENTS.md.
+#
+# Источник схемы: https://learn.chatgpt.com/docs/config-file/config-advanced
+# и https://learn.chatgpt.com/docs/hooks (проверено 2026-08-20).
+
+[[hooks.PreToolUse]]
+matcher = "^Bash$"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = 'python3 "/Users/antonvaskin/Documents/Codex/2026-07-11/new-chat/MyTeam/hooks/codex-pretooluse.py"'
+timeout = 10
+statusMessage = "Проверка Bash-команды на сырой git fetch/pull/stash"

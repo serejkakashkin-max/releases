@@ -108,6 +108,16 @@ class ScheduleManagerDirectorySyncTests(unittest.TestCase):
                             "assignment_explanations": [
                                 {"employee_name": "Кашин Р. В.", "days": [1]}
                             ],
+                            "capacity_diagnostics": {
+                                "warnings": ["Диагностика вместимости."],
+                                "overloaded_assignments": [
+                                    {
+                                        "employee_name": "Кашин Р. В.",
+                                        "shift_code": "ВД",
+                                        "other_candidates": [{"name": "Кашин Р. В."}],
+                                    }
+                                ],
+                            },
                         },
                         "grid": {
                             "title": "Август 2026",
@@ -144,6 +154,15 @@ class ScheduleManagerDirectorySyncTests(unittest.TestCase):
             projected.get_month_metadata("Август 2026", "autoplan")[
                 "assignment_explanations"
             ][0]["employee_name"],
+        )
+        diagnostics = projected.get_month_metadata("Август 2026", "autoplan")[
+            "capacity_diagnostics"
+        ]
+        self.assertEqual(
+            "Квашин Р. В.", diagnostics["overloaded_assignments"][0]["employee_name"]
+        )
+        self.assertEqual(
+            "Квашин Р. В.", diagnostics["overloaded_assignments"][0]["other_candidates"][0]["name"]
         )
         self.assertEqual(
             "Кашин Р. В.", snapshot.get_month_grid("Август 2026").employees[0].employee_name
@@ -251,15 +270,79 @@ class ScheduleManagerDirectorySyncTests(unittest.TestCase):
             Employee(name="Последний П. П.", status="active"),
         ]
 
-        ordered = service._sort_by_directory_order(
-            projected.get_month_grid("Август 2026")
+        unavailable = EmployeeDirectoryRuntimeContext(
+            status="missing",
+            revision=None,
+            etag="",
         )
+        with mock.patch(
+            "services.employee_directory_service.load_employee_directory_context",
+            return_value=unavailable,
+        ):
+            ordered = service._sort_by_directory_order(
+                projected.get_month_grid("Август 2026")
+            )
 
         self.assertEqual(
             ["Первый П. П.", "Квашин Р. В.", "Последний П. П."],
             [row.employee_name for row in ordered.employees],
         )
         self.assertEqual({1: "ВД"}, ordered.employees[1].assignments)
+
+    def test_admin_display_orders_historical_spacing_variants_by_directory(self):
+        grid = ScheduleGrid(
+            title="Август 2026",
+            year=2026,
+            month=8,
+            days=[ScheduleDay(day=1, weekday="сб", date=date(2026, 8, 1))],
+            employees=[
+                ScheduleRow("Кашкин С.Н.", 0, {1: ""}),
+                ScheduleRow("Тутов А. М.", 0, {1: "ДД"}),
+                ScheduleRow("Ефимов В. В.", 0, {1: "ДР"}),
+                ScheduleRow("Мухиддинов М.", 0, {1: "ВД"}),
+                ScheduleRow("Айрапетова Н. Г.", 0, {1: "ВР"}),
+                ScheduleRow("Андреев В. Ю.", 0, {1: ""}),
+            ],
+        )
+        service = ScheduleDisplayService.__new__(ScheduleDisplayService)
+        service.employee_service = mock.Mock()
+        service.employee_service.list_employees.return_value = [
+            Employee(name="Васькин Антон Анатольевич", status="active"),
+            Employee(name="Гапоненко Д.А.", status="active"),
+            Employee(name="Кондратьева А.А.", status="active"),
+            Employee(name="Фисан К.Ю.", status="active"),
+            Employee(name="Тутов А.М.", status="active"),
+            Employee(name="Ефимов В.В.", status="active"),
+            Employee(name="Частухин А.М.", status="active"),
+            Employee(name="Мухиддинов М.Б.", status="active"),
+            Employee(name="Кашкин С.Н.", status="active"),
+            Employee(name="Айрапетова Н.Г.", status="active"),
+            Employee(name="Андреев Василий Юрьевич", status="active"),
+        ]
+
+        unavailable = EmployeeDirectoryRuntimeContext(
+            status="missing",
+            revision=None,
+            etag="",
+        )
+        with mock.patch(
+            "services.employee_directory_service.load_employee_directory_context",
+            return_value=unavailable,
+        ):
+            ordered = service._sort_by_directory_order(grid)
+
+        self.assertEqual(
+            [
+                "Тутов А. М.",
+                "Ефимов В. В.",
+                "Мухиддинов М.",
+                "Кашкин С.Н.",
+                "Айрапетова Н. Г.",
+                "Андреев В. Ю.",
+            ],
+            [row.employee_name for row in ordered.employees],
+        )
+        self.assertEqual({1: "ДД"}, ordered.employees[0].assignments)
 
     def test_projection_is_not_cancelled_when_another_month_already_has_current_name(self):
         old_grid = ScheduleGrid(
@@ -361,6 +444,67 @@ class ScheduleManagerDirectorySyncTests(unittest.TestCase):
             month_grids["2026-08"]["employees"][0]["employee_name"],
         )
         self.assertEqual("Кашин Р. В.", months[0]["employees"][0]["employee_name"])
+
+    def test_read_only_schedule_keeps_directory_order_for_spacing_variants(self):
+        provider = ReleaseMonitorDutyProvider()
+        months = [
+            {
+                "year": 2026,
+                "month": 8,
+                "label": "Август 2026",
+                "days": [],
+                "employees": [
+                    {
+                        "employee_name": "Кашкин С.Н.",
+                        "hours": 0,
+                        "assignments": {},
+                        "ambiguous": False,
+                    },
+                    {
+                        "employee_name": "Тутов А. М.",
+                        "hours": 0,
+                        "assignments": {},
+                        "ambiguous": False,
+                    },
+                    {
+                        "employee_name": "Ефимов В. В.",
+                        "hours": 0,
+                        "assignments": {},
+                        "ambiguous": False,
+                    },
+                ],
+                "autoplan_artifact": {},
+            }
+        ]
+        unavailable = EmployeeDirectoryRuntimeContext(
+            status="missing",
+            revision=None,
+            etag="",
+        )
+        with mock.patch("services.employee_directory_service.load_employee_directory_context", return_value=unavailable), mock.patch(
+            "VA.schedule_manager.services.employee_identity.build_directory_order_index",
+            return_value={
+                "тутовам": 0,
+                "ефимоввв": 1,
+                "кашкинсн": 2,
+                "__surname__": {"тутов": 0, "ефимов": 1, "кашкин": 2},
+            },
+        ):
+            _projection, month_grids = provider._project(
+                months,
+                [],
+                {},
+                "schedule-revision",
+                True,
+            )
+
+        self.assertEqual(
+            ["Тутов А. М.", "Ефимов В. В.", "Кашкин С.Н."],
+            [
+                row["employee_name"]
+                for row in month_grids["2026-08"]["employees"]
+            ],
+        )
 
     def test_employee_directory_revision_is_part_of_provider_cache_signature(self):
         provider = ReleaseMonitorDutyProvider()

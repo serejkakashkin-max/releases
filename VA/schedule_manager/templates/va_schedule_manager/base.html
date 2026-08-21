@@ -1,45 +1,52 @@
-<!doctype html>
+{% extends "layouts/oplot_base.html" %}
+{% set oplot_show_sidebar = false %}
+{% set oplot_topbar_variant = 'core' %}
+{% set oplot_show_breadcrumbs = false %}
 {% from "va_schedule_manager/components/user_messages.html" import render_user_messages %}
-<html lang="ru">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="csrf-token" content="{{ va_admin_csrf_token }}">
-    <title>{% block title %}График дежурств{% endblock %}</title>
-    <link rel="stylesheet" href="{{ va_url_for('va_schedule_manager.static', filename='va_schedule_manager/style.css') }}?v=20260714-30">
-    {% block head_extra %}{% endblock %}
-  </head>
-  <body>
-    {{ render_user_messages(user_messages) }}
-    <main class="layout {% block layout_class %}{% endblock %}">
-      <header class="app-header">
-        <div>
-          <nav class="va-breadcrumb" aria-label="breadcrumb">
-            <a href="{{ va_admin_panel_url }}">СУП-параметры</a>
-            <span>/</span>
-            <span>Инструменты</span>
-            <span>/</span>
-            <strong>Графики дежурств</strong>
-          </nav>
-          <h1>{% block page_title %}График дежурств{% endblock %}</h1>
-          <p>{% block page_subtitle %}Система управления графиком дежурств сотрудников{% endblock %}</p>
-        </div>
-        {% block header_actions %}{% endblock %}
-      </header>
 
+{% block topbar_utilities %}
+  {% set topbar_home_url = safe_public_url_for('main.index') %}
+  {% if topbar_home_url %}
+    <a class="btn btn-outline-primary oplot-dtc-topbar-back" href="{{ topbar_home_url }}">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/><path d="M9 12h11"/></svg>
+      <span>К главной Oplot</span>
+    </a>
+  {% endif %}
+{% endblock %}
+
+{% block styles %}
+  <meta name="csrf-token" content="{{ va_admin_csrf_token }}">
+  <link rel="stylesheet" href="{{ va_url_for('va_schedule_manager.static', filename='va_schedule_manager/style.css') }}?v=20260821-2">
+{% endblock %}
+
+{% block content %}
+  <div class="va-sm">
+    {{ render_user_messages(user_messages) }}
       <nav class="top-nav" aria-label="Основная навигация">
         <a class="{% if active_page == 'schedule' %}active{% endif %}" href="{{ va_url_for('va_schedule_manager.web.index') }}">График</a>
-        <a href="{{ va_url_for('sup_parameters.sup_parameters_page', tab='employees', view='employees') }}">Сотрудники</a>
-        <a href="{{ va_url_for('sup_parameters.sup_parameters_page', tab='employees', view='competencies') }}">Компетенции</a>
         <a class="{% if active_page == 'shifts' %}active{% endif %}" href="{{ va_url_for('va_schedule_manager.settings.shifts') }}">Смены</a>
         <a class="{% if active_page == 'integrations' %}active{% endif %}" href="{{ va_url_for('va_schedule_manager.settings.integrations') }}">Интеграции</a>
-        <a class="top-nav-docs {% if active_page == 'docs' %}active{% endif %}" href="{{ va_url_for('va_schedule_manager.web.docs_index') }}">Документация</a>
+        <a class="{% if active_page == 'docs' %}active{% endif %}" href="{{ va_url_for('va_schedule_manager.web.docs_index') }}">Документация</a>
+        {% set employees_url = safe_public_url_for('sup_parameters.sup_parameters_page', tab='employees', view='employees') %}
+        {% if employees_url %}
+          <a class="top-nav__external" href="{{ employees_url }}">
+            <span>Справочник сотрудников</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 5h5v5M19 5l-8 8"/><path d="M19 14v4a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h4"/></svg>
+          </a>
+        {% endif %}
       </nav>
 
-      {% block content %}{% endblock %}
-    </main>
+    {% block va_body %}{% endblock %}
+  </div>
+{% endblock %}
 
+{% block overlays %}
+  <div class="va-sm">
     {% block dialogs %}{% endblock %}
+  </div>
+{% endblock %}
+
+{% block scripts %}
     <script>
       (function () {
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || "";
@@ -68,7 +75,5 @@
         });
       })();
     </script>
-    <script src="{{ va_url_for('va_schedule_manager.static', filename='va_schedule_manager/app.js') }}?v=20260714-30"></script>
-    {% block scripts %}{% endblock %}
-  </body>
-</html>
+    <script src="{{ va_url_for('va_schedule_manager.static', filename='va_schedule_manager/app.js') }}?v=20260821-2"></script>
+{% endblock %}

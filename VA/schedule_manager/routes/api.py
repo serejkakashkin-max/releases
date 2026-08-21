@@ -1,5 +1,6 @@
 from flask import Blueprint, request
 
+from VA.schedule_manager.url_helpers import public_url_for
 from VA.schedule_manager.parsers.schedule_csv_parser import parse_schedule_csv_file
 from VA.schedule_manager.repositories.competency_repository import CompetencyRepository
 from VA.schedule_manager.repositories.managed_employee_repository import ManagedEmployeeRepository
@@ -9,6 +10,8 @@ from VA.schedule_manager.repositories.shift_repository import ShiftRepository
 from VA.schedule_manager.routes.api_responses import api_error, api_success
 from VA.schedule_manager.services.calendar_integration_service import CalendarIntegrationService
 from VA.schedule_manager.services.competency_service import CompetencyService
+from VA.schedule_manager.services.autoplan_job_service import autoplan_jobs
+from VA.schedule_manager.services.schedule_autoplan_service import ScheduleAutoplanService
 from VA.schedule_manager.services.schedule_edit_service import ScheduleEditService, ScheduleEditValidationError
 from VA.schedule_manager.services.schedule_month_service import ScheduleMonthService, ScheduleMonthValidationError
 from VA.schedule_manager.services.schedule_service import ScheduleService
@@ -58,6 +61,14 @@ def _schedule_month_service() -> ScheduleMonthService:
         ScheduleRepository(),
         ManagedEmployeeRepository(),
         CalendarIntegrationService(IntegrationSettingsRepository()),
+    )
+
+
+def _schedule_autoplan_service() -> ScheduleAutoplanService:
+    return ScheduleAutoplanService(
+        ScheduleRepository(),
+        ManagedEmployeeRepository(),
+        ShiftService(ShiftRepository()),
     )
 
 
@@ -131,6 +142,7 @@ def update_schedule_cell():
             employee_name=str(payload.get("employee_name", "")),
             day=int(payload.get("day", 0)),
             shift_code=str(payload.get("shift_code", "")),
+            holiday_confirmed=bool(payload.get("holiday_confirmed", False)),
         )
     except (TypeError, ValueError):
         return api_error("invalid_request", "Некорректные параметры ячейки.", 400)
@@ -177,6 +189,7 @@ def bulk_fill_schedule_cells():
             sheet_name=str(payload.get("sheet_name", "")),
             cells=cells,
             shift_code=str(payload.get("shift_code", "")),
+            holiday_confirmed=bool(payload.get("holiday_confirmed", False)),
         )
     except ScheduleEditValidationError as exc:
         return api_error("validation_error", str(exc), 400)
@@ -353,6 +366,63 @@ def copy_schedule_month():
         },
         status=201,
     )
+
+
+@api_bp.post("/schedule/autoplan")
+def start_schedule_autoplan():
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        payload = request.form.to_dict()
+
+    sheet_name = str(payload.get("sheet_name", ""))
+    year = str(payload.get("year", ""))
+    month = str(payload.get("month", ""))
+    confirmed_value = payload.get("vacations_confirmed")
+    vacations_confirmed = confirmed_value is True or str(confirmed_value).lower() in {"1", "true", "yes", "on"}
+
+    if not sheet_name:
+        return api_error("invalid_request", "Не выбран график для автопланирования.", 400)
+
+    def runner(target_sheet_name, target_confirmed, progress):
+        return _schedule_autoplan_service().autoplan(
+            target_sheet_name,
+            vacations_confirmed=target_confirmed,
+            progress=progress,
+        )
+
+    job = autoplan_jobs.start(sheet_name, year, month, vacations_confirmed, runner)
+    return api_success({"job_id": job.job_id, "status": job.status}, 202)
+
+
+@api_bp.get("/schedule/autoplan/<job_id>")
+def schedule_autoplan_status(job_id: str):
+    job = autoplan_jobs.get(job_id)
+    if job is None:
+        return api_error("not_found", "Задача автопланирования не найдена.", 404)
+
+    payload = job.to_dict()
+    if job.status == "done" and job.result:
+        message = (
+            f"Автопланирование {job.result['title']} выполнено. "
+            f"Заполнено ячеек: {job.result['assigned_cells_count']}."
+        )
+        if job.result["violation_count"]:
+            message = f"{message} Остались замечания проверки: {job.result['violation_count']}."
+        payload["redirect_url"] = public_url_for(
+            "va_schedule_manager.web.index",
+            year=job.year,
+            month=job.month,
+            message=message,
+        )
+    elif job.status == "error":
+        payload["redirect_url"] = public_url_for(
+            "va_schedule_manager.web.index",
+            year=job.year,
+            month=job.month,
+            autoplan=job.sheet_name,
+            error=job.error,
+        )
+    return api_success(payload)
 
 
 @api_bp.get("/sample-history-analysis")

@@ -1,10 +1,10 @@
 {% extends "va_schedule_manager/base.html" %}
 
 {% block title %}{{ doc_title }}{% endblock %}
-{% block page_title %}{{ doc_title }}{% endblock %}
-{% block page_subtitle %}Просмотр документации{% endblock %}
+{% set oplot_page_title = doc_title %}
+{% set oplot_page_description = 'Просмотр документации' %}
 
-{% block content %}
+{% block va_body %}
   <section class="panel">
     <div class="section-header">
       <div>

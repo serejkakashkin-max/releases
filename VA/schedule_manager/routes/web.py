@@ -26,6 +26,7 @@ from VA.schedule_manager.services.schedule_autoplan_service import (
 )
 from VA.schedule_manager.services.schedule_display_service import ScheduleDisplayService
 from VA.schedule_manager.services.schedule_export_service import ScheduleExportError, ScheduleExportService
+from VA.schedule_manager.services.employee_identity import filter_employees_not_in_grid
 from VA.schedule_manager.services.schedule_month_service import (
     MONTH_NAMES,
     ScheduleMonthService,
@@ -60,6 +61,11 @@ DOC_FILES = [
         "title": "Правила графиков",
         "description": "Логика формирования и проверки графиков дежурств.",
         "path": "duty-scheduling-rules.md",
+    },
+    {
+        "title": "Контракт автопланировщика",
+        "description": "Зафиксированный алгоритм автоформирования графика и машинный источник правил.",
+        "path": "autoplan-contract.md",
     },
     {
         "title": "Журнал изменений",
@@ -173,6 +179,14 @@ def _active_employees() -> list:
         return []
 
 
+def _active_employees_for_schedule(context: dict) -> list:
+    active = _active_employees()
+    grid = context.get("schedule_grid")
+    if grid is None:
+        return active
+    return filter_employees_not_in_grid(active, grid.employees)
+
+
 def _display_service(schedule_service: ScheduleService) -> ScheduleDisplayService:
     return ScheduleDisplayService(schedule_service, _shift_service())
 
@@ -252,6 +266,7 @@ def index():
     schedule_service, _ = _services()
     display_service = _display_service(schedule_service)
     snapshot = schedule_service.get_current()
+    workbook_context = _workbook_schedule_context(display_service)
     message = request.args.get("message")
     error = request.args.get("error")
     return render_template(
@@ -263,11 +278,11 @@ def index():
         shift_lookup=display_service.shift_lookup(),
         shift_options=display_service.shift_options(),
         shift_options_payload=display_service.shift_options_payload(),
-        active_employees=_active_employees(),
+        active_employees=_active_employees_for_schedule(workbook_context),
         today_state=_today_state(schedule_service),
         delete_month_usage=_delete_month_usage(),
         **_create_month_context(),
-        **_workbook_schedule_context(display_service),
+        **workbook_context,
     )
 
 
@@ -277,6 +292,7 @@ def upload():
     display_service = _display_service(schedule_service)
     file = request.files.get("file")
     if file is None:
+        workbook_context = _workbook_schedule_context(display_service)
         return render_template(
             "va_schedule_manager/index.html",
             snapshot=schedule_service.get_current(),
@@ -286,15 +302,16 @@ def upload():
             shift_lookup=display_service.shift_lookup(),
             shift_options=display_service.shift_options(),
             shift_options_payload=display_service.shift_options_payload(),
-            active_employees=_active_employees(),
+            active_employees=_active_employees_for_schedule(workbook_context),
             today_state=_today_state(schedule_service),
             **_create_month_context(),
-            **_workbook_schedule_context(display_service),
+            **workbook_context,
         ), 400
 
     try:
         snapshot = import_service.import_file(file)
     except (UploadValidationError, ExcelParseError) as exc:
+        workbook_context = _workbook_schedule_context(display_service)
         return render_template(
             "va_schedule_manager/index.html",
             snapshot=schedule_service.get_current(),
@@ -304,12 +321,13 @@ def upload():
             shift_lookup=display_service.shift_lookup(),
             shift_options=display_service.shift_options(),
             shift_options_payload=display_service.shift_options_payload(),
-            active_employees=_active_employees(),
+            active_employees=_active_employees_for_schedule(workbook_context),
             today_state=_today_state(schedule_service),
             **_create_month_context(),
-            **_workbook_schedule_context(display_service),
+            **workbook_context,
         ), 400
 
+    workbook_context = _workbook_schedule_context(display_service)
     return render_template(
         "va_schedule_manager/index.html",
         snapshot=snapshot,
@@ -319,10 +337,10 @@ def upload():
         shift_lookup=display_service.shift_lookup(),
         shift_options=display_service.shift_options(),
         shift_options_payload=display_service.shift_options_payload(),
-        active_employees=_active_employees(),
+        active_employees=_active_employees_for_schedule(workbook_context),
         today_state=_today_state(schedule_service),
         **_create_month_context(),
-        **_workbook_schedule_context(display_service),
+        **workbook_context,
     )
 
 
@@ -332,6 +350,7 @@ def update():
     display_service = _display_service(schedule_service)
     if schedule_service.get_current() is None:
         return redirect(public_url_for("va_schedule_manager.web.index", message="Сначала загрузите Excel-файл."))
+    workbook_context = _workbook_schedule_context(display_service)
     return render_template(
         "va_schedule_manager/index.html",
         snapshot=schedule_service.get_current(),
@@ -341,11 +360,11 @@ def update():
         shift_lookup=display_service.shift_lookup(),
         shift_options=display_service.shift_options(),
         shift_options_payload=display_service.shift_options_payload(),
-        active_employees=_active_employees(),
+        active_employees=_active_employees_for_schedule(workbook_context),
         today_state=_today_state(schedule_service),
         focus_upload=True,
         **_create_month_context(),
-        **_workbook_schedule_context(display_service),
+        **workbook_context,
     )
 
 

@@ -3,7 +3,15 @@ from typing import List, Optional
 
 from VA.schedule_manager.models.schedule_grid import ScheduleGrid, ScheduleRow
 from VA.schedule_manager.services.employee_service import EmployeeService
+from VA.schedule_manager.services.employee_identity import (
+    build_directory_order_index,
+    employee_identity_matches,
+)
 from VA.schedule_manager.services.schedule_service import ScheduleService
+from VA.schedule_manager.services.autoplan_contract import AUTOPLAN_CONTRACT
+from VA.schedule_manager.services.newcomer_history import collect_newcomer_shift_codes
+
+LOAD_SHIFT_CODES = set(AUTOPLAN_CONTRACT.load_shift_codes)
 from VA.schedule_manager.services.schedule_validator import build_validation_rules, validate_schedule
 from VA.schedule_manager.services.shift_service import ShiftService
 
@@ -74,7 +82,14 @@ class ScheduleEditService:
     def apply_edits(self, grid: ScheduleGrid, workbook_id: str, sheet_name: str) -> ScheduleGrid:
         return self._recalculate_grid_hours(grid)
 
-    def update_cell(self, sheet_name: str, employee_name: str, day: int, shift_code: str) -> ScheduleCellUpdate:
+    def update_cell(
+        self,
+        sheet_name: str,
+        employee_name: str,
+        day: int,
+        shift_code: str,
+        holiday_confirmed: bool = False,
+    ) -> ScheduleCellUpdate:
         snapshot = self.schedule_service.get_current()
         if snapshot is None:
             raise ScheduleEditValidationError("Сначала загрузите Excel-файл.")
@@ -94,6 +109,10 @@ class ScheduleEditService:
             raise ScheduleEditValidationError("Сотрудник не найден в графике.")
 
         if self._is_holiday_shift(shift_code):
+            if not holiday_confirmed:
+                raise ScheduleEditValidationError(
+                    "Праздник применяется ко всей дате. Подтвердите изменение."
+                )
             grid = self._fill_days(base_grid, {day}, shift_code)
         else:
             grid = self._update_grid_cell(base_grid, employee_name, day, shift_code)
@@ -105,7 +124,7 @@ class ScheduleEditService:
         autoplan_artifact_cleared = "autoplan" in cleared_metadata
         row = next(item for item in grid.employees if item.employee_name == employee_name)
         shift = self.shift_service.lookup().get(shift_code) or self.shift_service.lookup().get(shift_code.lower())
-        violations = validate_schedule(grid, build_validation_rules(self.shift_service.list_shifts()))
+        violations = validate_schedule(grid, self._validation_rules(snapshot, grid))
 
         return ScheduleCellUpdate(
             employee_name=employee_name,
@@ -149,7 +168,11 @@ class ScheduleEditService:
             grid = snapshot.get_month_grid(sheet_name)
         except KeyError as exc:
             raise ScheduleEditValidationError("Лист графика не найден.") from exc
-        if any(row.employee_name == employee_name for row in grid.employees):
+        order_index = build_directory_order_index(self.employee_service)
+        if any(
+            employee_identity_matches(row.employee_name, employee_name, order_index)
+            for row in grid.employees
+        ):
             raise ScheduleEditValidationError("Сотрудник уже есть в текущем графике.")
 
         assignments = self._default_assignments(grid, fill_mode)
@@ -171,7 +194,7 @@ class ScheduleEditService:
             clear_metadata_keys=("autoplan",),
         )
         autoplan_artifact_cleared = "autoplan" in cleared_metadata
-        violations = validate_schedule(updated_grid, build_validation_rules(self.shift_service.list_shifts()))
+        violations = validate_schedule(updated_grid, self._validation_rules(snapshot, updated_grid))
 
         return ScheduleEmployeeAdd(
             employee_name=employee_name,
@@ -220,7 +243,7 @@ class ScheduleEditService:
             clear_metadata_keys=("autoplan",),
         )
         autoplan_artifact_cleared = "autoplan" in cleared_metadata
-        violations = validate_schedule(updated_grid, build_validation_rules(self.shift_service.list_shifts()))
+        violations = validate_schedule(updated_grid, self._validation_rules(snapshot, updated_grid))
 
         return ScheduleEmployeeDelete(
             employee_name=employee_name,
@@ -238,7 +261,13 @@ class ScheduleEditService:
             autoplan_artifact_cleared=autoplan_artifact_cleared,
         )
 
-    def bulk_fill(self, sheet_name: str, cells: List[dict], shift_code: str) -> ScheduleBulkFill:
+    def bulk_fill(
+        self,
+        sheet_name: str,
+        cells: List[dict],
+        shift_code: str,
+        holiday_confirmed: bool = False,
+    ) -> ScheduleBulkFill:
         snapshot = self.schedule_service.get_current()
         if snapshot is None:
             raise ScheduleEditValidationError("Сначала загрузите Excel-файл.")
@@ -269,6 +298,10 @@ class ScheduleEditService:
 
         applied_to_full_days = self._is_holiday_shift(shift_code)
         if applied_to_full_days:
+            if not holiday_confirmed:
+                raise ScheduleEditValidationError(
+                    "Праздник применяется ко всей дате. Подтвердите изменение."
+                )
             target_days = {cell["day"] for cell in normalized_cells}
             updated_grid = self._fill_days(grid, target_days, shift_code)
         else:
@@ -280,7 +313,7 @@ class ScheduleEditService:
             clear_metadata_keys=("autoplan",),
         )
         autoplan_artifact_cleared = "autoplan" in cleared_metadata
-        violations = validate_schedule(updated_grid, build_validation_rules(self.shift_service.list_shifts()))
+        violations = validate_schedule(updated_grid, self._validation_rules(snapshot, updated_grid))
         touched_rows = {
             row.employee_name
             for row in updated_grid.employees
@@ -329,6 +362,21 @@ class ScheduleEditService:
         if shift is None:
             raise ScheduleEditValidationError("Неизвестная смена.")
         return shift.code
+
+    def _validation_rules(self, snapshot, grid: ScheduleGrid):
+        history = collect_newcomer_shift_codes(
+            snapshot, grid, self._normalize_shift_code_for_history, LOAD_SHIFT_CODES
+        )
+        return build_validation_rules(
+            self.shift_service.list_shifts(),
+            newcomer_allowed_shift_codes=history,
+            newcomer_trainee_shift_codes=set(AUTOPLAN_CONTRACT.newcomer_trainee_shift_codes),
+        )
+
+    def _normalize_shift_code_for_history(self, shift_code: object) -> str:
+        code = " ".join(str(shift_code or "").strip().split())
+        shift = self.shift_service.lookup().get(code) or self.shift_service.lookup().get(code.lower())
+        return shift.code if shift else code
 
     def _update_grid_cell(self, grid: ScheduleGrid, employee_name: str, day: int, shift_code: str) -> ScheduleGrid:
         rows = []

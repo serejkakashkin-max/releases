@@ -8,15 +8,173 @@ from datetime import date
 from pathlib import Path
 from unittest.mock import patch
 
+from flask import Flask, render_template_string
+
 from tests._support import PROJECT_ROOT
 from VA.schedule_manager.models.employee import Employee
 from VA.schedule_manager.models.integration_settings import CalendarIntegrationSettings
 from VA.schedule_manager.models.schedule_grid import ScheduleDay, ScheduleGrid, ScheduleRow
 from VA.schedule_manager.models.schedule_snapshot import ScheduleSnapshot, grid_to_dict
 from VA.schedule_manager.services import calendar_integration_service as calendar_module
+from VA.schedule_manager.services import schedule_display_service as display_module
+from VA.schedule_manager.services.autoplan_hint_service import (
+    autoplan_hint_full_text,
+    autoplan_hint_text,
+    build_autoplan_stop_cells,
+    normalize_autoplan_artifact,
+)
 from VA.schedule_manager.services.calendar_integration_service import CalendarIntegrationService
 from VA.schedule_manager.services.schedule_display_service import ScheduleDisplayService
+from VA.schedule_manager.services.schedule_edit_service import (
+    ScheduleEditService,
+    ScheduleEditValidationError,
+)
 from VA.schedule_manager.services.schedule_month_service import ScheduleMonthService
+
+
+def test_autoplan_hint_text_uses_short_reason():
+    explanation = {
+        "shift_name": "Дневной дежурный",
+        "shift_code": "ДД",
+        "period": "1–5 числа",
+        "short_reason": "У вас одна из самых низких нагрузок.",
+        "reason": "полная трассировка",
+        "candidate_count": 5,
+        "load_before": 2,
+    }
+
+    assert autoplan_hint_text(explanation) == (
+        "Автоплан: Дневной дежурный (ДД), 1–5 числа. У вас одна из самых низких нагрузок."
+    )
+
+
+def test_autoplan_hint_text_uses_fallback_without_short_reason():
+    explanation = {"shift_name": "Дневной дежурный", "shift_code": "ДД", "period": "1–5 числа"}
+
+    assert autoplan_hint_text(explanation) == (
+        "Автоплан: Дневной дежурный (ДД), 1–5 числа. "
+        "Смену поставил автопланировщик; подробности — у руководителя."
+    )
+
+
+def test_normalized_legacy_artifact_keeps_a_nonempty_short_hint():
+    artifact = normalize_autoplan_artifact(
+        {
+            "source": "autoplanner",
+            "year": 2026,
+            "month": 9,
+            "assignment_explanations": [
+                {
+                    "employee_name": "Сотрудник С.С.",
+                    "shift_code": "ДД",
+                    "shift_name": "Дневной дежурный",
+                    "period": "1–5 числа",
+                    "days": [1, 2, 3, 4, 5],
+                    "reason": "Старая полная трассировка.",
+                }
+            ],
+        },
+        year=2026,
+        month=9,
+        employee_names=["Сотрудник С.С."],
+        valid_days=[1, 2, 3, 4, 5],
+    )
+
+    explanation = artifact["assignment_explanations"][0]
+    assert explanation["short_reason"] == ""
+    assert artifact["capacity_diagnostics"] == {}
+    assert autoplan_hint_text(explanation) == (
+        "Автоплан: Дневной дежурный (ДД), 1–5 числа. "
+        "Смену поставил автопланировщик; подробности — у руководителя."
+    )
+
+
+def test_normalized_capacity_diagnostics_filters_unknown_names():
+    artifact = normalize_autoplan_artifact(
+        {
+            "source": "autoplanner",
+            "year": 2026,
+            "month": 9,
+            "capacity_diagnostics": {
+                "warnings": ["На неделе 1-5 доступных дежурных 2."],
+                "overloaded_assignments": [
+                    {
+                        "employee_name": "Сотрудник С.С.",
+                        "shift_code": "ДД",
+                        "period": "1-5 числа",
+                        "blocks_before": 2,
+                        "candidate_count": 1,
+                        "historical_load": 4,
+                        "other_candidates": [
+                            {"name": "Чужой", "historical_load": 99},
+                            {"name": "Сотрудник С.С.", "current_month_blocks": 1},
+                        ],
+                    },
+                    {"employee_name": "Чужой", "shift_code": "ВД"},
+                ],
+            },
+        },
+        year=2026,
+        month=9,
+        employee_names=["Сотрудник С.С."],
+        valid_days=[1, 2, 3, 4, 5],
+    )
+
+    assert artifact["capacity_diagnostics"] == {
+        "warnings": ["На неделе 1-5 доступных дежурных 2."],
+        "overloaded_assignments": [
+            {
+                "employee_name": "Сотрудник С.С.",
+                "shift_code": "ДД",
+                "period": "1-5 числа",
+                "blocks_before": 2,
+                "candidate_count": 1,
+                "historical_load": 4,
+                "other_candidates": [{"name": "Сотрудник С.С.", "current_month_blocks": 1}],
+            }
+        ],
+    }
+
+
+def test_short_reason_is_escaped_and_precedes_the_full_reason_in_template():
+    template = (
+        PROJECT_ROOT / "VA/schedule_manager/templates/va_schedule_manager/index.html"
+    ).read_text(encoding="utf-8")
+    short_reason_line = "{% if explanation.short_reason %}<strong>{{ explanation.short_reason }}</strong>{% endif %}"
+
+    assert short_reason_line in template
+    assert template.index(short_reason_line) < template.index("<p>{{ explanation.reason }}</p>")
+    assert "{{ explanation.short_reason|safe }}" not in template
+
+    app = Flask(__name__)
+    with app.app_context():
+        rendered = render_template_string(
+            "{% if explanation.short_reason %}<strong>{{ explanation.short_reason }}</strong>{% endif %}",
+            explanation={"short_reason": 'Смена "ДД" <важная>'},
+        )
+        empty_rendered = render_template_string(
+            "{% if explanation.short_reason %}<strong>{{ explanation.short_reason }}</strong>{% endif %}",
+            explanation={"short_reason": ""},
+        )
+
+    assert rendered == "<strong>Смена &#34;ДД&#34; &lt;важная&gt;</strong>"
+    assert empty_rendered == ""
+
+
+def test_autoplan_hint_full_text_keeps_previous_hint_format():
+    explanation = {
+        "shift_name": "Дневной дежурный",
+        "shift_code": "ДД",
+        "period": "1–5 числа",
+        "reason": "полная трассировка",
+        "candidate_count": 5,
+        "load_before": 2,
+    }
+
+    assert autoplan_hint_full_text(explanation) == (
+        "Автоплан: ДД · Дневной дежурный 1–5 числа полная трассировка "
+        "Кандидатов: 5; нагрузка до назначения: 2."
+    )
 
 
 class _SettingsRepository:
@@ -37,6 +195,52 @@ class _EmployeeService:
 
     def list_employees(self):
         return list(self._employees)
+
+
+class _ScheduleService:
+    def __init__(self, snapshot) -> None:
+        self.snapshot = snapshot
+        self.saved = None
+
+    def get_current(self):
+        return self.snapshot
+
+    def save_month_grid(self, sheet_name, grid, clear_metadata_keys=()):
+        self.saved = (sheet_name, grid, clear_metadata_keys)
+        return []
+
+
+class _ShiftService:
+    def lookup(self):
+        return {}
+
+    def list_shifts(self):
+        return []
+
+
+class _HolidayShiftService:
+    def __init__(self) -> None:
+        self.holiday = types.SimpleNamespace(
+            code="Праздник",
+            display_code="П",
+            name="Праздник",
+            short_name="П",
+            aliases=("П",),
+            color="#FF0000",
+            text_color="#FFFFFF",
+            hours=0,
+        )
+
+    def lookup(self):
+        return {
+            "Праздник": self.holiday,
+            "праздник": self.holiday,
+            "П": self.holiday,
+            "п": self.holiday,
+        }
+
+    def list_shifts(self):
+        return []
 
 
 def _grid(names: list[str], *, year: int = 2026, month: int = 8) -> ScheduleGrid:
@@ -108,6 +312,28 @@ class CalendarIntegrationStandSyncTests(unittest.TestCase):
         self.assertEqual(saved.api_token, "")
         self.assertEqual(saved.timeout_seconds, 30)
         self.assertNotIn("unexpected", saved.to_dict())
+
+    def test_display_days_payload_includes_production_calendar_status(self):
+        service = ScheduleDisplayService.__new__(ScheduleDisplayService)
+
+        class FakeCalendarService:
+            def __init__(self, repository) -> None:
+                self.repository = repository
+
+            def load_calendar(self, year, month):
+                return types.SimpleNamespace(
+                    holidays={date(2026, 8, 1)},
+                    source="holidays library",
+                    warning="",
+                )
+
+        with patch.object(display_module, "CalendarIntegrationService", FakeCalendarService):
+            payload = service._schedule_days_payload(_grid(["Сотрудник"], year=2026, month=8))
+
+        self.assertEqual(payload[0]["date"], "2026-08-01")
+        self.assertTrue(payload[0]["is_production_holiday"])
+        self.assertEqual(payload[0]["calendar_source"], "holidays library")
+        self.assertEqual(payload[0]["calendar_warning"], "")
 
 
 class ScheduleOrderingStandSyncTests(unittest.TestCase):
@@ -191,8 +417,168 @@ class ScheduleOrderingStandSyncTests(unittest.TestCase):
         )
         self.assertEqual(service._get_employees_from_last_schedule(snapshot), ["Новый"])
 
+    def test_add_employee_rejects_existing_spacing_variant(self):
+        snapshot = ScheduleSnapshot(
+            employees=[],
+            original_filename="fixture",
+            stored_filename="",
+            uploaded_at="",
+            month_schedules=[
+                {
+                    "year": 2026,
+                    "month": 8,
+                    "month_name": "Август",
+                    "sheet_name": "Август 2026",
+                    "label": "Август 2026",
+                    "grid": grid_to_dict(_grid(["Тутов А. М."])),
+                }
+            ],
+        )
+        service = ScheduleEditService(
+            _ScheduleService(snapshot),
+            _ShiftService(),
+            employee_service=_EmployeeService([Employee("Тутов А.М.", status="active")]),
+        )
+
+        with self.assertRaisesRegex(ScheduleEditValidationError, "уже есть"):
+            service.add_employee("Август 2026", "Тутов А.М.")
+
+    def test_holiday_bulk_fill_requires_explicit_confirmation(self):
+        snapshot = ScheduleSnapshot(
+            employees=[],
+            original_filename="fixture",
+            stored_filename="",
+            uploaded_at="",
+            month_schedules=[
+                {
+                    "year": 2026,
+                    "month": 8,
+                    "month_name": "Август",
+                    "sheet_name": "Август 2026",
+                    "label": "Август 2026",
+                    "grid": grid_to_dict(_grid(["Сотрудник А", "Сотрудник Б"])),
+                }
+            ],
+        )
+        service = ScheduleEditService(
+            _ScheduleService(snapshot),
+            _HolidayShiftService(),
+        )
+
+        with self.assertRaisesRegex(ScheduleEditValidationError, "Праздник применяется"):
+            service.bulk_fill(
+                "Август 2026",
+                [{"employee_name": "Сотрудник А", "day": 1}],
+                "Праздник",
+            )
+
+        result = service.bulk_fill(
+            "Август 2026",
+            [{"employee_name": "Сотрудник А", "day": 1}],
+            "Праздник",
+            holiday_confirmed=True,
+        )
+
+        self.assertTrue(result.applied_to_full_days)
+        self.assertEqual(
+            [
+                {"employee_name": "Сотрудник А", "day": 1, "shift_code": "Праздник", "display_code": "П", "shift_name": "Праздник", "color": "#FF0000", "text_color": "#FFFFFF"},
+                {"employee_name": "Сотрудник Б", "day": 1, "shift_code": "Праздник", "display_code": "П", "shift_name": "Праздник", "color": "#FF0000", "text_color": "#FFFFFF"},
+            ],
+            result.cells,
+        )
+
 
 class ScheduleManagerPackagingAndStartupTests(unittest.TestCase):
+    def test_user_messages_are_dismissible_and_auto_close_success(self):
+        template = (
+            PROJECT_ROOT
+            / "VA/schedule_manager/templates/va_schedule_manager/components/user_messages.html"
+        ).read_text(encoding="utf-8")
+        script = (
+            PROJECT_ROOT / "VA/schedule_manager/static/va_schedule_manager/app.js"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("data-message-layer", template)
+        self.assertIn("data-message-frame", template)
+        self.assertIn("data-message-close", template)
+        self.assertNotIn("onclick=", template)
+        self.assertIn("setupUserMessages", script)
+        self.assertIn("document.addEventListener('click', closeOnOutsideClick)", script)
+        self.assertIn("event.target.closest('[data-message-frame]')", script)
+        self.assertIn("setTimeout(() => removeFrame(frame), 10000)", script)
+        self.assertIn("['success', 'info']", script)
+
+    def test_holiday_fill_ui_requires_two_confirmations(self):
+        script = (
+            PROJECT_ROOT / "VA/schedule_manager/static/va_schedule_manager/app.js"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("function confirmHolidayFill", script)
+        self.assertIn("function productionCalendarWarningText", script)
+        self.assertGreaterEqual(script.count("window.confirm("), 2)
+        self.assertIn("Праздник\" применяется не к одной ячейке", script)
+        self.assertIn("праздничный день по производственному календарю", script)
+        self.assertIn("не праздничный день по производственному календарю", script)
+        self.assertIn("производственный календарь не проверен", script)
+        self.assertIn("Повторное подтверждение", script)
+        self.assertIn("holiday_confirmed: holidayConfirmed", script)
+
+    def test_autoplan_modal_uses_progress_job_api(self):
+        template = (
+            PROJECT_ROOT / "VA/schedule_manager/templates/va_schedule_manager/index.html"
+        ).read_text(encoding="utf-8")
+        script = (
+            PROJECT_ROOT / "VA/schedule_manager/static/va_schedule_manager/app.js"
+        ).read_text(encoding="utf-8")
+        api_source = (
+            PROJECT_ROOT / "VA/schedule_manager/routes/api.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("data-autoplan-form", template)
+        self.assertIn("data-autoplan-progress-log", template)
+        self.assertIn("start_schedule_autoplan", template)
+        self.assertIn("schedule_autoplan_status", template)
+        self.assertIn("setupAutoplanProgressForms", script)
+        self.assertIn("window.setTimeout(poll, 900)", script)
+        self.assertIn('@api_bp.post("/schedule/autoplan")', api_source)
+        self.assertIn('@api_bp.get("/schedule/autoplan/<job_id>")', api_source)
+
+    def test_autoplan_stop_cells_are_renderable(self):
+        template = (
+            PROJECT_ROOT / "VA/schedule_manager/templates/va_schedule_manager/index.html"
+        ).read_text(encoding="utf-8")
+        styles = (
+            PROJECT_ROOT / "VA/schedule_manager/static/va_schedule_manager/style.css"
+        ).read_text(encoding="utf-8")
+        artifact = normalize_autoplan_artifact(
+            {
+                "source": "autoplanner",
+                "year": 2026,
+                "month": 9,
+                "stop_cells": [
+                    {
+                        "employee_name": "Кашкин С.Н.",
+                        "day": 4,
+                        "shift_code": "ДР",
+                        "message": "ДР: дни 4 число нужно распределить вручную.",
+                    }
+                ],
+            },
+            year=2026,
+            month=9,
+            employee_names=["Кашкин С.Н."],
+            valid_days=[1, 2, 3, 4],
+        )
+
+        self.assertEqual(
+            {"Кашкин С.Н.|4": "ДР: дни 4 число нужно распределить вручную."},
+            build_autoplan_stop_cells(artifact),
+        )
+        self.assertIn("autoplan-stop-cell", template)
+        self.assertIn("data-autoplan-stop", template)
+        self.assertIn("box-shadow: inset 0 0 0 3px #dc2626", styles)
+
     def test_requirements_are_utf8_without_nulls_or_conflicting_duplicates(self):
         raw = (PROJECT_ROOT / "requirements.txt").read_bytes()
         self.assertNotIn(b"\x00", raw)
