@@ -41,6 +41,13 @@ MAX_DRY_RUN_MATCHES = 500
 MAX_MESSAGE_AGE = timedelta(hours=24)
 WORKFLOW_STATUS_NEW = {"command": "NEW"}
 
+# RFC thread headers are the authoritative reply signal.  The subject prefixes
+# cover mail clients/gateways that strip those headers before delivery.
+_REPLY_SUBJECT_PREFIX_RE = re.compile(
+    r"^\s*(?:(?:re|aw|sv|antwort|reply|ответ|отв)\s*(?:\[\d+\])?\s*:\s*)+",
+    re.IGNORECASE,
+)
+
 _process_lock = threading.Lock()
 _worker_thread = None
 _worker_stop = threading.Event()
@@ -511,6 +518,24 @@ def _stable_message_id(message: Message, uid: int, subject: str, from_rows: List
     return "fallback-" + hashlib.sha256(fingerprint_source.encode("utf-8")).hexdigest()
 
 
+def _reply_reason(message: Message, subject: str) -> str:
+    if str(message.get("In-Reply-To") or "").strip():
+        return "in_reply_to"
+    if str(message.get("References") or "").strip():
+        return "references"
+    if _REPLY_SUBJECT_PREFIX_RE.match(str(subject or "")):
+        return "subject_prefix"
+    return ""
+
+
+def _is_reply_message_data(message_data: Dict[str, Any]) -> bool:
+    if bool(message_data.get("is_reply")):
+        return True
+    # Compatibility for pending/dry-run events written by older versions,
+    # which did not persist the parsed reply flag.
+    return bool(_REPLY_SUBJECT_PREFIX_RE.match(str(message_data.get("subject") or "")))
+
+
 def _parse_email_message(uid: int, raw_bytes: bytes, body_limit: int) -> Dict[str, Any]:
     message = email.message_from_bytes(raw_bytes)
     subject = _decode_header_value(message.get("Subject")).strip()
@@ -520,6 +545,7 @@ def _parse_email_message(uid: int, raw_bytes: bytes, body_limit: int) -> Dict[st
     date = _message_date(message.get("Date"))
     body, truncated = _message_body(message, body_limit)
     message_id = _stable_message_id(message, uid, subject, from_rows, date)
+    reply_reason = _reply_reason(message, subject)
     return {
         "uid": uid,
         "message_id": message_id,
@@ -530,6 +556,8 @@ def _parse_email_message(uid: int, raw_bytes: bytes, body_limit: int) -> Dict[st
         "date": date,
         "body": body,
         "body_truncated": truncated,
+        "is_reply": bool(reply_reason),
+        "reply_reason": reply_reason,
     }
 
 
@@ -733,6 +761,8 @@ def _match_messages(
     pending = state.get("pending") if isinstance(state.get("pending"), dict) else {}
     matches = []
     for message_data in messages:
+        if _is_reply_message_data(message_data):
+            continue
         subject = str(message_data.get("subject") or "")
         matched_destinations = set()
         assigned_to, candidates = _resolve_assignee(
@@ -873,6 +903,9 @@ def _retry_pending(
     created_count = 0
     for dedupe_key, event in list(pending.items())[: settings["max_pending_per_cycle"]]:
         mail = event.get("mail") if isinstance(event.get("mail"), dict) else {}
+        if _is_reply_message_data(mail):
+            pending.pop(dedupe_key, None)
+            continue
         if not _is_recent_message_date(mail.get("date")):
             pending.pop(dedupe_key, None)
             continue
@@ -904,6 +937,10 @@ def _process_dry_run_matches_when_live(
     created = state.get("created_keys") if isinstance(state.get("created_keys"), dict) else {}
     moved = 0
     for dedupe_key, event in list(dry_run.items()):
+        mail = event.get("mail") if isinstance(event.get("mail"), dict) else {}
+        if _is_reply_message_data(mail):
+            dry_run.pop(dedupe_key, None)
+            continue
         if dedupe_key in created:
             dry_run.pop(dedupe_key, None)
             continue

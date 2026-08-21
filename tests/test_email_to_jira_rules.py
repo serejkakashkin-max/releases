@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import unittest
+from datetime import datetime, timezone
+from email.header import Header
 from unittest import mock
 
 from tests._support import prepare_config_import
@@ -9,6 +11,11 @@ from tests._support import prepare_config_import
 prepare_config_import()
 
 from services.email_to_jira_service import create_email_jira_task
+from services.email_to_sbertrack_service import (
+    _match_messages,
+    _parse_email_message,
+    _retry_pending,
+)
 from services.feature_flags_service import DEFAULT_FEATURE_FLAGS, _normalize_email_to_sbertrack_config
 from services.sup_parameters_service import _admin_email_to_sbertrack
 
@@ -118,6 +125,117 @@ class EmailJiraPayloadTests(unittest.TestCase):
         self.assertEqual({"id": "21"}, fields["issuetype"])
         self.assertEqual({"name": "Minor"}, fields["priority"])
         self.assertEqual("[\u0410\u0438\u0441\u0442] Thunder", fields["customfield_12000"])
+
+
+class EmailReplySuppressionTests(unittest.TestCase):
+    @staticmethod
+    def _raw_message(subject: str, extra_headers: str = "") -> bytes:
+        encoded_subject = Header(subject, "utf-8").encode()
+        return (
+            "From: sender@example.test\r\n"
+            "To: automation@example.test\r\n"
+            f"Subject: {encoded_subject}\r\n"
+            f"Date: {datetime.now(timezone.utc).strftime('%a, %d %b %Y %H:%M:%S %z')}\r\n"
+            "Message-ID: <message@example.test>\r\n"
+            f"{extra_headers}"
+            "Content-Type: text/plain; charset=utf-8\r\n"
+            "\r\n"
+            "Body"
+        ).encode("utf-8")
+
+    @staticmethod
+    def _settings():
+        return {
+            "technical_mailboxes": ["automation@example.test"],
+            "routes": [
+                {
+                    "enabled": True,
+                    "name": "CLM",
+                    "target_system": "jira",
+                    "jira_domain": "sberbank",
+                    "subject_triggers": ["CLM"],
+                    "spaces": ["SMECLM"],
+                    "suit": "",
+                    "priority": "Minor",
+                    "summary_template": "{subject}",
+                }
+            ],
+        }
+
+    def test_new_message_still_matches_route(self):
+        message = _parse_email_message(1, self._raw_message("CLM: новая задача"), 6000)
+
+        with mock.patch(
+            "services.email_to_sbertrack_service.get_sbertrack_users_config",
+            return_value={},
+        ):
+            matches = _match_messages([message], self._settings(), {})
+
+        self.assertFalse(message["is_reply"])
+        self.assertEqual(1, len(matches))
+
+    def test_in_reply_to_blocks_route_even_without_re_prefix(self):
+        message = _parse_email_message(
+            2,
+            self._raw_message(
+                "CLM: новая задача",
+                "In-Reply-To: <original@example.test>\r\n",
+            ),
+            6000,
+        )
+
+        matches = _match_messages([message], self._settings(), {})
+
+        self.assertTrue(message["is_reply"])
+        self.assertEqual("in_reply_to", message["reply_reason"])
+        self.assertEqual([], matches)
+
+    def test_references_header_blocks_route(self):
+        message = _parse_email_message(
+            3,
+            self._raw_message(
+                "AIST: уточнение",
+                "References: <original@example.test>\r\n",
+            ),
+            6000,
+        )
+
+        self.assertTrue(message["is_reply"])
+        self.assertEqual("references", message["reply_reason"])
+
+    def test_reply_subject_prefix_is_fallback_but_forward_is_not(self):
+        reply = _parse_email_message(4, self._raw_message("Re: CLM: новая задача"), 6000)
+        localized_reply = _parse_email_message(
+            5, self._raw_message("Ответ: AIST: новая задача"), 6000
+        )
+        forwarded = _parse_email_message(6, self._raw_message("Fwd: CLM: новая задача"), 6000)
+
+        self.assertTrue(reply["is_reply"])
+        self.assertTrue(localized_reply["is_reply"])
+        self.assertFalse(forwarded["is_reply"])
+
+    def test_legacy_pending_reply_is_removed_without_task_creation(self):
+        recent = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        state = {
+            "pending": {
+                "reply": {
+                    "mail": {"subject": "RE: EMRM: исходная тема", "date": recent}
+                }
+            },
+            "created_keys": {},
+            "processed_message_ids": [],
+        }
+
+        with mock.patch("services.email_to_sbertrack_service._create_task") as create_task:
+            created = _retry_pending(
+                state,
+                {"max_pending_per_cycle": 10},
+                {},
+            )
+
+        self.assertEqual(0, created)
+        self.assertEqual({}, state["pending"])
+        create_task.assert_not_called()
 
 
 if __name__ == "__main__":
