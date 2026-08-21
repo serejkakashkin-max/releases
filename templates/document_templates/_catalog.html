@@ -6,6 +6,17 @@
   <span>Новая версия прошла проверку, а предыдущая сохранена в истории.</span>
 </div>
 {% endif %}
+{% if catalog.creation_success %}
+<div class="oplot-dtc-success" role="status"><strong>Комплект создан</strong><span>Все документы прошли проверку и опубликованы одной операцией.</span></div>
+{% endif %}
+{% if catalog.document_add_success %}
+<div class="oplot-dtc-success" role="status"><strong>Документ добавлен</strong><span>Он уже доступен генератору, просмотру и дальнейшему управлению версиями.</span></div>
+{% endif %}
+
+<div class="oplot-dtc-catalog-actions">
+  <div><h2>Рабочий каталог</h2><p>Создавайте комплекты и расширяйте их состав без ручной работы с папками.</p></div>
+  <div class="oplot-actions"><a class="btn btn-outline-primary" href="{{ public_url_for('document_templates.template_guide') }}">Как подготовить шаблон</a><button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#kit-create-modal">Создать комплект</button></div>
+</div>
 
 <div class="oplot-dtc-summary row row-deck row-cards mb-4">
   <div class="col-sm-4"><div class="card"><div class="card-body"><div class="subheader">Комплекты</div><div class="h1 mb-0">{{ catalog.summary.kits }}</div></div></div></div>

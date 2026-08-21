@@ -414,6 +414,7 @@ def build_catalog_page(
         )
         kits.append({
             "category": str(entry.get("category") or ""),
+            "relative_dir": relative_dir,
             "release_clean": str(entry.get("release_clean") or ""),
             "release_full": str(entry.get("release_full") or ""),
             "ke": str(entry.get("ke") or ""),

@@ -5,9 +5,12 @@
   var modalInstance = null;
   var historyDeleteModalInstance = null;
   var pendingHistoryDeleteButton = null;
+  var pendingDeleteButton = null;
+  var deleteModalInstance = null;
   var initialized = false;
   var previewGeneration = 0;
   var PLACEHOLDER_PATH = "word/media/oplot-external-image-placeholder.png";
+  var DELETE_SCROLL_KEY = "oplot-dtc-delete-return";
   var PLACEHOLDER_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL1WQAAAABJRU5ErkJggg==";
   var OFFICE_RELATIONSHIP_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 
@@ -383,6 +386,146 @@
     });
   }
 
+  function requestDelete(button, confirmation) {
+    var formData = new FormData();
+    formData.append("_csrf_token", getDtcCsrfToken());
+    formData.append("confirmation", confirmation);
+    return fetch(button.dataset.deleteUrl, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Accept": "application/json" },
+      body: formData
+    }).then(parseJsonResponse);
+  }
+
+  function showDeleteError(message) {
+    var error = document.getElementById("dtc-delete-error");
+    if (error) {
+      error.textContent = message || "Не удалось выполнить удаление.";
+      error.hidden = false;
+    }
+  }
+
+  function openDeleteModal(button) {
+    var modal = document.getElementById("dtc-delete-modal");
+    var Modal = tablerModalApi();
+    if (!modal || !Modal) {
+      showError("Компонент подтверждения удаления недоступен.");
+      return;
+    }
+    pendingDeleteButton = button;
+    document.getElementById("dtc-delete-required-name").textContent = button.dataset.confirmName || "";
+    document.getElementById("dtc-delete-confirmation").value = "";
+    document.getElementById("dtc-delete-error").hidden = true;
+    deleteModalInstance = Modal.getOrCreateInstance(modal);
+    deleteModalInstance.show();
+    window.setTimeout(function () { document.getElementById("dtc-delete-confirmation").focus(); }, 120);
+  }
+
+  function finishDelete(button, confirmation) {
+    return requestDelete(button, confirmation).then(function (result) {
+      if (result.response.ok && result.payload.success !== false) {
+        try {
+          window.sessionStorage.setItem(DELETE_SCROLL_KEY, JSON.stringify({
+            url: window.location.pathname + window.location.search,
+            scrollY: window.scrollY
+          }));
+        } catch (storageError) {
+          // The reload below still preserves the active URL and its filters.
+        }
+        window.location.reload();
+        return;
+      }
+      throw new Error(result.payload.error || "Удаление не выполнено.");
+    });
+  }
+
+  function submitDelete(form) {
+    var button = pendingDeleteButton;
+    var confirmation = document.getElementById("dtc-delete-confirmation").value.trim();
+    var expected = button ? button.dataset.confirmName || "" : "";
+    var submit = form.querySelector('button[type="submit"]');
+    if (!button || confirmation !== expected) {
+      showDeleteError("Введите точное имя: " + expected);
+      return;
+    }
+    submit.disabled = true;
+    submit.classList.add("is-loading");
+    finishDelete(button, confirmation).catch(function (error) {
+      showDeleteError(error && error.message ? error.message : "Удаление не выполнено.");
+    }).finally(function () {
+      submit.disabled = false;
+      submit.classList.remove("is-loading");
+    });
+  }
+
+  function readKitSources() {
+    var source = document.getElementById("oplot-dtc-kit-sources");
+    if (!source) {
+      return [];
+    }
+    try {
+      var value = JSON.parse(source.textContent || "[]");
+      return Array.isArray(value) ? value : [];
+    } catch (_error) {
+      return [];
+    }
+  }
+
+  function renderTargetNames(names) {
+    var target = document.getElementById("kit-target-names");
+    if (!target) {
+      return;
+    }
+    target.replaceChildren();
+    if (!names.length) {
+      var empty = document.createElement("p");
+      empty.className = "text-secondary";
+      empty.textContent = "Выберите комплект-основу или файлы для загрузки.";
+      target.appendChild(empty);
+      return;
+    }
+    names.forEach(function (name, index) {
+      var label = document.createElement("label");
+      label.className = "oplot-dtc-target-name";
+      var caption = document.createElement("span");
+      caption.textContent = "Документ " + (index + 1);
+      var input = document.createElement("input");
+      input.className = "form-control";
+      input.name = "target_names";
+      input.value = name;
+      input.required = true;
+      input.setAttribute("aria-label", "Итоговое имя документа " + (index + 1));
+      label.appendChild(caption);
+      label.appendChild(input);
+      target.appendChild(label);
+    });
+  }
+
+  function syncKitCreateSource() {
+    var mode = document.querySelector('input[name="source_mode"]:checked');
+    var copyPanel = document.getElementById("kit-copy-source");
+    var uploadPanel = document.getElementById("kit-upload-source");
+    var copySelect = document.getElementById("kit-source-id");
+    var files = document.getElementById("kit-files");
+    if (!mode || !copyPanel || !uploadPanel) {
+      return;
+    }
+    var copying = mode.value === "copy";
+    copyPanel.hidden = !copying;
+    uploadPanel.hidden = copying;
+    copySelect.required = copying;
+    files.required = !copying;
+    var names = [];
+    if (copying) {
+      var selected = readKitSources().find(function (item) { return item.kit_id === copySelect.value; });
+      names = selected && Array.isArray(selected.filenames) ? selected.filenames : [];
+    } else {
+      names = Array.prototype.map.call(files.files || [], function (file) { return file.name; });
+    }
+    renderTargetNames(names);
+  }
+
   function openPreview(button) {
     var view = elements();
     var Modal = window.tabler && (window.tabler.Modal || (window.tabler.bootstrap && window.tabler.bootstrap.Modal));
@@ -511,6 +654,18 @@
       return;
     }
     initialized = true;
+    try {
+      var deleteReturn = JSON.parse(window.sessionStorage.getItem(DELETE_SCROLL_KEY) || "null");
+      var currentUrl = window.location.pathname + window.location.search;
+      window.sessionStorage.removeItem(DELETE_SCROLL_KEY);
+      if (deleteReturn && deleteReturn.url === currentUrl && Number.isFinite(Number(deleteReturn.scrollY))) {
+        window.requestAnimationFrame(function () {
+          window.scrollTo(0, Number(deleteReturn.scrollY));
+        });
+      }
+    } catch (storageError) {
+      // Storage can be disabled; deletion remains functional without scroll restoration.
+    }
     syncVariantFilter();
     document.addEventListener("change", function (event) {
       if (event.target && event.target.id === "category-filter") {
@@ -553,12 +708,31 @@
           completeHistoryDelete(deleteButton);
         }
       }
+      var addDocumentButton = event.target.closest(".js-add-document");
+      if (addDocumentButton) {
+        var addForm = document.getElementById("document-add-form");
+        if (addForm) {
+          addForm.action = addDocumentButton.dataset.addUrl;
+          document.getElementById("document-add-kit-name").textContent = addDocumentButton.dataset.kitName || "";
+          addForm.reset();
+        }
+      }
+      var deleteButton = event.target.closest(".js-active-delete");
+      if (deleteButton) {
+        event.preventDefault();
+        openDeleteModal(deleteButton);
+      }
     });
     document.addEventListener("submit", function (event) {
       var form = event.target;
       if (form && form.id === "history-delete-admin-form") {
         event.preventDefault();
         submitHistoryDeleteAdminLogin(form);
+        return;
+      }
+      if (form && form.id === "dtc-delete-form") {
+        event.preventDefault();
+        submitDelete(form);
         return;
       }
       if (form.dataset.confirm && !window.confirm(form.dataset.confirm)) {
@@ -584,6 +758,37 @@
         if (submit) {
           submit.disabled = Boolean(file && file.size > 10 * 1024 * 1024);
         }
+      });
+    }
+    Array.prototype.forEach.call(document.querySelectorAll('input[name="source_mode"]'), function (radio) {
+      radio.addEventListener("change", syncKitCreateSource);
+    });
+    var kitSource = document.getElementById("kit-source-id");
+    if (kitSource) {
+      kitSource.addEventListener("change", syncKitCreateSource);
+    }
+    var kitFiles = document.getElementById("kit-files");
+    if (kitFiles) {
+      kitFiles.addEventListener("change", syncKitCreateSource);
+    }
+    syncKitCreateSource();
+    var addFile = document.getElementById("document-add-file");
+    if (addFile) {
+      addFile.addEventListener("change", function () {
+        var file = addFile.files && addFile.files[0];
+        var name = document.getElementById("document-add-name");
+        if (file && name) {
+          name.value = file.name;
+        }
+      });
+    }
+    var guideSearch = document.getElementById("dtc-guide-search");
+    if (guideSearch) {
+      guideSearch.addEventListener("input", function () {
+        var query = guideSearch.value.trim().toLocaleLowerCase("ru");
+        Array.prototype.forEach.call(document.querySelectorAll(".js-guide-row"), function (row) {
+          row.hidden = Boolean(query && row.textContent.toLocaleLowerCase("ru").indexOf(query) === -1);
+        });
       });
     }
     var view = elements();

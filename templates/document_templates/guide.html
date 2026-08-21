@@ -1,0 +1,31 @@
+{% extends 'layouts/oplot_base.html' %}
+{% set oplot_show_sidebar = false %}
+{% set oplot_topbar_variant = 'core' %}
+{% set oplot_show_breadcrumbs = false %}
+{% set oplot_page_title = 'Как подготовить шаблон' %}
+{% set oplot_page_pretitle = 'Справочник Центра шаблонов' %}
+{% set oplot_page_description = 'Служебные поля, структура документов и проверки перед публикацией.' %}
+{% block title %}Как подготовить шаблон — Oplot{% endblock %}
+{% block body_class %}oplot-dtc oplot-dtc--guide{% endblock %}
+{% block styles %}<link rel="stylesheet" href="{{ public_url_for('static', filename='css/document_templates.css') }}">{% endblock %}
+{% block topbar_utilities %}{% include 'document_templates/_topbar_back.html' %}{% endblock %}
+{% block page_actions %}<a class="btn btn-primary" href="{{ public_url_for('document_templates.index') }}">К каталогу</a>{% endblock %}
+{% block content %}
+<div class="oplot-dtc-guide-search card"><div class="card-body"><label class="form-label" for="dtc-guide-search">Поиск по ключу или назначению</label><input class="form-control" id="dtc-guide-search" type="search" placeholder="Например: версия, дата, проверяющий"><p class="text-secondary mt-2 mb-0">Ключи размещаются обычным текстом в теле документа или ячейках таблиц. Колонтитулы и текстовые блоки Word не поддерживаются.</p></div></div>
+{% set keys = [
+('RELEASE_VERSION','Текущая версия дистрибутива','данные релиза','D-01.002.03','тело документа или таблица','по необходимости'),
+('PREV_VERSION','Версия дистрибутива для отката','предыдущий релиз/уточнение пользователя','D-01.002.02','блок отката','для документов с откатом'),
+('RELEASE_ID','Номер релиза Jira','релизная таблица','SMECLM-12345','тело документа или таблица','по необходимости'),
+('RELNUMBER','Номер релиза в служебных блоках','релизная таблица','SMECLM-12345','тело документа или таблица','по необходимости'),
+('OPLOT','Дежурный Oplot','назначения релиза','Иванов И.И.','тело документа или таблица','по необходимости'),
+('CHECKER','Проверяющий','назначения релиза','Петров П.П.','тело документа или таблица','по необходимости'),
+('DATE','Дата внедрения','релизная таблица','21.08.2026','тело документа или таблица','по необходимости'),
+('PLUS_1','Следующий календарный день','расчёт от даты внедрения','22.08.2026','тело документа или таблица','по необходимости'),
+('POB','Связанный идентификатор РОВ/ПОВ','релизная таблица','SMECLM-54321','тело документа или таблица','по необходимости'),
+('PLAYBOOKS','Выбранные плейбуки','мастер формирования документов','DEPLOY_APP','тело документа или таблица','для комплектов с плейбуками'),
+('INSTRUCTION_BLOCK','Текст и ссылка на инструкцию','данные релиза и мастер','Инструкция по внедрению','тело документа или таблица','по необходимости')
+] %}
+<div class="oplot-dtc-guide-table table-responsive mt-4"><table class="table table-vcenter"><thead><tr><th>Ключ</th><th>Что подставляется</th><th>Источник</th><th>Пример</th><th>Где размещать</th><th>Обязательность</th></tr></thead><tbody>{% for key in keys %}<tr class="js-guide-row"><td><code>{{ key[0] }}</code></td><td>{{ key[1] }}</td><td>{{ key[2] }}</td><td>{{ key[3] }}</td><td>{{ key[4] }}</td><td>{{ key[5] }}</td></tr>{% endfor %}</tbody></table></div>
+<div class="oplot-dtc-guide-grid mt-4"><article class="card"><div class="card-body"><h2>Имена и состав</h2><p>Имя каждого файла должно быть уникальным внутри комплекта. Можно добавить два плана внедрения, два чек-листа или любой другой состав — генератор включит все DOCX комплекта.</p></div></article><article class="card"><div class="card-body"><h2>Копирование комплекта</h2><p>Копия сохраняет оформление и служебные поля. Обязательно перечитайте статические названия систем, ссылки и инструкции: они не изменяются автоматически.</p></div></article><article class="card"><div class="card-body"><h2>Типовые ошибки</h2><p>Публикацию блокируют неизвестные ключи, повреждённый DOCX, опасные вложения и связи, ключи в неподдерживаемых областях и ошибка контрольной генерации.</p></div></article></div>
+{% endblock %}
+{% block scripts %}<script defer src="{{ public_url_for('static', filename='js/document_templates.js') }}"></script>{% endblock %}

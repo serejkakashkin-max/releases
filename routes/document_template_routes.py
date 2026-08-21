@@ -33,6 +33,13 @@ from services.document_template_storage_service import (
     document_lock, get_candidate, get_history_version, list_candidates, list_history,
     update_candidate, write_uploaded_candidate,
 )
+from services.document_template_creation_service import (
+    CreationDraftConflict, CreationDraftNotFound, cancel_creation_draft,
+    create_document_draft, create_kit_draft, creation_draft_payload,
+    delete_active_document, delete_active_kit, get_creation_draft,
+    kit_id_for_relative_dir, list_kit_models, publish_creation_draft,
+    resolve_kit, safe_docx_filename,
+)
 from services.document_template_vendor_service import verify_vendor_assets
 from services.oplot_ui_service import safe_public_url_for
 from services.public_url_service import public_url_for
@@ -110,6 +117,7 @@ def _page_number() -> int:
 
 def _enrich_catalog(catalog: dict) -> None:
     for kit in catalog.get("kits", []):
+        kit["kit_id"] = kit_id_for_relative_dir(kit["relative_dir"])
         for document in kit.get("documents", []):
             candidates = [
                 item for item in list_candidates(document["document_id"])
@@ -187,8 +195,16 @@ def index():
     try:
         catalog = build_catalog_page(_template_root(), **filters); _enrich_catalog(catalog)
         catalog["replacement_success"] = request.args.get("replacement") == "success"
+        catalog["creation_success"] = request.args.get("created") == "kit"
+        catalog["document_add_success"] = request.args.get("created") == "document"
+        creation_kits = list_kit_models(_template_root())
         template = "document_templates/_catalog.html" if _is_htmx_request() else "document_templates/index.html"
-        response = make_response(render_template(template, catalog=catalog, csrf_token=csrf_token()))
+        response = make_response(render_template(
+            template,
+            catalog=catalog,
+            csrf_token=csrf_token(),
+            creation_kits=creation_kits,
+        ))
     except DocumentTemplateRootUnavailable:
         if _is_htmx_request():
             response = make_response(render_template(
@@ -231,6 +247,253 @@ def preview_document(document_id: str):
 @document_template_bp.get("/documents/<document_id>/download")
 def download_document(document_id: str):
     return _active_docx_response(document_id, attachment=True)
+
+
+@document_template_bp.get("/guide")
+def template_guide():
+    return render_template("document_templates/guide.html")
+
+
+def _aliases_from_form() -> list[str]:
+    return [
+        value.strip()
+        for value in re.split(r"[,;\r\n]+", str(request.form.get("aliases") or ""))
+        if value.strip()
+    ]
+
+
+@document_template_bp.post("/kits/drafts")
+def create_kit_draft_route():
+    guard = _csrf_guard()
+    if guard is not None:
+        return guard
+    uploads = []
+    for upload in request.files.getlist("files"):
+        if upload and upload.filename:
+            uploads.append((Path(upload.filename).name, upload.stream))
+    if len(uploads) > 20:
+        return make_response("За одну операцию можно добавить не более 20 документов.", 400)
+    target_names = [value for value in request.form.getlist("target_names") if value.strip()]
+    try:
+        draft = create_kit_draft(
+            root=_template_root(),
+            category=str(request.form.get("category") or ""),
+            name="",
+            ke=str(request.form.get("kit_ke") or request.form.get("ke") or ""),
+            variant=str(request.form.get("variant") or ""),
+            aliases=_aliases_from_form(),
+            source_mode=str(request.form.get("source_mode") or ""),
+            uploads=uploads,
+            source_kit_id=str(request.form.get("source_kit_id") or ""),
+            target_names=target_names or None,
+        )
+        append_audit_event(
+            actor=DOCUMENT_TEMPLATE_ACTOR,
+            action="kit_create_draft",
+            kit_id=draft.get("target_kit_id"),
+            draft_uuid=draft.get("draft_uuid"),
+            category=draft.get("category"),
+            relative_target=draft.get("target_relative_dir"),
+            result=draft.get("state"),
+        )
+    except CandidateUploadTooLarge:
+        return make_response("Один из файлов превышает допустимый размер 10 МиБ.", 413)
+    except (CreationDraftConflict, ValueError) as exc:
+        return make_response(str(exc), 409 if isinstance(exc, CreationDraftConflict) else 400)
+    except (OSError, FileLockTimeoutError):
+        return make_response("Черновик временно не может быть создан.", 423)
+    return redirect(public_url_for("document_templates.creation_draft_detail", draft_uuid=draft["draft_uuid"]), code=303)
+
+
+@document_template_bp.post("/kits/<kit_id>/documents/drafts")
+def create_document_draft_route(kit_id: str):
+    guard = _csrf_guard()
+    if guard is not None:
+        return guard
+    upload = request.files.get("file")
+    if upload is None or not upload.filename:
+        return make_response("Выберите DOCX-файл.", 400)
+    filename = str(request.form.get("target_filename") or Path(upload.filename).name)
+    try:
+        draft = create_document_draft(root=_template_root(), kit_id=kit_id, filename=filename, stream=upload.stream)
+        append_audit_event(
+            actor=DOCUMENT_TEMPLATE_ACTOR,
+            action="document_add_draft",
+            kit_id=kit_id,
+            draft_uuid=draft.get("draft_uuid"),
+            relative_target=draft.get("target_relative_dir"),
+            source_filename=filename,
+            result=draft.get("state"),
+        )
+    except CandidateUploadTooLarge:
+        return make_response("Файл превышает допустимый размер 10 МиБ.", 413)
+    except (CreationDraftConflict, ValueError) as exc:
+        return make_response(str(exc), 409 if isinstance(exc, CreationDraftConflict) else 400)
+    except (OSError, FileLockTimeoutError):
+        return make_response("Черновик временно не может быть создан.", 423)
+    return redirect(public_url_for("document_templates.creation_draft_detail", draft_uuid=draft["draft_uuid"]), code=303)
+
+
+@document_template_bp.get("/drafts/<draft_uuid>")
+def creation_draft_detail(draft_uuid: str):
+    try:
+        draft = get_creation_draft(draft_uuid)
+    except (CreationDraftNotFound, ValueError):
+        abort(404)
+    return render_template("document_templates/creation_draft.html", draft=draft, csrf_token=csrf_token())
+
+
+def _creation_draft_docx_response(draft_uuid: str, index: int, *, test: bool, attachment: bool):
+    try:
+        payload, item = creation_draft_payload(draft_uuid, index, test=test)
+    except (CreationDraftNotFound, ValueError):
+        abort(404)
+    except CreationDraftConflict as exc:
+        return make_response(str(exc), 409)
+    filename = str(item.get("target_filename") or "template.docx")
+    if test:
+        filename = f"test-{filename}"
+    return send_file(BytesIO(payload), mimetype=DOCX_CONTENT_TYPE, as_attachment=attachment, download_name=filename, conditional=False, etag=False, max_age=0)
+
+
+@document_template_bp.get("/drafts/<draft_uuid>/documents/<int:index>/preview")
+def preview_creation_draft(draft_uuid: str, index: int):
+    return _creation_draft_docx_response(draft_uuid, index, test=False, attachment=False)
+
+
+@document_template_bp.get("/drafts/<draft_uuid>/documents/<int:index>/test-preview")
+def preview_creation_draft_test(draft_uuid: str, index: int):
+    return _creation_draft_docx_response(draft_uuid, index, test=True, attachment=False)
+
+
+@document_template_bp.post("/drafts/<draft_uuid>/publish")
+def publish_creation_draft_route(draft_uuid: str):
+    guard = _csrf_guard()
+    if guard is not None:
+        return guard
+    try:
+        draft = get_creation_draft(draft_uuid)
+        action = "kit_create" if draft.get("operation") == "create_kit" else "document_add"
+        append_audit_event(
+            actor=DOCUMENT_TEMPLATE_ACTOR,
+            action=action,
+            kit_id=draft.get("target_kit_id"),
+            draft_uuid=draft_uuid,
+            category=draft.get("category"),
+            relative_target=draft.get("target_relative_dir"),
+            result="approved",
+        )
+        published = publish_creation_draft(draft_uuid, _template_root())
+        try:
+            append_audit_event(
+                actor=DOCUMENT_TEMPLATE_ACTOR,
+                action=action,
+                kit_id=published.get("target_kit_id"),
+                draft_uuid=draft_uuid,
+                relative_target=published.get("target_relative_dir"),
+                result="published",
+            )
+        except Exception:
+            pass
+    except (CreationDraftNotFound, ValueError):
+        abort(404)
+    except CreationDraftConflict as exc:
+        return make_response(str(exc), 409)
+    except (OSError, FileLockTimeoutError):
+        return make_response("Публикация временно заблокирована.", 423)
+    created = "kit" if published.get("operation") == "create_kit" else "document"
+    return redirect(public_url_for("document_templates.index", created=created), code=303)
+
+
+@document_template_bp.post("/drafts/<draft_uuid>/cancel")
+def cancel_creation_draft_route(draft_uuid: str):
+    guard = _csrf_guard()
+    if guard is not None:
+        return guard
+    try:
+        draft = get_creation_draft(draft_uuid)
+        append_audit_event(
+            actor=DOCUMENT_TEMPLATE_ACTOR,
+            action="creation_cancel",
+            kit_id=draft.get("target_kit_id"),
+            draft_uuid=draft_uuid,
+            relative_target=draft.get("target_relative_dir"),
+            result="cancelled",
+        )
+        cancel_creation_draft(draft_uuid)
+    except (CreationDraftNotFound, ValueError):
+        abort(404)
+    except CreationDraftConflict as exc:
+        return make_response(str(exc), 409)
+    return redirect(public_url_for("document_templates.index"), code=303)
+
+
+def _destructive_dtc_guard():
+    if not csrf_form_is_valid():
+        return make_response("Действие отклонено: обновите страницу и повторите попытку.", 403)
+    return None
+
+
+def _confirmed_name() -> str:
+    if request.is_json:
+        payload = request.get_json(silent=True) or {}
+        return str(payload.get("confirmation") or "").strip()
+    return str(request.form.get("confirmation") or "").strip()
+
+
+@document_template_bp.post("/documents/<document_id>/delete")
+def delete_document(document_id: str):
+    guard = _destructive_dtc_guard()
+    if guard is not None:
+        return guard
+    document = _resolved_or_404(document_id)
+    if _confirmed_name() != document.filename:
+        return jsonify({"success": False, "error": "Введите точное имя удаляемого документа."}), 400
+    try:
+        append_audit_event(
+            actor=DOCUMENT_TEMPLATE_ACTOR,
+            action="document_delete",
+            document_id=document.document_id,
+            kit_id=kit_id_for_relative_dir(document.relative_directory),
+            relative_target=document.relative_path,
+            sha256=document.sha256,
+            source_filename=document.filename,
+            result="deleted",
+        )
+        delete_active_document(document)
+    except CreationDraftConflict as exc:
+        return jsonify({"success": False, "error": str(exc)}), 409
+    except (OSError, FileLockTimeoutError):
+        return jsonify({"success": False, "error": "Документ временно заблокирован."}), 423
+    return jsonify({"success": True, "redirect": public_url_for("document_templates.index")})
+
+
+@document_template_bp.post("/kits/<kit_id>/delete")
+def delete_kit(kit_id: str):
+    guard = _destructive_dtc_guard()
+    if guard is not None:
+        return guard
+    kit = resolve_kit(kit_id, _template_root())
+    if kit is None:
+        abort(404)
+    expected = str(kit.get("release_full") or "")
+    if _confirmed_name() != expected:
+        return jsonify({"success": False, "error": "Введите точное имя удаляемого комплекта."}), 400
+    try:
+        append_audit_event(
+            actor=DOCUMENT_TEMPLATE_ACTOR,
+            action="kit_delete",
+            kit_id=kit_id,
+            category=kit.get("category"),
+            relative_target=kit.get("relative_dir"),
+            result="deleted",
+        )
+        delete_active_kit(kit, _template_root())
+    except CreationDraftConflict as exc:
+        return jsonify({"success": False, "error": str(exc)}), 409
+    except (OSError, FileLockTimeoutError):
+        return jsonify({"success": False, "error": "Комплект временно заблокирован."}), 423
+    return jsonify({"success": True, "redirect": public_url_for("document_templates.index")})
 
 
 @document_template_bp.post("/documents/<document_id>/candidates")
